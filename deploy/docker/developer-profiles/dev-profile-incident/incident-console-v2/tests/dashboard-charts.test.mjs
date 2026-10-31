@@ -4,7 +4,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { assetRows, dashboardView, delta, formatDay, severityRows, typeRows, unratedReports } from '../src/modules/dashboard/domain/charts.ts';
+import {
+  assetRows,
+  dashboardView,
+  delta,
+  formatDay,
+  severityRows,
+  typeRows,
+  unratedReports,
+} from '../src/modules/dashboard/domain/charts.ts';
 import { severityChartColor } from '../src/lib/ui/severity.ts';
 
 const analytics = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'dashboard-rpc.json'), 'utf8'));
