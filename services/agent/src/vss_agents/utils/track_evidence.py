@@ -148,22 +148,29 @@ class Track:
 
 @dataclass
 class TrackingSummary:
-    """What ``/analyze`` reports about the tracking stage (``enabled`` false means it did not run)."""
+    """What ``/analyze`` reports about the tracking stage (``enabled`` false means it did not run).
+
+    ``marks`` is the set-of-marks record (``utils/set_of_marks.py``) and is left out of the dict when that is off.
+    """
 
     enabled: bool = False
     matched: int = 0
     tracks: int = 0
     elapsed_ms: float = 0.0
     skipped: str | None = None
+    marks: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        summary: dict[str, Any] = {
             "enabled": self.enabled,
             "matched": self.matched,
             "tracks": self.tracks,
             "elapsed_ms": round(self.elapsed_ms, 1),
             "skipped": self.skipped,
         }
+        if self.marks is not None:
+            summary["marks"] = self.marks
+        return summary
 
 
 @dataclass
@@ -517,12 +524,23 @@ class TrackingRequest:
     """One analysis run's tracking: the sensor id, the summary it fills in and, for tests, what the run uses.
 
     ``options`` are keyword arguments of :func:`run_tracking` (``client``, ``settings``, ``probe``, ...).
+    ``marked`` maps entity ids to the tracks set-of-marks prompting matched them to; the evidence step takes those
+    as they are and associates only the other entities by box overlap.
     """
 
     sensor_id: str
     summary: TrackingSummary = field(default_factory=lambda: TrackingSummary(enabled=True))
     runner: Callable[..., Coroutine[Any, Any, TrackingOutcome]] = run_tracking
     options: dict[str, Any] = field(default_factory=dict)
+    marked: dict[str, Track] = field(default_factory=dict)
+
+    def reuse(self, outcome: TrackingOutcome) -> None:
+        """Serve ``outcome`` (a run made earlier in the request) instead of running the stack again."""
+
+        async def _earlier(*_: Any, **__: Any) -> TrackingOutcome:
+            return outcome
+
+        self.runner = _earlier
 
     @property
     def min_iou(self) -> float:

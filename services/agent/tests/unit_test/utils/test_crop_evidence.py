@@ -736,6 +736,53 @@ class TestTrackingEvidence:
         )
         assert started == [] and request.summary.skipped
 
+    @pytest.mark.asyncio
+    async def test_a_marked_entity_keeps_its_track_even_without_box_overlap(self, tiny_video_path: Path) -> None:
+        # The detector box (200..600) overlaps neither track, so only the mark can match E1.
+        marked = Track("12", [Sample(0.0, (800, 800, 950, 950), 0.9), Sample(1.0, (700, 700, 950, 950), 0.95)])
+        other = Track("13", [Sample(0.0, (210, 210, 590, 590), 0.9)])
+        request = self._request(TrackingOutcome(tracks=[marked, other]))
+        request.marked = {"E1": marked}
+        request.summary.marks = {"rendered": True, "parsed": 0, "fallback": 0, "invalid": 0}
+        results = await CropEvidenceService(
+            detector=self.DETECTOR, store=InMemoryEvidenceStore()
+        ).process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b", tracking=request
+        )
+        person = results[0]
+        assert person["track"] == "evidence/v/b/E1-track.json" and person["box_seconds"] == 1.0
+        assert person["bounding_box"] == pytest.approx([700, 700, 950, 950], abs=60)  # cut at the mark's track
+        assert request.summary.matched == 1
+        assert request.summary.marks == {"rendered": True, "parsed": 1, "fallback": 0, "invalid": 0}
+
+    @pytest.mark.asyncio
+    async def test_an_unmarked_entity_falls_back_to_overlap_with_the_tracks_no_mark_took(
+        self, tiny_video_path: Path
+    ) -> None:
+        report = copy.deepcopy(REPORT)
+        report["entities"].append({**report["entities"][0], "entity_id": "E2", "label": "second person"})
+        overlapping = self._track()  # overlaps the detector box, so both entities would pick it by IoU
+        request = self._request(TrackingOutcome(tracks=[overlapping]))
+        request.marked = {"E2": overlapping}
+        request.summary.marks = {"rendered": True, "parsed": 0, "fallback": 0, "invalid": 0}
+        results = await CropEvidenceService(
+            detector=self.DETECTOR, store=InMemoryEvidenceStore()
+        ).process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=report, batch_id="b", tracking=request
+        )
+        by_id = {r["item_id"]: r for r in results}
+        assert by_id["E2"]["track"] and "track" not in by_id["E1"]  # the marked track is not offered to E1
+        assert request.summary.marks["parsed"] == 1 and request.summary.marks["fallback"] == 0
+
+        fallback = self._request(TrackingOutcome(tracks=[self._track()]))
+        fallback.summary.marks = {"rendered": True, "parsed": 0, "fallback": 0, "invalid": 1}
+        results = await CropEvidenceService(
+            detector=self.DETECTOR, store=InMemoryEvidenceStore()
+        ).process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b", tracking=fallback
+        )
+        assert results[0]["track"] and fallback.summary.marks["fallback"] == 1 and fallback.summary.marks["parsed"] == 0
+
 
 class TestZoomSecondLook:
     """The zoomed second look: a close-up of each located item is named again and a confident correction applied."""
