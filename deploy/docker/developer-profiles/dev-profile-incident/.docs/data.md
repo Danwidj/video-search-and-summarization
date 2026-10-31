@@ -16,6 +16,7 @@ There is one Supabase project per project phase ([decision](decisions.md)): **fi
 - `20261023120000_report_revision_embeddings.sql` — adds `report_revisions.embedding` with its HNSW index, and `search_report_revisions`.
 - `20261024090000_save_human_revision_with_crops.sql` — adds `save_human_revision_with_crops`.
 - `20261028090000_r2_rename.sql` — adds `apply_r2_rename` (used once by [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py)) and lets it, and nothing else, change a revision's `evidence` column.
+- `20261031090000_dashboard_official_else_newest.sql` — rewrites `get_incident_dashboard` to count official, else newest, with the official split and `p_scope`, and adds `not_official` to `list_incident_report_summaries`.
 
 Which of these are applied to finals is in [`status.md`](status.md#3-database-status). The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres.
 
@@ -298,7 +299,8 @@ newest revision (so reports awaiting selection still appear). Facets come from t
 description/title/confidence from `payload.incident`. Filters: `p_search`, `p_type`, `p_severity`
 (`low`/`medium`/`high` or a number), `p_kind` (`ai`/`human`), date range, local time-of-day and
 weekday (`p_timezone`, default UTC), entity/instrument/asset text or exact-name match,
-`p_entity_types`, `p_sort`, and `p_scope` (`all` or `official`). Returns
+`p_entity_types`, `p_sort`, and `p_scope` (`all`, `official` or `not_official`). `p_type`
+`Unclassified` selects a NULL `incident_type`. Returns
 `{reports: [...], totalItems, incidentTypes}`. Each card carries `revisionId`, `revisionNo`,
 `videoId`, `modelRunId`, `kind`, `createdBy`, `note`, `isOfficial`, `outcome`, and the display
 fields, plus `officialSince` (when the official revision was marked; null if none), `versionCount`
@@ -309,13 +311,21 @@ stored. It never returns `payload`, notes, signed URLs or video content.
 
 #### `get_incident_dashboard`
 
-Aggregates **official revisions only**, filtered by the revision's `created_at` plus optional type,
-severity band, weekday and hour (in `p_timezone`, default UTC). Returns `total`, all-time `videos`
-counts (`uploaded`, `withOfficial`, `awaitingSelection`, `withoutReport`), `previous`, severity,
-`revisions` (`ai`/`human`), types with per-type evidence, daily trend, heatmap, `entityTypes`,
-`topInstruments`, `topAssets`, `threatLevels`, a confidence histogram with `confidenceNotProvided`,
-and `modelCoverage` (attempts by outcome: failed attempts from `model_runs`, successful ones from
-AI revisions).
+Counts each video once through `searchable_revision_id`: its **official revision, else its newest**,
+the same rule as the library and search (migration `20261031090000_dashboard_official_else_newest.sql`).
+It only reads `videos.official_revision_id`, to report the split, and never sets it. Filtered by the
+revision's `created_at` plus optional type, severity band, weekday and hour (in `p_timezone`, default
+UTC) and `p_scope` (`all`, `official` or `not_official`; a caller that omits it gets `official`,
+because a console from before this change labels its numbers official; the console always sends
+it). Returns `total` with
+`official` and `notOfficial`, all-time `videos` counts (`uploaded`, `withOfficial`,
+`awaitingSelection`, `withoutReport`), `previous`, `severity` and `severityByScope`, `revisions`
+(`ai`/`human`), types with per-type evidence, daily `trend` (days in `p_timezone`), `heatmap`,
+`entityTypes`, `topInstruments`, `topAssets`, `threatLevels`, a confidence histogram with
+`confidenceNotProvided`, and `modelCoverage` (attempts by outcome: failed attempts from `model_runs`,
+successful ones from AI revisions). Each `types`, `trend`, `heatmap` and `topAssets` entry also
+carries `official` and `notOfficial`. `videos` and `modelCoverage` ignore every filter except that
+`modelCoverage` follows the period. A `type` of `Unclassified` selects a NULL `incident_type`.
 
 ---
 

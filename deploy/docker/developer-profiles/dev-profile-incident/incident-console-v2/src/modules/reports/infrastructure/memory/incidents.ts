@@ -59,7 +59,12 @@ export class InMemoryIncidentRepository implements IncidentRepository {
     if (unmodelled.length) throw new Error(`InMemoryIncidentRepository does not model: ${unmodelled.join(', ')}`);
     const direction = query.sort === 'oldest' ? 1 : -1;
     const matching = this.summaries
-      .filter((summary) => (query.scope !== 'official' || summary.isOfficial) && (query.kind === null || summary.kind === query.kind))
+      .filter(
+        (summary) =>
+          (query.scope !== 'official' || summary.isOfficial) &&
+          (query.scope !== 'not_official' || !summary.isOfficial) &&
+          (query.kind === null || summary.kind === query.kind),
+      )
       .sort((a, b) => direction * (a.generatedAt ?? '').localeCompare(b.generatedAt ?? '') || a.revisionId - b.revisionId);
     // The RPC clamps the page size to 1-1000 and the page to at least 1.
     const size = Math.min(Math.max(query.pageSize, 1), 1000);

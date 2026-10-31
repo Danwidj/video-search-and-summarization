@@ -3,6 +3,8 @@
 import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
 
 export type DashboardSeverity = 'low' | 'medium' | 'high';
+/** Which reports count: every video's counted revision, or only the official or not-yet-official ones. */
+export type DashboardScope = 'all' | 'official' | 'not_official';
 
 /** get_incident_dashboard's inputs, validated and resolved by the route. */
 export interface DashboardQuery {
@@ -15,6 +17,7 @@ export interface DashboardQuery {
   dayOfWeek: number | null;
   hour: number | null;
   timezone: string;
+  scope: DashboardScope;
 }
 
 export interface DashboardRepository {
