@@ -175,7 +175,7 @@ cmd_stop() {
 
 cmd_status() {
   local rc=0 out
-  echo "perception :9000   $(curl -s --max-time 5 http://localhost:9000/api/v1/stream/get-stream-info || echo UNREACHABLE)"
+  echo "perception :9000   $(curl -s --max-time 5 http://localhost:9000/api/v1/stream/get-stream-info | tr -d "[:space:]" || echo UNREACHABLE)"
   echo "analytics  :8081   $(curl -s --max-time 5 http://localhost:8081/livez || echo UNREACHABLE)"
   echo "elastic    :9200   $(curl -s --max-time 5 'http://localhost:9200/_cat/indices/mdx-*' | tr '\n' ' ' || echo UNREACHABLE)"
   echo "nvstreamer :31000  $(curl -s --max-time 5 http://localhost:31000/api/v1/sensor/streams || echo UNREACHABLE)"
