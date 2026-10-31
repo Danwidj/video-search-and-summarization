@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-export type StageKey = 'idle' | 'uploading' | 'preparing' | 'analyzing' | 'saving' | 'complete' | 'error';
+export type StageKey = 'idle' | 'uploading' | 'converting' | 'analyzing' | 'saving' | 'complete' | 'error';
 
 export const stageLabels: Array<{ key: StageKey; label: string }> = [
   { key: 'uploading', label: 'Uploading video' },
-  { key: 'preparing', label: 'Preparing secure access' },
+  { key: 'converting', label: 'Converting to H.264' },
   { key: 'analyzing', label: 'Understanding the incident' },
   { key: 'saving', label: 'Structuring and saving report' },
   { key: 'complete', label: 'Report ready' },
@@ -13,7 +13,7 @@ export const stageLabels: Array<{ key: StageKey; label: string }> = [
 export const stageOrder: Record<StageKey, number> = {
   idle: -1,
   uploading: 0,
-  preparing: 1,
+  converting: 1,
   analyzing: 2,
   saving: 3,
   complete: 4,
@@ -24,7 +24,7 @@ export function getStageProgress(stage: StageKey, uploadProgress = 0, lastActive
   switch (stage) {
     case 'uploading':
       return Math.max(2, Math.min(20, Math.round((uploadProgress / 100) * 20)));
-    case 'preparing':
+    case 'converting':
       return 40;
     case 'analyzing':
       return 60;
@@ -42,12 +42,25 @@ export function getStageProgress(stage: StageKey, uploadProgress = 0, lastActive
   }
 }
 
-export function getStageAnnouncement(stage: StageKey, uploadProgress = 0, error: string | null = null): string {
+/** Whole seconds as `m:ss`, for the time the conversion has been running. */
+export function formatElapsed(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
+
+/** What to say under the stages once the console has answered: converted, or stored as it was. */
+export function conversionNote(converted: boolean, seconds: number): string {
+  return converted
+    ? `Converted to H.264 MP4 at the original resolution in ${formatElapsed(seconds)}.`
+    : 'Already an H.264 MP4: stored without conversion.';
+}
+
+export function getStageAnnouncement(stage: StageKey, uploadProgress = 0, error: string | null = null, convertingSeconds = 0): string {
   switch (stage) {
     case 'uploading':
       return `Stage 1 of 5: Uploading video${uploadProgress > 0 ? ` (${uploadProgress}%)` : ''}.`;
-    case 'preparing':
-      return 'Stage 2 of 5: Preparing secure access.';
+    case 'converting':
+      return `Stage 2 of 5: Converting to H.264 (${formatElapsed(convertingSeconds)}).`;
     case 'analyzing':
       return 'Stage 3 of 5: Understanding the incident.';
     case 'saving':

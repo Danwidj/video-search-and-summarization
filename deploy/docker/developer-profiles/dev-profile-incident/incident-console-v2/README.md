@@ -13,7 +13,7 @@ From `deploy/docker/developer-profiles/dev-profile-incident/`:
 
 In vm mode the console reaches only the agent (`localhost:8000`, the one tunnelled port) and uploads videos straight to R2 through its own `/api/uploads/r2` route; it uses no VST and no `:7777` proxy, which are removed from the VM deployment along with HAProxy, Redis and Kafka (Phoenix stays, for eval traces).
 
-Either way the console opens on `http://127.0.0.1:3200`; `GET /api/health` should report `ready`. To run it by hand, start the [mock backend](../mock-backend/base_profile_mock/README.md) and the [VLM gateway](../vlm-gateway/README.md), then `npm install && npm run dev` here. Evidence frames and crops need `ffmpeg` on your PATH.
+Either way the console opens on `http://127.0.0.1:3200`; `GET /api/health` should report `ready`. To run it by hand, start the [mock backend](../mock-backend/base_profile_mock/README.md) and the [VLM gateway](../vlm-gateway/README.md), then `npm install && npm run dev` here. Uploads need `ffmpeg` and `ffprobe` on your PATH (every upload is probed and, unless it is already an H.264 MP4, converted to one at its original resolution before it goes to R2); evidence frames and crops need `ffmpeg`.
 
 Settings come from `.env.local`, a symlink to the profile's shared `../.env.local`; edit that file, not the symlink.
 

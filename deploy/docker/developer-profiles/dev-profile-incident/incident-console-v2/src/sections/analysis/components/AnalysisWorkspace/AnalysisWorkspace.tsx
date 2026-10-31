@@ -15,7 +15,15 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { checkUploadName, type UploadNameReport, useVideoUpload } from '@/sections/analysis/hooks/use-video-upload';
 
-import { getStageAnnouncement, getStageProgress, type StageKey, stageLabels, stageOrder } from '@/sections/analysis/stage-progress';
+import {
+  conversionNote,
+  formatElapsed,
+  getStageAnnouncement,
+  getStageProgress,
+  type StageKey,
+  stageLabels,
+  stageOrder,
+} from '@/sections/analysis/stage-progress';
 
 export type { StageKey };
 export { getStageAnnouncement, getStageProgress, stageLabels, stageOrder };
@@ -61,6 +69,8 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // When the bytes finished uploading and the route started probing or converting the file.
+  const convertingStartRef = useRef<number | null>(null);
   const [file, setFile] = useState<File | null>(() => {
     if (initialFileName) {
       return new File(['fixture'], initialFileName, { type: 'video/mp4' });
@@ -76,6 +86,8 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [nameNotice, setNameNotice] = useState<string | null>(null);
   const [storedName, setStoredName] = useState<string | null>(null);
+  const [convertingSeconds, setConvertingSeconds] = useState(0);
+  const [conversion, setConversion] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState('');
@@ -125,6 +137,16 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
     };
   }, []);
 
+  // The Converting step shows how long the route has been working on the file.
+  useEffect(() => {
+    if (stage !== 'converting') return;
+    const started = convertingStartRef.current ?? Date.now();
+    const tick = () => setConvertingSeconds((Date.now() - started) / 1000);
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [stage]);
+
   useEffect(() => {
     if (!file) {
       setPreviewUrl(null);
@@ -166,6 +188,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
     setNameNotice(null);
     setStoredName(null);
     setError(null);
+    setConversion(null);
     setStage('idle');
     setLastActiveStage('idle');
     setUploadProgress(0);
@@ -177,11 +200,19 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
     abortRef.current = controller;
     setError(null);
     setNameNotice(null);
+    setConversion(null);
     setUploadProgress(0);
+    setConvertingSeconds(0);
+    convertingStartRef.current = null;
 
     try {
       changeStage('uploading');
-      const { filePath, filename } = await upload(file, controller.signal, setUploadProgress);
+      const { filePath, filename, converted } = await upload(file, controller.signal, setUploadProgress, () => {
+        convertingStartRef.current = Date.now();
+        changeStage('converting');
+      });
+      const started = convertingStartRef.current;
+      setConversion(conversionNote(converted, started ? (Date.now() - started) / 1000 : 0));
 
       changeStage('analyzing');
       const result = await apiJson<{ report: { videoId: string; revisionId: number } }>('/api/analysis', {
@@ -204,9 +235,9 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
   const activeIndex = stageOrder[stage];
   const effectiveActiveIndex = stage === 'error' ? stageOrder[lastActiveStage] : activeIndex;
   const failedStageIndex = stage === 'error' ? stageOrder[lastActiveStage] : -1;
-  const busy = ['uploading', 'preparing', 'analyzing', 'saving'].includes(stage);
+  const busy = ['uploading', 'converting', 'analyzing', 'saving'].includes(stage);
   const progressValue = getStageProgress(stage, uploadProgress, lastActiveStage);
-  const announcement = getStageAnnouncement(stage, uploadProgress, error);
+  const announcement = getStageAnnouncement(stage, uploadProgress, error, convertingSeconds);
 
   return (
     <Card
@@ -387,12 +418,18 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
                         {active && item.key === 'uploading' && uploadProgress > 0 && (
                           <span className="font-mono text-[11px] text-primary/80">{uploadProgress}%</span>
                         )}
+                        {active && item.key === 'converting' && (
+                          <span className="font-mono text-[11px] text-primary/80" data-testid="converting-elapsed">
+                            {formatElapsed(convertingSeconds)}
+                          </span>
+                        )}
                       </div>
                       <span className="leading-snug">{item.label}</span>
                     </li>
                   );
                 })}
               </ol>
+              {conversion && <p className="text-xs text-muted-foreground">{conversion}</p>}
             </div>
           )}
 

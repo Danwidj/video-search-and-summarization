@@ -8,7 +8,15 @@ import { thumbnailCaptureTime } from '@/lib/ui/thumbnail';
 
 export interface UploadedVideo {
   filePath: string;
+  /** The stored name, which always ends in .mp4. */
   filename: string;
+  /** True when the console converted the file to H.264; false when it was stored byte for byte. */
+  converted: boolean;
+}
+
+interface UploadAnswer extends ApiError {
+  filePath?: string;
+  converted?: boolean;
 }
 
 interface ApiError {
@@ -41,9 +49,17 @@ export async function checkUploadName(filename: string): Promise<UploadNameRepor
  * Uploads the video directly to R2 via the console's own server-side route,
  * which keeps the R2 credentials server-side, and returns its R2 key.
  * XMLHttpRequest rather than fetch, because only it reports upload progress.
+ * `onUploaded` fires once the bytes have all been sent: the route is then
+ * probing and, when needed, converting the file before it stores it.
  */
-function uploadToR2(file: File, filename: string, signal: AbortSignal, onProgress: (progress: number) => void): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
+function uploadToR2(
+  file: File,
+  filename: string,
+  signal: AbortSignal,
+  onProgress: (progress: number) => void,
+  onUploaded?: () => void,
+): Promise<{ filePath: string; converted: boolean }> {
+  return new Promise((resolve, reject) => {
     if (signal.aborted) {
       reject(new Error('Upload was cancelled'));
       return;
@@ -57,9 +73,10 @@ function uploadToR2(file: File, filename: string, signal: AbortSignal, onProgres
     request.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
     };
+    request.upload.onload = () => onUploaded?.();
     request.onload = () => {
       signal.removeEventListener('abort', cancel);
-      let payload: { filePath?: string } & ApiError = {};
+      let payload: UploadAnswer = {};
       try {
         payload = JSON.parse(request.responseText) as typeof payload;
       } catch {
@@ -67,7 +84,7 @@ function uploadToR2(file: File, filename: string, signal: AbortSignal, onProgres
       }
       if (request.status >= 200 && request.status < 300 && isValidR2Key(payload.filePath)) {
         onProgress(100);
-        resolve(payload.filePath);
+        resolve({ filePath: payload.filePath, converted: payload.converted === true });
       } else {
         reject(new Error(payload.error || `Could not upload the video to R2 (HTTP ${request.status})`));
       }
@@ -160,16 +177,26 @@ async function uploadThumbnail(thumbnail: Blob, videoKey: string, signal: AbortS
   }
 }
 
-/** Uploads a selected video once, to R2, and its thumbnail, returning the R2 key the analysis reads. */
-export async function uploadVideo(file: File, signal: AbortSignal, onProgress: (progress: number) => void): Promise<UploadedVideo> {
+/**
+ * Uploads a selected video once, to R2 (converted to H.264 MP4 on the way when
+ * it is not one already), and its thumbnail, returning the R2 key the analysis
+ * reads. The thumbnail is captured here from the chosen file (the same frames
+ * as the stored copy) and lands under the stored key.
+ */
+export async function uploadVideo(
+  file: File,
+  signal: AbortSignal,
+  onProgress: (progress: number) => void,
+  onUploaded?: () => void,
+): Promise<UploadedVideo> {
   const thumbnail = captureThumbnail(file).catch(() => null);
   const filename = inspectUploadName(file.name).name;
-  const filePath = await uploadToR2(file, filename, signal, onProgress);
+  const { filePath, converted } = await uploadToR2(file, filename, signal, onProgress, onUploaded);
 
   const thumbnailBlob = await thumbnail;
   if (thumbnailBlob) await uploadThumbnail(thumbnailBlob, filePath, signal).catch(() => undefined);
 
-  return { filePath, filename: filePath.split('/').pop() || filename };
+  return { filePath, filename: filePath.split('/').pop() || filename, converted };
 }
 
 export function useVideoUpload() {

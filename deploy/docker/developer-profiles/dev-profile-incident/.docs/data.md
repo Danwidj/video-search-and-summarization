@@ -53,7 +53,7 @@ Primary registry of ingested video assets.
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | `VARCHAR(20)` | PRIMARY KEY | Video identifier: `'v' + first 19 hex of sha256(random UUID)` for uploads (20 chars; rows uploaded before 2026-10-31 hashed the VST sensor id instead); clip-name ids (`Burglary012`, `RoadAccidents...`, `SYN-...`, `MOCK-...`) for fixture/eval rows. Raw sensor ids are never used directly as `id`. |
-| `filepath` | `VARCHAR(1024)` | NULLABLE | R2 object key (`uploads/<original file name>`, `anomaly/<category>/<clip>.mp4`, or `normal_videos/<clip>.mp4`; rows written before 2026-10-28 hold `uploads/<sensorId>/<uuid>.<ext>` until `migrate_r2_names.py` is applied). Older rows may hold an absolute VST path — validate with `isValidR2Key` before presigning. The console owns this column; the agent does not write `videos`. |
+| `filepath` | `VARCHAR(1024)` | NULLABLE | R2 object key (`uploads/<original name>.mp4` for uploads since 2026-10-31, `uploads/<original file name>` before, `anomaly/<category>/<clip>.mp4`, or `normal_videos/<clip>.mp4`; rows written before 2026-10-28 hold `uploads/<sensorId>/<uuid>.<ext>` until `migrate_r2_names.py` is applied). Older rows may hold an absolute VST path — validate with `isValidR2Key` before presigning. The console owns this column; the agent does not write `videos`. |
 | `uploaded_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC timestamp (`timestamp without time zone`) when uploaded. Some historical rows are NULL. |
 | `duration` | `INTEGER` | NULLABLE | Video duration in integer seconds |
 | `source` | `VARCHAR(512)` | NULLABLE | Ingestion source or camera stream name. NULL for console uploads since 2026-10-31 (uploads no longer go through VST); older upload rows keep the VST sensor id they were given. |
@@ -405,7 +405,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 ├── normal_videos/                   # baseline non-incident clips
 │   └── <clip-name>.mp4
 ├── uploads/                         # all new user uploads (the console's own R2 upload, both modes)
-│   └── <original file name>         # flat; a taken name gets -2, -3 before the extension
+│   └── <original name>.mp4          # flat; always an H.264 MP4 (converted on upload unless already one); a taken name gets -2, -3 before .mp4
 ├── thumbnails/                      # browser-captured report-card screenshots for new uploads
 │   └── <video-key>.webp             # e.g. thumbnails/uploads/Animal001_x264.mp4.webp
 ├── Report/                          # empty folder marker, unused by code
@@ -416,7 +416,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 ```
 
 > [!NOTE]
-> The `anomaly/` subfolders are reserved for classified seed/evaluation data. New user uploads are classification-neutral and use `uploads/<original file name>` in both modes; the VLM's later incident classification does not move or rename the object.
+> The `anomaly/` subfolders are reserved for classified seed/evaluation data. New user uploads are classification-neutral and use `uploads/<original name>.mp4` in both modes (the console converts every upload to an H.264 MP4 at the original resolution unless it is one already, so the stored extension is always `.mp4`); the VLM's later incident classification does not move or rename the object.
 > In addition to the five fixture categories, live R2 storage includes `assault/` and `shooting/`.
 > The `Report/` prefix is a 0-byte directory marker and is unused by code.
 > The `evidence/` tree holds two writers' images, both under `evidence/<video key>/` where `<video key>` is `videos.filepath` (item ids `E#`, `I#` and `A#` are unique across types). No key holds a hash or UUID, and no key is ever overwritten: each write takes the next free number, and the put is conditional (`If-None-Match: *`):
@@ -436,7 +436,8 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
    - Guard against VST/NvStreamer `filePath` outputs (which return `./streamer/media/...` or local file paths).
 2. **Upload & Evidence Key Patterns:**
    Direct uploads from `incident-console-v2/src/app/api/uploads/r2/route.ts` format keys as `uploads/<name>`
-   (`src/lib/r2/names.ts`): the original file name is kept; a character outside letters, digits and
+   (`src/lib/r2/names.ts`): the original file name is kept with its extension replaced by `.mp4` (every stored
+   video is an H.264 MP4, `src/lib/video/transcode.ts`); a character outside letters, digits and
    `. _ - ( ) + ,` (a space included) becomes `_`; a name over 150 characters is cut (extension kept); a name that is
    already stored gets `-2`, `-3` before the extension, found with `HeadObject` and written with
    `If-None-Match: *` so a race returns 409 instead of overwriting. `POST /api/uploads/check` returns the same

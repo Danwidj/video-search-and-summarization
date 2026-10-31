@@ -9,6 +9,9 @@ export const MAX_UPLOAD_NAME_LENGTH = 150;
 /** Folder of every uploaded video: the object key is `uploads/<name>`. */
 export const UPLOAD_PREFIX = 'uploads/';
 
+/** Every stored video is an H.264 MP4 (lib/video/transcode.ts), so every stored name ends in this. */
+export const STORED_EXTENSION = '.mp4';
+
 const MAX_COUNTER = 999;
 
 export interface UploadNameCheck {
@@ -37,7 +40,9 @@ function describe(char: string): string {
 /**
  * The stored name for an uploaded file. The original name is kept; a character
  * outside letters, digits and `. _ - ( ) + ,` is replaced with `_` and reported,
- * and the name is shortened only when it exceeds MAX_UPLOAD_NAME_LENGTH.
+ * the extension becomes `.mp4` (the upload route converts anything else to an
+ * H.264 MP4, so `clip.MOV` is stored as `clip.mp4`), and the name is shortened
+ * only when it exceeds MAX_UPLOAD_NAME_LENGTH.
  */
 export function inspectUploadName(original: string): UploadNameCheck {
   const unsafe = new Set<string>();
@@ -56,9 +61,10 @@ export function inspectUploadName(original: string): UploadNameCheck {
     name = `_${name.slice(1)}`;
   }
   if (name === '') name = 'video';
-  const { stem, ext } = splitExtension(name);
-  const truncated = name.length > MAX_UPLOAD_NAME_LENGTH;
-  return { name: truncated ? fit(stem, ext) : name, unsafeChars: [...unsafe], truncated };
+  const { stem } = splitExtension(name);
+  const stored = `${stem}${STORED_EXTENSION}`;
+  const truncated = stored.length > MAX_UPLOAD_NAME_LENGTH;
+  return { name: truncated ? fit(stem, STORED_EXTENSION) : stored, unsafeChars: [...unsafe], truncated };
 }
 
 /** `name` with a counter before its extension: `clip.mp4`, then `clip-2.mp4`, `clip-3.mp4`. */
