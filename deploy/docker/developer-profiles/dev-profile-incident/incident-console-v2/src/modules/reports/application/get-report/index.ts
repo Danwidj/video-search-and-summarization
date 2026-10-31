@@ -4,11 +4,11 @@
 // evidence images (the whole frame and the crop) signed for the browser, and
 // each person's track and each item's clip pointed at the console's own routes.
 
-import type { IncidentRepository } from '@/modules/reports/domain/IncidentRepository';
+import type { IncidentRepository, RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
 import type { ReportView } from '@/modules/reports/domain/report-view';
 import { toReportView } from '@/modules/reports/application/report-view';
 import type { SignStorageKey } from '@/modules/reports/application/types';
-import type { EvidenceItemType } from '@/modules/reports/domain/revision';
+import type { EvidenceItemType, ReportPayload } from '@/modules/reports/domain/revision';
 import { clipCentreSeconds, evidenceClipKey, evidenceClipUrl } from '@/modules/reports/domain/evidence-clip';
 
 /** The console route the browser reads one item's track samples from (R2 has no CORS rule for the console origin). */
@@ -48,6 +48,19 @@ async function withImageUrls(view: ReportView, videoKey: string, sign: SignStora
   return view;
 }
 
+/**
+ * The stored payload of the AI revision a revision derives from: its own payload for an AI revision, else the
+ * nearest AI ancestor's (a human revision copies its parent's items). Null when the chain holds no AI revision.
+ */
+async function aiBaseline(incidents: IncidentRepository, record: RevisionRecord): Promise<ReportPayload | null> {
+  let current: RevisionRecord | null = record;
+  while (current?.revision.kind === 'human') {
+    if (current.revision.parentId === null) return null;
+    current = await incidents.getRevision(record.revision.videoId, current.revision.parentId);
+  }
+  return current?.payload ?? null;
+}
+
 /** One revision's report view (revisionId null: the official revision, else the newest); null when the video or revision is missing. */
 export async function getReport(
   incidents: IncidentRepository,
@@ -58,5 +71,6 @@ export async function getReport(
   const record = await incidents.getRevision(videoId, revisionId);
   if (!record) return null;
   if (!record.video.storageKey) throw new Error('The report has no linked R2 video');
-  return withImageUrls(toReportView(record, await sign(record.video.storageKey)), record.video.storageKey, sign);
+  const baseline = await aiBaseline(incidents, record);
+  return withImageUrls(toReportView(record, await sign(record.video.storageKey), baseline), record.video.storageKey, sign);
 }

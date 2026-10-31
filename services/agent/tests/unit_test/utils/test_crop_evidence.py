@@ -865,7 +865,10 @@ class TestObjectTrackingEvidence:
         self, tiny_video_path: Path
     ) -> None:
         async def people(video_ref: object, *, sensor_id: str, **_: object) -> TrackingOutcome:
-            return TrackingOutcome(tracks=[Track("7", [Sample(0.0, (210, 210, 590, 590), 0.9)])])
+            # solid: two real detections (a ghost track backs no entity)
+            return TrackingOutcome(
+                tracks=[Track("7", [Sample(0.0, (210, 210, 590, 590), 0.9), Sample(0.2, (210, 210, 590, 590), 0.9)])]
+            )
 
         person_request = TrackingRequest(sensor_id="s", runner=people)
         request, _ = self._request(ObjectTrackingOutcome(tracks={"I1": self._track("I1")}))

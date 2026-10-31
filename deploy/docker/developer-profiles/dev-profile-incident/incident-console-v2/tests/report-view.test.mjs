@@ -8,8 +8,9 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { buildReportView } = await import('./support/report-view.mjs');
-const { reportHeading } = await import('../src/modules/reports/application/report-view.ts');
+const { aiRevisionRow, buildReportView } = await import('./support/report-view.mjs');
+const { reportHeading, toReportView } = await import('../src/modules/reports/application/report-view.ts');
+const { revisionRecordFromRows } = await import('../src/modules/reports/infrastructure/supabase/mappers/report.ts');
 const { parseRunNotes } = await import('../src/modules/reports/domain/run-notes.ts');
 const { canonicalEntityType, canonicalIncidentType, formatClock, parseTimestamp } = await import(
   '../src/modules/reports/domain/normalize.ts'
@@ -83,14 +84,44 @@ test('an edited structured severity is reported against the model severity; the 
   assert.equal(view.modelOutput.severityReason, JSON.parse(smoke.modelRun.notes).incidentConsoleV2.report.incident.severity_reason);
 });
 
-test('edits to type, window and evidence are listed as reviewer edits', () => {
+test('edits to type and window are listed as reviewer edits', () => {
   const edited = clone(smoke);
   edited.incident.type = 'road accident';
   edited.incident.end_timestamp = '12';
-  edited.assets = edited.assets.slice(0, 1);
   const view = buildReportView(rowsFrom(edited));
   assert.deepEqual(view.differences.type, { model: 'assault', current: 'road accident' });
-  assert.deepEqual(view.differences.fields.sort(), ['assets', 'incident window', 'type'].sort());
+  assert.deepEqual(view.differences.fields.sort(), ['incident window', 'type'].sort());
+});
+
+// The zoomed second look rewrites an entity's description in the stored AI revision; the run notes keep the first pass.
+const secondLookPayload = (rows) => {
+  const { payload } = aiRevisionRow(rows);
+  payload.entities[0].description = `${payload.entities[0].description} (zoomed second look)`;
+  return payload;
+};
+
+test('an AI version the zoomed second look corrected has no reviewer edits', () => {
+  const rows = rowsFrom(smoke);
+  const view = buildReportView(rows, { payload: secondLookPayload(rows) });
+  assert.deepEqual(view.differences, { fields: [] });
+});
+
+test('a reviewer save that keeps the second-look correction is not a reviewer edit', () => {
+  const rows = rowsFrom(smoke);
+  const aiPayload = secondLookPayload(rows);
+  const human = aiRevisionRow(rows, { id: 2, revision_no: 2, kind: 'human', parent_id: 1, created_by: 'Reviewer A', payload: aiPayload });
+  const view = toReportView(revisionRecordFromRows({ video: rows.video, revision: human, modelRun: rows.modelRun }), 'x', aiPayload);
+  assert.deepEqual(view.differences, { fields: [] });
+});
+
+test('a reviewer edit to an entity after the second look is listed as an entity edit', () => {
+  const rows = rowsFrom(smoke);
+  const aiPayload = secondLookPayload(rows);
+  const edited = clone(aiPayload);
+  edited.entities[0].description = 'reviewer wording';
+  const human = aiRevisionRow(rows, { id: 2, revision_no: 2, kind: 'human', parent_id: 1, created_by: 'Reviewer A', payload: edited });
+  const view = toReportView(revisionRecordFromRows({ video: rows.video, revision: human, modelRun: rows.modelRun }), 'x', aiPayload);
+  assert.deepEqual(view.differences.fields, ['entities']);
 });
 
 test('Class B is never taken from the rows and Class A never from notes', () => {

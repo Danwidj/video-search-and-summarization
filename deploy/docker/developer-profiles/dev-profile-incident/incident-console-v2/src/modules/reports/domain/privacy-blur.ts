@@ -3,9 +3,7 @@
 // Privacy blur (videos.blur_faces): the agent pixelates the heads of the people in every stored frame and crop of a run
 // analysed with blur_faces; the console blurs the same heads in an evidence clip as it cuts it. Pure functions, no I/O,
 // browser-safe: the head region of a person box (the same maths as the agent's utils/privacy_blur.py), whether a run was
-// blurred, and the timed regions a clip blurs.
-
-import type { TrackSample } from '@/modules/reports/domain/track';
+// blurred, and the timed regions a clip blurs (every stored track per second, the recorded heads for the whole clip).
 
 /** [ymin, xmin, ymax, xmax] normalised to 0-1000, like every evidence box. */
 export type NormalisedBox = [number, number, number, number];
@@ -15,7 +13,7 @@ export const HEAD_FRACTION = 0.3;
 export const HEAD_PADDING = 0.1;
 /** A head recorded at one second is grown by this much of its own size on every side when it stands for a whole clip, since people move. */
 export const STATIC_HEAD_PADDING = 0.25;
-/** At most this many regions go into one clip's filter graph; a busier clip keeps the first ones (the item's own track first). */
+/** At most this many regions go into one clip's filter graph; a busier clip has its closest regions merged. */
 export const MAX_CLIP_REGIONS = 32;
 /** The smallest region side kept for a clip, on 0-1000 (1 % of the frame). */
 export const MIN_REGION = 10;
@@ -78,47 +76,129 @@ export interface ClipBlurRegion {
   toSeconds: number | null;
 }
 
+/** One sample of a stored track ({t, box, score}); a score under 0 is a tracker-only box (no detection), no score reads as a detection. */
+export interface BlurSample {
+  t: number;
+  box: NormalisedBox;
+  score?: number;
+}
+
+/** A tracker-only box counts only within this long of the latest detection before it; later ones are the tracker drifting (the agent's PREDICTED_GRACE_SECONDS). */
+export const PREDICTED_GRACE_SECONDS = 0.6;
+/** A track sample belongs to a clip second when it is within this long of it, so a person moving across a second boundary stays covered. */
+export const SECOND_MARGIN_SECONDS = 0.25;
+/** Items whose second is this close to the clip count as showing the clip's people (their recorded heads and boxes blur it whole). */
+export const CONTEXT_SECONDS = 1;
+
+/** A stored track file read leniently, keeping each sample's score; null when it is not a list. */
+export function parseBlurSamples(value: unknown): BlurSample[] | null {
+  if (!Array.isArray(value)) return null;
+  const samples: BlurSample[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue;
+    const { t, box, score } = raw as { t?: unknown; box?: unknown; score?: unknown };
+    if (typeof t !== 'number' || !Number.isFinite(t) || t < 0 || !isBox(box)) continue;
+    samples.push({ t, box: [...box] as NormalisedBox, ...(typeof score === 'number' && Number.isFinite(score) ? { score } : {}) });
+  }
+  return samples.sort((a, b) => a.t - b.t);
+}
+
+/** The samples to trust: detections, and tracker-only boxes within PREDICTED_GRACE_SECONDS of the latest detection before them; the rest is drift. */
+export function visibleSamples(samples: readonly BlurSample[]): BlurSample[] {
+  const kept: BlurSample[] = [];
+  let lastDetected: number | null = null;
+  for (const sample of samples) {
+    if (sample.score === undefined || sample.score >= 0) {
+      lastDetected = sample.t;
+      kept.push(sample);
+    } else if (lastDetected !== null && sample.t - lastDetected <= PREDICTED_GRACE_SECONDS) {
+      kept.push(sample);
+    }
+  }
+  return kept;
+}
+
 export interface ClipBlurInput {
   /** The clip's start and length in video seconds. */
   window: { startSeconds: number; lengthSeconds: number };
-  /** The item's own track samples, when it has a track. */
-  track: readonly TrackSample[] | null;
-  /** The heads the agent blurred in the item's frame (blur_regions), when recorded. */
+  /** Every track the run stored for the clip's video (each matched entity's, not only the clip item's own). */
+  tracks: readonly (readonly BlurSample[])[];
+  /** The heads the agent blurred in the frames of the items near the clip (blur_regions); null when none of them recorded any. */
   recorded: readonly NormalisedBox[] | null;
-  /** A person item's located box, used for its head when nothing else is known. */
-  personBox: readonly number[] | null;
+  /** The located boxes of the people near the clip, whose heads stand in when their frame's heads were not recorded. */
+  personBoxes: readonly (readonly number[])[];
 }
 
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
 
+/** One track's head regions, one per second of the clip it has samples near, each the union of that track's heads in (and just around) the second. */
+function trackRegions(track: readonly BlurSample[], { startSeconds, lengthSeconds }: ClipBlurInput['window']): ClipBlurRegion[] {
+  const end = startSeconds + lengthSeconds;
+  const inClip = visibleSamples(track).filter((sample) => sample.t >= startSeconds - 0.5 && sample.t <= end + 0.5);
+  const regions: ClipBlurRegion[] = [];
+  for (let second = 0; second < Math.ceil(lengthSeconds); second++) {
+    const heads = inClip
+      .filter((sample) => {
+        const at = sample.t - startSeconds;
+        return at >= second - SECOND_MARGIN_SECONDS && at < second + 1 + SECOND_MARGIN_SECONDS;
+      })
+      .map((sample) => headRegion(sample.box));
+    if (heads.length) regions.push({ box: union(heads), fromSeconds: second, toSeconds: round3(Math.min(lengthSeconds, second + 1)) });
+  }
+  return regions;
+}
+
+const area = ([ymin, xmin, ymax, xmax]: NormalisedBox) => (ymax - ymin) * (xmax - xmin);
+const sameSpan = (a: ClipBlurRegion, b: ClipBlurRegion) => a.fromSeconds === b.fromSeconds && a.toSeconds === b.toSeconds;
+
+/** At most MAX_CLIP_REGIONS regions: while there are more, the two of one time span whose union is smallest become that union, so no head ever drops out. */
+function limitRegions(regions: ClipBlurRegion[]): ClipBlurRegion[] {
+  const out = [...regions];
+  while (out.length > MAX_CLIP_REGIONS) {
+    let best: [number, number] | null = null;
+    let bestArea = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < out.length; i++) {
+      for (let j = i + 1; j < out.length; j++) {
+        if (!sameSpan(out[i], out[j])) continue;
+        const merged = area(union([out[i].box, out[j].box]));
+        if (merged < bestArea) {
+          bestArea = merged;
+          best = [i, j];
+        }
+      }
+    }
+    if (!best) return [{ box: union(out.map((region) => region.box)), fromSeconds: null, toSeconds: null }];
+    const [i, j] = best;
+    out[i] = { ...out[i], box: union([out[i].box, out[j].box]) };
+    out.splice(j, 1);
+  }
+  return out;
+}
+
 /**
  * The regions an evidence clip blurs, in clip seconds; null when nothing is known about the heads it shows (then no
- * blurred clip can be cut). Per second of the clip, the union of the head regions of the item's own track samples in
- * that second; for the whole clip, each head the agent blurred in the item's frame (padded, since people move), else a
- * person item's own head region (padded). An empty list means the agent recorded no head at the item's second.
+ * blurred clip can be cut). Per second of the clip, the head regions of every stored track (each person's own, so a
+ * person who moves or stands up stays covered, and so does a bystander the run matched); for the whole clip, each head
+ * the agent blurred in the frames of the items near it (padded, since people move), and the head of a located person
+ * whose frame's heads were not recorded (an older version). A track's drifting tracker-only boxes are not blurred. An
+ * empty list means the agent recorded no head near the clip. A clip with more regions than MAX_CLIP_REGIONS has the
+ * closest ones merged.
  */
 export function clipBlurRegions(input: ClipBlurInput): ClipBlurRegion[] | null {
-  const { startSeconds, lengthSeconds } = input.window;
-  const end = startSeconds + lengthSeconds;
-  const regions: ClipBlurRegion[] = [];
-  const buckets = new Map<number, NormalisedBox[]>();
-  for (const sample of input.track ?? []) {
-    if (sample.t < startSeconds - 0.5 || sample.t > end + 0.5 || !isBox(sample.box)) continue;
-    const second = Math.floor(Math.max(0, sample.t - startSeconds));
-    buckets.set(second, [...(buckets.get(second) ?? []), headRegion(sample.box)]);
-  }
-  for (const second of [...buckets.keys()].sort((a, b) => a - b)) {
-    const heads = buckets.get(second) ?? [];
-    regions.push({ box: union(heads), fromSeconds: second, toSeconds: round3(Math.min(lengthSeconds, second + 1)) });
-  }
-  if (input.recorded) {
-    for (const box of input.recorded) regions.push({ box: padBox(box, STATIC_HEAD_PADDING), fromSeconds: null, toSeconds: null });
-  } else if (input.personBox && isBox([...input.personBox])) {
-    regions.push({ box: padBox(headRegion(input.personBox), STATIC_HEAD_PADDING), fromSeconds: null, toSeconds: null });
+  const regions: ClipBlurRegion[] = input.tracks.flatMap((track) => trackRegions(track, input.window));
+  const heads: NormalisedBox[] = [
+    ...(input.recorded ?? []).map((box) => padBox(box, STATIC_HEAD_PADDING)),
+    ...input.personBoxes.filter((box) => isBox([...box])).map((box) => padBox(headRegion(box), STATIC_HEAD_PADDING)),
+  ];
+  const seen = new Set<string>();
+  for (const box of heads) {
+    if (seen.has(box.join())) continue;
+    seen.add(box.join());
+    regions.push({ box, fromSeconds: null, toSeconds: null });
   }
   if (!regions.length && !input.recorded) return null;
   // A sliver of a box rounds to a zero-pixel crop, which ffmpeg reads as the whole frame: such regions are dropped.
-  return regions.filter(({ box }) => box[2] - box[0] >= MIN_REGION && box[3] - box[1] >= MIN_REGION).slice(0, MAX_CLIP_REGIONS);
+  return limitRegions(regions.filter(({ box }) => box[2] - box[0] >= MIN_REGION && box[3] - box[1] >= MIN_REGION));
 }
 
 const fraction = (value: number) => (value / 1000).toFixed(4);

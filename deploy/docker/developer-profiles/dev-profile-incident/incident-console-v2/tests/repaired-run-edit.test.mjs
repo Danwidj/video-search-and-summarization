@@ -90,6 +90,7 @@ test('editing repaired run m811cf2b237f50ff9812 adds a human revision; the run n
     view = toReportView(
       await new SupabaseIncidentAdapter(new PostgrestClient('https://supabase.test', 'k')).getRevision(fixture.videoId, 2),
       'x',
+      db.store.report_revisions[0].payload,
     );
   } finally {
     globalThis.fetch = originalFetch;

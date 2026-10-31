@@ -8,13 +8,27 @@ import { runBlurredFaces } from '@/modules/reports/domain/privacy-blur';
 import type { RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
 import { canonicalIncidentType, parseTimestamp } from '@/modules/reports/domain/normalize';
 import type { ModelOutput, ReportView, RunDetails } from '@/modules/reports/domain/report-view';
+import type { ReportPayload } from '@/modules/reports/domain/revision';
 
 export { reportHeading } from '@/modules/reports/domain/report-view';
 export type { ReportView } from '@/modules/reports/domain/report-view';
 
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value : null);
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+/** The stored payload's list rows, reduced to the named fields (raw keys), so two payloads compare field by field. */
+const fieldsOf = (value: unknown, fields: string[]) =>
+  Array.isArray(value) ? value.map((row) => fields.map((field) => (row as Record<string, unknown> | null)?.[field])) : [];
 
-export function toReportView(record: RevisionRecord, playbackUrl: string): ReportView {
+/**
+ * `baseline` is the stored payload of the AI revision the view's revision derives from (its own payload for an AI
+ * revision). Items are compared with it, not with the model's first pass: the zoomed second look rewrites item
+ * names and descriptions in the stored AI revision, so only a change made after that is a reviewer edit.
+ */
+export function toReportView(
+  record: RevisionRecord,
+  playbackUrl: string,
+  baseline: ReportPayload | null = record.revision.kind === 'ai' ? record.payload : null,
+): ReportView {
   const structured: ReportView['structured'] = {
     incident: record.incident,
     entities: record.entities,
@@ -74,33 +88,29 @@ export function toReportView(record: RevisionRecord, playbackUrl: string): Repor
       differences.fields.push('description');
     if (notes.kind === 'contract') {
       // Legacy start/end were strings the old editor rewrote freely, so only
-      // contract runs compare timestamps and evidence exactly.
+      // contract runs compare timestamps exactly.
       if (original.startSeconds !== current.startSeconds || original.endSeconds !== current.endSeconds)
         differences.fields.push('incident window');
-      const model = notes.report;
-      const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-      if (
-        !same(
-          model.entities.map((e) => [e.entity_id, e.type, e.description]),
-          structured.entities.map((e) => [e.entityId, e.type, e.description]),
-        )
-      )
-        differences.fields.push('entities');
-      if (
-        !same(
-          model.instruments.map((i) => [i.instrument_id, i.entity_id, i.name, i.description, i.threat_level]),
-          structured.instruments.map((i) => [i.instrumentId, i.entityId, i.name, i.description, i.threatLevel]),
-        )
-      )
-        differences.fields.push('instruments');
-      if (
-        !same(
-          model.assets.map((a) => [a.asset_id, a.name, a.description]),
-          structured.assets.map((a) => [a.assetId, a.name, a.description]),
-        )
-      )
-        differences.fields.push('assets');
     }
+  }
+  if (baseline) {
+    const stored = record.payload;
+    if (
+      !same(
+        fieldsOf(baseline.entities, ['entity_id', 'type', 'description']),
+        fieldsOf(stored.entities, ['entity_id', 'type', 'description']),
+      )
+    )
+      differences.fields.push('entities');
+    if (
+      !same(
+        fieldsOf(baseline.instruments, ['instrument_id', 'entity_id', 'name', 'description', 'threat_level']),
+        fieldsOf(stored.instruments, ['instrument_id', 'entity_id', 'name', 'description', 'threat_level']),
+      )
+    )
+      differences.fields.push('instruments');
+    if (!same(fieldsOf(baseline.assets, ['asset_id', 'name', 'description']), fieldsOf(stored.assets, ['asset_id', 'name', 'description'])))
+      differences.fields.push('assets');
   }
 
   const { videoId } = record.revision;
