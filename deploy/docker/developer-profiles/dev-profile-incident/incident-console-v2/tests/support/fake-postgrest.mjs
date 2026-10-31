@@ -126,6 +126,17 @@ export function fakePostgrest(tables, { rpc = {}, views = {}, identity = {} } = 
       }
       return json(results);
     }
+    if (method === 'PATCH') {
+      // Prefer: return=representation: the updated rows come back (none when nothing matched).
+      const values = JSON.parse(String(init.body));
+      const updated = [];
+      for (const [index, row] of rows.entries()) {
+        if (!matches(row, parsed.searchParams)) continue;
+        rows[index] = { ...row, ...values };
+        updated.push(rows[index]);
+      }
+      return json(updated);
+    }
     return json({ message: `unsupported ${method}` }, 405);
   };
   return { fetch, store, requests };

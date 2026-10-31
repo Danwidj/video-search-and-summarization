@@ -39,6 +39,8 @@ export interface AnalysisAttemptRecord {
     schemaSha256: string;
     /** The video's length from its MP4 header; null when it could not be read (video-length rule not applied). */
     videoDurationSeconds?: number | null;
+    /** Present (true) only when the run asked the agent to blur faces (the video's privacy toggle). */
+    blurFaces?: true;
   };
   /** Only the fields the gateway actually returned; the content is the original, never altered. */
   response: {
@@ -50,6 +52,8 @@ export interface AnalysisAttemptRecord {
     usage?: Record<string, unknown> | null;
     /** Agent mode, person tracking on: the agent's tracking summary ({enabled, matched, tracks, elapsed_ms, skipped}) as returned. */
     tracking?: Record<string, unknown>;
+    /** Agent mode, blur_faces asked: the agent's privacy summary ({blur_faces, regions, frames, heads, head_queries, failed}) as returned. */
+    privacy?: Record<string, unknown>;
   } | null;
   /**
    * firstPass: every violation of the original response, each with its

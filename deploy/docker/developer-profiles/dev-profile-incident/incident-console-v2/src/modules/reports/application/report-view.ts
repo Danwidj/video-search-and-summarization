@@ -5,6 +5,7 @@
 // Supabase rows are mapped by lib/adapters/supabase/mappers/report.ts.
 
 import { timestampWithinVideo } from '@/modules/contract/domain/validate';
+import { runBlurredFaces } from '@/modules/reports/domain/privacy-blur';
 import type { RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
 import { canonicalIncidentType, parseTimestamp } from '@/modules/reports/domain/normalize';
 import type { ModelOutput, ReportView, RunDetails, TimelineCheck, TimelineEvent } from '@/modules/reports/domain/report-view';
@@ -199,6 +200,10 @@ export function toReportView(record: RevisionRecord, playbackUrl: string): Repor
     run,
     revision: record.revision,
     official: { officialRevisionId: record.video.officialRevisionId, isOfficial: record.revision.isOfficial },
+    privacy: {
+      blurFaces: record.video.blurFaces === true,
+      runBlurred: notes.kind === 'contract' && runBlurredFaces(notes.response),
+    },
     differences,
   };
 }

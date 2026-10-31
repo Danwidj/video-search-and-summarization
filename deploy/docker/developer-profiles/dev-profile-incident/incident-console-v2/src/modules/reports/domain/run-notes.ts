@@ -16,6 +16,8 @@ export interface ContractRunRequest {
   schemaSha256?: string;
   /** The video's length read before validation; null or absent when unknown. */
   videoDurationSeconds?: number | null;
+  /** True when the run asked the agent to blur faces; absent otherwise. */
+  blurFaces?: boolean;
 }
 
 export interface ContractRunResponse {
@@ -27,6 +29,8 @@ export interface ContractRunResponse {
   usage?: Record<string, unknown> | null;
   /** Agent mode with person tracking on: the agent's tracking summary {enabled, matched, tracks, elapsed_ms, skipped}. */
   tracking?: Record<string, unknown>;
+  /** Agent mode with blur_faces asked: the agent's privacy summary {blur_faces, regions, frames, heads, head_queries, failed}. */
+  privacy?: Record<string, unknown>;
 }
 
 export type ValidStatus = 'valid_first_pass' | 'valid_after_structural_repair';
