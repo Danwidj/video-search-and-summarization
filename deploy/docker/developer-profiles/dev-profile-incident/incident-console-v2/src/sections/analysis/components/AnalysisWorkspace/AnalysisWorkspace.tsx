@@ -14,7 +14,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { otherJobs } from '@/sections/analysis/batch-upload';
 import { BatchFileRow } from '@/sections/analysis/components/BatchFileRow';
+import { JobsList } from '@/sections/analysis/components/JobsList';
+import { useAnalysisJobs } from '@/sections/analysis/hooks/use-analysis-jobs';
 import { useBatchUpload } from '@/sections/analysis/hooks/use-batch-upload';
 import { checkUploadName, type UploadNameReport, useVideoUpload } from '@/sections/analysis/hooks/use-video-upload';
 
@@ -31,24 +34,9 @@ import {
 export type { StageKey };
 export { getStageAnnouncement, getStageProgress, stageLabels, stageOrder };
 
-interface ApiError {
-  error?: string;
-}
-
 interface ModelOption {
   id: string;
   label: string;
-}
-
-async function apiJson<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const payload = (await response.json()) as T & ApiError;
-  if (!response.ok) throw new Error(payload.error || `Request failed with HTTP ${response.status}`);
-  return payload;
 }
 
 /** The warning to show before an upload whose stored name differs from the file's own, or null. */
@@ -95,7 +83,10 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState('');
   const { upload } = useVideoUpload();
-  const batch = useBatchUpload();
+  const jobs = useAnalysisJobs();
+  const batch = useBatchUpload(jobs);
+  // The single upload's background job, watched until it finishes.
+  const [watchedJobId, setWatchedJobId] = useState<number | null>(null);
 
   function changeStage(newStage: StageKey) {
     setStage(newStage);
@@ -140,6 +131,27 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
       active = false;
     };
   }, []);
+
+  // The single upload follows its job: done opens the report, failed or cancelled stops with the reason.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: router is stable; only a new jobs list re-runs this
+  useEffect(() => {
+    if (watchedJobId === null) return;
+    const job = jobs.jobs.find((entry) => entry.id === watchedJobId);
+    if (!job) return;
+    if (job.status === 'done' && job.videoId && job.revisionId !== null) {
+      changeStage('saving');
+      changeStage('complete');
+      setWatchedJobId(null);
+      router.push(`/reports/${encodeURIComponent(job.videoId)}?revision=${job.revisionId}`);
+    } else if (job.status === 'failed' || job.status === 'cancelled') {
+      setLastActiveStage('analyzing');
+      setError(job.status === 'failed' ? job.error || 'The analysis failed' : 'Analysis cancelled.');
+      setStage('error');
+    } else if (stage === 'error') {
+      changeStage('analyzing');
+      setError(null);
+    }
+  }, [jobs.jobs, watchedJobId]);
 
   // The Converting step shows how long the route has been working on the file.
   useEffect(() => {
@@ -189,6 +201,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
       return;
     }
     setFile(selected);
+    setWatchedJobId(null);
     setNameNotice(null);
     setStoredName(null);
     setError(null);
@@ -207,6 +220,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
     }
     // A finished or failed single upload gives way to the batch.
     setFile(null);
+    setWatchedJobId(null);
     setStage('idle');
     setNameNotice(null);
     setError(null);
@@ -215,6 +229,13 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
 
   async function analyze() {
     if (!file) return;
+    // A failed analysis is retried on the server: the file is already uploaded.
+    if (watchedJobId !== null) {
+      setError(null);
+      changeStage('analyzing');
+      await jobs.retry(watchedJobId);
+      return;
+    }
     const controller = new AbortController();
     abortRef.current = controller;
     setError(null);
@@ -234,14 +255,9 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
       setConversion(conversionNote(converted, started ? (Date.now() - started) / 1000 : 0));
 
       changeStage('analyzing');
-      const result = await apiJson<{ report: { videoId: string; revisionId: number } }>('/api/analysis', {
-        filepath: filePath,
-        filename,
-        ...(model ? { model } : {}),
-      });
-      changeStage('saving');
-      changeStage('complete');
-      router.push(`/reports/${encodeURIComponent(result.report.videoId)}?revision=${result.report.revisionId}`);
+      // The analysis runs as a background job; the effect above opens the report when it is done.
+      const job = await jobs.enqueue({ filePath, filename, model });
+      setWatchedJobId(job.id);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Analysis failed';
       setError(message === 'Upload was cancelled' ? 'Analysis cancelled.' : message);
@@ -255,6 +271,9 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
   const effectiveActiveIndex = stage === 'error' ? stageOrder[lastActiveStage] : activeIndex;
   const failedStageIndex = stage === 'error' ? stageOrder[lastActiveStage] : -1;
   const busy = ['uploading', 'converting', 'analyzing', 'saving'].includes(stage);
+  // Once the job is queued nothing in this tab is needed: the server analyses it.
+  const queuedOnServer = stage === 'analyzing' && watchedJobId !== null;
+  const listedJobs = otherJobs(jobs.jobs, [...batch.items.map((item) => item.jobId), watchedJobId]);
   const progressValue = getStageProgress(stage, uploadProgress, lastActiveStage);
   const announcement = getStageAnnouncement(stage, uploadProgress, error, convertingSeconds);
   const { summary } = batch;
@@ -328,7 +347,16 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
           </div>
           <ul className="flex flex-col gap-3" aria-label="Videos in this batch">
             {batch.items.map((item) => (
-              <BatchFileRow item={item} key={item.key} onRemove={batch.remove} />
+              <BatchFileRow
+                item={item}
+                key={item.key}
+                onCancel={(key) => {
+                  const id = batch.items.find((entry) => entry.key === key)?.jobId;
+                  if (id) void jobs.cancel(id);
+                }}
+                onRemove={batch.remove}
+                onRetry={batch.retry}
+              />
             ))}
           </ul>
           <div className="flex flex-wrap gap-3">
@@ -369,7 +397,9 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Each video becomes its own report. Cancelling drops the queued videos; a video already converting or analysing finishes.
+            Each video becomes its own report. Videos upload one at a time from this tab, then wait for analysis on the server: once a video
+            shows Queued after its upload, closing this tab no longer stops it; a video still uploading is lost if the tab closes.
+            Cancelling drops the videos not yet analysing; one already analysing finishes.
           </p>
         </div>
       ) : file && previewUrl ? (
@@ -527,6 +557,12 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
                 })}
               </ol>
               {conversion && <p className="text-xs text-muted-foreground">{conversion}</p>}
+              {queuedOnServer && (
+                <p className="text-xs text-muted-foreground">
+                  The video is uploaded and its analysis runs on the server: closing this tab does not stop it, and it stays listed under
+                  Analysis jobs.
+                </p>
+              )}
             </div>
           )}
 
@@ -551,7 +587,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
                     ? `Continue as ${storedName}`
                     : 'Analyze video'}
             </Button>
-            {busy && (
+            {busy && !queuedOnServer && (
               <Button
                 variant="outline"
                 size="lg"
@@ -565,6 +601,8 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
           </div>
         </div>
       )}
+
+      <JobsList error={jobs.error} jobs={listedJobs} onCancel={(id) => void jobs.cancel(id)} onRetry={(id) => void jobs.retry(id)} />
     </Card>
   );
 }

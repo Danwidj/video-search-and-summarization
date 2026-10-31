@@ -43,3 +43,14 @@ export function isSupabaseConfigured(config: ServiceConfiguration): boolean {
 export function isR2Configured(config: ServiceConfiguration): boolean {
   return Boolean(config.r2AccountId && config.r2AccessKey && config.r2SecretKey && config.r2Bucket);
 }
+
+/** The configuration an analysis needs (its mode's model URL and Supabase); throws naming what is missing. */
+export function requireAnalysisConfiguration(config: ServiceConfiguration = getServiceConfiguration()): ServiceConfiguration {
+  if (config.analysisMode === 'agent') {
+    if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
+  } else {
+    if (!config.gatewayUrl) throw new Error('VLM_GATEWAY_URL is not configured');
+  }
+  if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
+  return config;
+}

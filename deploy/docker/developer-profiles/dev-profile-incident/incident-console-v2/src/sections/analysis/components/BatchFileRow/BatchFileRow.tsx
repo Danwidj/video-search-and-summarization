@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Check, Loader2, Video, X } from 'lucide-react';
+import { Check, Loader2, RotateCcw, Video, X } from 'lucide-react';
 import { cn } from 'cn';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -16,6 +16,7 @@ import { formatElapsed } from '@/sections/analysis/stage-progress';
 
 const statusLabel: Record<BatchStatus, string> = {
   queued: 'Queued',
+  waiting: 'Queued',
   uploading: 'Uploading',
   converting: 'Converting',
   analysing: 'Analysing',
@@ -32,8 +33,10 @@ function announcement(item: BatchItem): string {
       return `${item.name}: report ready.`;
     case 'queued':
       return `${item.name}: queued.`;
+    case 'waiting':
+      return `${item.name}: uploaded, queued for analysis.`;
     case 'cancelled':
-      return `${item.name}: cancelled before it was stored.`;
+      return item.jobId !== null ? `${item.name}: cancelled before its analysis started.` : `${item.name}: cancelled before it was stored.`;
     case 'uploading':
       return `${item.name}: uploading${item.uploadProgress > 0 ? ` (${item.uploadProgress}%)` : ''}.`;
     default:
@@ -44,29 +47,41 @@ function announcement(item: BatchItem): string {
 /** The message as a sentence, so what follows it reads on. */
 const sentence = (text: string | null): string => (text && !/[.!?]$/.test(text) ? `${text}.` : (text ?? ''));
 
-/** Seconds the file has spent in its current step; restarts when the step changes and ticks only while it runs. */
-function useStepSeconds(status: BatchStatus): number {
+/**
+ * Seconds the file has spent in its current step; restarts when the step changes and ticks only while it runs.
+ * `since` (naive UTC from the server) dates a job's analysis from its real start, even on a reopened page.
+ */
+function useStepSeconds(status: BatchStatus, since: string | null = null): number {
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     setSeconds(0);
     if (status !== 'converting' && status !== 'analysing') return;
-    const started = Date.now();
-    const timer = setInterval(() => setSeconds((Date.now() - started) / 1000), 1000);
+    const fromServer = since ? Date.parse(since.endsWith('Z') ? since : `${since}Z`) : Number.NaN;
+    const started = Number.isFinite(fromServer) ? Math.min(fromServer, Date.now()) : Date.now();
+    const tick = () => setSeconds((Date.now() - started) / 1000);
+    tick();
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [status]);
+  }, [status, since]);
   return seconds;
 }
 
 export interface BatchFileRowProps {
   item: BatchItem;
-  onRemove(key: string): void;
+  /** Drops a file not uploaded yet; omitted for rows built from jobs. */
+  onRemove?(key: string): void;
+  /** Retry on a failed row (shown only when given). */
+  onRetry?(key: string): void;
+  /** Cancels a row whose job waits in the queue (shown only when given). */
+  onCancel?(key: string): void;
 }
 
-export function BatchFileRow({ item, onRemove }: BatchFileRowProps) {
+export function BatchFileRow({ item, onRemove, onRetry, onCancel }: BatchFileRowProps) {
   const progress = itemProgress(item);
-  const reached = item.status === 'failed' ? (item.failedAt ?? 'uploading') : item.status;
+  // A waiting row has uploaded and converted; its analysis has not started.
+  const reached = item.status === 'failed' ? (item.failedAt ?? 'uploading') : item.status === 'waiting' ? 'analysing' : item.status;
   const stageIndex = BATCH_STAGES.indexOf(reached as (typeof BATCH_STAGES)[number]);
-  const stepSeconds = useStepSeconds(item.status);
+  const stepSeconds = useStepSeconds(item.status, item.status === 'analysing' ? (item.analysingSince ?? null) : null);
   return (
     <li className="rounded-2xl border border-border bg-card p-3.5 sm:p-4" data-file={item.name} data-status={item.status}>
       <div className="flex items-start justify-between gap-3">
@@ -76,7 +91,7 @@ export function BatchFileRow({ item, onRemove }: BatchFileRowProps) {
           </span>
           <div className="min-w-0">
             <p className="break-all text-sm font-semibold">{item.name}</p>
-            <p className="text-xs text-muted-foreground">{(item.size / 1024 / 1024).toFixed(1)} MB</p>
+            {item.size !== null && <p className="text-xs text-muted-foreground">{(item.size / 1024 / 1024).toFixed(1)} MB</p>}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -86,7 +101,25 @@ export function BatchFileRow({ item, onRemove }: BatchFileRowProps) {
           >
             {statusLabel[item.status]}
           </Badge>
-          {item.status === 'queued' && (
+          {item.status === 'failed' && onRetry && (
+            <Button aria-label={`Retry ${item.name}`} onClick={() => onRetry(item.key)} size="sm" type="button" variant="outline">
+              <RotateCcw data-icon="inline-start" />
+              Retry
+            </Button>
+          )}
+          {item.status === 'waiting' && item.jobId !== null && onCancel && (
+            <Button
+              aria-label={`Cancel the analysis of ${item.name}`}
+              onClick={() => onCancel(item.key)}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <X data-icon="inline-start" />
+              Cancel
+            </Button>
+          )}
+          {item.status === 'queued' && onRemove && (
             <Button
               aria-label={`Remove ${item.name} from the queue`}
               onClick={() => onRemove(item.key)}
@@ -152,15 +185,23 @@ export function BatchFileRow({ item, onRemove }: BatchFileRowProps) {
         <Alert className="mt-3" variant="destructive">
           <AlertDescription>
             <strong className="font-semibold">Stopped at {batchStageLabels[item.failedAt ?? 'uploading']}.</strong> {sentence(item.error)}{' '}
-            The other videos carry on.
+            {onRetry ? 'Retry runs it again; the' : 'The'} other videos carry on.
           </AlertDescription>
         </Alert>
+      )}
+
+      {item.status === 'done' && !item.report && (
+        <p className="mt-3 text-xs text-muted-foreground">Analysed; the video has since been deleted.</p>
       )}
 
       {item.status === 'done' && item.report && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
           <span className="text-muted-foreground">
-            {item.converted ? 'Converted to H.264 MP4 and analysed.' : 'Stored as uploaded and analysed.'}
+            {item.converted === null
+              ? 'Analysed.'
+              : item.converted
+                ? 'Converted to H.264 MP4 and analysed.'
+                : 'Stored as uploaded and analysed.'}
           </span>
           <Link
             className="font-semibold text-primary hover:underline"
