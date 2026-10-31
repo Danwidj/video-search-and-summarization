@@ -814,45 +814,69 @@ class TestZoomSecondLook:
         post.assert_not_called()
         assert all("key missing" in e["zoom_gap"] and e["zoom_checked"] is False for e in by_id.values())
 
-    def test_the_default_detector_is_also_the_namer_and_its_zoom_call_is_outside_the_budget(self) -> None:
+    def test_the_default_detector_is_also_the_namer_and_its_zoom_calls_are_outside_the_budget(self) -> None:
         detector = DefaultDetector(api_key="k", base_url="https://vlm.example", model_name="m")
         service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
         assert service.namer is detector
         budget = CropCallBudget(1)
         budgeted = detector.with_call_budget(budget)
-        reply = MagicMock(status_code=200)
-        reply.json.return_value = {
-            "choices": [
-                {
-                    "message": {
-                        "content": "```json\n"
-                        + '{"name": "plastic bag", "description": "A bag.", "confidence": 0.8, "changed": true}'
-                        + "\n```"
-                    }
-                }
-            ]
-        }
-        with patch("vss_agents.utils.crop_evidence.httpx.post", return_value=reply) as post:
+
+        def reply(content: str) -> MagicMock:
+            response = MagicMock(status_code=200)
+            response.json.return_value = {"choices": [{"message": {"content": content}}]}
+            return response
+
+        replies = [
+            reply('{"name": "plastic bag", "description": "A crumpled bag.", "confidence": 0.9}'),  # frame look
+            reply(
+                '```json\n{"name": "plastic bag", "description": "A white bag.", "confidence": 0.8}\n```'
+            ),  # close-up
+            reply('{"name": "plastic bag", "description": "A bag on the floor.", "confidence": 0.95, "changed": true}'),
+        ]
+        with patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=replies) as post:
             verdict = budgeted.zoom_name(
                 b"jpeg", item_type="asset", name="soccer ball", description="A ball.", context_jpeg=b"frame"
             )
-            second = budgeted.zoom_name(b"jpeg", item_type="asset", name="soccer ball", description="A ball.")
-        assert verdict == second == ZoomVerdict(name="plastic bag", description="A bag.", confidence=0.8, changed=True)
-        assert budget.calls == 0  # two zoom calls, none counted against the grounding cap
-        assert post.call_args.args[0] == "https://vlm.example/v1/chat/completions"
-        body = post.call_args.kwargs["json"]
-        assert body["model"] == "m" and body["response_format"] == {"type": "json_object"}
-        image, text = body["messages"][0]["content"]  # the last call sent the close-up alone
-        assert image["image_url"]["url"].startswith("data:image/jpeg;base64,")
-        assert '"soccer ball"' in text["text"] and "asset" in text["text"] and '"changed"' in text["text"]
-        first_content = post.call_args_list[0].kwargs["json"]["messages"][0]["content"]
-        assert [part["type"] for part in first_content] == ["image_url", "image_url", "text"]
-        assert first_content[0]["image_url"]["url"].endswith(base64.b64encode(b"frame").decode())
-        assert "red box" in first_content[2]["text"]
-        # The question comes before the report's current name, so the model is not led by it.
-        assert first_content[2]["text"].index("decide what the marked object is") < first_content[2]["text"].index(
-            '"soccer ball"'
+        assert verdict == ZoomVerdict(
+            name="plastic bag",
+            description="A bag on the floor.",
+            confidence=0.8,  # the lowest of the three calls
+            changed=True,
+            seen={"frame": "plastic bag", "close_up": "plastic bag"},
         )
+        assert budget.calls == 0  # three zoom calls, none counted against the grounding cap
+        assert post.call_count == 3 and all(
+            c.args[0] == "https://vlm.example/v1/chat/completions" for c in post.call_args_list
+        )
+        bodies = [c.kwargs["json"] for c in post.call_args_list]
+        assert all(b["model"] == "m" and b["response_format"] == {"type": "json_object"} for b in bodies)
+        contents = [b["messages"][0]["content"] for b in bodies]
+        assert [[part["type"] for part in c] for c in contents] == [
+            ["image_url", "text"],  # the frame with the box
+            ["image_url", "image_url", "text"],  # the frame and the close-up
+            ["text"],  # the text-only merge
+        ]
+        assert contents[1][1]["image_url"]["url"].endswith(base64.b64encode(b"jpeg").decode())
+        # The blind looks never see the report's name; only the merge does.
+        assert "soccer ball" not in contents[0][1]["text"] and "soccer ball" not in contents[1][2]["text"]
+        assert '"soccer ball"' in contents[2][0]["text"] and "plastic bag" in contents[2][0]["text"]
+        assert "both looks agree" in contents[2][0]["text"]
+
+    def test_without_a_context_frame_the_close_up_is_the_only_look(self) -> None:
+        detector = DefaultDetector(api_key="k")
+        look = MagicMock(status_code=200)
+        look.json.return_value = {
+            "choices": [{"message": {"content": '{"name": "bag", "description": "", "confidence": 1}'}}]
+        }
+        merge = MagicMock(status_code=200)
+        merge.json.return_value = {
+            "choices": [
+                {"message": {"content": '{"name": "bag", "description": "", "confidence": 1, "changed": false}'}}
+            ]
+        }
+        with patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=[look, merge]) as post:
+            verdict = detector.zoom_name(b"jpeg", item_type="asset", name="bag", description="")
+        assert post.call_count == 2 and verdict.seen == {"frame": "bag", "close_up": "bag"}
 
     def test_the_default_detector_raises_on_a_malformed_zoom_reply(self) -> None:
         detector = DefaultDetector(api_key="k")

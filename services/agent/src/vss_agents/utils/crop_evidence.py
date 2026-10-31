@@ -26,9 +26,10 @@ console builds the searchable ``evidence_crops`` rows from a revision's evidence
 Zoomed second look (``INCIDENT_ZOOM_NAMES_ENABLED``, default on): the whole-clip VLM pass names each item at
 thumbnail resolution, so a crumpled bag seen at 25 pixels can become "soccer ball". Once an item is located, the
 item is cut from the frame at native resolution with a 25% margin (upscaled to a short side of at least 256 px for
-the model only; the stored crop is unchanged) and the same VLM the grounding detector uses is shown the frame with
-the box drawn and that close-up, asked what the marked object is, and only then given the report's current name and
-description to confirm or correct (a prompt that leads with the current name makes it confirm a wrong one). A correction is applied to the evidence entry
+the model only; the stored crop is unchanged) and the same VLM the grounding detector uses takes two blind looks
+(the frame with the box drawn; that frame plus the close-up), then a text-only merge weighs the looks against the
+report's current name and description and may correct them only when the looks agree (a vision prompt that carries
+the current name makes the model confirm a wrong one, and a close-up alone can name a neighbouring object). A correction is applied to the evidence entry
 and to the matching item of the report payload when the model says ``changed`` with confidence at least 0.7; the
 item id, label, timestamps and an entity's ``type`` are never changed. Zoom calls are outside ``CropCallBudget``
 (the grounding cap of an experimental request) and a failed or slow call never fails the analysis.
@@ -118,37 +119,70 @@ def zoom_names_enabled() -> bool:
 
 
 @dataclass(frozen=True)
+class ZoomLook:
+    """One blind look at the marked item: what the model sees, without the report's text."""
+
+    name: str
+    description: str
+    confidence: float
+
+
+@dataclass(frozen=True)
 class ZoomVerdict:
-    """The second look's reply for one item: the name and description it stands by, and how sure it is."""
+    """The second look's outcome for one item: the name and description it stands by, and how sure it is.
+
+    ``seen`` records the blind looks (``frame`` and ``close_up``) so a reviewer can see what the model saw
+    even when nothing changed.
+    """
 
     name: str
     description: str
     confidence: float
     changed: bool
+    seen: dict[str, str] | None = None
+
+
+def _confidence(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 0.0 <= float(value) <= 1.0:
+        raise ValueError(f"zoom reply confidence is not a number in 0..1: {value!r}")
+    return float(value)
+
+
+def parse_look_reply(data: dict[str, Any]) -> ZoomLook:
+    """A strict ``{name, description, confidence}`` object; anything else raises ``ValueError``."""
+    name = data.get("name")
+    description = data.get("description")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("zoom look has no name")
+    if not isinstance(description, str):
+        raise ValueError("zoom look has no description")
+    return ZoomLook(
+        name=" ".join(name.split()), description=description.strip(), confidence=_confidence(data.get("confidence"))
+    )
 
 
 def parse_zoom_reply(data: dict[str, Any]) -> ZoomVerdict:
     """A strict ``{name, description, confidence, changed}`` object; anything else raises ``ValueError``."""
     name = data.get("name")
     description = data.get("description")
-    confidence = data.get("confidence")
     changed = data.get("changed")
     if not isinstance(name, str) or not name.strip():
         raise ValueError("zoom reply has no name")
     if not isinstance(description, str):
         raise ValueError("zoom reply has no description")
-    if isinstance(confidence, bool) or not isinstance(confidence, int | float) or not 0.0 <= float(confidence) <= 1.0:
-        raise ValueError(f"zoom reply confidence is not a number in 0..1: {confidence!r}")
     if not isinstance(changed, bool):
         raise ValueError(f"zoom reply changed is not a boolean: {changed!r}")
     return ZoomVerdict(
-        name=" ".join(name.split()), description=description.strip(), confidence=float(confidence), changed=changed
+        name=" ".join(name.split()),
+        description=description.strip(),
+        confidence=_confidence(data.get("confidence")),
+        changed=changed,
     )
 
 
 @runtime_checkable
 class ZoomNamer(Protocol):
-    """Port for the zoomed second look: one VLM call that names a close-up of a located item."""
+    """Port for the zoomed second look: names a located item again from its close-up and marked frame."""
 
     def zoom_name(
         self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None
@@ -161,38 +195,55 @@ class ZoomNamer(Protocol):
         ...
 
 
-def zoom_prompt(item_type: str, name: str, description: str, with_context: bool = True) -> str:
-    """The second-look question for one item; an entity's type is fixed, so only its description may change.
-
-    The model is asked to decide what the boxed object is from the images first and only then compare with the
-    report's current text, because a prompt that leads with the current name makes it confirm a wrong one.
-    """
+def look_prompt(item_type: str, with_close_up: bool) -> str:
+    """A blind look: name the marked item from the image(s) alone, with no report text to lean on."""
     images = (
-        "The first image is a video frame with one object marked by a red box; the second is a close-up of that box."
-        if with_context
-        else "The image is a close-up of one object from a video frame."
+        "The first image is a video frame with one {thing} marked by a red box; the second is a close-up of that box."
+        if with_close_up
+        else "The image is a video frame with one {thing} marked by a red box."
     )
     if item_type == "entity":
-        subject = (
-            f'The marked object is an entity of type "{name}" in an incident report. The type is fixed and is not '
-            f'yours to change. The report currently describes it as: "{description}".'
-        )
-        task = (
-            "First look at the images and describe the marked entity in one sentence in your own words. Then, if the "
-            "report's description is wrong or misleading, replace it with yours; otherwise keep the report's. Reply "
-            'with the type unchanged as "name".'
-        )
-    else:
-        subject = f'The report currently calls the marked object "{name}" and describes it as: "{description}".'
-        task = (
-            "First look at the images and decide what the marked object is in your own words. Only then compare with "
-            "the report: if its name or description is wrong for what is visible, correct them (a name is one to "
-            "four plain words; a description is one sentence); otherwise keep them."
+        return (
+            f"{images.format(thing='person')} Describe the marked person from what is visible: clothing, build, "
+            'what they carry or hold. Return JSON only, in the form {"name": "person", "description": "<one sentence>", '
+            '"confidence": <0 to 1: how sure you are>}.'
         )
     return (
-        f"{images} It is an {item_type} from an incident report. Judge only what is visible. {task} {subject} "
-        'Return JSON only, in the form {"name": "<name>", "description": "<description>", "confidence": <0 to 1: how '
-        'sure you are of your name and description>, "changed": <true when either differs from the report\'s>}.'
+        f"{images.format(thing='object')} What is the object inside the red box? Ignore things that are only partly "
+        'inside it. Return JSON only, in the form {"name": "<one to four plain words>", "description": "<one '
+        'sentence>", "confidence": <0 to 1: how sure you are>}.'
+    )
+
+
+def merge_prompt(item_type: str, name: str, description: str, frame_look: ZoomLook, close_up_look: ZoomLook) -> str:
+    """The text-only merge: the report's text against two blind looks; a change needs the looks to agree.
+
+    The report's name is kept out of the vision calls because a model that reads "soccer ball" next to a
+    25-pixel smudge confirms "soccer ball"; here it only arbitrates between what the looks found and what the
+    report says.
+    """
+    looks = (
+        f'Looking at the whole frame, a model named it "{frame_look.name}" ("{frame_look.description}", confidence '
+        f'{frame_look.confidence:.2f}). Looking at a close-up of the box, it named it "{close_up_look.name}" '
+        f'("{close_up_look.description}", confidence {close_up_look.confidence:.2f}).'
+    )
+    if item_type == "entity":
+        rule = (
+            'The entity type is fixed: return it unchanged as "name". Keep the report\'s description unless both looks '
+            "agree it is wrong about the person's appearance (clothing, build, what they carry); then correct only the "
+            "wrong parts and keep what the report says about their behaviour and context."
+        )
+    else:
+        rule = (
+            "Keep the report's name and description unless both looks agree with each other and show the report is "
+            "wrong about what the object is; then correct the name (one to four plain words) and only the wrong parts "
+            "of the description, keeping what the report says about context. If the looks disagree with each other, "
+            "keep the report's text and lower your confidence."
+        )
+    return (
+        f'An incident report lists an {item_type} named "{name}" with the description: "{description}". {looks} '
+        f'{rule} Return JSON only, in the form {{"name": "<name>", "description": "<description>", "changed": <true '
+        'when either differs from the report>, "confidence": <0 to 1: how sure you are the result is right>}.'
     )
 
 
@@ -552,17 +603,8 @@ class DefaultDetector:
                 logger.warning("Unparseable grounding reply (attempt %d); retrying", attempt)
         raise RuntimeError("unreachable")  # pragma: no cover
 
-    def zoom_name(
-        self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None
-    ) -> ZoomVerdict:
-        """One second-look call on the same endpoint and model as grounding; outside any ``CropCallBudget``.
-
-        Sends the frame with the box drawn (``context_jpeg``, when given) and then the close-up. A single attempt
-        with its own, shorter timeout: the caller treats any error as "not checked" and the analysis stands. Raises
-        ``httpx.HTTPError`` on transport or status errors and ``ValueError`` on a reply that is not the strict zoom
-        JSON.
-        """
-        images = [image for image in (context_jpeg, jpeg) if image is not None]
+    def _chat_json(self, images: Sequence[bytes], text: str, max_tokens: int = 256) -> dict[str, Any]:
+        """One unbudgeted chat completion (images first, then ``text``) parsed as a JSON object."""
         body = {
             "model": self.model_name,
             "messages": [
@@ -578,15 +620,12 @@ class DefaultDetector:
                             }
                             for image in images
                         ),
-                        {
-                            "type": "text",
-                            "text": zoom_prompt(item_type, name, description, with_context=context_jpeg is not None),
-                        },
+                        {"type": "text", "text": text},
                     ],
                 }
             ],
             "temperature": 0.0,
-            "max_tokens": 256,
+            "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
         }
         resp = httpx.post(
@@ -596,7 +635,37 @@ class DefaultDetector:
             timeout=ZOOM_TIMEOUT_SECONDS,
         )
         resp.raise_for_status()
-        return parse_zoom_reply(parse_json_object(resp.json()["choices"][0]["message"]["content"]))
+        return parse_json_object(resp.json()["choices"][0]["message"]["content"])
+
+    def zoom_name(
+        self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None
+    ) -> ZoomVerdict:
+        """The second look on the same endpoint and model as grounding; outside any ``CropCallBudget``.
+
+        Three small calls: a blind look at the frame with the box drawn (``context_jpeg``), a blind look at that
+        frame plus the close-up ``jpeg``, then a text-only merge of the two looks with the report's text
+        (:func:`merge_prompt`). Without ``context_jpeg`` the close-up alone is the only look. The verdict's
+        confidence is the lowest of the calls. Every call is a single attempt with its own, shorter timeout: the
+        caller treats any error as "not checked" and the analysis stands. Raises ``httpx.HTTPError`` on transport
+        or status errors and ``ValueError`` on a reply that is not the strict JSON asked for.
+        """
+        if context_jpeg is not None:
+            frame_look = parse_look_reply(self._chat_json([context_jpeg], look_prompt(item_type, with_close_up=False)))
+            close_up_look = parse_look_reply(
+                self._chat_json([context_jpeg, jpeg], look_prompt(item_type, with_close_up=True))
+            )
+        else:
+            frame_look = close_up_look = parse_look_reply(self._chat_json([jpeg], look_prompt(item_type, False)))
+        merged = parse_zoom_reply(
+            self._chat_json([], merge_prompt(item_type, name, description, frame_look, close_up_look))
+        )
+        return ZoomVerdict(
+            name=merged.name,
+            description=merged.description,
+            confidence=min(merged.confidence, frame_look.confidence, close_up_look.confidence),
+            changed=merged.changed,
+            seen={"frame": frame_look.name, "close_up": close_up_look.name},
+        )
 
     def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
         if not self.is_available():
@@ -958,6 +1027,7 @@ def evidence_items(report: dict[str, Any]) -> list[dict[str, Any]]:
 ZOOM_ENTRY_FIELDS: dict[str, Any] = {
     "zoom_checked": False,
     "zoom_confidence": None,
+    "zoom_seen": None,
     "name_before": None,
     "zoom_gap": None,
 }
@@ -996,11 +1066,12 @@ def apply_zoom_verdict(entry: dict[str, Any], report: dict[str, Any], verdict: Z
     A correction is applied only when the model says ``changed`` with confidence at least
     ``ZOOM_CONFIDENCE_THRESHOLD``: the entry's ``item_name`` and ``description`` and the matching report item's
     name and description (an entity keeps its ``type``; only its description changes) are replaced, and the entry
-    keeps the previous name as ``name_before`` (and ``description_before``). The item id, label and timestamps are
-    never touched. Returns whether a correction was applied.
+    keeps the previous name as ``name_before`` (and ``description_before``). ``zoom_seen`` records what the blind
+    looks found. The item id, label and timestamps are never touched. Returns whether a correction was applied.
     """
     entry["zoom_checked"] = True
     entry["zoom_confidence"] = verdict.confidence
+    entry["zoom_seen"] = verdict.seen
     if not verdict.changed:
         return False
     if verdict.confidence < ZOOM_CONFIDENCE_THRESHOLD:
