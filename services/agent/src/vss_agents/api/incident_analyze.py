@@ -43,6 +43,8 @@ An experimental request never writes a report revision, and its response adds ``
 (prompt id and SHA-256 used, and for a crops-on request ``crop``: wall time, calls against the cap,
 tokens, images and gaps), ``p1_elapsed_ms`` and ``usage``.
 A request without them gets exactly the production response.
+With ``INCIDENT_TRACKING_ENABLED`` on, a production response adds ``tracking`` (``{enabled, matched, tracks,
+elapsed_ms, skipped}``); with it off the key is absent.
 """
 
 from __future__ import annotations
@@ -243,6 +245,8 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
         if not body.is_experimental():
             for key in EXPERIMENT_OUTPUT_FIELDS:  # production responses keep exactly their documented shape
                 response.pop(key, None)
+        if response.get("tracking") is None:
+            response.pop("tracking", None)  # tracking off (the default): the response is exactly as it was
         return response
 
     return router
