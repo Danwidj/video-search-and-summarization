@@ -37,6 +37,15 @@
 #     on kwanz-ws (vss-agent via NAT framework, plus optional analytics
 #     video-analytics-api and behavior-analytics).
 #
+# Default analysis stack (vm mode): one run brings up person tracking, the
+# caption timeline and the alert flags. start.sh starts the tracking stack
+# (ENABLE_TRACKING=false skips it); native-services.sh starts vss-agent with
+# INCIDENT_TRACKING_ENABLED=true, INCIDENT_CHUNKING_ENABLED=1 (20 s windows,
+# 2 s overlap) and INCIDENT_ALERTS_ENABLED=1 unless generated.env.remote sets
+# them (false or 0 turns one off, then restart the agent), and installs a static
+# ffmpeg/ffprobe into the VM checkout's .tools/ffmpeg on the agent's first start
+# (.scripts/media-tools.sh). With any piece off the analysis still runs without it.
+#
 # Execution flow (vm mode):
 #   0. Preflight: probes SSH and, on failure, says why (Tailscale not
 #      installed/stopped/logged out, VM offline in the tailnet, host not

@@ -57,10 +57,24 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 
 ### Person-tracking stack (`.scripts/tracking-stack.sh`, `ENABLE_TRACKING=true`)
 
-On by default in vm mode (since 31 Oct 2026): `./start.sh --mode vm` runs `tracking-stack.sh start` on the VM after Phoenix; `vm-stop-backend.sh` runs `stop` when the last session exits. `native-services.sh` starts `vss-agent` with `INCIDENT_TRACKING_ENABLED=true` unless `generated.env.remote` sets it, and the agent needs `ffmpeg` and `ffprobe` on its `PATH` ([agent reinstall](../skills/incident-operate-vm/SKILL.md#3-agent-editable-reinstall)).
+On by default in vm mode (since 31 Oct 2026): `./start.sh --mode vm` runs `tracking-stack.sh start` on the VM after Phoenix; `vm-stop-backend.sh` runs `stop` when the last session exits. `native-services.sh` starts `vss-agent` with `INCIDENT_TRACKING_ENABLED=true` unless `generated.env.remote` sets it, and the agent needs `ffmpeg` and `ffprobe`, which `native-services.sh` provides ([default stack](#default-analysis-stack-in-vm-mode)).
 
 - **Turn it off:** `ENABLE_TRACKING=false ./start.sh` skips the stack; the agent then reports `tracking.skipped` and the analysis runs as before. To stop the agent trying at all, set `INCIDENT_TRACKING_ENABLED=false` in `generated.env.remote` (ask first) and `./native-services.sh restart vss-agent`.
 - **Latency:** an analysis takes about the clip's length plus 10 s longer (31 Oct 2026: 24 s clip 56 s, 49 s clip 79 s, 94 s clip 132 s in total). An agent run is bounded by the model's 300 s timeout (`contracts/inference.json`), so clips over about 3 minutes may time out.
+
+### Default analysis stack in vm mode
+
+Since 1 Nov 2026 one `./start.sh --mode vm` brings up the full stack: person tracking, the caption timeline and the alert flags. Each piece is on by default and can be turned off on its own; with any of them off the analysis still runs and the report simply lacks that part.
+
+| Piece | Where the default lives | Turn it off |
+|---|---|---|
+| Tracking stack (perception containers) | `start.sh`: `ENABLE_TRACKING` defaults to `true` in vm mode | `ENABLE_TRACKING=false ./start.sh` (the agent then reports `tracking.skipped`) |
+| Tracking in the agent | `native-services.sh`: `INCIDENT_TRACKING_ENABLED=true` | `INCIDENT_TRACKING_ENABLED=false` in `generated.env.remote` (ask first), then `./native-services.sh restart vss-agent` |
+| Caption pass (caption timeline, clips over 30 s) | `native-services.sh`: `INCIDENT_CHUNKING_ENABLED=1`; window 20 s and overlap 2 s are the agent defaults (`INCIDENT_CHUNK_WINDOW_SECONDS`, `INCIDENT_CHUNK_OVERLAP_SECONDS`) | `INCIDENT_CHUNKING_ENABLED=0` in `generated.env.remote` (ask first), then restart the agent. Also turns the alert check off, which needs the timeline |
+| Alert rules (flags on the timeline, Alerts list) | `native-services.sh`: `INCIDENT_ALERTS_ENABLED=1`; rules in `services/agent/src/vss_agents/utils/chunk_alert_rules.json` | `INCIDENT_ALERTS_ENABLED=0` in `generated.env.remote` (ask first), then restart the agent |
+| `ffmpeg` and `ffprobe` for the agent | `.scripts/media-tools.sh`, run by `native-services.sh` before it starts the agent: BtbN static build, SHA-256 checked, into `/srv/rise-up/vss/.tools/ffmpeg/bin` (gitignored), first on the agent's `PATH`; skipped when both are already on `PATH` | Not needed off; without them the agent skips the caption pass and tracking. Check with `./native-services.sh status` (prints both with versions, or `MISSING`) or `./media-tools.sh check`; install alone with `./media-tools.sh install` |
+
+The defaults reach the shared agent only when it starts (`native-services.sh restart vss-agent`, or `start.sh` finding it down); a running agent keeps the environment it started with. Check a running agent with `tr '\0' '\n' < /proc/<pid>/environ | grep -E '^INCIDENT_(TRACKING|CHUNKING|ALERTS)_ENABLED='`. Cost and time with all three on: [status](status.md#1-what-is-live).
 
 On the VM:
 
