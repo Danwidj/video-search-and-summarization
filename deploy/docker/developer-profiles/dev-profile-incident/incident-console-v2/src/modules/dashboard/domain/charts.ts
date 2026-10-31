@@ -29,6 +29,11 @@ export function severityRows(data: DashboardAnalytics): SplitRow[] {
   }));
 }
 
+/** Reports with no severity fall in no band, so the bands can sum to less than the total. */
+export function unratedReports(data: DashboardAnalytics): number {
+  return Math.max(0, data.total - data.severity.high - data.severity.medium - data.severity.low);
+}
+
 export function typeRows(data: DashboardAnalytics): SplitRow[] {
   return data.types.map(({ type, count, official, notOfficial }) => ({ key: type, label: type, total: count, official, notOfficial }));
 }
