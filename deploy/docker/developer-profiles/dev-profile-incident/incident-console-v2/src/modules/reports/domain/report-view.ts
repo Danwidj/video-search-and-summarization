@@ -12,9 +12,10 @@
 //   report in model_runs.notes (title, severity rationale, location, timeline,
 //   uncertainties), plus the model's original structured values so edits can
 //   be shown against them.
-//   The run's caption pass (chunkTimeline) is read from the same notes.
+//   The run's caption pass (chunkTimeline) and its alert matches (chunkAlerts) are read from the same notes.
 // - Class C (run, revision): run, revision and provenance metadata.
 
+import type { ChunkAlert } from '@/modules/reports/domain/chunk-alerts';
 import type { ChunkWindow } from '@/modules/reports/domain/chunk-timeline';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import type { ContractRunRequest, ContractRunResponse } from '@/modules/reports/domain/run-notes';
@@ -53,6 +54,8 @@ export interface ItemEvidence {
   track: string | null;
   /** Same-origin URL the browser reads the track's samples from (R2 has no CORS rule for the console); null without a track. */
   trackUrl: string | null;
+  /** Console route that cuts (on first play) and signs the item's clip; null when it has no second or no stored evidence to keep a clip beside. */
+  clipUrl: string | null;
   /** The track's span on screen in video seconds, beside the report's own first_seen/last_seen (never rewritten). */
   trackFirstSeenSeconds: number | null;
   trackLastSeenSeconds: number | null;
@@ -163,6 +166,8 @@ export interface ReportView {
   modelOutput: ModelOutput | null;
   /** The run's caption pass, one entry per window ordered by start; empty when the run had none (gateway mode, chunking off or skipped, or analysed before it existed). */
   chunkTimeline: ChunkWindow[];
+  /** Alert rules the run's caption windows matched, ordered by time; empty when there were none or no alert check ran. */
+  chunkAlerts: ChunkAlert[];
   run: RunDetails;
   revision: RevisionSummary;
   /** The incident's one official revision (D6); never inferred from recency. */

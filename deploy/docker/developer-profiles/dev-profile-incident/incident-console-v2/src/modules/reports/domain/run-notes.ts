@@ -29,6 +29,10 @@ export interface ContractRunResponse {
   chunkTimeline?: unknown;
   /** Agent mode with the caption pass on: the agent's chunking telemetry, or { skipped: reason }. */
   chunking?: Record<string, unknown>;
+  /** Agent mode with the alert check on: the agent's chunk_alerts as returned (read by chunkAlertsFrom). */
+  chunkAlerts?: unknown;
+  /** Agent mode with the alert check on: the agent's alerting telemetry, or { skipped: reason }. */
+  alerting?: Record<string, unknown>;
   /** Agent mode with person tracking on: the agent's tracking summary {enabled, matched, tracks, elapsed_ms, skipped}. */
   tracking?: Record<string, unknown>;
 }
