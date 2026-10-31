@@ -14,7 +14,7 @@ Like NVIDIA's skills, these are for **deploying and operating** the profile from
   LAPTOP                                    kwanz-ws (shared, GPU 0)
   ┌───────────────────────────┐ SSH tunnel  ┌──────────────────────────────┐
   │ incident-console-v2 :3200 │────8000────▶│ vss-agent :8000 (native)     │
-  │                           │             │ HAProxy :7777 → VIOS/VST     │
+  │                           │             │ phoenix :6006 (Docker)       │
   │ mock mode only:           │             │ (Docker appliances)          │
   │   mock-backend  :7777     │             └──────────────┬───────────────┘
   │   vlm-gateway   :8600     │                            │
@@ -28,7 +28,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 | Mode | Backend | Analysis path (`ANALYSIS_MODE`) | Needs |
 |---|---|---|---|
 | `--mode mock` | `mock-backend` + `vlm-gateway` on the laptop | `gateway`: console calls the gateway, the console writes Supabase | `.env.local`, no GPU, no SSH |
-| `--mode vm` (default) | Native `vss-agent` + Docker VIOS on `kwanz-ws` | `agent`: console calls `POST /api/v1/incidents/{id}/analyze` (`skip_rp1: true`); the agent inserts the AI revision and returns `revision_id`, the console writes `model_runs` | Tailscale, `Host kwanz-ws` SSH config, `.env.local` |
+| `--mode vm` (default) | Native `vss-agent` + Docker Phoenix on `kwanz-ws` | `agent`: console calls `POST /api/v1/incidents/{id}/analyze` (`skip_rp1: true`); the agent inserts the AI revision and returns `revision_id`, the console writes `model_runs` | Tailscale, `Host kwanz-ws` SSH config, `.env.local` |
 
 ---
 

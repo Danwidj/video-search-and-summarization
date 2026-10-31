@@ -1,6 +1,6 @@
 ---
 name: incident-operate-vm
-description: Use to deploy, restart, inspect, debug or tear down the incident backend on the kwanz-ws VM - native services (vss-agent, analytics) via native-services.sh, Docker appliances (VIOS, HAProxy, Redis, Kafka) via compose, generated.env.remote, and the agent editable reinstall. Not for the laptop launch (use incident-start) and never via NVIDIA's dev-profile.sh / vss-deploy-profile.
+description: Use to deploy, restart, inspect, debug or tear down the incident backend on the kwanz-ws VM - native services (vss-agent, analytics) via native-services.sh, Docker appliances (Phoenix only; VIOS, HAProxy, Redis and Kafka are removed) via compose, generated.env.remote, and the agent editable reinstall. Not for the laptop launch (use incident-start) and never via NVIDIA's dev-profile.sh / vss-deploy-profile.
 license: Apache-2.0
 metadata:
   version: "0.1.2"
@@ -30,7 +30,7 @@ Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-p
 | Kind | Services | Manage with |
 |---|---|---|
 | Native (fast restart, about 2 s) | `vss-agent` :8000; optional `video-analytics-api` :8081 and `behavior-analytics` (`ENABLE_ANALYTICS=true`). `status` lists only expected services (analytics excluded unless `ENABLE_ANALYTICS=true`). Concurrency-safe across multi-user VM starts via `flock` and `umask 002`. | `.scripts/native-services.sh start\|stop\|restart\|status\|logs <svc\|all\|analytics>` |
-| Docker appliances | VIOS (`vss-vios-*`), `vss-haproxy-ingress` :7777, `redis`, `phoenix`, `kafka`; optional `elasticsearch` | `docker compose -p mdx ...` with `generated.env.remote` |
+| Docker appliances | `phoenix` :6006 (trace viewer used for eval); optional `elasticsearch` (`ENABLE_ANALYTICS=true`). VIOS/VST (`vss-vios-*`), `vss-haproxy-ingress` :7777, `redis` and `kafka` are removed from the deployment: `start.sh` does not start or check them and they are being deleted from the VM; never start them again | `docker compose -p mdx ...` with `generated.env.remote` |
 
 Full port and rationale table: [operations §2](../../.docs/incident-profile-operations.md#2-native-vs-docker-service-split).
 
@@ -102,7 +102,7 @@ The file is untracked and lives on the VM only. Rules (why for each: [operations
 
 1. `./status.sh` and `./native-services.sh status`: is it running?
 2. `./health.sh`: is the agent up? A 503 in the first 60-90 s of a cold start is normal.
-3. `./logs.sh vss-agent`, `docker logs --tail 100 vss-haproxy-ingress`, `docker logs --tail 100 vss-vios-ingress`.
+3. `./logs.sh vss-agent`, `docker logs --tail 100 phoenix`.
 4. Partial deploy: start only the missing service. Don't force-redeploy over inconsistent state.
 
 Note: `sdr-controller` was removed from the incident deployment stack (unused and port-clashes with streamprocessing on port 10000; see [`.docs/decisions.md`](../../.docs/decisions.md)); it should not be running.

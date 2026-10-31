@@ -10,7 +10,7 @@ HTTP contracts of the native `vss-agent` on `kwanz-ws` and the SSH tunnel the fr
 |---|---|---|---|
 | `8000` | `127.0.0.1:8000` (loopback) | native `vss-agent` (FastAPI) | all endpoints below; set `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (start.sh exports it) |
 
-- start.sh forwards nothing else. The console does not use `vss-haproxy-ingress` (`:7777`, VIOS/VST) any more: it uploads each video straight to R2 through its own `/api/uploads/r2` route, so it never calls the VST upload or sensor API and creates no VST camera ([decision](decisions.md)). The VST containers still run on the VM; `.scripts/tunnel.sh` can still forward `:7777` for the stock VSS UI.
+- Nothing else is forwarded, by start.sh or `.scripts/tunnel.sh`. The console uploads each video straight to R2 through its own `/api/uploads/r2` route, so it never calls the VST upload or sensor API and creates no VST camera. The `:7777` proxy (`vss-haproxy-ingress`) and VIOS/VST, with the Redis and Kafka they needed, are removed from the deployment: not started by start.sh and being deleted from the VM ([decision](decisions.md)). Phoenix (`:6006`, the trace viewer used for eval) stays.
 - In mock mode `127.0.0.1:7777` is the mock backend instead (it serves the incident search, revision search, chat, analyze and evidence-embeddings routes). There is no tunnel.
 - A laptop port 8000 already in use stops start.sh before the tunnel opens: `laptop port 8000 is already in use by <holder>`.
 - After opening, start.sh polls `localhost:8000/health` for up to 60 s. Run `./.scripts/tunnel-check.sh` to check tunneled routes.

@@ -10,8 +10,9 @@ runtime interaction sequences for `dev-profile-incident`.
 The system spans three runtime tiers:
 1. **Developer Laptop:** Hosts the modern frontend (`incident-console-v2`), local API proxies (`vlm-gateway`),
    and base mocks (`mock-backend`).
-2. **Shared GPU Workstation (`kwanz-ws` VM):** Runs the heavy video ingestion appliance (VIOS/NvStreamer),
-   infrastructure services in Docker, and the fast-iterating AI agent (`vss-agent`) as a native process.
+2. **Shared GPU Workstation (`kwanz-ws` VM):** Runs the AI agent (`vss-agent`) as a native process and
+   Phoenix (the trace viewer used for eval) in Docker. VIOS/VST, HAProxy, Redis and Kafka are removed from the
+   deployment ([decision](decisions.md)).
 3. **Cloud & External Services:** Cloudflare R2 for durable video storage, Supabase for relational data via
    HTTPS PostgREST, and hosted LLM/VLM inference endpoints (NGC and Brev).
 
@@ -36,17 +37,13 @@ flowchart TB
             BehaviorAnalytics["behavior-analytics<br/>(Optional, no HTTP port; Kafka consumer)"]
         end
 
-        subgraph VMDocker["Docker Appliances (Proprietary Toolchains / JVM / Infra)"]
-            HAProxy["vss-haproxy-ingress<br/>(Port 7777)"]
-            VIOSIngress["vss-vios-ingress<br/>(nginx, Port 30888)"]
-            StreamProcessing["vss-vios-streamprocessing<br/>(VST storage API, Port 10000; GPU 0)"]
-            VIOSSensor["vss-vios-sensor<br/>(Port 30000; GPU 0, not started by start.sh)"]
-            NvStreamer["vss-vios-nvstreamer<br/>(RTSP streamer, Port 31000; GPU 0)"]
-            VIOSPostgres["vss-vios-postgres<br/>(Internal DB, Unix socket only)"]
-            Redis["redis<br/>(State Cache)"]
-            Phoenix["phoenix<br/>(Telemetry, Port 6006)"]
-            Kafka["kafka<br/>(Analytics Bus, always started by start.sh)"]
+        subgraph VMDocker["Docker Appliances"]
+            Phoenix["phoenix<br/>(Trace viewer for eval, Port 6006)"]
             Elasticsearch["elasticsearch<br/>(Search Index, Optional)"]
+        end
+
+        subgraph VMRemoved["Removed from the deployment (not started by start.sh; being deleted from the VM)"]
+            Removed["VIOS/VST (vss-vios-*), vss-haproxy-ingress :7777,<br/>redis, kafka"]
         end
     end
 
@@ -60,7 +57,7 @@ flowchart TB
     UI -->|Mock Mode Inference| Gateway
     UI -->|Mock Mode Upload| Mock
     UI -->|VM Mode HTTP /analyze| FwdAgent
-    UI -->|Direct Upload Fallback & Presigned URLs| R2
+    UI -->|Video upload /api/uploads/r2 & Presigned URLs| R2
     UI -->|REST report_revisions insert| Supabase
     UI -->|/rpc/save_human_revision, /rpc/set_official_revision| Supabase
 
@@ -71,10 +68,7 @@ flowchart TB
     FwdAgent --> Agent
 
     %% VM Internal Routing
-    HAProxy --> VIOSIngress
-    VIOSIngress --> StreamProcessing
-    VIOSIngress --> VIOSSensor
-    Agent -->|Fetch Video Bytes| VIOSIngress
+    Agent -->|Traces| Phoenix
     Agent -->|OpenAI Protocol Inference| Brev
     Agent -->|HTTPS PostgREST & RPC| Supabase
 ```
@@ -90,17 +84,17 @@ flowchart TB
 | `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis, search, and chat workflows (`/api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`, `POST /api/v1/incidents/revisions/search`, `POST /api/v1/incidents/chat`), tool calling, report persistence; remote inference via Brev |
 | `video-analytics-api` | `kwanz-ws` | 8081 | Node.js (Native) | `services/analytics/video-analytics-api/` | Optional MVP2 video analytics ingestion and query layer (`ENABLE_ANALYTICS=true`) |
 | `behavior-analytics` | `kwanz-ws` | none (8080 is a HAProxy/label placeholder) | Python (Native) | `services/analytics/behavior-analytics/` | Optional MVP2 behavior perception pipeline (`ENABLE_ANALYTICS=true`) |
-| `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `deploy/docker/services/infra/haproxy/` | Public reverse proxy on :7777: /api,/chat → vss-agent :8000; /vst,/storage → vss-vios-ingress :30888; /phoenix → :6006; optional analytics/kibana backends. Still running, but the console no longer uses it |
-| `vss-vios-streamprocessing`| `kwanz-ws` | 10000 | Docker container (GPU 0) | `deploy/docker/services/vios/` | VST storage/upload + replay API (still running; the console no longer uploads to it) |
-| `vss-vios-nvstreamer` | `kwanz-ws` | 31000 | Docker container (GPU 0) | `deploy/docker/developer-profiles/dev-profile-alerts/compose.yml` | NvStreamer RTSP file streamer (not in the upload path; not routed by ingress/HAProxy) |
-| `vss-vios-ingress` | `kwanz-ws` | 30888 | Docker container | `deploy/docker/services/vios/` (foundational) | Nginx VST ingress: /vst/api/v1/sensor → sensor-ms :30000; other /vst/api/v1 and /vst/storage → streamprocessing :10000 |
-| `vss-vios-sensor` | `kwanz-ws` | 30000 | Docker container (GPU 0) | `deploy/docker/services/vios/initiator/` | VST sensor registration service (`sensor-ms`; pinned to GPU 0 in `compose.override.yml`, but not started by `start.sh`) |
-| `vss-vios-postgres` | `kwanz-ws` | none (Unix socket only) | Docker container | `deploy/docker/services/vios/` | VIOS internal database for camera sensors and stream registrations |
+| `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `deploy/docker/services/infra/haproxy/` | Public reverse proxy on :7777: /api,/chat → vss-agent :8000; /vst,/storage → vss-vios-ingress :30888; /phoenix → :6006; optional analytics/kibana backends. **Removed from the deployment:** not started by `start.sh`, being deleted from the VM. |
+| `vss-vios-streamprocessing`| `kwanz-ws` | 10000 | Docker container (GPU 0) | `deploy/docker/services/vios/` | VST storage/upload + replay API **Removed from the deployment:** not started by `start.sh`, being deleted from the VM. |
+| `vss-vios-nvstreamer` | `kwanz-ws` | 31000 | Docker container (GPU 0) | `deploy/docker/developer-profiles/dev-profile-alerts/compose.yml` | NvStreamer RTSP file streamer (not in the upload path; not routed by ingress/HAProxy) **Removed from the deployment:** not started by `start.sh`, being deleted from the VM. |
+| `vss-vios-ingress` | `kwanz-ws` | 30888 | Docker container | `deploy/docker/services/vios/` (foundational) | Nginx VST ingress: /vst/api/v1/sensor → sensor-ms :30000; other /vst/api/v1 and /vst/storage → streamprocessing :10000 **Removed from the deployment:** not started by `start.sh`, being deleted from the VM. |
+| `vss-vios-sensor` | `kwanz-ws` | 30000 | Docker container (GPU 0) | `deploy/docker/services/vios/initiator/` | VST sensor registration service (`sensor-ms`; pinned to GPU 0 in `compose.override.yml`, but not started by `start.sh`) **Removed from the deployment:** not started by `start.sh`, being deleted from the VM. |
+| `vss-vios-postgres` | `kwanz-ws` | none (Unix socket only) | Docker container | `deploy/docker/services/vios/` | VIOS internal database for camera sensors and stream registrations **Removed from the deployment:** not started by `start.sh`, being deleted from the VM. |
 | `perception-2d-fusion` (`vss-rtvi-cv`) | `kwanz-ws` | 9000 | Docker container (GPU 0) | `deploy/docker/developer-profiles/dev-profile-search/video-analytics-2d-app/compose.yml` | Stock DeepStream perception service (pinned to GPU 0 in `compose.override.yml`; not started by `start.sh`; RT-CV indexing is dropped from MVP2) |
 | `rtvi-embed` (`vss-rtvi-embed`) | `kwanz-ws` | 8017 (→8000) | Docker container (GPU 0, bridged) | `deploy/docker/services/rtvi/rtvi-embed/` | Stock Triton inference server for video embeddings (pinned to GPU 0 in `compose.override.yml`; not started by `start.sh`; RT-Embed indexing is dropped from MVP2, whose text embeddings and VLM are remote) |
-| `redis` | `kwanz-ws` | 6379 (int) | Docker container | Stock compose infra | Message broker and caching layer |
-| `phoenix` | `kwanz-ws` | 6006 (int) | Docker container (bridged mdx_default) | Stock compose infra | LLM/VLM telemetry, trace logging, and performance monitoring |
-| `kafka` | `kwanz-ws` | 9092 | Docker container | Stock compose infra | Heavy event bus for analytics (always started by start.sh) |
+| `redis` | `kwanz-ws` | 6379 (int) | Docker container | Stock compose infra | Message broker and caching layer **Removed from the deployment:** not started by `start.sh`, being deleted from the VM. |
+| `phoenix` | `kwanz-ws` | 6006 (int) | Docker container (bridged mdx_default) | Stock compose infra | LLM/VLM telemetry and trace viewer; kept for eval. The only Docker service `start.sh` starts by default |
+| `kafka` | `kwanz-ws` | 9092 | Docker container | Stock compose infra | Event bus that VST needed **Removed from the deployment:** not started by `start.sh`, being deleted from the VM. |
 | `elasticsearch` | `kwanz-ws` | Internal | Docker container | Stock compose infra | JVM search index appliance (optional, only with `ENABLE_ANALYTICS=true`) |
 | `Supabase` | Cloud | 443 (HTTPS) | Managed PostgREST / Postgres | `supabase/migrations/` (finals, including the versioned-report schema and functions); `supabase/midterm/` (frozen record) | Store for videos, runs, versioned report revisions, evidence crops and search history. One project per phase: see [Two Supabase projects](#two-supabase-projects-one-per-phase) |
 | `Cloudflare R2` | Cloud | 443 (HTTPS) | S3-Compatible Object Store | `incident-console-v2/src/lib/r2/` | Canonical persistent object storage for video clips and screenshots |
@@ -112,8 +106,8 @@ flowchart TB
 
 Services are split based on feasibility:
 - **Native Processes (High Feasibility):** `vss-agent` (Python/uv), `video-analytics-api` (Node.js), and `behavior-analytics` (Python). Running natively eliminates Docker image rebuilds on code changes (~2s process restart vs multi-minute container build).
-- **Docker Appliances (Infeasible Natively):** Media engines and storage appliances (`vss-vios-streamprocessing`, `vss-vios-nvstreamer`, `vss-vios-ingress`, `vss-vios-postgres`). These depend on proprietary CUDA and GStreamer container toolchains; host installation is infeasible. Stock perception and embedding appliances (`perception-2d-fusion` / `vss-rtvi-cv`, `rtvi-embed` / `vss-rtvi-embed`, `sensor-ms` / `vss-vios-sensor`) are containerized and pinned to GPU 0 in `compose.override.yml`, but are not started by `start.sh`.
-- **Docker Appliances (No Benefit / JVM):** Infrastructure appliances (`redis`, `kafka`, `elasticsearch`, `phoenix`, `vss-haproxy-ingress`). Standard prebuilt containers or heavy JVM runtimes where native execution provides no development benefit.
+- **Docker Appliances (Infeasible Natively):** Media engines and storage appliances (`vss-vios-streamprocessing`, `vss-vios-nvstreamer`, `vss-vios-ingress`, `vss-vios-postgres`; all removed from the deployment). These depend on proprietary CUDA and GStreamer container toolchains; host installation is infeasible. Stock perception and embedding appliances (`perception-2d-fusion` / `vss-rtvi-cv`, `rtvi-embed` / `vss-rtvi-embed`, `sensor-ms` / `vss-vios-sensor`) are containerized and pinned to GPU 0 in `compose.override.yml`, but are not started by `start.sh`.
+- **Docker Appliances (No Benefit / JVM):** Infrastructure appliances (`phoenix`, and `elasticsearch` with `ENABLE_ANALYTICS=true`; `redis`, `kafka` and `vss-haproxy-ingress` are removed from the deployment). Standard prebuilt containers or heavy JVM runtimes where native execution provides no development benefit.
 - **Networking:** Nearly all containers use host networking (`network_mode: host`); exceptions are `phoenix` (bridge `mdx_default`, published 6006:6006) and `vss-rtvi-embed` (if started; published `${RTVI_EMBED_PORT}`=8017→8000). Native processes reach all of them on `localhost`.
 
 ---
@@ -153,7 +147,7 @@ flowchart TD
 
 ### SSH Tunnel Port Forwards
 
-VM mode forwards only `localhost:8000`, to the native `vss-agent`. The console no longer talks to `vss-haproxy-ingress` (:7777): uploads go from the console straight to R2, so no VST camera is created ([decision](decisions.md)). The VIOS/VST containers still run on the VM. The forwards and their checks are in [`vm-api-contracts.md`](vm-api-contracts.md#tunnel); the VM address detection and SSH troubleshooting are in [`incident-profile-operations.md`](incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).
+VM mode forwards only `localhost:8000`, to the native `vss-agent`. The console no longer talks to `vss-haproxy-ingress` (:7777): uploads go from the console straight to R2, so no VST camera is created ([decision](decisions.md)). VIOS/VST, HAProxy, Redis and Kafka are removed from the deployment too: `start.sh` no longer starts or checks them, and they are being deleted from the VM. The forwards and their checks are in [`vm-api-contracts.md`](vm-api-contracts.md#tunnel); the VM address detection and SSH troubleshooting are in [`incident-profile-operations.md`](incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).
 
 ### Two Supabase projects (one per phase)
 

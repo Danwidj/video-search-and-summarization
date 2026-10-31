@@ -18,7 +18,7 @@ metadata:
 | User says | Mode | Why |
 |---|---|---|
 | "run the mock backend", "offline from the VM" (mock-backend tests only; never for UI or backend work, and never as a fallback when the VM is unreachable - stop and report) | `--mode mock` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. `--mode local` still works as a deprecated alias. |
-| "run it", "run against the VM", "real agent", "full stack", "demo", "frontend work", any UI or backend work, no preference | `--mode vm` (default) | Real native `vss-agent` and VIOS on `kwanz-ws`. `start.sh` self-heals missing services: it starts stopped ones, pulls missing images, clones a missing checkout, and fails with a reason instead of hanging. |
+| "run it", "run against the VM", "real agent", "full stack", "demo", "frontend work", any UI or backend work, no preference | `--mode vm` (default) | Real native `vss-agent` and Phoenix on `kwanz-ws`. `start.sh` self-heals missing services: it starts stopped ones, pulls missing images, clones a missing checkout, and fails with a reason instead of hanging. |
 
 Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#2-deployment--connectivity).
 
@@ -82,7 +82,7 @@ Then run one upload to report with [`incident-analyze-video`](../incident-analyz
 |---|---|
 | `start.sh` aborts at the SSH preflight | Read the `Cause:` / `Fix:` lines it prints (Tailscale logged out or stopped, VM offline in the tailnet, DNS, SSH timeout or refused, login rejected, host key changed). Table: [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting). |
 | `start.sh` aborts with "could not register active run lock" | The backend may currently be stopping from another session's exit. Retry once the stop completes. |
-| `start.sh` stops with `[vm] ERROR` or "timed out" | The Docker step on the VM failed: exit 10 repo, 11 `generated.env.remote` missing, 12 docker unusable, 13 image pull (NGC login), 14/124 `compose up` failed or stuck (its output shows container states and Kafka logs). Tunables: `VSS_PULL_TIMEOUT`, `VSS_COMPOSE_UP_TIMEOUT`, `VSS_NATIVE_START_TIMEOUT`. |
+| `start.sh` stops with `[vm] ERROR` or "timed out" | The Docker step on the VM failed: exit 10 repo, 11 `generated.env.remote` missing, 12 docker unusable, 13 image pull (NGC login), 14/124 `compose up` failed or stuck (its output shows container states and logs). Tunables: `VSS_PULL_TIMEOUT`, `VSS_COMPOSE_UP_TIMEOUT`, `VSS_NATIVE_START_TIMEOUT`. |
 | Tunnel step fails | `start.sh` says whether a laptop port is taken, the SSH forward is blocked (or `VSS_AGENT_HOST` on the VM is bound to a LAN address instead of `127.0.0.1`), the VM address is wrong (set `VSS_VM_IP`), or the agent or proxy is down on the VM. |
 | Logged in as the wrong VM user | Set `User` under `Host kwanz-ws`, or `export VSS_SSH_USER=<name>`. |
 | Port 3200, 7777, 8000 or 8600 already in use | A previous run is still alive. Stop it, or find it with `lsof -i :<port>`. |

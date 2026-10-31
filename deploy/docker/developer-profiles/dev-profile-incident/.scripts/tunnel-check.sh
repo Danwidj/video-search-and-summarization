@@ -4,11 +4,8 @@
 # `mdx-tunnel-incident-check` shell alias from deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh —
 # same behavior, standalone script). LAPTOP SIDE ONLY, like tunnel.sh.
 #
-# The agent health check must pass. The proxy (:7777) is optional: start.sh
-# forwards only :8000, since the console uploads straight to R2; tunnel.sh
-# still forwards :7777 for the stock VSS UI.
-
-VSS_VM_IP="${VSS_VM_IP:-the VM}"
+# The agent health check must pass. Only :8000 is forwarded: the VM no longer
+# runs the VIOS/VST HAProxy ingress (:7777).
 
 if curl -sf --max-time 15 http://localhost:8000/health | grep -q isAlive; then
   echo "agent ok (localhost:8000 -> VM loopback :8000)"
@@ -22,10 +19,4 @@ if [ "$search_code" = "200" ]; then
   echo "search route ok (localhost:8000/api/v1/incidents/search -> VM loopback :8000)"
 else
   echo "search route returned HTTP ${search_code} (expected 200)"
-fi
-
-if curl -sf -I --max-time 15 http://localhost:7777/storage 2>/dev/null | grep -qi accept-ranges; then
-  echo "proxy ok (localhost:7777 -> ${VSS_VM_IP}:7777)"
-else
-  echo "proxy not forwarded (only tunnel.sh forwards :7777; the console does not need it)"
 fi

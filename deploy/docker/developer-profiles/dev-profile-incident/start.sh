@@ -8,7 +8,8 @@
 # Modes (via --mode or VSS_START_MODE, default: vm):
 #   vm    — real VM agent (checks/deploys kwanz-ws over SSH, opens the SSH
 #           tunnel for the agent on :8000 only; uploads go straight from the
-#           console to R2, so nothing forwards the VM's :7777 VST proxy). Exports ANALYSIS_MODE=agent so v2 calls the agent's
+#           console to R2, and the VM runs no VST/HAProxy). Exports
+#           ANALYSIS_MODE=agent so v2 calls the agent's
 #           /analyze endpoint directly. No local vlm-gateway. The search route
 #           (POST /api/v1/incidents/search) is always mounted on vss-agent (:8000)
 #           with an always-on VLM critic and persisted ranking/verdicts.
@@ -26,8 +27,9 @@
 # and is never started.
 #
 # Architecture (Native vs Docker Split):
-#   - DOCKER SERVICES: Foundational appliance containers (VIOS/VST, HAProxy,
-#     Postgres, Redis, Phoenix, and optional Kafka/ElasticSearch).
+#   - DOCKER SERVICES: Phoenix only (the trace viewer used for eval), plus
+#     Elasticsearch with ENABLE_ANALYTICS=true. VIOS/VST, HAProxy, Redis and
+#     Kafka are no longer part of the deployment: uploads go straight to R2.
 #   - NATIVE SERVICES: Fast-iterating application modules running directly
 #     on kwanz-ws (vss-agent via NAT framework, plus optional analytics
 #     video-analytics-api and behavior-analytics).
@@ -94,7 +96,7 @@
 #   --no-console             bring the backend and tunnel up, skip incident-console-v2,
 #                            and hold the tunnel open (for checking the VM side only)
 #   ENABLE_ANALYTICS         set to 'true' to include video-analytics-api and
-#                            behavior-analytics natively, plus elasticsearch/kafka in Docker
+#                            behavior-analytics natively, plus elasticsearch in Docker
 #   INCIDENT_DOCKER_SERVICES space-separated list of Docker services to expect/run
 #   INCIDENT_NATIVE_SERVICES space-separated list of native VM services to expect/run
 set -euo pipefail
@@ -157,17 +159,6 @@ LOCK_SSH_PID=""
 LOCK_LOG=""
 LOCK_HELD=0
 CLEANUP_RUNNING=""
-
-# Laptop-side name -> compose service name for the Docker appliances.
-map_docker_service() {
-  case "$1" in
-    vss-vios-streamprocessing) echo "streamprocessing-ms" ;;
-    vss-vios-nvstreamer)       echo "nvstreamer-2d-fusion" ;;
-    vss-vios-ingress)          echo "vst-ingress" ;;
-    vss-vios-postgres)         echo "centralizedb" ;;
-    *)                         echo "$1" ;;
-  esac
-}
 
 # Every process below pid, found through parent pids (pgrep -P works on Linux and macOS).
 descendants() {
@@ -251,8 +242,8 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
   ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
 
-  # Base Docker infrastructure (appliances)
-  default_docker_services="vss-vios-streamprocessing vss-vios-nvstreamer vss-vios-ingress vss-haproxy-ingress vss-vios-postgres redis phoenix kafka"
+  # Docker appliances: only Phoenix (VIOS/VST, HAProxy, Redis and Kafka were dropped)
+  default_docker_services="phoenix"
   if [ "${ENABLE_ANALYTICS}" = "true" ]; then
     default_docker_services="${default_docker_services} elasticsearch"
   fi
@@ -411,10 +402,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
     # Cases 2 and 3 (services stopped, repo/images not downloaded): vm-ensure-docker.sh
     # runs on the VM and clones/pulls what is missing, then runs a bounded `compose up`.
     if [ "${#docker_missing[@]}" -gt 0 ]; then
-      compose_services=()
-      for svc in "${docker_missing[@]}"; do
-        compose_services+=("$(map_docker_service "$svc")")
-      done
+      compose_services=("${docker_missing[@]}")
       echo "--- starting missing Docker appliances (${docker_missing[*]}) over SSH ---"
       docker_rc=0
       # ssh joins its arguments into one string, so quote them (an empty repo URL must survive).
