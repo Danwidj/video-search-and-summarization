@@ -232,6 +232,8 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
           completion_tokens: 117,
           elapsed_ms: 5840,
         },
+        chunk_alerts: [{ rule_id: 'person-falls', rule: 'A person falls.', window_index: 0, start: 0, end: 20, reason: 'E1 falls.' }],
+        alerting: { model: 'llm', rules: 3, windows: 1, matches: 1, prompt_tokens: 900, completion_tokens: 30, elapsed_ms: 800 },
         tracking: { enabled: true, matched: 2, tracks: 3, elapsed_ms: 91000, skipped: null },
       };
       return new Response(JSON.stringify(mockAgentResponse), {
@@ -300,9 +302,11 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
         completion_tokens: 117,
         elapsed_ms: 5840,
       },
+      chunkAlerts: [{ rule_id: 'person-falls', rule: 'A person falls.', window_index: 0, start: 0, end: 20, reason: 'E1 falls.' }],
+      alerting: { model: 'llm', rules: 3, windows: 1, matches: 1, prompt_tokens: 900, completion_tokens: 30, elapsed_ms: 800 },
       tracking: { enabled: true, matched: 2, tracks: 3, elapsed_ms: 91000, skipped: null },
     },
-    'only what the agent returned, the caption pass included',
+    'only what the agent returned, the caption pass and its alerts included',
   );
 });
 
