@@ -2,7 +2,7 @@
 #
 # Hermetic test for native-services.sh
 # Tests concurrency, flock serialisation, health check detection, atomic pid file,
-# and status filtering.
+# status filtering, the agent's feature defaults and the ffmpeg/ffprobe install (media-tools.sh).
 #
 # Usage:
 #   bash deploy/docker/developer-profiles/dev-profile-incident/.scripts/test-native-services.sh
@@ -300,6 +300,76 @@ echo "INCIDENT_TRACKING_ENABLED=false" >"$tracking_env"
 # shellcheck disable=SC1090
 tracking_off="$(unset INCIDENT_TRACKING_ENABLED; ENV_FILE="$tracking_env"; source "$SUT" status >/dev/null; echo "$INCIDENT_TRACKING_ENABLED")"
 assert_eq "false" "$tracking_off" "an env file INCIDENT_TRACKING_ENABLED=false wins"
+
+# -----------------------------------------------------------------------------
+# Caption pass and alert check: on for vss-agent by default, the env file can turn them off
+# -----------------------------------------------------------------------------
+# shellcheck disable=SC1090
+pass_default="$(unset INCIDENT_CHUNKING_ENABLED INCIDENT_ALERTS_ENABLED; source "$SUT" status >/dev/null; echo "$INCIDENT_CHUNKING_ENABLED $INCIDENT_ALERTS_ENABLED")"
+assert_eq "1 1" "$pass_default" "INCIDENT_CHUNKING_ENABLED and INCIDENT_ALERTS_ENABLED default to 1"
+pass_env="$TMP/pass-off.env"
+printf 'INCIDENT_CHUNKING_ENABLED=0\nINCIDENT_ALERTS_ENABLED=0\n' >"$pass_env"
+# shellcheck disable=SC1090
+pass_off="$(unset INCIDENT_CHUNKING_ENABLED INCIDENT_ALERTS_ENABLED; ENV_FILE="$pass_env"; source "$SUT" status >/dev/null; echo "$INCIDENT_CHUNKING_ENABLED $INCIDENT_ALERTS_ENABLED")"
+assert_eq "0 0" "$pass_off" "an env file with both set to 0 wins"
+
+# -----------------------------------------------------------------------------
+# ffmpeg and ffprobe: reported by status, installed into the tools dir when missing
+# -----------------------------------------------------------------------------
+echo "=== Media tools ==="
+MEDIA="${SCRIPT_DIR}/media-tools.sh"
+BARE_PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+build="ffmpeg-n0.0-latest-linux64-gpl-0.0"
+release="$TMP/release"
+mkdir -p "$release/$build/bin"
+for tool in ffmpeg ffprobe; do
+  printf '#!/bin/sh\necho "%s version 0.0-test Copyright"\n' "$tool" >"$release/$build/bin/$tool"
+  chmod +x "$release/$build/bin/$tool"
+done
+tar -cJf "$release/$build.tar.xz" -C "$release" "$build"
+(cd "$release" && sha256sum "$build.tar.xz" >checksums.sha256)
+
+tools="$TMP/tools"
+# The "missing" checks need a host without ffmpeg on the bare PATH (true on kwanz-ws and macOS).
+if [ -z "$(PATH="$BARE_PATH:/usr/local/bin" command -v ffmpeg || true)" ]; then
+  missing_out="$(PATH="$BARE_PATH" VSS_MEDIA_TOOLS_DIR="$tools" bash "$MEDIA" check || true)"
+  assert_contains "$missing_out" "^ffmpeg MISSING" "check reports a missing ffmpeg"
+  assert_contains "$missing_out" "^ffprobe MISSING" "check reports a missing ffprobe"
+  status_missing="$(PATH="$BARE_PATH" HOME="$TMP/home" VSS_MEDIA_TOOLS_DIR="$tools" bash "$SUT" status)"
+  assert_contains "$status_missing" "ffmpeg MISSING" "status reports a missing ffmpeg"
+else
+  echo "NOTE: ffmpeg is on this host's system PATH; the missing-tool checks do not apply here"
+fi
+
+install_out="$(PATH="$BARE_PATH" VSS_MEDIA_TOOLS_DIR="$tools" VSS_MEDIA_TOOLS_PLATFORM=Linux-x86_64 \
+  VSS_FFMPEG_BUILD="$build" VSS_FFMPEG_BASE_URL="file://$release" bash "$MEDIA" install 2>&1)"
+assert_contains "$install_out" "ffprobe $tools/bin/ffprobe 0.0-test" "install puts a verified build in the tools dir"
+assert_eq "0" "$(find "$tools" -maxdepth 1 -name '.install.*' | wc -l | tr -d ' ')" "install removes its scratch dir"
+
+status_out="$(PATH="$BARE_PATH" VSS_MEDIA_TOOLS_DIR="$tools" bash "$SUT" status)"
+assert_contains "$status_out" "ffmpeg $tools/bin/ffmpeg 0.0-test" "status reports the tools-dir ffmpeg and its version"
+porcelain_tools="$(VSS_MEDIA_TOOLS_DIR="$tools" bash "$SUT" status --porcelain | grep -c . || true)"
+assert_eq "1" "$porcelain_tools" "porcelain status stays one line per service"
+
+again_out="$(PATH="$BARE_PATH" VSS_MEDIA_TOOLS_DIR="$tools" VSS_MEDIA_TOOLS_PLATFORM=Linux-x86_64 \
+  VSS_FFMPEG_BUILD="$build" VSS_FFMPEG_BASE_URL="file://$TMP/no-such-release" bash "$MEDIA" install 2>&1)"
+assert_contains "$again_out" "already available" "install is a no-op when both are present"
+
+bad_release="$TMP/bad-release"
+mkdir -p "$bad_release"
+cp "$release/$build.tar.xz" "$bad_release/"
+echo "0000  $build.tar.xz" >"$bad_release/checksums.sha256"
+bad_tools="$TMP/bad-tools"
+bad_rc=0
+bad_out="$(PATH="$BARE_PATH" VSS_MEDIA_TOOLS_DIR="$bad_tools" VSS_MEDIA_TOOLS_PLATFORM=Linux-x86_64 \
+  VSS_FFMPEG_BUILD="$build" VSS_FFMPEG_BASE_URL="file://$bad_release" bash "$MEDIA" install 2>&1)" || bad_rc=$?
+assert_eq "1" "$bad_rc" "install fails on a checksum mismatch"
+assert_contains "$bad_out" "checksum mismatch" "install names the checksum mismatch"
+assert_eq "no" "$([ -e "$bad_tools/bin/ffmpeg" ] && echo yes || echo no)" "a mismatched build is never installed"
+
+platform_rc=0
+PATH="$BARE_PATH" VSS_MEDIA_TOOLS_DIR="$TMP/mac-tools" VSS_MEDIA_TOOLS_PLATFORM=Darwin-arm64 bash "$MEDIA" install >/dev/null 2>&1 || platform_rc=$?
+assert_eq "1" "$platform_rc" "install refuses a platform with no static build"
 
 echo ""
 echo "=== Summary ==="
