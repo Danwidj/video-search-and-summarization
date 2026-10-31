@@ -46,6 +46,7 @@ from vss_agents.tools.incident_report_gen import rp1_request_body
 from vss_agents.tools.incident_report_gen import run_p1
 from vss_agents.tools.incident_report_gen import run_rp1
 from vss_agents.utils import chunk_captions
+from vss_agents.utils import set_of_marks
 from vss_agents.utils import track_evidence
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
 
@@ -759,6 +760,161 @@ class TestTracking:
             set_crop_evidence_service(None)
         assert request.summary.skipped == "evidence cropping failed"
         assert entries and all(e["image"] is None for e in entries)
+
+
+MARKED_URL = "https://signed.example/scratch/analyze/uploads/a.mp4/run1-marks/marked.mp4?sig=1"
+
+
+class RecordingScratch:
+    """A scratch store that only records which prefixes were deleted."""
+
+    def __init__(self) -> None:
+        self.deleted: list[str] = []
+
+    async def delete_prefix(self, prefix: str) -> int:
+        self.deleted.append(prefix)
+        return 1
+
+
+class TestSetOfMarks:
+    """INCIDENT_SOM_ENABLED: P1 on the marked copy, marks parsed back, scratch always deleted."""
+
+    INPUT = TestTracking.INPUT.model_copy(update={"skip_rp1": True, "video_duration_seconds": 6.0})
+    TRACK = track_evidence.Track("4711", [track_evidence.Sample(2.0, (100, 100, 900, 500), 0.9)])
+
+    @pytest.fixture(autouse=True)
+    def _flags(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_TRACKING_ENABLED", "1")
+        monkeypatch.setenv("INCIDENT_SOM_ENABLED", "1")
+        monkeypatch.delenv("INCIDENT_CHUNKING_ENABLED", raising=False)
+        monkeypatch.delenv("INCIDENT_ALERTS_ENABLED", raising=False)
+
+    def _marked(self, url: str | None = MARKED_URL, skipped: str | None = None) -> set_of_marks.MarkedClip:
+        self.scratch = RecordingScratch()
+        return set_of_marks.MarkedClip(
+            url=url,
+            marks=set_of_marks.number_tracks([self.TRACK]),
+            outcome=track_evidence.TrackingOutcome(tracks=[self.TRACK], elapsed_ms=900.0),
+            skipped=skipped,
+            prefix="scratch/analyze/uploads/a.mp4/run1-marks/",
+            store=self.scratch,  # type: ignore[arg-type]
+        )
+
+    @staticmethod
+    def _p1(requests: list[dict], label: str = "person in a hood [1]", content: str | None = None):
+        output = json.loads(json.dumps(MODEL_OUTPUT))
+        output["entities"][0]["label"] = label
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST":
+                requests.append(json.loads(request.content))
+            return _completion(content if content is not None else json.dumps(output))
+
+        return handler
+
+    async def _run(self, handler, marked):
+        transport = httpx.MockTransport(handler)
+        real_client = httpx.AsyncClient
+
+        def client_factory(*args, **kwargs):
+            kwargs["transport"] = transport
+            return real_client(*args, **kwargs)
+
+        with (
+            patch("vss_agents.tools.incident_report_gen.httpx.AsyncClient", side_effect=client_factory),
+            patch.object(set_of_marks, "prepare_marks", new_callable=AsyncMock, return_value=marked) as prepare,
+            patch(
+                "vss_agents.tools.incident_report_gen.collect_evidence", new_callable=AsyncMock, return_value=[]
+            ) as collect,
+            patch(
+                "vss_agents.tools.incident_report_gen.persist_revision", new_callable=AsyncMock, return_value=7
+            ) as persist,
+        ):
+            async with incident_report_gen(_config(), MagicMock()) as function_info:
+                result = await function_info.single_fn(self.INPUT)
+        return result, persist, prepare, collect
+
+    @pytest.mark.asyncio
+    async def test_p1_sees_the_marked_copy_and_the_number_matches_the_track(self):
+        requests: list[dict] = []
+        result, persist, prepare, collect = await self._run(self._p1(requests), self._marked())
+        assert prepare.await_args.kwargs["video_key"] == "uploads/a.mp4"
+        assert prepare.await_args.kwargs["run_id"] == "run1"
+        assert prepare.await_args.args == (VIDEO_URL,)  # tracked from the original clip
+        (body,) = requests
+        assert body["messages"][0]["content"][0]["video_url"]["url"] == MARKED_URL
+        assert body["messages"][0]["content"][1]["text"] == incident_contract.extraction_prompt()
+        assert body["messages"][1] == {
+            "role": "user",
+            "content": set_of_marks.marks_context(set_of_marks.number_tracks([self.TRACK])),
+        }
+        assert body["response_format"] == incident_contract.response_format()
+        assert result.report["entities"][0]["label"] == "person in a hood"  # stripped before storing
+        assert persist.await_args.kwargs["report"]["entities"][0]["label"] == "person in a hood"
+        evidence_kwargs = collect.await_args.kwargs
+        assert evidence_kwargs["video_url"] == VIDEO_URL  # crops come from the original clip
+        assert evidence_kwargs["report"]["entities"][0]["label"] == "person in a hood"
+        tracking = evidence_kwargs["tracking"]
+        assert tracking.marked == {"E1": self.TRACK}
+        assert (await tracking.runner(VIDEO_URL, sensor_id=tracking.sensor_id)).tracks == [self.TRACK]  # reused
+        assert result.tracking["marks"] == {
+            "rendered": True,
+            "parsed": 0,  # counted by the evidence step, mocked here
+            "fallback": 0,
+            "invalid": 0,
+            "skipped": None,
+            "elapsed_ms": 0.0,
+        }
+        assert self.scratch.deleted == ["scratch/analyze/uploads/a.mp4/run1-marks/"]
+
+    @pytest.mark.parametrize("label", ["person in a hood", "person in a hood [9]"])
+    @pytest.mark.asyncio
+    async def test_a_missing_or_invalid_number_leaves_the_entity_to_the_fallback(self, label):
+        requests: list[dict] = []
+        result, _, _, collect = await self._run(self._p1(requests, label=label), self._marked())
+        assert collect.await_args.kwargs["tracking"].marked == {}
+        assert result.report["entities"][0]["label"] == "person in a hood"
+        assert result.tracking["marks"]["invalid"] == (1 if "[" in label else 0)
+
+    @pytest.mark.asyncio
+    async def test_a_render_or_upload_failure_runs_p1_on_the_original_clip(self):
+        requests: list[dict] = []
+        marked = self._marked(url=None, skipped="rendering the marked copy failed: RuntimeError: boom")
+        result, _, _, collect = await self._run(self._p1(requests), marked)
+        (body,) = requests
+        assert body["messages"][0]["content"][0]["video_url"]["url"] == VIDEO_URL and len(body["messages"]) == 1
+        assert result.tracking["marks"]["rendered"] is False
+        assert result.tracking["marks"]["skipped"].startswith("rendering the marked copy failed")
+        assert result.report["entities"][0]["label"] == "person in a hood [1]"  # nothing was asked, nothing stripped
+        assert collect.await_args.kwargs["tracking"].marked == {}
+
+    @pytest.mark.asyncio
+    async def test_the_scratch_copy_is_deleted_when_p1_fails(self):
+        requests: list[dict] = []
+        with pytest.raises(IncidentExtractionError):
+            await self._run(self._p1(requests, content="not json"), self._marked())
+        assert self.scratch.deleted == ["scratch/analyze/uploads/a.mp4/run1-marks/"]
+
+    @pytest.mark.asyncio
+    async def test_the_flag_off_runs_tracking_after_p1_exactly_as_before(self, monkeypatch):
+        monkeypatch.delenv("INCIDENT_SOM_ENABLED")
+        requests: list[dict] = []
+        result, _, prepare, collect = await self._run(self._p1(requests), self._marked())
+        prepare.assert_not_awaited()
+        (body,) = requests
+        assert body["messages"][0]["content"][0]["video_url"]["url"] == VIDEO_URL and len(body["messages"]) == 1
+        assert "marks" not in result.tracking
+        assert result.report["entities"][0]["label"] == "person in a hood [1]"
+        tracking = collect.await_args.kwargs["tracking"]
+        assert tracking.marked == {} and tracking.runner is track_evidence.run_tracking
+
+    @pytest.mark.asyncio
+    async def test_the_flag_needs_tracking(self, monkeypatch):
+        monkeypatch.delenv("INCIDENT_TRACKING_ENABLED")
+        requests: list[dict] = []
+        result, _, prepare, _ = await self._run(self._p1(requests), self._marked())
+        prepare.assert_not_awaited()
+        assert result.tracking is None and len(requests[0]["messages"]) == 1
 
 
 CAPTIONS = chunk_captions.ChunkCaptions(

@@ -51,6 +51,11 @@ Runs the same calls as ``incident-console-v2`` (gateway mode, P1 only) and the `
    With ``INCIDENT_TRACKING_ENABLED`` set, a production request also pushes the clip through the stock VSS
    perception stack (``track_evidence``) and re-cuts each entity it matches to a person track at the track's best
    moment; the response carries a ``tracking`` summary and a tracking failure never fails the analysis.
+   With ``INCIDENT_SOM_ENABLED`` set as well (set-of-marks prompting, ``utils/set_of_marks.py``), tracking runs
+   before P1 instead: P1 sees a scratch copy of the clip with a numbered box on each person track and one more
+   context message asking for the number in each person entity's label, and the entities are matched to tracks by
+   that number first (box overlap for the rest). The number is stripped from the stored labels, the evidence is
+   cut from the original clip, and a failure to render or upload the copy runs P1 on the original clip.
 4. **Revision** - the validated report is appended best-effort as a new ``kind='ai'``
    ``report_revisions`` row (``payload`` = report, ``evidence`` = step 3, facet columns,
    ``parent_id`` NULL). A re-generation is a new branch and copies nothing from earlier revisions.
@@ -62,6 +67,7 @@ standalone call (no ``model_run_id``) registers ``config.model_run_id`` itself. 
 belongs to the console, which owns the durable R2 key, so this tool never writes it.
 """
 
+import asyncio
 from collections.abc import AsyncGenerator
 import logging
 import os
@@ -90,6 +96,7 @@ from vss_agents.utils import chunk_alerts
 from vss_agents.utils import chunk_captions
 from vss_agents.utils import crop_evidence
 from vss_agents.utils import incident_db
+from vss_agents.utils import set_of_marks
 from vss_agents.utils import track_evidence
 from vss_agents.utils import video_duration
 from vss_agents.utils.embeddings import RemoteTextEmbedder
@@ -297,7 +304,8 @@ class IncidentReportGenOutput(BaseModel):
         default=None,
         description=(
             "Person tracking (INCIDENT_TRACKING_ENABLED, production requests only): {enabled, matched, tracks, "
-            "elapsed_ms, skipped}. Null when tracking is off or the request is experimental."
+            "elapsed_ms, skipped}, plus marks {rendered, parsed, fallback, invalid, skipped, elapsed_ms} when "
+            "INCIDENT_SOM_ENABLED is on. Null when tracking is off or the request is experimental."
         ),
     )
 
@@ -335,11 +343,13 @@ def p1_request_body(
     reviewer_prompt: str | None = None,
     prompt_text: str | None = None,
     context_block: str | None = None,
+    marks_block: str | None = None,
 ) -> dict[str, Any]:
     """The P1 request. ``prompt_text`` (a verified registry prompt) replaces only the prompt text.
 
     ``context_block`` (the caption pass's timed captions) is one more user message after the video message,
-    so the stored prompt text and the request settings stay exactly the contract's.
+    so the stored prompt text and the request settings stay exactly the contract's. ``marks_block`` (set-of-marks
+    prompting) is added the same way, after it.
     """
     content: list[dict[str, Any]] = [
         {"type": "video_url", "video_url": {"url": video_url}},
@@ -350,6 +360,8 @@ def p1_request_body(
     messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
     if context_block:
         messages.append({"role": "user", "content": context_block})
+    if marks_block:
+        messages.append({"role": "user", "content": marks_block})
     return {
         "model": model,
         "messages": messages,
@@ -406,18 +418,20 @@ async def run_p1(
     prompt_text: str | None = None,
     telemetry: dict[str, Any] | None = None,
     context_block: str | None = None,
+    marks_block: str | None = None,
 ) -> tuple[dict[str, Any], str, str | None]:
     """One P1 call parsed strictly. Returns ``(report, raw_content, finish_reason)``.
 
     With ``video_duration_seconds`` the video-bounds rules apply; without it they cannot.
     ``telemetry``, when given, receives ``p1_elapsed_ms`` (the HTTP round trip) and ``usage``.
-    ``context_block`` is the caption pass's context message (see :func:`p1_request_body`).
+    ``context_block`` is the caption pass's context message and ``marks_block`` the set-of-marks one (see
+    :func:`p1_request_body`).
     """
     model_name = model or config.vlm_model_name
     started = time.perf_counter()
     response = await client.post(
         _chat_completions_url(config.vlm_base_url),
-        json=p1_request_body(model_name, video_url, reviewer_prompt, prompt_text, context_block),
+        json=p1_request_body(model_name, video_url, reviewer_prompt, prompt_text, context_block, marks_block),
     )
     if telemetry is not None:
         telemetry["p1_elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
@@ -719,6 +733,29 @@ async def run_alert_pass(
     return result
 
 
+async def run_marks_pass(
+    tool_input: IncidentReportGenInput, tracking: track_evidence.TrackingRequest | None
+) -> set_of_marks.MarkedClip | None:
+    """Set-of-marks preparation of a production request. Never raises.
+
+    ``None`` when tracking is off or ``INCIDENT_SOM_ENABLED`` is not set (P1 then runs exactly as before).
+    Otherwise the marked copy, or why there is none; the tracking run it made is reused by the evidence step, and
+    ``tracking.summary.marks`` starts its record.
+    """
+    if tracking is None or not set_of_marks.som_enabled():
+        return None
+    marked = await set_of_marks.prepare_marks(
+        tool_input.video_url,
+        video_key=tool_input.video_key or tool_input.incident_id,
+        run_id=tool_input.model_run_id or uuid.uuid4().hex[:12],
+        tracking=tracking,
+    )
+    if marked.outcome is not None:
+        tracking.reuse(marked.outcome)
+    tracking.summary.marks = marked.telemetry()
+    return marked
+
+
 def experiment_settings(tool_input: IncidentReportGenInput, reviewer_prompt: str | None) -> dict[str, Any] | None:
     """``None`` for a production request; for an experimental one, what it uses, after every gate.
 
@@ -777,24 +814,30 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             )
         api_key = os.environ.get(config.api_key_env, "")
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        # Only production requests track; experiments (skip_crops included) never do.
+        tracking = tracking_request(tool_input) if experiment is None and track_evidence.tracking_enabled() else None
         async with httpx.AsyncClient(timeout=config.request_timeout_seconds, headers=headers) as client:
-            captions = (
-                None
-                if experiment is not None
-                else await run_caption_pass(client, config, tool_input, model_name, video_length.seconds)
-            )
+            captions: chunk_captions.ChunkCaptions | None = None
+            marked: set_of_marks.MarkedClip | None = None
+            if experiment is None:
+                captions, marked = await asyncio.gather(
+                    run_caption_pass(client, config, tool_input, model_name, video_length.seconds),
+                    run_marks_pass(tool_input, tracking),
+                )
             alerts = None if experiment is not None else await run_alert_pass(client, config, tool_input, captions)
+            marked_url = marked.url if marked is not None else None
             try:
                 report, raw_output, finish_reason, p1_attempts = await run_p1_with_retry(
                     client,
                     config,
-                    tool_input.video_url,
+                    SignedUrl(marked_url) if marked_url else tool_input.video_url,
                     model=model_name,
                     reviewer_prompt=reviewer_prompt,
                     video_duration_seconds=video_length.seconds,
                     prompt_text=prompt_text,
                     telemetry=telemetry,
                     context_block=captions.context if captions else None,
+                    marks_block=set_of_marks.marks_context(marked.marks) if marked is not None and marked_url else None,
                 )
             except IncidentExtractionError as exc:
                 if experiment is not None:  # the caller must still see which prompt produced the rejected output
@@ -803,11 +846,15 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 raise
             except httpx.TimeoutException as exc:
                 raise TimeoutError(f"P1 call timed out after {config.request_timeout_seconds}s") from exc
+            finally:
+                await set_of_marks.cleanup_marks(marked)
+            if marked is not None and marked_url and tracking is not None and tracking.summary.marks is not None:
+                # Before RP1 and the evidence step, so neither the prose nor the stored labels carry the number.
+                tracking.marked, tracking.summary.marks["invalid"] = set_of_marks.apply_marks(report, marked.marks)
             report_text, report_text_error = (
                 (None, None) if tool_input.skip_rp1 else await run_rp1(client, config, report)
             )
 
-        tracking: track_evidence.TrackingRequest | None = None
         if tool_input.skip_crops:
             # No crop means no located item, so the zoomed second look is off as well.
             evidence = crop_evidence.blank_evidence_entries(
@@ -833,7 +880,6 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             experiment["evidence_store"] = EXPERIMENT_EVIDENCE_STORE
             experiment["crop"] = crop_telemetry(evidence, budget, time.perf_counter() - crop_started)
         else:
-            tracking = tracking_request(tool_input) if track_evidence.tracking_enabled() else None
             evidence = await collect_evidence(
                 video_url=tool_input.video_url,
                 incident_id=tool_input.incident_id,
