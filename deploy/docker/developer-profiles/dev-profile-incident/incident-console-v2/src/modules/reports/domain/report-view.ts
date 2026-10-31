@@ -85,36 +85,11 @@ export interface StructuredAsset extends ItemDetails {
   description: string;
 }
 
-export interface TimelineEvent {
-  startSeconds: number;
-  endSeconds: number | null;
-  description: string;
-  /** Inside the model's own incident window. Events outside it are model context, never incident timestamps. */
-  insideWindow: boolean;
-  /** False only when the start is outside the video itself (known length); jumping there would be meaningless. */
-  seekable: boolean;
-}
-
-/**
- * The timeline is unscored best-effort model output (validation policy
- * core-scored-v1). Its consistency checks decide how it is presented, never
- * whether the report is valid; the events themselves are never altered.
- */
-export interface TimelineCheck {
-  consistentWithWindow: boolean;
-  /** Timeline violation codes, e.g. TIMELINE_START_OUTSIDE_WINDOW. */
-  codes: string[];
-  videoDurationSeconds: number | null;
-}
-
 export interface ModelOutput {
   source: 'contract' | 'legacy';
   title: string | null;
   location: string | null;
   severityReason: string | null;
-  timeline: TimelineEvent[];
-  timelineCheck: TimelineCheck;
-  uncertainties: string[];
   /** The model's own structured values, for comparison with the (possibly edited) projection. */
   original: {
     type: string | null;
