@@ -2,6 +2,34 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-31: Dashboard chart requests: a model picks an allowlisted spec, our code fetches the figures, and VSS `chart_generator` draws them
+- **Research (what NVIDIA VSS offers):** no natural-language analytics over a relational database, but a drawing service worth reusing.
+  - `chart_generator` draws bar and pie images with matplotlib from numbers its caller passes in. It reads no data, so whoever calls it supplies the figures.
+  - `get_fov_counts_with_chart` charts one sensor's object counts from the video-analytics API.
+  - `multi_report_agent` with `multi_incident_formatter` charts incidents fetched from video analytics, and is enabled only in the `warehouse-operations` and `smartcities` industry configs.
+  - `va_retrieval` (`tools/incidents.py`) runs a model-written SQL string on an in-process DuckDB `incidents` table loaded from a bucket.
+  - `top_agent` is a conversational loop with `max_history`, the opposite of one input and one output.
+  - NVIDIA's overview and agent pages describe no text-to-SQL and no charting over a user's own database.
+- **Decision (captain, 2026-10-31):** one request, one static image at the bottom of the dashboard (`POST /api/dashboard/chart {request, chartType, timezone}`; a new request replaces the result, and no history exists to send).
+  - **The user** picks bar or pie.
+  - **The model** (`CHART_MODEL`, through `vlm-gateway`) sees only a prompt built from the allowlist plus that request. Its reply counts only if it parses as a strict Zod `ChartSpec` (`modules/dashboard/domain/chart-spec.ts`): metric, dimension, period, incident type and severity, each from a fixed list. Anything else, including an extra key, is a plain "Can't chart that".
+  - **Our code** runs `DashboardRepository.getDashboard` and builds the rows, title and labels from the allowlist. No model text reaches the database, the image or the screen, and the model never sees a figure.
+  - **`chart_generator`** draws those figures through a new agent route, `POST /api/v1/incidents/charts`. The console reads the PNG from `/static/`, deletes it from the agent's in-memory store and returns it inside its response, so the browser never talks to the agent, and a per-request name means two people cannot swap images. The tool now closes each figure; it used to keep one in memory per chart.
+  - **Official and not official:** the counting rule and `DashboardQuery.scope` come from the dashboard fix. A bar chart shows both beside each other, from one `getDashboard` per scope (assets from the per-asset figures the query already returns). A pie has no second series, so it carries the totals in a caption, and `report_status` is a chart of its own. Top instruments stay one series, because the query cuts that list to eight per scope, so a name could read as a false 0; analysis attempts are not reports.
+  - **Pie only for a true whole:** type, severity, status, report version and analysis outcome. Anything else answers "that one needs a bar chart". The severity split is gone: `chart_generator` groups bars rather than stacking them, so two splits would crowd the chart.
+  - **Time** is the report date, as on the dashboard. The weekday and hour charts say they show when reports were generated; a question about when incidents happened is refused. A trend past 31 bars moves to weeks, then months, and says so, because the tool labels every bar.
+  - **`start.sh --mode vm` starts the local gateway too,** only for this. A laptop without `uv` or its link still starts, and a missing `VLM_GATEWAY_API_KEY` shows as a chart error, never a degraded health check.
+- **Why:** the requirement is real figures only, and a spec from a closed list makes that structural rather than a prompt instruction. The captain chose the VSS service for drawing and accepted static images and its default colours.
+- **Alternatives rejected:**
+  - *`top_agent` or `va_retrieval`:* see above.
+  - *Text-to-SQL:* the model would write what reaches the database.
+  - *NAT's `front_end.endpoints` for `chart_generator`:* NAT checks the result with `isinstance(result, list[...])`, which Python refuses, after the tool has drawn. So a small route calls the unchanged tool, as `/analyze` does.
+  - *Allowlist and prompt in the agent:* they would live in both TypeScript and Python.
+  - *The console calling Switchyard itself:* the console would hold a model key, which the gateway owns.
+  - *Recharts in the console (the first version of this feature):* the captain chose the VSS service.
+  - *`LLM_NAME` for the model:* laptop settings can hold the template placeholder `<your-model-id>`.
+- **Open:** see [status action item 12](status.md#5-action-items).
+- **Links:** [`../incident-console-v2/src/modules/dashboard/domain/chart-spec.ts`](../incident-console-v2/src/modules/dashboard/domain/chart-spec.ts), [`../incident-console-v2/src/modules/dashboard/application/generate-chart/index.ts`](../incident-console-v2/src/modules/dashboard/application/generate-chart/index.ts), [`../../../../services/agent/src/vss_agents/api/incident_charts.py`](../../../../services/agent/src/vss_agents/api/incident_charts.py), [vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentscharts).
 ### 2026-10-31: The dashboard counts official, else newest, and shows six fixed displays with the official split
 - **Decision:** `get_incident_dashboard` counts each video once through `searchable_revision_id` (official, else newest) and returns the official and not-yet-official split. This replaces decision D6 (official reports only; others never put in a category). Counting a report never marks it official: `videos.official_revision_id` is only read. The fixed page is Total reports, Incidents over time, Incidents by type, Severity breakdown, Top targeted assets, and Activity by day and hour, each showing the split. `DashboardRepository` takes a `scope` (`all`, `official`, `not_official`) so natural-language charts reuse the rule. The RPC's `p_scope` defaults to `official`, so a console from before this change, which labels its numbers official, keeps showing only official reports; the current console always sends it.
 - **Why:** finals has 0 official revisions, so official-only counting left the dashboard empty. A read-only test changing only that join matched `/library` on total, severity, kind and period. The captain chose the rule, the split and the six displays.

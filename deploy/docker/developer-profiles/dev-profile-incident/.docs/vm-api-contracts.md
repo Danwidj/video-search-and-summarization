@@ -121,6 +121,14 @@ Searches saved report revisions by their summary embedding. The route embeds `qu
 
 Request: `{"query": <1-1000 chars>, "top_k": <1-50, default 10>, "min_similarity": <-1.0 to 1.0, default 0.0>}`. Response `200`: a list, best first, of `{revision_id, video_id, revision_no, kind, model_run_id, title, description, incident_type, severity_level, start_seconds, end_seconds, similarity_score}`; empty when nothing matches. Errors: `422` invalid body, `502` embedding service failed, `503` database or query embedding key not configured.
 
+## `POST /api/v1/incidents/charts`
+
+Draws the figures it is given with the `chart_generator` tool. The dashboard's chart requests call it from the console server; the route chooses and computes nothing. It needs `chart_generator` in the agent's config (`dev-profile-base/vss-agent/configs/config.yml`). The mock has no such route, so chart requests show an error there.
+
+Request: `{"charts_data": [<bar or pie>], "output_dir": "<dir>", "file_prefix": "<prefix>"}`. A bar is `{"title", "chart_file_format": "png", "x_categories": [...], "series": {"<name>": [...]}, "x_label", "y_label"}`; a pie is `{"title", "chart_file_format": "png", "sizes": [...], "labels": [...]}`.
+
+Response `200`: one entry per chart, `{"success", "error_message", "object_store_key"}`. `GET /static/<object_store_key>` returns the image and `DELETE` the same path removes it. The store is in memory, so images do not survive an agent restart. `422` for a body that does not validate, `501` when the profile does not configure the tool, `500` when it fails.
+
 ## `POST /api/v1/incidents/{incident_id}/analyze`
 
 Runs the `incident_report_gen` tool (P1 extraction, then RP1 prose report) on an uploaded video. Called by `incident-console-v2` in agent mode; `incident_id` is the console's `videos.id`. Field-level report schema: [analysis-schema.md](analysis-schema.md).
