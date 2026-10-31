@@ -3,11 +3,21 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, Bar, BarChart, Cell, CartesianGrid, LabelList, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
 import { href, type Filters, type LinkFilters, type Range } from '@/modules/dashboard/domain/links';
-import { assetRows, dashboardView, delta, formatDay, severityRows, type SplitRow, typeRows } from '@/modules/dashboard/domain/charts';
+import {
+  assetRows,
+  dashboardView,
+  delta,
+  formatDay,
+  SEVERITY_LABELS,
+  severityRows,
+  type SplitRow,
+  typeRows,
+} from '@/modules/dashboard/domain/charts';
 import { getViewerTimeZone } from '@/lib/time';
+import { severityChartColor } from '@/lib/ui/severity';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -36,6 +46,12 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const splitConfig = {
   official: { label: 'Official', color: 'var(--chart-1)' },
   notOfficial: { label: 'Not yet official', color: 'var(--chart-3)' },
+} satisfies ChartConfig;
+
+const severityConfig = {
+  high: { label: SEVERITY_LABELS.high, color: severityChartColor.high },
+  medium: { label: SEVERITY_LABELS.medium, color: severityChartColor.medium },
+  low: { label: SEVERITY_LABELS.low, color: severityChartColor.low },
 } satisfies ChartConfig;
 
 export function Dashboard() {
@@ -208,17 +224,17 @@ export function Dashboard() {
               'h-40',
             )}
           </Panel>
-          <Panel className="xl:col-span-4" title="Severity breakdown" subtitle="Select a severity to filter this page">
+          <Panel className="xl:col-span-4" title="Severity breakdown" subtitle="Select a band to filter this page">
             {panel(
               (d) => (
-                <SplitBars
+                <SeverityDonut
                   emptyText={emptyText}
                   onSelect={(row) => toggle('severity', row.key)}
                   rows={d.total ? severityRows(d) : []}
                   selected={filters.severity}
                 />
               ),
-              'h-40',
+              'h-48',
             )}
           </Panel>
           <Panel className="lg:col-span-2 xl:col-span-4" title="Top targeted assets" subtitle="Reports per asset (exact name)">
@@ -332,67 +348,48 @@ function Trend({ points, emptyText }: { points: DashboardAnalytics['trend']; emp
   if (!points.some((x) => x.count)) return <NoData text={emptyText} />;
   return (
     <ChartContainer config={splitConfig} className="aspect-auto h-56 w-full">
-      <BarChart accessibilityLayer data={points} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
+      <AreaChart accessibilityLayer data={points} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
         <CartesianGrid vertical={false} />
         <XAxis axisLine={false} dataKey="date" minTickGap={28} tickFormatter={formatDay} tickLine={false} tickMargin={8} />
         <YAxis allowDecimals={false} axisLine={false} tickLine={false} width={28} />
         <ChartTooltip content={<ChartTooltipContent labelFormatter={(value) => formatDay(String(value))} />} cursor={false} />
         <ChartLegend content={<ChartLegendContent />} itemSorter={null} />
-        <Bar dataKey="official" fill="var(--color-official)" isAnimationActive={false} stackId="split" />
-        <Bar dataKey="notOfficial" fill="var(--color-notOfficial)" isAnimationActive={false} radius={[4, 4, 0, 0]} stackId="split" />
-      </BarChart>
+        <Area
+          dataKey="official"
+          fill="var(--color-official)"
+          fillOpacity={0.35}
+          isAnimationActive={false}
+          stackId="split"
+          stroke="var(--color-official)"
+          strokeWidth={2}
+          type="monotone"
+        />
+        <Area
+          dataKey="notOfficial"
+          fill="var(--color-notOfficial)"
+          fillOpacity={0.35}
+          isAnimationActive={false}
+          stackId="split"
+          stroke="var(--color-notOfficial)"
+          strokeWidth={2}
+          type="monotone"
+        />
+      </AreaChart>
     </ChartContainer>
   );
 }
 
 const MAX_TICK_LENGTH = 18;
 
-function RowTick({
-  x = 0,
-  y = 0,
-  row,
-  href: url,
-  onSelect,
-  selected,
-}: {
-  x?: number;
-  y?: number;
-  row: SplitRow;
-  href?: string;
-  onSelect?: (row: SplitRow) => void;
-  selected?: boolean;
-}) {
+function RowTick({ x = 0, y = 0, row, href: url }: { x?: number; y?: number; row: SplitRow; href: string }) {
   const shown = row.label.length > MAX_TICK_LENGTH ? `${row.label.slice(0, MAX_TICK_LENGTH - 1)}…` : row.label;
-  const text = (
-    <text className={cn('fill-ink text-xs capitalize', selected && 'font-semibold')} dy={4} textAnchor="end" x={x} y={y}>
-      <title>{row.label}</title>
-      {shown}
-    </text>
-  );
-  if (url) {
-    return (
-      <Link aria-label={`${row.label}: ${row.total} reports`} className="hover:underline" href={url}>
-        {text}
-      </Link>
-    );
-  }
   return (
-    // biome-ignore lint/a11y/useSemanticElements: an SVG tick cannot hold a button element.
-    <g
-      aria-label={`${row.label}: ${row.total} reports`}
-      aria-pressed={selected}
-      className="cursor-pointer hover:underline"
-      onClick={() => onSelect?.(row)}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        onSelect?.(row);
-      }}
-      role="button"
-      tabIndex={0}
-    >
-      {text}
-    </g>
+    <Link aria-label={`${row.label}: ${row.total} reports`} className="hover:underline" href={url}>
+      <text className="fill-ink text-xs capitalize" dy={4} textAnchor="end" x={x} y={y}>
+        <title>{row.label}</title>
+        {shown}
+      </text>
+    </Link>
   );
 }
 
@@ -400,28 +397,14 @@ const ROW_HEIGHT = 40;
 const LEGEND_HEIGHT = 36;
 const LABEL_ANCHOR = 1e-6;
 
-/** Rows of official and not-yet-official bars. A row opens its reports (hrefFor) or filters the page (onSelect). */
-function SplitBars({
-  rows,
-  emptyText,
-  hrefFor,
-  onSelect,
-  selected,
-}: {
-  rows: SplitRow[];
-  emptyText: string;
-  hrefFor?: (row: SplitRow) => string;
-  onSelect?: (row: SplitRow) => void;
-  selected?: string;
-}) {
+/** Rows of official and not-yet-official bars. Each row opens its reports. */
+function SplitBars({ rows, emptyText, hrefFor }: { rows: SplitRow[]; emptyText: string; hrefFor: (row: SplitRow) => string }) {
   const router = useRouter();
   if (!rows.length) return <NoData text={emptyText} />;
   const byLabel = new Map(rows.map((row) => [row.label, row]));
   const activate = (index: number) => {
     const row = rows[index];
-    if (!row) return;
-    if (hrefFor) router.push(hrefFor(row));
-    else onSelect?.(row);
+    if (row) router.push(hrefFor(row));
   };
   return (
     <ChartContainer config={splitConfig} className="aspect-auto w-full" style={{ height: rows.length * ROW_HEIGHT + LEGEND_HEIGHT }}>
@@ -433,16 +416,7 @@ function SplitBars({
           tick={(props) => {
             const row = byLabel.get(String(props.payload?.value));
             if (!row) return <g />;
-            return (
-              <RowTick
-                href={hrefFor?.(row)}
-                onSelect={onSelect}
-                row={row}
-                selected={selected === row.key}
-                x={Number(props.x)}
-                y={Number(props.y)}
-              />
-            );
+            return <RowTick href={hrefFor(row)} row={row} x={Number(props.x)} y={Number(props.y)} />;
           }}
           tickLine={false}
           type="category"
@@ -473,6 +447,87 @@ function SplitBars({
         </Bar>
       </BarChart>
     </ChartContainer>
+  );
+}
+
+/**
+ * Severity bands as a donut, with each band's exact official and not-yet-official counts beside it. The list is the
+ * accessible control: each band is a button that filters the page, so no slice has to be hit by a pointer.
+ */
+function SeverityDonut({
+  rows,
+  emptyText,
+  selected,
+  onSelect,
+}: {
+  rows: SplitRow[];
+  emptyText: string;
+  selected: string;
+  onSelect: (row: SplitRow) => void;
+}) {
+  if (!rows.length) return <NoData text={emptyText} />;
+  const total = rows.reduce((sum, row) => sum + row.total, 0);
+  const summary = rows.map((row) => `${row.label} ${row.total}`).join(', ');
+  return (
+    <div className="flex flex-col gap-5 sm:flex-row sm:items-center xl:flex-col">
+      <div aria-label={`Severity of ${total} reports: ${summary}`} className="relative mx-auto size-40 shrink-0" role="img">
+        <ChartContainer config={severityConfig} className="aspect-square size-full">
+          <PieChart>
+            <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+            <Pie
+              cursor="default"
+              data={rows}
+              dataKey="total"
+              innerRadius="62%"
+              isAnimationActive={false}
+              nameKey="key"
+              outerRadius="96%"
+              stroke="#fff"
+              strokeWidth={2}
+            >
+              {rows.map((row) => (
+                <Cell fill={severityChartColor[row.key as keyof typeof severityChartColor]} key={row.key} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ChartContainer>
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-2xl font-semibold text-ink">{total}</span>
+          <span className="text-xs text-ink-caption">reports</span>
+        </div>
+      </div>
+      <ul className="grid min-w-0 flex-1 gap-1">
+        {rows.map((row) => {
+          const pressed = selected === row.key;
+          return (
+            <li key={row.key}>
+              <button
+                aria-pressed={pressed}
+                className={cn(
+                  'flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  pressed && 'bg-ink/5 ring-1 ring-ink/20',
+                )}
+                onClick={() => onSelect(row)}
+                type="button"
+              >
+                <span
+                  aria-hidden="true"
+                  className="size-3 shrink-0 rounded-xs"
+                  style={{ background: severityChartColor[row.key as keyof typeof severityChartColor] }}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-ink">{row.label}</span>
+                  <span className="block text-xs text-ink-caption">
+                    Official {row.official} · Not yet official {row.notOfficial}
+                  </span>
+                </span>
+                <span className="text-lg font-semibold tabular-nums text-ink">{row.total}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
