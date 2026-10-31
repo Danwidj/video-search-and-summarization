@@ -4,40 +4,13 @@
 // Its input is the translated RevisionRecord (lib/ports/incidents.ts); the
 // Supabase rows are mapped by lib/adapters/supabase/mappers/report.ts.
 
-import { timestampWithinVideo } from '@/modules/contract/domain/validate';
 import { runBlurredFaces } from '@/modules/reports/domain/privacy-blur';
 import type { RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
 import { canonicalIncidentType, parseTimestamp } from '@/modules/reports/domain/normalize';
-import type { ModelOutput, ReportView, RunDetails, TimelineCheck, TimelineEvent } from '@/modules/reports/domain/report-view';
+import type { ModelOutput, ReportView, RunDetails } from '@/modules/reports/domain/report-view';
 
 export { reportHeading } from '@/modules/reports/domain/report-view';
 export type { ReportView } from '@/modules/reports/domain/report-view';
-
-type RawEvent = { startSeconds: number; endSeconds: number | null; description: string };
-
-/** Presentation flags for the model's timeline; the events are passed through unaltered. */
-function timelineView(
-  events: RawEvent[],
-  windowStart: number | null,
-  windowEnd: number | null,
-  videoDurationSeconds: number | null,
-): TimelineEvent[] {
-  return events.map((event) => ({
-    ...event,
-    // Without a known window nothing can be called outside it.
-    insideWindow:
-      windowStart === null ||
-      windowEnd === null ||
-      (event.startSeconds >= windowStart &&
-        event.startSeconds <= windowEnd &&
-        (event.endSeconds === null || (event.endSeconds >= event.startSeconds && event.endSeconds <= windowEnd))),
-    seekable: videoDurationSeconds === null ? event.startSeconds >= 0 : timestampWithinVideo(event.startSeconds, videoDurationSeconds),
-  }));
-}
-
-function timelineCodes(codes: string[]): string[] {
-  return [...new Set(codes.filter((code) => code.startsWith('TIMELINE_')))];
-}
 
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value : null);
 
@@ -55,26 +28,11 @@ export function toReportView(record: RevisionRecord, playbackUrl: string): Repor
   let modelOutput: ModelOutput | null = null;
   if (notes.kind === 'contract') {
     const { report } = notes;
-    const videoDurationSeconds = typeof notes.request.videoDurationSeconds === 'number' ? notes.request.videoDurationSeconds : null;
-    const codes = timelineCodes(notes.enrichment.map((violation) => violation.code));
-    const timelineCheck: TimelineCheck = { consistentWithWindow: codes.length === 0, codes, videoDurationSeconds };
     modelOutput = {
       source: 'contract',
       title: report.incident.title,
       location: report.incident.location,
       severityReason: report.incident.severity_reason,
-      timeline: timelineView(
-        report.timeline.map((event) => ({
-          startSeconds: event.start_seconds,
-          endSeconds: event.end_seconds,
-          description: event.description,
-        })),
-        report.incident.start_timestamp,
-        report.incident.end_timestamp,
-        videoDurationSeconds,
-      ),
-      timelineCheck,
-      uncertainties: [...report.uncertainties],
       original: {
         type: report.incident.type,
         severityLevel: report.incident.severity_level,
@@ -85,21 +43,11 @@ export function toReportView(record: RevisionRecord, playbackUrl: string): Repor
     };
   } else if (notes.kind === 'legacy') {
     const { report } = notes;
-    const events = report.timeline.map((event) => ({
-      startSeconds: Math.floor(event.start_seconds),
-      endSeconds: event.end_seconds === null ? null : Math.floor(event.end_seconds),
-      description: event.description,
-    }));
     modelOutput = {
       source: 'legacy',
       title: text(report.title),
       location: text(report.location),
       severityReason: text(report.severity_reason),
-      // Legacy reports predate the contract and its timeline rule, and their
-      // parser defaults a missing window to 0:00, so no window judgement is made.
-      timeline: timelineView(events, null, null, null),
-      timelineCheck: { consistentWithWindow: true, codes: [], videoDurationSeconds: null },
-      uncertainties: [...report.uncertainties],
       original: {
         type: canonicalIncidentType(report.incident_type),
         severityLevel: report.severity,

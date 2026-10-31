@@ -50,8 +50,11 @@ test('contract-v2 smoke run: Class A from rows, Class B from notes, Class C from
   assert.equal(view.modelOutput.title, notes.report.incident.title);
   assert.equal(view.modelOutput.severityReason, notes.report.incident.severity_reason);
   assert.equal(view.modelOutput.location, notes.report.incident.location);
-  assert.equal(view.modelOutput.timeline.length, notes.report.timeline.length);
-  assert.deepEqual(view.modelOutput.uncertainties, notes.report.uncertainties);
+  assert.ok(
+    !('timeline' in view.modelOutput) && !('uncertainties' in view.modelOutput),
+    'the model timeline and uncertainties are not part of the view',
+  );
+  assert.deepEqual(view.run.originalReport.timeline, notes.report.timeline, 'the stored report keeps its timeline');
   assert.equal(reportHeading(view), 'Person falls on sidewalk while walking.');
 
   assert.equal(view.run.notesKind, 'contract');
@@ -68,35 +71,6 @@ test('contract-v2 smoke run: Class A from rows, Class B from notes, Class C from
   assert.deepEqual(view.run.originalReport, notes.report);
 
   assert.deepEqual(view.differences, { fields: [] }, 'unedited run: projection equals the original model output');
-});
-
-test('an inconsistent timeline is shown as model context, never as incident timestamps, and never altered', () => {
-  const rows = clone(smoke);
-  const wrapper = JSON.parse(rows.modelRun.notes);
-  const record = wrapper.incidentConsoleV2;
-  const original = clone(record.report.timeline);
-  record.request.videoDurationSeconds = 12.539;
-  record.report.timeline = [
-    { start_seconds: 0, end_seconds: 1, description: 'Two people walk along the pavement.' },
-    ...original,
-    { start_seconds: 30, end_seconds: null, description: 'A time past the end of the video.' },
-  ];
-  rows.modelRun.notes = JSON.stringify(wrapper);
-  const view = buildReportView(rowsFrom(rows));
-
-  assert.equal(view.run.notesKind, 'contract', 'a timeline problem does not make the stored report invalid');
-  assert.equal(view.modelOutput.timelineCheck.consistentWithWindow, false);
-  assert.deepEqual(view.modelOutput.timelineCheck.codes.sort(), ['TIMELINE_BEYOND_VIDEO', 'TIMELINE_START_OUTSIDE_WINDOW']);
-  assert.equal(view.modelOutput.timelineCheck.videoDurationSeconds, 12.539);
-  const [first, ...rest] = view.modelOutput.timeline;
-  const last = rest.at(-1);
-  assert.deepEqual([first.insideWindow, first.seekable], [false, true], 'outside the window but inside the video: context, still seekable');
-  assert.deepEqual([last.insideWindow, last.seekable], [false, false], 'outside the video: not seekable');
-  assert.ok(rest.slice(0, -1).every((event) => event.insideWindow && event.seekable));
-  assert.deepEqual(
-    view.modelOutput.timeline.map((e) => [e.startSeconds, e.endSeconds, e.description]),
-    record.report.timeline.map((e) => [e.start_seconds, e.end_seconds, e.description]),
-  );
 });
 
 test('an edited structured severity is reported against the model severity; the rationale stays the model original', () => {
@@ -206,9 +180,6 @@ test('legacy run: normalised Class A, best-effort Class B, earlier reviewer edit
   assert.equal(view.modelOutput.source, 'legacy');
   assert.equal(view.modelOutput.title, 'Street fight');
   assert.equal(view.modelOutput.severityReason, 'Punches thrown.');
-  assert.deepEqual(view.modelOutput.timeline, [
-    { startSeconds: 15, endSeconds: null, description: 'Fight starts', insideWindow: true, seekable: true },
-  ]);
   assert.equal(view.run.notesKind, 'legacy');
   assert.equal(view.run.rawModelOutput, '{"legacy":true}');
   assert.deepEqual(view.run.legacyReviewerEdits, { title: 'Street fight near bus stop' });

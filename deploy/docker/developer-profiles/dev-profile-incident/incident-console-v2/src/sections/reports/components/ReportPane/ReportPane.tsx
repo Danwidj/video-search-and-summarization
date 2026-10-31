@@ -4,7 +4,6 @@
 import Link from 'next/link';
 import { type CSSProperties, type MouseEvent, type ReactNode, useState } from 'react';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card as UICard, CardContent } from '@/components/ui/card';
@@ -12,7 +11,6 @@ import { evidenceDisplay } from '@/lib/evidence/evidence-view';
 import { formatTimestamp } from '@/lib/time';
 import { severityStyle } from '@/lib/ui/severity';
 import { cn } from '@/lib/utils';
-import { timestampWithinVideo } from '@/modules/contract/domain/video-bounds';
 import { formatClock } from '@/modules/reports/domain/normalize';
 import {
   assetDetail,
@@ -259,122 +257,10 @@ export function ReportPane({
         videoId={report.videoId}
       />
 
-      <ModelSection title="Model event timeline" source={modelOutput?.source}>
-        {windowEdited && original && original.startSeconds !== null && original.endSeconds !== null && (
-          <p className="mb-2 text-[11px] text-destructive">
-            Event times are the model&apos;s, relative to its original window {formatClock(original.startSeconds)}–
-            {formatClock(original.endSeconds)}.
-          </p>
-        )}
-        {modelOutput && !modelOutput.timelineCheck.consistentWithWindow && (
-          <Alert className="mb-2 border-amber-300 bg-amber-50/80 p-3 text-xs leading-5 text-amber-950" data-testid="timeline-inconsistent">
-            <AlertDescription>
-              Model-generated timeline, not consistent with the detected incident window
-              {original && original.startSeconds !== null && original.endSeconds !== null
-                ? ` (${formatClock(original.startSeconds)}–${formatClock(original.endSeconds)})`
-                : ''}
-              . Events outside the window are the model&apos;s context, not incident timestamps. The timeline is not scored and does not
-              affect the report&apos;s validity.
-            </AlertDescription>
-          </Alert>
-        )}
-        {modelOutput?.timeline.length ? (
-          <ol className="space-y-2">
-            {modelOutput.timeline.map((event) => {
-              const clock = `${formatClock(event.startSeconds)}${event.endSeconds !== null && event.endSeconds !== event.startSeconds ? `–${formatClock(event.endSeconds)}` : ''}`;
-              const outsideWindow = event.insideWindow === false;
-              const seekable =
-                event.seekable !== false && (playerDuration === null || timestampWithinVideo(event.startSeconds, playerDuration));
-              const tags = (
-                <>
-                  {outsideWindow && (
-                    <Badge
-                      className="text-[10px] font-semibold uppercase tracking-wide"
-                      data-testid="event-outside-window"
-                      variant="secondary"
-                    >
-                      outside incident window
-                    </Badge>
-                  )}
-                  {!seekable && (
-                    <Badge
-                      className="text-[10px] font-semibold uppercase tracking-wide"
-                      data-testid="event-outside-video"
-                      variant="destructive"
-                    >
-                      outside the video
-                    </Badge>
-                  )}
-                </>
-              );
-              return (
-                <li key={`${event.startSeconds}-${event.endSeconds ?? ''}-${event.description}`}>
-                  {seekable ? (
-                    <button
-                      aria-label={`Play video from ${formatClock(event.startSeconds)}: ${event.description}`}
-                      className={`group flex w-full gap-4 rounded-xl border p-3 text-left transition hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${outsideWindow ? 'border-dashed border-border' : 'border-border'}`}
-                      onClick={() => onSeek(event.startSeconds)}
-                      type="button"
-                    >
-                      <span
-                        className={`whitespace-nowrap font-mono text-xs font-bold ${outsideWindow ? 'text-muted-foreground' : 'text-primary'}`}
-                      >
-                        {clock}
-                      </span>
-                      <span className={`text-sm leading-5 ${outsideWindow ? 'text-muted-foreground' : 'text-foreground/80'}`}>
-                        {event.description} {tags}
-                      </span>
-                    </button>
-                  ) : (
-                    <div
-                      className="flex w-full gap-4 rounded-xl border border-dashed border-border p-3 text-left"
-                      data-testid="event-not-seekable"
-                    >
-                      <span className="whitespace-nowrap font-mono text-xs font-bold text-muted-foreground">{clock}</span>
-                      <span className="text-sm leading-5 text-muted-foreground">
-                        {event.description} {tags}
-                      </span>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        ) : (
-          <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-            {modelOutput ? 'The model returned no timestamped events.' : 'The original model output was not retained for this run.'}
-          </p>
-        )}
-      </ModelSection>
-
-      {modelOutput && modelOutput.uncertainties.length > 0 && (
-        <ModelSection title="Model-reported uncertainties" source={modelOutput.source}>
-          <ul className="space-y-2 text-sm leading-5 text-foreground/75">
-            {modelOutput.uncertainties.map((item) => (
-              <li className="border-l-2 border-primary/40 pl-3" key={item}>
-                {item}
-              </li>
-            ))}
-          </ul>
-        </ModelSection>
-      )}
-
       <div className="-mx-5 mt-6 sm:-mx-8">
         <RunDetailsPanel report={report} />
       </div>
     </div>
-  );
-}
-
-function ModelSection({ title, source, children }: { title: string; source?: 'contract' | 'legacy'; children: ReactNode }) {
-  return (
-    <section className="mt-7">
-      <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
-      <p className="mb-3 mt-1 text-[11px] text-muted-foreground/70">
-        Original model output · read-only{source === 'legacy' ? ' · earlier prompt version' : ''}
-      </p>
-      {children}
-    </section>
   );
 }
 

@@ -215,16 +215,6 @@ function RunCard({ report, index }: { report: ReportView; index: number }) {
           ))}
         </ul>
       </section>
-      <section className="mt-5">
-        <h3 className="text-xs font-bold uppercase text-ink-caption">Model event timeline</h3>
-        <ol className="mt-2 space-y-2 text-sm text-ink/65">
-          {(model?.timeline ?? []).map((event) => (
-            <li key={`${event.startSeconds}-${event.endSeconds ?? ''}-${event.description}`}>
-              <strong className="text-ink">{formatClock(event.startSeconds)}</strong> {event.description}
-            </li>
-          ))}
-        </ol>
-      </section>
     </Card>
   );
 }
