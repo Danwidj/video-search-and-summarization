@@ -44,7 +44,7 @@ export function RunDetailsPanel({ report }: { report: ReportView }) {
               {run.validation?.fullContractValid !== undefined && (
                 <Provenance
                   label="Full contract validity (first response)"
-                  value={run.validation.fullContractValid ? 'Valid' : 'Not valid: only unscored or ID issues, see below'}
+                  value={run.validation.fullContractValid ? 'Valid' : 'Not valid: only ID or unscored-field issues'}
                 />
               )}
               {request && 'videoDurationSeconds' in request && (
@@ -58,27 +58,6 @@ export function RunDetailsPanel({ report }: { report: ReportView }) {
                 />
               )}
             </dl>
-            {(run.firstPassViolations ?? []).some((violation) => violation.scope === 'enrichment') && (
-              <Alert
-                className="mt-4 rounded-xl border border-border bg-card/60 p-4 text-xs text-muted-foreground"
-                data-testid="enrichment-violations"
-              >
-                <AlertTitle className="text-xs font-semibold text-foreground">
-                  Issues in unscored model fields (recorded, not repaired, do not affect validity)
-                </AlertTitle>
-                <AlertDescription>
-                  <ul className="mt-1 list-disc pl-5">
-                    {(run.firstPassViolations ?? [])
-                      .filter((violation) => violation.scope === 'enrichment')
-                      .map((violation) => (
-                        <li key={`${violation.code}:${violation.message}`}>
-                          <span className="font-mono">{violation.code}</span>: {violation.message}
-                        </li>
-                      ))}
-                  </ul>
-                </AlertDescription>
-              </Alert>
-            )}
             {run.notesKind === 'invalid-contract' && (
               <Alert className="mt-4" variant="destructive">
                 <AlertDescription>The stored model output could not be re-validated: {run.notesError}</AlertDescription>
@@ -152,11 +131,13 @@ function RepairDetails({ run }: { run: ReportView['run'] }) {
         </p>
         <p className="mt-3 font-semibold text-inherit">First-pass violations</p>
         <ul className="mt-1 list-disc pl-5">
-          {(run.firstPassViolations ?? []).map((violation) => (
-            <li key={`${violation.code}:${violation.message}`}>
-              <span className="font-mono">{violation.code}</span>: {violation.message}
-            </li>
-          ))}
+          {(run.firstPassViolations ?? [])
+            .filter((violation) => violation.scope !== 'enrichment')
+            .map((violation) => (
+              <li key={`${violation.code}:${violation.message}`}>
+                <span className="font-mono">{violation.code}</span>: {violation.message}
+              </li>
+            ))}
         </ul>
         <p className="mt-3 font-semibold text-inherit">Repair operations</p>
         <ul className="mt-1 list-disc pl-5">
