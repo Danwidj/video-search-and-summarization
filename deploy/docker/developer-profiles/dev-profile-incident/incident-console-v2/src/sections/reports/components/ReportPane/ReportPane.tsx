@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { type ReactNode, useState } from 'react';
+import { type CSSProperties, type MouseEvent, type ReactNode, useState } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import { Card as UICard, CardContent } from '@/components/ui/card';
 import { evidenceDisplay } from '@/lib/evidence/evidence-view';
 import { formatTimestamp } from '@/lib/time';
 import { severityStyle } from '@/lib/ui/severity';
+import { cn } from '@/lib/utils';
 import { timestampWithinVideo } from '@/modules/contract/domain/video-bounds';
 import { formatClock } from '@/modules/reports/domain/normalize';
 import {
@@ -21,8 +22,10 @@ import {
   instrumentDetail,
 } from '@/modules/reports/domain/evidence-detail';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
+import { type TrackedReportItem, trackedReportItems } from '@/modules/reports/domain/track';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
 import { EvidenceDetailDialog } from '@/sections/reports/components/EvidenceDetailDialog';
+import { PresenceBar } from '@/sections/reports/components/PresenceBar';
 import { RunDetailsPanel } from '@/sections/reports/components/ReportRunDetails';
 
 const capitalize = (value: string | null) => (value ? value[0].toUpperCase() + value.slice(1) : 'Unclassified');
@@ -36,13 +39,18 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** The scrolling part of View mode: the version, its report fields, its evidence grouped by holder (each card opens in detail), and the model's own output. */
+/**
+ * The scrolling part of View mode: the version, its report fields, its evidence grouped by holder (each card opens in
+ * detail; a tracked item's card also selects its box in the player and shows where it is on screen), and the model's own output.
+ */
 export function ReportPane({
   report,
   playerDuration,
   onSeek,
   officialMissing = false,
   compareHref = null,
+  selectedTrackId = null,
+  onSelectTrack = () => undefined,
 }: {
   report: ReportView;
   playerDuration: number | null;
@@ -51,6 +59,9 @@ export function ReportPane({
   officialMissing?: boolean;
   /** Link to compare this version with another AI version, when there is one. */
   compareHref?: string | null;
+  /** The tracked item whose box the player emphasises; null for none. */
+  selectedTrackId?: string | null;
+  onSelectTrack?: (id: string | null) => void;
 }) {
   const { structured, modelOutput, run, differences, revision } = report;
   const { incident } = structured;
@@ -61,6 +72,21 @@ export function ReportPane({
   const unheld = structured.instruments.filter((instrument) => !heldIds.has(instrument.instrumentId));
   const [detail, setDetail] = useState<EvidenceDetailItem | null>(null);
   const itemCount = structured.entities.length + structured.instruments.length + structured.assets.length;
+  const tracked = new Map(trackedReportItems(structured).map((item) => [`${item.kind}:${item.id}`, item]));
+  const cardProps = (item: EvidenceDetailItem) => {
+    const track = tracked.get(`${item.kind}:${item.id}`) ?? null;
+    return {
+      item,
+      track,
+      playerDuration,
+      selected: track !== null && selectedTrackId === track.id,
+      onOpen: setDetail,
+      onSeek,
+      // Opening the card selects it; a click on the selected card's text clears the selection.
+      onSelect: track ? (toggle: boolean) => onSelectTrack(toggle && selectedTrackId === track.id ? null : track.id) : undefined,
+      videoId: report.videoId,
+    };
+  };
 
   return (
     <div className="px-5 pb-16 sm:px-8">
@@ -194,14 +220,9 @@ export function ReportPane({
             <div className="grid gap-3 sm:grid-cols-[6rem_1fr]" data-holder={entity.entityId} key={entity.entityId}>
               <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Entity</span>
               <div className="flex flex-wrap gap-3">
-                <Card item={entityDetail(entity, structured.instruments)} onOpen={setDetail} videoId={report.videoId} />
+                <Card {...cardProps(entityDetail(entity, structured.instruments))} />
                 {heldBy(entity.entityId).map((instrument) => (
-                  <Card
-                    item={instrumentDetail(instrument, structured.entities)}
-                    key={instrument.instrumentId}
-                    onOpen={setDetail}
-                    videoId={report.videoId}
-                  />
+                  <Card key={instrument.instrumentId} {...cardProps(instrumentDetail(instrument, structured.entities))} />
                 ))}
               </div>
             </div>
@@ -211,12 +232,7 @@ export function ReportPane({
               <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Holder unknown</span>
               <div className="flex flex-wrap gap-3">
                 {unheld.map((instrument) => (
-                  <Card
-                    item={instrumentDetail(instrument, structured.entities)}
-                    key={instrument.instrumentId}
-                    onOpen={setDetail}
-                    videoId={report.videoId}
-                  />
+                  <Card key={instrument.instrumentId} {...cardProps(instrumentDetail(instrument, structured.entities))} />
                 ))}
               </div>
             </div>
@@ -226,7 +242,7 @@ export function ReportPane({
               <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Assets</span>
               <div className="flex flex-wrap gap-3">
                 {structured.assets.map((asset) => (
-                  <Card item={assetDetail(asset)} key={asset.assetId} onOpen={setDetail} videoId={report.videoId} />
+                  <Card key={asset.assetId} {...cardProps(assetDetail(asset))} />
                 ))}
               </div>
             </div>
@@ -234,7 +250,14 @@ export function ReportPane({
         </div>
       )}
 
-      <EvidenceDetailDialog item={detail} onClose={() => setDetail(null)} onPlayFrom={onSeek} videoId={report.videoId} />
+      <EvidenceDetailDialog
+        item={detail}
+        onClose={() => setDetail(null)}
+        onPlayFrom={onSeek}
+        playerDuration={playerDuration}
+        track={detail ? (tracked.get(`${detail.kind}:${detail.id}`) ?? null) : null}
+        videoId={report.videoId}
+      />
 
       <ModelSection title="Model event timeline" source={modelOutput?.source}>
         {windowEdited && original && original.startSeconds !== null && original.endSeconds !== null && (
@@ -364,13 +387,42 @@ function IdBadge({ id }: { id: string }) {
   );
 }
 
-/** One evidence item: its whole video frame with the box drawn on it (never a cut-out crop), which opens the item in detail. */
-function Card({ item, videoId, onOpen }: { item: EvidenceDetailItem; videoId: string; onOpen: (item: EvidenceDetailItem) => void }) {
+/**
+ * One evidence item: its whole video frame with the box drawn on it (never a cut-out crop), which opens the item in detail.
+ * A tracked item's card also selects its box in the player when clicked anywhere, and shows its presence bar.
+ */
+function Card({
+  item,
+  track,
+  playerDuration,
+  selected,
+  videoId,
+  onOpen,
+  onSeek,
+  onSelect,
+}: {
+  item: EvidenceDetailItem;
+  track: TrackedReportItem | null;
+  playerDuration: number | null;
+  selected: boolean;
+  videoId: string;
+  onOpen: (item: EvidenceDetailItem) => void;
+  onSeek: (seconds: number) => void;
+  onSelect?: (toggle: boolean) => void;
+}) {
   const { seconds } = item;
   const lines = evidenceDetailLines(item);
   const shown = evidenceDisplay(item.evidence, videoId);
   return (
-    <UICard className="w-64 max-w-full overflow-hidden text-xs" data-testid="evidence-card">
+    // A pointer shortcut only: the frame button and the presence bar are the card's keyboard controls.
+    <UICard
+      className={cn('w-64 max-w-full overflow-hidden text-xs', selected && 'ring-2 ring-ring')}
+      data-selected={selected ? 'true' : undefined}
+      data-testid="evidence-card"
+      data-track-item={track?.id}
+      onClick={onSelect && ((event: MouseEvent<HTMLDivElement>) => onSelect(!(event.target as HTMLElement).closest('button')))}
+      style={selected && track ? ({ '--tw-ring-color': track.colour } as CSSProperties) : undefined}
+    >
       <button
         aria-label={`Show ${item.title} in detail`}
         className="block w-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -413,6 +465,16 @@ function Card({ item, videoId, onOpen }: { item: EvidenceDetailItem; videoId: st
           <p className="text-muted-foreground">
             Most visible at <b className="font-mono">{lines.time}</b>
           </p>
+        )}
+        {track && (
+          <PresenceBar
+            colour={track.colour}
+            durationSeconds={playerDuration}
+            firstSeconds={track.firstSeconds}
+            label={`${item.id} ${item.title}`}
+            lastSeconds={track.lastSeconds}
+            onSeek={onSeek}
+          />
         )}
       </CardContent>
     </UICard>

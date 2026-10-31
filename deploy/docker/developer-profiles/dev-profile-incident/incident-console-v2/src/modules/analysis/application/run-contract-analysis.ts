@@ -334,6 +334,7 @@ export async function runContractAnalysis(
         evidence?: unknown;
         chunk_timeline?: unknown;
         chunking?: unknown;
+        tracking?: unknown;
       };
       let agentP1: AgentP1 | null = null;
       if (agentResponse.ok) {
@@ -382,6 +383,9 @@ export async function runContractAnalysis(
       if (Array.isArray(agentP1.chunk_timeline)) response.chunkTimeline = agentP1.chunk_timeline;
       if (agentP1.chunking && typeof agentP1.chunking === 'object' && !Array.isArray(agentP1.chunking))
         response.chunking = agentP1.chunking as Record<string, unknown>;
+      // Person tracking (agent INCIDENT_TRACKING_ENABLED): its summary {enabled, matched, tracks, elapsed_ms, skipped}, as returned.
+      if (agentP1.tracking && typeof agentP1.tracking === 'object' && !Array.isArray(agentP1.tracking))
+        response.tracking = agentP1.tracking as Record<string, unknown>;
 
       if (agentP1.contract_version !== ports.catalog.contractVersion()) {
         const message = `Agent contract version (${String(agentP1.contract_version ?? 'missing')}) does not match console (${ports.catalog.contractVersion()})`;

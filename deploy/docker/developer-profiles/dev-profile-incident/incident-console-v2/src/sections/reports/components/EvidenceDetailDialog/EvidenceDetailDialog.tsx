@@ -8,27 +8,37 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { evidenceDisplay } from '@/lib/evidence/evidence-view';
 import { type EvidenceDetailItem, evidenceDetailLines } from '@/modules/reports/domain/evidence-detail';
+import type { TrackedReportItem } from '@/modules/reports/domain/track';
 import { EvidenceFrame, KIND_LABEL } from '@/sections/evidence/components/EvidenceFrame';
+import { PresenceBar } from '@/sections/reports/components/PresenceBar';
 
 /**
  * One evidence item in detail: its whole frame with the box, large, the full description and Play from here, which closes
- * the pop-up and seeks the page's video to the item's second. Closes with Escape, the close button or a click outside.
+ * the pop-up and seeks the page's video to the item's second. A tracked item also shows the span the tracker followed it
+ * and its presence bar, whose click closes the pop-up and seeks there. Closes with Escape, the close button or a click outside.
  */
 export function EvidenceDetailDialog({
   item,
   videoId,
   onClose,
   onPlayFrom,
+  track = null,
+  playerDuration = null,
 }: {
   item: EvidenceDetailItem | null;
   /** The report's video; an older item's frame is cut from its stored file. */
   videoId: string;
   onClose: () => void;
   onPlayFrom: (seconds: number) => void;
+  /** The item's track, when it has one. */
+  track?: TrackedReportItem | null;
+  playerDuration?: number | null;
 }) {
   return (
     <Dialog open={item !== null} onOpenChange={(open) => !open && onClose()}>
-      {item && <Detail item={item} onClose={onClose} onPlayFrom={onPlayFrom} videoId={videoId} />}
+      {item && (
+        <Detail item={item} onClose={onClose} onPlayFrom={onPlayFrom} playerDuration={playerDuration} track={track} videoId={videoId} />
+      )}
     </Dialog>
   );
 }
@@ -38,11 +48,15 @@ function Detail({
   videoId,
   onClose,
   onPlayFrom,
+  track,
+  playerDuration,
 }: {
   item: EvidenceDetailItem;
   videoId: string;
   onClose: () => void;
   onPlayFrom: (seconds: number) => void;
+  track: TrackedReportItem | null;
+  playerDuration: number | null;
 }) {
   const { seconds } = item;
   const lines = evidenceDetailLines(item);
@@ -88,6 +102,25 @@ function Detail({
         )}
         {lines.threat && <p className="text-muted-foreground">{lines.threat}</p>}
         {lines.onScreen && <p className="text-muted-foreground">{lines.onScreen}</p>}
+        {lines.trackedOnScreen && (
+          <p className="text-muted-foreground" data-testid="evidence-dialog-tracked">
+            {lines.trackedOnScreen}
+          </p>
+        )}
+        {track && (
+          <PresenceBar
+            caption={false}
+            colour={track.colour}
+            durationSeconds={playerDuration}
+            firstSeconds={track.firstSeconds}
+            label={`${item.id} ${item.title}`}
+            lastSeconds={track.lastSeconds}
+            onSeek={(at) => {
+              onClose();
+              onPlayFrom(at);
+            }}
+          />
+        )}
       </div>
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">{lines.playNote}</p>

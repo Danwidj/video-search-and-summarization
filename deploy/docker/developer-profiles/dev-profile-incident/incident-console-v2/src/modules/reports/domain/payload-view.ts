@@ -23,6 +23,16 @@ const asRow = (value: unknown): Row => (value && typeof value === 'object' && !A
 const rows = (value: unknown): Row[] => (Array.isArray(value) ? value.map(asRow) : []);
 const byId = (key: string) => (a: Row, b: Row) => String(a[key] ?? '').localeCompare(String(b[key] ?? ''), undefined, { numeric: true });
 
+/** The entry's track: a key and both span ends, else none at all (a half-written track is read as no track). */
+function trackOf(entry: EvidenceEntry): Pick<ItemEvidence, 'track' | 'trackUrl' | 'trackFirstSeenSeconds' | 'trackLastSeenSeconds'> {
+  const track = text(entry.track);
+  const first = num(entry.track_first_seen_seconds);
+  const last = num(entry.track_last_seen_seconds);
+  if (!track || first === null || last === null || last < first)
+    return { track: null, trackUrl: null, trackFirstSeenSeconds: null, trackLastSeenSeconds: null };
+  return { track, trackUrl: null, trackFirstSeenSeconds: first, trackLastSeenSeconds: last };
+}
+
 function evidenceOf(entries: EvidenceEntry[], type: EvidenceItemType, itemId: string): ItemEvidence | null {
   const entry = entries.find((candidate) => candidate.item_type === type && candidate.item_id === itemId);
   if (!entry) return null;
@@ -37,6 +47,7 @@ function evidenceOf(entries: EvidenceEntry[], type: EvidenceItemType, itemId: st
     boundingBox: entry.bounding_box,
     timestampSeconds: entry.timestamp_seconds,
     uploaded: entry.source === 'upload',
+    ...trackOf(entry),
   };
 }
 
