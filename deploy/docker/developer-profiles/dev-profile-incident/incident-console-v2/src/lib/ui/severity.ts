@@ -19,3 +19,9 @@ export function severityClass(level: number | null | undefined): string {
 }
 
 export const severityStyle = severityClass;
+
+/**
+ * Chart fills for the dashboard severity bands (high 4-5, medium 3, low 1-2): the severity badges' text colours, so the
+ * donut matches the badges. Each passes WCAG AA against white, and each band is also named in text beside the chart.
+ */
+export const severityChartColor = { high: '#991b1b', medium: '#765300', low: '#174f3b' } as const;

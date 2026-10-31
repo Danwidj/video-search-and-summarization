@@ -3,7 +3,7 @@ name: incident-operate-vm
 description: Use to deploy, restart, inspect, debug or tear down the incident backend on the kwanz-ws VM - native services (vss-agent, analytics) via native-services.sh, Docker appliances (Phoenix, plus the person-tracking stack started by default; VIOS, HAProxy and Redis are removed) via compose, generated.env.remote, and the agent editable reinstall. Not for the laptop launch (use incident-start) and never via NVIDIA's dev-profile.sh / vss-deploy-profile.
 license: Apache-2.0
 metadata:
-  version: "0.1.3"
+  version: "0.1.4"
   profile: "dev-profile-incident"
   tags: "incident vm operations native docker troubleshooting"
 ---
@@ -74,7 +74,7 @@ uv pip install --python .venv/bin/python supabase opencv-python-headless setupto
 cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts && ./native-services.sh restart vss-agent
 ```
 
-Person tracking is on for the agent by default: `native-services.sh` exports `INCIDENT_TRACKING_ENABLED=true` unless `generated.env.remote` sets it (set `false` there and restart to turn it off). It also needs `ffmpeg` and `ffprobe` on the agent's PATH (the VM has none on its system PATH; `native-services.sh` adds `~/.local/bin`, so a static build there works) and the perception stack on localhost (:31000, :9000, :8081); without them tracking is skipped and the analysis is unaffected. Install them user-locally, not system-wide. Check with `tr '\0' '\n' < /proc/<pid>/environ | grep ^INCIDENT_TRACKING_ENABLED=` and a `tracking` line in `.run/vss-agent.log` after an analysis.
+Person tracking is on for the agent by default: `native-services.sh` exports `INCIDENT_TRACKING_ENABLED=true` unless `generated.env.remote` sets it (set `false` there and restart to turn it off). It also needs `ffmpeg` and `ffprobe` on the agent's PATH (the VM has none on its system PATH; `native-services.sh` provides them, see [Default analysis stack](#default-analysis-stack)) and the perception stack on localhost (:31000, :9000, :8081); without them tracking is skipped and the analysis is unaffected. Check with `tr '\0' '\n' < /proc/<pid>/environ | grep ^INCIDENT_TRACKING_ENABLED=` and a `tracking` line in `.run/vss-agent.log` after an analysis.
 
 Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json` has `"editable": true`.
 
@@ -90,7 +90,7 @@ The file is untracked and lives on the VM only. Rules (why for each: [operations
 - `LLM_MODEL_TYPE=openai` and `VLM_MODEL_TYPE=openai`, with bare Brev URLs.
 - Search embeddings use the NVIDIA-hosted endpoint with `NVIDIA_API_KEY` (or `NGC_CLI_API_KEY`) from this file; the Brev key cannot call `/v1/embeddings`. Override with `EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, `EVIDENCE_EMBEDDING_API_KEY`. The loader and the search route must use the same model.
 - `incident_report_gen` reads `VLM_BASE_URL` + `VLM_NAME` (P1), `LLM_BASE_URL` (RP1; the model comes from the contract) and `OPENAI_API_KEY`. Changing `VLM_NAME` changes the agent-mode P1 model; ask first.
-- `INCIDENT_CHUNKING_ENABLED=1` turns on the caption pass before P1 (20 s windows cut with `ffmpeg`, captioned, handed to P1 as context; [contract](../../.docs/vm-api-contracts.md#caption-pass-chunked-captioning-incident_chunking_enabled)). Off unless set. It needs **`ffmpeg` on the agent process's `PATH`**: the VM has no system `ffmpeg`, so put a static build under a user-local prefix (for example `~/.local/bin`, from `https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz`, md5 checked) and make sure `native-services.sh` starts the agent with that prefix on `PATH`; never `apt-get install` on the shared VM without asking. Without `ffmpeg` the agent still answers, with `chunking: {"skipped": "ffmpeg is not installed on the agent host"}`. Optional tuning: `INCIDENT_CHUNK_WINDOW_SECONDS` (20), `INCIDENT_CHUNK_OVERLAP_SECONDS` (2), `INCIDENT_CHUNK_MIN_CLIP_SECONDS` (30), `INCIDENT_CHUNK_NUM_FRAMES` (32), `INCIDENT_CHUNK_CONCURRENCY` (4; the gateway allows 4 parallel requests per key). Switching it on for the shared agent is ask-first (it roughly triples VLM tokens per analysis).
+- `INCIDENT_CHUNKING_ENABLED` (caption pass before P1: 20 s windows cut with `ffmpeg`, captioned, handed to P1 as context; [contract](../../.docs/vm-api-contracts.md#caption-pass-chunked-captioning-incident_chunking_enabled)) is on by default through `native-services.sh`; `0` here turns it off (ask first). Without `ffmpeg` the agent still answers, with `chunking: {"skipped": "ffmpeg is not installed on the agent host"}`. Optional tuning: `INCIDENT_CHUNK_WINDOW_SECONDS` (20), `INCIDENT_CHUNK_OVERLAP_SECONDS` (2), `INCIDENT_CHUNK_MIN_CLIP_SECONDS` (30), `INCIDENT_CHUNK_NUM_FRAMES` (32), `INCIDENT_CHUNK_CONCURRENCY` (4; the gateway allows 4 parallel requests per key). It roughly triples VLM tokens per analysis of a clip over 30 s.
 - `INCIDENT_ALERTS_ENABLED=1` (with chunking on) adds one RP1-model text call after the caption pass that checks the rules in `services/agent/src/vss_agents/utils/chunk_alert_rules.json` against the window captions and returns `chunk_alerts` ([contract](../../.docs/vm-api-contracts.md#alert-rules-per-chunk-incident_alerts_enabled)). Off unless set; edit a rule's text in that file and restart the agent to change it. Switching it on for the shared agent is ask-first.
 - `INCIDENT_SOM_ENABLED=1` (with tracking on) turns on set-of-marks prompting: tracking runs before P1, which sees a scratch copy of the clip with numbered person boxes ([contract](../../.docs/vm-api-contracts.md#post-apiv1incidentsincident_idanalyze)). Off unless set; it needs `ffmpeg` on the agent's `PATH` and R2 settings, and switching it on for the shared agent is ask-first (the flag stays off until the end-to-end check).
 - `VSS_AGENT_HOST` defaults to `127.0.0.1` (loopback only: the agent has no auth and holds the DB admin key). An old `VSS_AGENT_HOST=0.0.0.0` must be removed or set to `127.0.0.1`.
@@ -103,6 +103,18 @@ The file is untracked and lives on the VM only. Rules (why for each: [operations
   ```
   If it fails with `Invalid API key` or a JWT error, run `uv pip install --python services/agent/.venv/bin/python -U 'supabase>=2,<3'` (ask first: shared VM) and retest. Pinning a minimum `supabase` version in `services/agent` is a follow-up.
 - GPU: only GPU 0 is used; GPU 1 is never used, because it belongs to another user. The pinning is listed in the [GPU rule](../../.docs/incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote) (item 10).
+
+## Default analysis stack
+
+One `./start.sh --mode vm` brings up tracking and the caption pass. Each is on by default and turns off on its own; the analysis runs with any of them off.
+
+| Piece | Turn it off |
+|---|---|
+| Tracking stack (containers) | `ENABLE_TRACKING=false ./start.sh` |
+| Tracking in the agent | `INCIDENT_TRACKING_ENABLED=false` in `generated.env.remote`, restart the agent |
+| Caption pass | `INCIDENT_CHUNKING_ENABLED=0` in `generated.env.remote`, restart the agent |
+
+`ffmpeg` and `ffprobe` come from `.scripts/media-tools.sh`, which `native-services.sh` runs before it starts the agent: a SHA-256-checked BtbN static build in `/srv/rise-up/vss/.tools/ffmpeg/bin` (gitignored, shared by everyone who starts the agent), first on the agent's `PATH`, installed only when missing. `./native-services.sh status` prints both with their versions or `MISSING`; `./media-tools.sh check` and `./media-tools.sh install` run the step alone. Never `apt-get install` ffmpeg on the shared VM. Edits to `generated.env.remote` are ask-first, and every default reaches the shared agent only at its next restart ([operations](../../.docs/incident-profile-operations.md#default-analysis-stack-in-vm-mode)).
 
 ## Troubleshooting order
 
