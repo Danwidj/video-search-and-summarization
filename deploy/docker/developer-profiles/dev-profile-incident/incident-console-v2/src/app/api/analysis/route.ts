@@ -2,15 +2,13 @@
 
 import { NextResponse } from 'next/server';
 
-import { getAnalysisPorts, getDbAdapters } from '@/lib/container';
-import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
-import { storeSearchableCrops, type SearchableCropsResult } from '@/modules/reports/application/store-searchable-crops';
+import { getUploadAnalysis } from '@/lib/container';
 import { analysisErrorResponse } from '@/lib/http/analysis-responses';
-import { runContractAnalysis } from '@/modules/analysis/application/run-contract-analysis';
-import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
-import { compactId } from '@/lib/ids';
+import { analyseUpload } from '@/modules/analysis/application/analyse-upload';
+import { requireAnalysisConfiguration, type ServiceConfiguration } from '@/lib/env';
 
 // The slowest allowlisted model's timeout (contracts/inference.json) plus persistence.
+// The upload page runs analyses as background jobs (lib/jobs/loop.ts), which this limit does not bind.
 export const maxDuration = 360;
 
 interface AnalysisRequest {
@@ -18,30 +16,6 @@ interface AnalysisRequest {
   filename?: string;
   model?: string;
   additionalInstruction?: string;
-}
-
-function requireAnalysisConfiguration(config: ServiceConfiguration = getServiceConfiguration()): ServiceConfiguration {
-  if (config.analysisMode === 'agent') {
-    if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
-  } else {
-    if (!config.gatewayUrl) throw new Error('VLM_GATEWAY_URL is not configured');
-  }
-  if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
-  return config;
-}
-
-/** What the upload flow needs to open the new run's report page. */
-interface AnalysisRunSummary {
-  videoId: string;
-  modelRunId: string;
-  /** The new AI revision. */
-  revisionId: number;
-  model: string;
-  promptVersion: string;
-  /** valid_first_pass or valid_after_structural_repair; failures are returned as errors. */
-  outcome: string;
-  /** Evidence crops stored so the video is searchable before it has an official revision. */
-  searchable: SearchableCropsResult;
 }
 
 export async function POST(request: Request) {
@@ -66,33 +40,10 @@ export async function POST(request: Request) {
       throw new Error(`validating service configuration failed: ${detail}`);
     }
 
-    const ports = getAnalysisPorts(config);
-    const { run, revisionId } = await runContractAnalysis(
-      {
-        // Each upload is a new video, so it gets a fresh id.
-        videoId: compactId('v', ports.randomUUID()),
-        r2Key: input.filepath,
-        model: input.model ?? config.vlmModel,
-        additionalInstruction: input.additionalInstruction,
-        newVideo: { uploadedAt: new Date().toISOString() },
-      },
-      ports,
-      config.analysisMode,
+    const report = await analyseUpload(
+      { r2Key: input.filepath, model: input.model, additionalInstruction: input.additionalInstruction },
+      getUploadAnalysis(config),
     );
-
-    const searchable = await storeSearchableCrops(getDbAdapters(config), run.videoId, revisionId, (id) =>
-      fetchEvidenceEmbeddings(config, id),
-    );
-    const report: AnalysisRunSummary = {
-      videoId: run.videoId,
-      modelRunId: run.modelRunId,
-      revisionId,
-      model: run.request.model,
-      promptVersion: run.contractVersion,
-      outcome: run.status,
-      searchable,
-    };
-
     return NextResponse.json({ report });
   } catch (error) {
     return analysisErrorResponse(error, 'Video analysis failed');

@@ -114,12 +114,13 @@ with tempfile.TemporaryDirectory() as tmp:
         "SELECT p.oid::regprocedure::TEXT FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
         "WHERE n.nspname = 'public' AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e') ORDER BY 1").fetchall()]
 
-    @test("schema: 6 tables, no views, no legacy report tables or functions")
+    @test("schema: 7 tables, no views, no legacy report tables or functions")
     def _():
         kinds = dict(conn.execute("SELECT relkind::TEXT, count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
                                   "WHERE n.nspname = 'public' AND relkind IN ('r','v') GROUP BY 1").fetchall())
-        assert kinds == {"r": 6}, kinds
-        assert sorted(tables) == ["evidence_crops", "model_runs", "queries", "query_results", "report_revisions", "videos"], tables
+        assert kinds == {"r": 7}, kinds
+        assert sorted(tables) == ["analysis_jobs", "evidence_crops", "model_runs", "queries", "query_results",
+                                  "report_revisions", "videos"], tables
         names = " ".join(tables + functions)
         for gone in ("incidents", "reports", "entities", "instruments", "assets", "human_reports", "review_status",
                      "gt_incidents", "severity_eval_log", "insert_incident", "save_human_report_edit",
@@ -127,7 +128,8 @@ with tempfile.TemporaryDirectory() as tmp:
             assert gone not in names, gone
         for present in ("save_human_revision", "set_official_revision", "search_evidence_items",
                         "list_incident_report_summaries", "get_incident_dashboard", "report_revisions_append_only",
-                        "set_revision_crops", "searchable_revision_id"):
+                        "set_revision_crops", "searchable_revision_id", "claim_analysis_job", "touch_analysis_job",
+                        "finish_analysis_job", "retry_analysis_job", "cancel_analysis_job"):
             assert present in names, present
         assert one(conn, "SELECT extnamespace::regnamespace::TEXT FROM pg_extension WHERE extname = 'vector'")[0] == "extensions"
         columns = [r[0] for r in conn.execute(
@@ -141,6 +143,7 @@ with tempfile.TemporaryDirectory() as tmp:
             for migration in REVISION_MIGRATIONS:
                 conn.execute(migration.read_text())
         assert one(conn, "SELECT count(*) FROM public.report_revisions")[0] == 0
+        assert one(conn, "SELECT count(*) FROM public.analysis_jobs")[0] == 0
 
     @test("security: anon and authenticated cannot read any table or run any function")
     def _():
@@ -636,12 +639,116 @@ with tempfile.TemporaryDirectory() as tmp:
         refused(conn, "UPDATE public.report_revisions SET embedding = NULL WHERE id = %s", (embedded,), contains="append-only")
         assert one(conn, "SELECT count(*) FROM pg_indexes WHERE indexname = 'report_revisions_embedding_hnsw_idx'")[0] == 1
 
+    # Background analysis jobs (20261031120000_analysis_jobs.sql).
+    def enqueue(name: str) -> int:
+        return one(conn, "INSERT INTO public.analysis_jobs (file_path, filename, model) VALUES (%s, %s, 'model-a') RETURNING id",
+                   (f"uploads/{name}", name))[0]
+
+    def claim(stale_seconds: int = 180):
+        row = conn.execute("SELECT id, status, attempts, started_at IS NOT NULL, heartbeat_at IS NOT NULL "
+                           "FROM public.claim_analysis_job(%s)", (stale_seconds,)).fetchone()
+        return row
+
+    job_status = lambda job: one(conn, "SELECT status, attempts, error FROM public.analysis_jobs WHERE id = %s", (job,))
+    age = lambda job, seconds: conn.execute(
+        "UPDATE public.analysis_jobs SET heartbeat_at = heartbeat_at - make_interval(secs => %s) WHERE id = %s", (seconds, job))
+    finish = lambda job, attempt, status, error=None, video=None, revision=None: conn.execute(
+        "SELECT id, status, error, video_id, revision_id FROM public.finish_analysis_job(%s, %s, %s, %s, %s, %s)",
+        (job, attempt, status, error, video, revision)).fetchall()
+
+    @test("analysis jobs: a new job is queued and claims run oldest first, one at a time")
+    def _():
+        first, second = enqueue("a.mp4"), enqueue("b.mp4")
+        assert job_status(first) == ("queued", 0, None)
+        assert claim() == (first, "running", 1, True, True)
+        assert claim() == (second, "running", 1, True, True)
+        assert claim() is None, "nothing left to claim"
+        assert finish(first, 1, "done", video="v2", revision=ai2) == [(first, "done", None, "v2", ai2)]
+        assert finish(second, 1, "failed", error="  ") == [(second, "failed", "The analysis failed", None, None)]
+
+    @test("analysis jobs: only the claim that is still running can heartbeat or finish")
+    def _():
+        job = enqueue("c.mp4")
+        assert claim()[0] == job
+        assert one(conn, "SELECT public.touch_analysis_job(%s, 1)", (job,))[0] is True
+        assert one(conn, "SELECT public.touch_analysis_job(%s, 2)", (job,))[0] is False, "another claim's attempt"
+        assert finish(job, 2, "done", video="v2", revision=ai2) == []
+        refused(conn, "SELECT * FROM public.finish_analysis_job(%s, 1, 'done')", (job,), contains="needs its video")
+        refused(conn, "SELECT * FROM public.finish_analysis_job(%s, 1, 'running')", (job,), contains="done or failed")
+        assert finish(job, 1, "failed", error="Unsupported model") == [(job, "failed", "Unsupported model", None, None)]
+        assert one(conn, "SELECT public.touch_analysis_job(%s, 1)", (job,))[0] is False, "a finished job takes no heartbeat"
+        assert finish(job, 1, "done", video="v2", revision=ai2) == [], "a finished job is not finished again"
+
+    @test("analysis jobs: a stale running job is queued again once, then failed")
+    def _():
+        job = enqueue("d.mp4")
+        assert claim()[0] == job
+        age(job, 120)
+        assert claim() is None and job_status(job)[0] == "running", "a fresh enough heartbeat is left alone"
+        age(job, 120)
+        assert claim() == (job, "running", 2, True, True), "first stale run: back to the queue and claimed again"
+        assert one(conn, "SELECT public.touch_analysis_job(%s, 1)", (job,))[0] is False, "the old runner lost its claim"
+        age(job, 600)
+        assert claim() is None
+        status, attempts, error = job_status(job)
+        assert (status, attempts) == ("failed", 2) and "stopped twice" in error, (status, attempts, error)
+        assert one(conn, "SELECT finished_at IS NOT NULL FROM public.analysis_jobs WHERE id = %s", (job,))[0]
+        refused(conn, "SELECT * FROM public.claim_analysis_job(0)", contains="at least 1")
+
+    @test("analysis jobs: retry requeues a failed or cancelled job; cancel takes only a queued one")
+    def _():
+        failed = one(conn, "SELECT id FROM public.analysis_jobs WHERE filename = 'd.mp4'")[0]
+        retried = conn.execute("SELECT status, attempts, error, started_at, finished_at FROM public.retry_analysis_job(%s)",
+                               (failed,)).fetchall()
+        assert retried == [("queued", 0, None, None, None)], retried
+        assert conn.execute("SELECT id FROM public.retry_analysis_job(%s)", (failed,)).fetchall() == [], "a queued job is not retried"
+        cancelled = conn.execute("SELECT status FROM public.cancel_analysis_job(%s)", (failed,)).fetchall()
+        assert cancelled == [("cancelled",)] and claim() is None, "a cancelled job is never claimed"
+        assert conn.execute("SELECT status FROM public.retry_analysis_job(%s)", (failed,)).fetchall() == [("queued",)]
+        assert claim()[0] == failed
+        assert conn.execute("SELECT id FROM public.cancel_analysis_job(%s)", (failed,)).fetchall() == [], "a running job is not cancelled"
+        done = one(conn, "SELECT id FROM public.analysis_jobs WHERE status = 'done'")[0]
+        assert conn.execute("SELECT id FROM public.retry_analysis_job(%s)", (done,)).fetchall() == [], "a done job is not retried"
+        assert finish(failed, 1, "failed", error="x")[0][1] == "failed"
+
+    @test("analysis jobs: two loops never claim the same job")
+    def _():
+        job = enqueue("e.mp4")
+        other = psycopg.connect(server.get_uri(), autocommit=True)
+        try:
+            other.execute("SET ROLE service_role")
+            with conn.transaction():
+                assert claim()[0] == job
+                # the first claim is not committed yet: the second loop skips the locked row
+                assert other.execute("SELECT id FROM public.claim_analysis_job(180)").fetchall() == []
+            assert other.execute("SELECT id FROM public.claim_analysis_job(180)").fetchall() == []
+        finally:
+            other.close()
+        assert finish(job, 1, "failed", error="x")[0][1] == "failed"
+        refused(conn, "INSERT INTO public.analysis_jobs (file_path, filename, status) VALUES ('k', 'k', 'paused')",
+                contains="analysis_jobs_status_check")
+
+    @test("security: analysis jobs are for the service role only")
+    def _():
+        conn.execute("RESET ROLE")
+        for role in ("anon", "authenticated"):
+            assert not one(conn, "SELECT has_table_privilege(%s, 'public.analysis_jobs', 'SELECT')", (role,))[0], role
+            for sig in ("public.claim_analysis_job(integer)", "public.touch_analysis_job(bigint, integer)",
+                        "public.finish_analysis_job(bigint, integer, text, text, character varying, bigint)",
+                        "public.retry_analysis_job(bigint)", "public.cancel_analysis_job(bigint)"):
+                assert not one(conn, "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, sig))[0], (role, sig)
+        assert one(conn, "SELECT has_function_privilege('service_role', 'public.claim_analysis_job(integer)', 'EXECUTE')")[0]
+        conn.execute("SET ROLE service_role")
+
     @test("deleting a video removes its revisions, crops and query results")
     def _():
         conn.execute("INSERT INTO public.queries (id, query_text) VALUES ('q1', 'man')")
         conn.execute("""INSERT INTO public.query_results (id, query_id, revision_id, item_type, item_id, rank, similarity_score, critic_verdict)
                         VALUES ('r1', 'q1', %s, 'entity', 'E1', 1, 0.9, 'confirmed')""", (ai1,))
+        linked = one(conn, "INSERT INTO public.analysis_jobs (file_path, filename, status, video_id, revision_id) "
+                           "VALUES ('uploads/v1.mp4', 'v1.mp4', 'done', 'v1', %s) RETURNING id", (ai1,))[0]
         conn.execute("DELETE FROM public.videos WHERE id = 'v1'")
+        assert one(conn, "SELECT status, video_id, revision_id FROM public.analysis_jobs WHERE id = %s", (linked,)) == ("done", None, None)
         assert one(conn, "SELECT count(*) FROM public.report_revisions WHERE video_id = 'v1'")[0] == 0
         assert one(conn, "SELECT count(*) FROM public.evidence_crops")[0] == 0
         assert one(conn, "SELECT count(*) FROM public.query_results")[0] == 0

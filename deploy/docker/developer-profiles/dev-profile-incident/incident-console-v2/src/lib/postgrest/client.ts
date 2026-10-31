@@ -151,6 +151,12 @@ export class PostgrestClient {
     return result[0] as Record<string, unknown>;
   }
 
+  /** Rows matching raw PostgREST query parameters (select, filters such as status=in.(a,b), order, limit). */
+  async selectWhere(table: string, params: Record<string, string>): Promise<Array<Record<string, unknown>>> {
+    const result = await this.request(`/${table}?${new URLSearchParams(params)}`);
+    return Array.isArray(result) ? (result as Array<Record<string, unknown>>) : [];
+  }
+
   async selectMany(
     table: string,
     options: { filters?: Record<string, string>; select?: string; order?: string; limit?: number } = {},

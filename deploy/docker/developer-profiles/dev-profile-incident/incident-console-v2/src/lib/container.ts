@@ -25,6 +25,10 @@ import { HttpIncidentAgent } from '@/modules/analysis/infrastructure/agent/incid
 import { R2VideoObjectStore } from '@/modules/analysis/infrastructure/r2/video-object-store';
 import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 import { defaultContractCatalog } from '@/modules/contract/infrastructure/loader';
+import type { UploadAnalysisDeps } from '@/modules/analysis/application/analyse-upload';
+import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
+import type { AnalysisJobRepository } from '@/modules/jobs/domain/AnalysisJobRepository';
+import { SupabaseAnalysisJobAdapter } from '@/modules/jobs/infrastructure/supabase/analysis-jobs';
 
 /** Outbound contract catalog port: provides shared prompts, schemas and model allowlists. */
 export function getContractCatalog(): ContractCatalog {
@@ -61,6 +65,23 @@ export function getAnalysisPorts(config: ServiceConfiguration = getServiceConfig
     catalog: defaultContractCatalog,
     randomUUID,
   };
+}
+
+/** Everything analyseUpload needs, for POST /api/analysis and the job loop. Pass a checked configuration (requireAnalysisConfiguration). */
+export function getUploadAnalysis(config: ServiceConfiguration): UploadAnalysisDeps {
+  return {
+    ports: getAnalysisPorts(config),
+    mode: config.analysisMode,
+    db: getDbAdapters(config),
+    embed: (revisionId) => fetchEvidenceEmbeddings(config, revisionId),
+    defaultModel: config.vlmModel,
+    now: () => new Date(),
+  };
+}
+
+/** The background analysis queue. Throws like getDbAdapters when the database is not configured. */
+export function getAnalysisJobs(config?: ServiceConfiguration): AnalysisJobRepository {
+  return new SupabaseAnalysisJobAdapter(createPostgrestClient(config));
 }
 
 /** The chart request port, in either analysis mode; null when VLM_GATEWAY_URL is not configured. */
