@@ -44,7 +44,9 @@ An experimental request never writes a report revision, and its response adds ``
 tokens, images and gaps), ``p1_elapsed_ms`` and ``usage``.
 A request without them gets exactly the production response.
 With ``INCIDENT_TRACKING_ENABLED`` on, a production response adds ``tracking`` (``{enabled, matched, tracks,
-elapsed_ms, skipped}``); with it off the key is absent.
+elapsed_ms, skipped}``); with it off the key is absent. With ``INCIDENT_ALERTS_ENABLED`` on, it adds ``alerting``
+(telemetry or ``{skipped}``) and ``chunk_alerts`` (``[{rule_id, rule, window_index, start, end, reason}]``, null
+when the check was skipped); with it off both keys are absent.
 """
 
 from __future__ import annotations
@@ -245,8 +247,9 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
         if not body.is_experimental():
             for key in EXPERIMENT_OUTPUT_FIELDS:  # production responses keep exactly their documented shape
                 response.pop(key, None)
-        if response.get("tracking") is None:
-            response.pop("tracking", None)  # tracking off (the default): the response is exactly as it was
+        for key in ("tracking", "chunk_alerts", "alerting"):
+            if response.get(key) is None and (key != "chunk_alerts" or response.get("alerting") is None):
+                response.pop(key, None)  # tracking or alerts off (the default): the response is exactly as it was
         return response
 
     return router

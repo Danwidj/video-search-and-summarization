@@ -334,6 +334,8 @@ export async function runContractAnalysis(
         evidence?: unknown;
         chunk_timeline?: unknown;
         chunking?: unknown;
+        chunk_alerts?: unknown;
+        alerting?: unknown;
         tracking?: unknown;
       };
       let agentP1: AgentP1 | null = null;
@@ -383,6 +385,10 @@ export async function runContractAnalysis(
       if (Array.isArray(agentP1.chunk_timeline)) response.chunkTimeline = agentP1.chunk_timeline;
       if (agentP1.chunking && typeof agentP1.chunking === 'object' && !Array.isArray(agentP1.chunking))
         response.chunking = agentP1.chunking as Record<string, unknown>;
+      // Alert rules per chunk (agent INCIDENT_ALERTS_ENABLED): the matches and telemetry, kept as returned.
+      if (Array.isArray(agentP1.chunk_alerts)) response.chunkAlerts = agentP1.chunk_alerts;
+      if (agentP1.alerting && typeof agentP1.alerting === 'object' && !Array.isArray(agentP1.alerting))
+        response.alerting = agentP1.alerting as Record<string, unknown>;
       // Person tracking (agent INCIDENT_TRACKING_ENABLED): its summary {enabled, matched, tracks, elapsed_ms, skipped}, as returned.
       if (agentP1.tracking && typeof agentP1.tracking === 'object' && !Array.isArray(agentP1.tracking))
         response.tracking = agentP1.tracking as Record<string, unknown>;

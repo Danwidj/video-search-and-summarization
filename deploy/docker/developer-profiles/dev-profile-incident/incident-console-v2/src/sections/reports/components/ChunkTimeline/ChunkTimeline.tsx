@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
+import { FlagIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
 import { cn } from '@/lib/utils';
+import { alertsByWindow, type ChunkAlert } from '@/modules/reports/domain/chunk-alerts';
 import { activeChunkIndex, type ChunkWindow } from '@/modules/reports/domain/chunk-timeline';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
@@ -11,19 +13,24 @@ import { formatClock } from '@/modules/reports/domain/normalize';
  * The run's caption pass under the video: one row per window with its time and
  * full caption. A click moves the playhead to the window's start; the window
  * playing now is highlighted and kept in view inside the strip (never by
- * scrolling the page). Rendered only when the run has a chunk timeline.
+ * scrolling the page). A window that matched an alert rule carries a flag with
+ * the rule's text (and the model's reason on hover). Rendered only when the run
+ * has a chunk timeline.
  */
 export function ChunkTimeline({
   windows,
+  alerts = [],
   currentTime,
   onSeek,
 }: {
   windows: ChunkWindow[];
+  alerts?: ChunkAlert[];
   currentTime: number;
   onSeek: (window: ChunkWindow) => void;
 }) {
   const listRef = useRef<HTMLOListElement>(null);
   const active = activeChunkIndex(windows, currentTime);
+  const windowAlerts = alertsByWindow(windows, alerts);
 
   useEffect(() => {
     const list = listRef.current;
@@ -68,7 +75,24 @@ export function ChunkTimeline({
               >
                 {formatClock(window.startSeconds)}–{formatClock(window.endSeconds)}
               </span>
-              <span className="whitespace-pre-line leading-5 text-foreground/80">{window.caption}</span>
+              <span className="leading-5">
+                {windowAlerts[index].length > 0 && (
+                  <span className="mb-1 flex flex-wrap gap-1.5">
+                    {windowAlerts[index].map((alert) => (
+                      <span
+                        className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-px text-xs font-semibold text-amber-950"
+                        data-testid="chunk-window-flag"
+                        key={alert.ruleId}
+                        title={alert.reason || undefined}
+                      >
+                        <FlagIcon aria-hidden="true" className="size-3" />
+                        {alert.rule}
+                      </span>
+                    ))}
+                  </span>
+                )}
+                <span className="whitespace-pre-line text-foreground/80">{window.caption}</span>
+              </span>
             </button>
           </li>
         ))}

@@ -24,6 +24,7 @@ import {
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import { type TrackedReportItem, trackedReportItems } from '@/modules/reports/domain/track';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
+import { ChunkAlerts } from '@/sections/reports/components/ChunkAlerts';
 import { EvidenceDetailDialog } from '@/sections/reports/components/EvidenceDetailDialog';
 import { PresenceBar } from '@/sections/reports/components/PresenceBar';
 import { RunDetailsPanel } from '@/sections/reports/components/ReportRunDetails';
@@ -90,6 +91,7 @@ export function ReportPane({
 
   return (
     <div className="px-5 pb-16 sm:px-8">
+      {report.chunkAlerts.length > 0 && <ChunkAlerts alerts={report.chunkAlerts} onSeek={onSeek} />}
       <UICard className="mt-5 gap-0 border-border bg-muted/40 py-0 text-sm" data-testid="version-summary">
         <CardContent className="divide-y divide-border p-0">
           <div className="px-4 py-3">

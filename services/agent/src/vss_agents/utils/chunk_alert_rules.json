@@ -1,0 +1,6 @@
+[
+  { "id": "person-falls", "text": "A person falls to the ground or is lying on the floor." },
+  { "id": "unattended-bag-picked-up", "text": "An unattended bag or object left on the floor is picked up or taken by a person." },
+  { "id": "person-carried-or-dragged", "text": "A person is carried, dragged or pulled along by someone else." },
+  { "id": "physical-fight", "text": "People hit, push, kick or wrestle each other." }
+]

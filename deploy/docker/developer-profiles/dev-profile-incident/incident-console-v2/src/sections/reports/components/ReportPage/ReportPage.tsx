@@ -555,6 +555,7 @@ export function ReportPage({
           </div>
           {report.chunkTimeline.length > 0 && (
             <ChunkTimeline
+              alerts={report.chunkAlerts}
               currentTime={currentTime}
               onSeek={(window) => seekToWindow(videoRef.current, window)}
               windows={report.chunkTimeline}
