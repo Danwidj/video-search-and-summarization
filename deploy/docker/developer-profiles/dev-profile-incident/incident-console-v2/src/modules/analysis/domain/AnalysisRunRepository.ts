@@ -48,6 +48,10 @@ export interface AnalysisAttemptRecord {
     reasoningContent?: string | null;
     finishReason?: string | null;
     usage?: Record<string, unknown> | null;
+    /** Agent mode, caption pass on: the agent's chunk_timeline ([{start, end, caption, events}]) as returned. */
+    chunkTimeline?: unknown[];
+    /** Agent mode, caption pass on: the agent's chunking telemetry, or { skipped: reason }, as returned. */
+    chunking?: Record<string, unknown>;
   } | null;
   /**
    * firstPass: every violation of the original response, each with its
