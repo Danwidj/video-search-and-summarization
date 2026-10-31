@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // AnalysisJobRepository over PostgREST: the analysis_jobs table and its
-// functions (supabase/migrations/20261031120000_analysis_jobs.sql). Every
-// state change is a function, so it runs on the database clock and is atomic.
+// functions (supabase/migrations/20261031120000_analysis_jobs.sql, and
+// 20261101090000_video_blur_faces.sql for re-analysis jobs). Every state change
+// is a function, so it runs on the database clock and is atomic.
 
 import type { PostgrestClient } from '@/lib/postgrest/client';
 import type { AnalysisJobRepository, NewAnalysisJob } from '@/modules/jobs/domain/AnalysisJobRepository';
@@ -72,7 +73,8 @@ export class SupabaseAnalysisJobAdapter implements AnalysisJobRepository {
   }
 
   async claim(staleSeconds: number): Promise<AnalysisJob | null> {
-    return firstJob(await this.db.rpc('claim_analysis_job', { p_stale_seconds: staleSeconds }));
+    // Uploads and re-analyses alike; claim_analysis_job, which older consoles call, leaves re-analyses to this one.
+    return firstJob(await this.db.rpc('claim_queued_analysis_job', { p_stale_seconds: staleSeconds, p_uploads_only: false }));
   }
 
   async heartbeat(id: number, attempt: number): Promise<boolean> {

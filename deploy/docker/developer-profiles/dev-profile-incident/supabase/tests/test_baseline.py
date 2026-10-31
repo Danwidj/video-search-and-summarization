@@ -128,7 +128,8 @@ with tempfile.TemporaryDirectory() as tmp:
             assert gone not in names, gone
         for present in ("save_human_revision", "set_official_revision", "search_evidence_items",
                         "list_incident_report_summaries", "get_incident_dashboard", "report_revisions_append_only",
-                        "set_revision_crops", "searchable_revision_id", "claim_analysis_job", "touch_analysis_job",
+                        "set_revision_crops", "searchable_revision_id", "claim_analysis_job", "claim_queued_analysis_job",
+                        "touch_analysis_job",
                         "finish_analysis_job", "retry_analysis_job", "cancel_analysis_job"):
             assert present in names, present
         assert one(conn, "SELECT extnamespace::regnamespace::TEXT FROM pg_extension WHERE extname = 'vector'")[0] == "extensions"
@@ -751,15 +752,28 @@ with tempfile.TemporaryDirectory() as tmp:
         assert one(conn, "SELECT reanalyse_video_id, blur_faces FROM public.analysis_jobs WHERE id = %s", (upload,)) == (None, False)
         job = one(conn, "INSERT INTO public.analysis_jobs (file_path, filename, model, reanalyse_video_id, blur_faces) "
                         "VALUES ('uploads/vb.mp4', 'vb.mp4', 'model-a', 'vb', true) RETURNING id")[0]
-        claimed = conn.execute("SELECT id, reanalyse_video_id, blur_faces FROM public.claim_analysis_job(180)").fetchone()
-        assert claimed == (upload, None, False), "jobs still run oldest first"
-        claimed = conn.execute("SELECT id, reanalyse_video_id, blur_faces FROM public.claim_analysis_job(180)").fetchone()
-        assert claimed == (job, "vb", True), claimed
+        later = enqueue("later.mp4")
+        claim_any = lambda: conn.execute(
+            "SELECT id, reanalyse_video_id, blur_faces FROM public.claim_queued_analysis_job(180, false)").fetchone()
+        claim_old = lambda: conn.execute("SELECT id FROM public.claim_analysis_job(180)").fetchone()
+        assert claim_any() == (upload, None, False), "jobs still run oldest first"
+        assert claim_old() == (later,), "an older console's claim passes over the re-analysis job"
+        assert claim_old() is None and job_status(job)[0] == "queued"
+        assert claim_any() == (job, "vb", True)
+        refused(conn, "SELECT * FROM public.claim_queued_analysis_job(0, false)", contains="at least 1")
         refused(conn, "INSERT INTO public.analysis_jobs (file_path, filename, reanalyse_video_id) VALUES ('k', 'k', 'nope')",
                 contains="analysis_jobs_reanalyse_video_id_fkey")
         conn.execute("DELETE FROM public.videos WHERE id = 'vb'")
         assert one(conn, "SELECT count(*) FROM public.analysis_jobs WHERE id = %s", (job,))[0] == 0
         assert finish(upload, 1, "failed", error="x")[0][1] == "failed"
+        assert finish(later, 1, "failed", error="x")[0][1] == "failed"
+        conn.execute("RESET ROLE")
+        for role in ("anon", "authenticated"):
+            assert not one(conn, "SELECT has_function_privilege(%s, 'public.claim_queued_analysis_job(integer, boolean)', "
+                                 "'EXECUTE')", (role,))[0], role
+        assert one(conn, "SELECT has_function_privilege('service_role', 'public.claim_queued_analysis_job(integer, boolean)', "
+                         "'EXECUTE')")[0]
+        conn.execute("SET ROLE service_role")
 
     @test("deleting a video removes its revisions, crops and query results")
     def _():
