@@ -45,6 +45,7 @@ from vss_agents.tools.incident_report_gen import revision_embedding
 from vss_agents.tools.incident_report_gen import rp1_request_body
 from vss_agents.tools.incident_report_gen import run_p1
 from vss_agents.tools.incident_report_gen import run_rp1
+from vss_agents.utils import chunk_captions
 from vss_agents.utils import track_evidence
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
 
@@ -127,6 +128,16 @@ class TestRequestBodies:
         assert len(parts) == 3
         assert parts[1]["text"] == incident_contract.extraction_prompt()
         assert parts[2] == {"type": "text", "text": f"{REVIEWER_PROMPT_PREAMBLE}\n<<<\nlook at the door\n>>>"}
+
+    def test_p1_appends_the_context_block_as_a_second_user_message(self):
+        body = p1_request_body("vlm", VIDEO_URL, "look at the door", context_block="CONTEXT FROM A FIRST PASS ...")
+        assert len(body["messages"]) == 2
+        assert len(body["messages"][0]["content"]) == 3  # video, prompt, reviewer text: unchanged
+        assert body["messages"][1] == {"role": "user", "content": "CONTEXT FROM A FIRST PASS ..."}
+        assert body["messages"][0]["content"][1]["text"] == incident_contract.extraction_prompt()
+        assert body["response_format"] == incident_contract.response_format()
+        assert len(p1_request_body("vlm", VIDEO_URL, context_block=None)["messages"]) == 1
+        assert len(p1_request_body("vlm", VIDEO_URL, context_block="")["messages"]) == 1
 
     def test_rp1_uses_contract_model_and_prompt(self):
         report = incident_contract.parse_report(json.dumps(MODEL_OUTPUT))
@@ -748,3 +759,155 @@ class TestTracking:
             set_crop_evidence_service(None)
         assert request.summary.skipped == "evidence cropping failed"
         assert entries and all(e["image"] is None for e in entries)
+
+
+CAPTIONS = chunk_captions.ChunkCaptions(
+    timeline=[
+        {
+            "start": 0.0,
+            "end": 20.0,
+            "caption": "[0.0s-20.0s] E1 forces A1 with I1.",
+            "events": [{"start": 0.0, "end": 20.0, "text": "E1 forces A1 with I1."}],
+        }
+    ],
+    telemetry={
+        "window_seconds": 20.0,
+        "overlap_seconds": 2.0,
+        "num_frames": 32,
+        "model": "nvidia/cosmos-3-nano-reasoner",
+        "calls": 1,
+        "retries": 0,
+        "prompt_tokens": 8516,
+        "completion_tokens": 117,
+        "elapsed_ms": 5840.0,
+    },
+    context="CONTEXT FROM A FIRST PASS OVER THE SAME VIDEO (not evidence by itself).\n\n[0.0s-20.0s]\n[0.0s-20.0s] E1 forces A1 with I1.",
+)
+
+
+class TestChunkedCaptions(TestEndToEnd):
+    """The caption pass around P1: flag off, experimental skip, soft failure, and the context message."""
+
+    def _p1_only(self, requests: list[dict]):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST":
+                requests.append(json.loads(request.content))
+            return _completion(json.dumps(MODEL_OUTPUT))
+
+        return handler
+
+    def _input(self, **extra):
+        return IncidentReportGenInput(
+            incident_id="v1",
+            video_url=VIDEO_URL,
+            video_key="uploads/clip.mp4",
+            model_run_id="run1",
+            skip_rp1=True,
+            video_duration_seconds=94.2,
+            **extra,
+        )
+
+    @pytest.mark.asyncio
+    async def test_flag_off_runs_p1_as_before_with_no_chunking_fields(self, monkeypatch):
+        monkeypatch.delenv("INCIDENT_CHUNKING_ENABLED", raising=False)
+        requests: list[dict] = []
+        with patch.object(chunk_captions, "caption_video", new_callable=AsyncMock) as caption_video:
+            result, _ = await self._run(self._p1_only(requests), tool_input=self._input())
+        caption_video.assert_not_awaited()
+        assert len(requests) == 1 and len(requests[0]["messages"]) == 1
+        assert result.chunk_timeline is None and result.chunking is None
+        assert "chunk_timeline" in result.model_dump()  # the key exists, null, in the production response
+
+    @pytest.mark.asyncio
+    async def test_flag_on_appends_the_context_and_returns_timeline_and_telemetry(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        requests: list[dict] = []
+        with patch.object(chunk_captions, "caption_video", new_callable=AsyncMock, return_value=CAPTIONS) as cv:
+            result, persist = await self._run(self._p1_only(requests), tool_input=self._input())
+        kwargs = cv.await_args.kwargs
+        assert kwargs["video_key"] == "uploads/clip.mp4" and kwargs["run_id"] == "run1"
+        assert kwargs["duration_seconds"] == 94.2 and kwargs["model"] == "nvidia/cosmos-3-nano-reasoner"
+        assert kwargs["vlm_base_url"] == "https://switchyard.example"
+        assert kwargs["settings"].enabled is True and kwargs["settings"].window_seconds == 20.0
+        assert kwargs["client"].headers["authorization"] == "Bearer secret"  # the same model client as P1
+        assert len(requests) == 1
+        messages = requests[0]["messages"]
+        assert len(messages) == 2 and messages[1] == {"role": "user", "content": CAPTIONS.context}
+        assert messages[0]["content"][1]["text"] == incident_contract.extraction_prompt()  # prompt file untouched
+        assert requests[0]["response_format"] == incident_contract.response_format()
+        assert result.chunk_timeline == CAPTIONS.timeline
+        assert result.chunking == CAPTIONS.telemetry
+        assert persist.await_args.kwargs["report"] == result.report  # the revision is written as before
+
+    @pytest.mark.asyncio
+    async def test_a_caption_failure_is_soft_and_p1_runs_without_context(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        requests: list[dict] = []
+        with patch.object(
+            chunk_captions,
+            "caption_video",
+            new_callable=AsyncMock,
+            side_effect=chunk_captions.ChunkCaptionError("ffmpeg is not installed on the agent host"),
+        ):
+            result, _ = await self._run(self._p1_only(requests), tool_input=self._input())
+        assert len(requests) == 1 and len(requests[0]["messages"]) == 1
+        assert result.chunk_timeline == []
+        assert result.chunking == {"skipped": "ffmpeg is not installed on the agent host"}
+        assert result.revision_id == 7
+
+    @pytest.mark.asyncio
+    async def test_an_unexpected_caption_error_is_soft_too(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        requests: list[dict] = []
+        with patch.object(chunk_captions, "caption_video", new_callable=AsyncMock, side_effect=OSError("disk full")):
+            result, _ = await self._run(self._p1_only(requests), tool_input=self._input())
+        assert len(requests) == 1 and len(requests[0]["messages"]) == 1
+        assert result.chunking == {"skipped": "OSError: disk full"}
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_video_length_skips_the_pass(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        requests: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST":
+                requests.append(json.loads(request.content))
+                return _completion(json.dumps(MODEL_OUTPUT))
+            return httpx.Response(403, text="SignatureDoesNotMatch")
+
+        with patch.object(chunk_captions, "caption_video", new_callable=AsyncMock) as caption_video:
+            result, _ = await self._run(
+                handler,
+                tool_input=IncidentReportGenInput(
+                    incident_id="v1", video_url=VIDEO_URL, model_run_id="run1", skip_rp1=True
+                ),
+            )
+        caption_video.assert_not_awaited()
+        assert result.chunking == {"skipped": "video length unknown"}
+        assert result.video_bounds_checked is False
+        assert len(requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_bad_chunking_settings_skip_the_pass(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        monkeypatch.setenv("INCIDENT_CHUNK_WINDOW_SECONDS", "lots")
+        requests: list[dict] = []
+        with patch.object(chunk_captions, "caption_video", new_callable=AsyncMock) as caption_video:
+            result, _ = await self._run(self._p1_only(requests), tool_input=self._input())
+        caption_video.assert_not_awaited()
+        assert result.chunking == {
+            "skipped": "bad chunking settings: INCIDENT_CHUNK_WINDOW_SECONDS must be a number, got 'lots'"
+        }
+
+    @pytest.mark.asyncio
+    async def test_an_experimental_request_never_runs_the_pass(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        monkeypatch.setenv("INCIDENT_EXPERIMENTS_ENABLED", "1")
+        requests: list[dict] = []
+        with patch.object(chunk_captions, "caption_video", new_callable=AsyncMock) as caption_video:
+            result, persist = await self._run(self._p1_only(requests), tool_input=self._input(skip_crops=True))
+        caption_video.assert_not_awaited()
+        assert len(requests) == 1 and len(requests[0]["messages"]) == 1
+        assert result.chunk_timeline is None and result.chunking is None
+        assert result.experiment is not None and result.revision_id is None
+        persist.assert_not_awaited()

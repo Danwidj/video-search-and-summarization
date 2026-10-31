@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Person tracking (ENABLE_TRACKING): overrides on top of compose.override.yml,
+# used only by .scripts/tracking-stack.sh. See .docs/decisions.md (2026-10-31).
+#
+# The GPU 0 pins for nvstreamer-2d-fusion and perception-2d-fusion stay in
+# compose.override.yml; this file adds only what tracking needs.
+
+services:
+  # NvStreamer replays an uploaded file once per RTSP connection. The stock
+  # config loops it forever; tracking needs it to stop at the end of the file.
+  nvstreamer-2d-fusion:
+    volumes:
+      - ${VSS_APPS_DIR}/developer-profiles/dev-profile-incident/tracking/nvstreamer-vst-config.json:/home/vst/vst_release/configs/vst_config.json
+
+  # Streams are provisioned over REST (:9000/api/v1/stream/add), so perception
+  # never talks to sensor-ms. Dropping that dependency also keeps sensor-ms and
+  # its Postgres (centralizedb) out of the stack.
+  perception-2d-fusion:
+    depends_on: !reset
+      perception-2d-init:
+        condition: service_completed_successfully
+      broker-health-check:
+        condition: service_completed_successfully
+
+  sensor-ms:
+    depends_on: !reset {}

@@ -14,6 +14,7 @@ Pydantic v2, OpenCV, xhtml2pdf. Package manager: `uv`. Linter/formatter: Ruff. T
 # Setup
 uv venv --python 3.13 && uv sync --group dev && source .venv/bin/activate
 sudo apt-get install libcairo2-dev pkg-config python3-dev   # PDF generation deps
+sudo apt-get install ffmpeg                                  # incident chunked captioning (INCIDENT_CHUNKING_ENABLED); skipped with a reason when missing
 pre-commit install
 
 # Test

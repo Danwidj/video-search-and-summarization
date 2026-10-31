@@ -55,6 +55,26 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 ./native-services.sh logs vss-agent
 ```
 
+### Person-tracking stack (`.scripts/tracking-stack.sh`, `ENABLE_TRACKING=true`)
+
+Off by default. `ENABLE_TRACKING=true ./start.sh` runs `tracking-stack.sh start` on the VM after Phoenix; `vm-stop-backend.sh` runs `stop` when the last session exits. On the VM:
+
+```bash
+cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts
+./tracking-stack.sh start               # stage the RT-DETR model if missing, bring up, wait for ready
+./tracking-stack.sh status              # perception stream-count, :8081/livez, mdx-* indices, NvStreamer streams
+./tracking-stack.sh restart-perception  # only perception-2d-fusion, then wait for ready
+./tracking-stack.sh stop                # stop by name; keeps containers, volumes and built engines
+```
+
+- **Model staging:** `start` downloads `nvidia/tao/rtdetr_2d_warehouse:deployable_rn50_v1.0.2` (251 MB) with `ngc` (key `NGC_CLI_API_KEY` from the env file) and installs `rtdetr_warehouse_v1.0.2.fp16.onnx` into `$VSS_DATA_DIR/models`. It does nothing when the file is there. A missing `ngc` binary or key stops with a clear error. The SigLIP encoder is fetched by the `perception-2d-init` container; without the RT-DETR file `vss-rtvi-cv` exits at start.
+- **First start:** builds TensorRT engines (about 7 to 10 minutes); later starts take about 90 s. Override the wait with `TRACKING_READY_TIMEOUT`.
+- **HOST_IP:** Kafka advertises it and NvStreamer builds RTSP URLs from it. The script exports the VM's current address for the run and leaves `generated.env.remote` unchanged.
+- **Cost:** GPU 0 holds about 7.6 GB while the perception container is up (5.0 GB right after start, freed only by a restart), the images take about 40 GB (29.9 GB is `vss-rt-cv`), and RAM rises by about 14 GB.
+- **HDR clips crash DeepStream** (BT.2020/HLG, as iPhone HDR records): the pipeline quits within 2 s of `stream/add`. Convert HDR to BT.709 before NvStreamer, or skip tracking for it.
+- **Pipeline dies, container lives:** after a crash `/api/v1/ready` still says YES. Health is `stream-count` from `get-stream-info`; run `restart-perception` when a stream produces no frames within 40 s of add. Compose gives the container only two restarts. `start` and `restart-perception` return when the REST server answers; wait about 30 s more before the first `stream/add` after a restart. `start` also creates the `data_log` bind-mount directories (Elasticsearch, Kafka, API) that `dev-profile.sh` would otherwise make.
+- **One stack per host:** the stock compose uses fixed container names, and the video-analytics API container takes port 8081 from the native `video-analytics-api` (`ENABLE_ANALYTICS`); do not run both. `compose.tracking.yml` drops perception's dependency on `sensor-ms`, so `sensor-ms` and `centralizedb` are never started.
+
 ### Pruning Retired Docker Images (`incident-operate-vm/scripts/prune-native-images.sh`)
 
 Because `vss-agent`, `video-analytics-api`, and `behavior-analytics` run natively, their old container images

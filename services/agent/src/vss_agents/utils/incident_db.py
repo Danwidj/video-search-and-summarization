@@ -89,7 +89,7 @@ def is_configured() -> bool:
 def _utcnow() -> _dt.datetime:
     # The console schema uses PostgreSQL ``timestamp without time zone``.
     # Supabase/PostgREST also expects naive UTC for timestamptz-less columns.
-    return _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+    return _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
 
 
 def _row_to_dict(row: dict[str, Any] | None) -> dict[str, Any] | None:

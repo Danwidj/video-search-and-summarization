@@ -15,7 +15,9 @@
 
 """Unit tests for crop_evidence utility and CropEvidenceService (MVP2 VM Step 3)."""
 
+import base64
 from collections.abc import Generator
+import copy
 import io
 import json
 from pathlib import Path
@@ -36,8 +38,11 @@ from vss_agents.utils.crop_evidence import CropResult
 from vss_agents.utils.crop_evidence import DefaultDetector
 from vss_agents.utils.crop_evidence import Detection
 from vss_agents.utils.crop_evidence import FakeDetector
+from vss_agents.utils.crop_evidence import FakeZoomNamer
 from vss_agents.utils.crop_evidence import InMemoryEvidenceStore
 from vss_agents.utils.crop_evidence import R2EvidenceStore
+from vss_agents.utils.crop_evidence import ZoomLook
+from vss_agents.utils.crop_evidence import ZoomVerdict
 from vss_agents.utils.crop_evidence import apply_box_padding
 from vss_agents.utils.crop_evidence import crop_evidence_item
 from vss_agents.utils.crop_evidence import encode_jpeg
@@ -45,9 +50,13 @@ from vss_agents.utils.crop_evidence import evidence_items
 from vss_agents.utils.crop_evidence import evidence_key
 from vss_agents.utils.crop_evidence import extract_frame
 from vss_agents.utils.crop_evidence import get_crop_evidence_service
+from vss_agents.utils.crop_evidence import looks_agree
 from vss_agents.utils.crop_evidence import next_run_batch_id
 from vss_agents.utils.crop_evidence import normalize_box
+from vss_agents.utils.crop_evidence import parse_zoom_reply
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
+from vss_agents.utils.crop_evidence import zoom_crop
+from vss_agents.utils.crop_evidence import zoom_names_enabled
 from vss_agents.utils.track_evidence import Sample
 from vss_agents.utils.track_evidence import Track
 from vss_agents.utils.track_evidence import TrackingOutcome
@@ -726,3 +735,339 @@ class TestTrackingEvidence:
             video_ref=tiny_video_path, video_id="v", report=REPORT, tracking=request
         )
         assert started == [] and request.summary.skipped
+
+
+class TestZoomSecondLook:
+    """The zoomed second look: a close-up of each located item is named again and a confident correction applied."""
+
+    LOCATED: ClassVar[list[Detection]] = [Detection(box=[200, 200, 600, 600], score=0.95, label="x")]
+    BAG_REPLY: ClassVar[dict] = {
+        "name": "plastic bag",
+        "description": "A crumpled white plastic bag on the floor.",
+        "confidence": 0.9,
+        "changed": True,
+    }
+
+    def _service(self, namer: FakeZoomNamer) -> CropEvidenceService:
+        return CropEvidenceService(
+            detector=FakeDetector(detections=self.LOCATED), store=InMemoryEvidenceStore(), namer=namer
+        )
+
+    async def _run(self, service: CropEvidenceService, video: Path, report: dict, **kwargs: object) -> dict[str, dict]:
+        results = await service.process_incident_report(video_ref=video, video_id="v", report=report, **kwargs)
+        return {r["item_id"]: r for r in results}
+
+    def test_zoom_crop_takes_a_25_percent_margin_and_upscales_a_small_cut_for_the_model(self) -> None:
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        box = [500, 500, 550, 540]  # 24 x 25.6 px at 480p: the "25-pixel smudge"
+        zoomed = zoom_crop(frame, box)
+        assert zoomed is not None
+        width, height = cv2.imdecode(np.frombuffer(zoomed, np.uint8), cv2.IMREAD_COLOR).shape[1::-1]
+        assert min(width, height) == 256 and max(width, height) < 400  # upscaled, aspect kept
+        # The stored crop beside it keeps the 5% margin and is never upscaled.
+        c_ymin, c_xmin, c_ymax, c_xmax = apply_box_padding(box, 640, 480, padding_fraction=0.05)
+        assert (c_ymax - c_ymin, c_xmax - c_xmin) == (26, 28)
+        z_ymin, z_xmin, z_ymax, z_xmax = apply_box_padding(box, 640, 480, padding_fraction=0.25)
+        assert (z_ymax - z_ymin, z_xmax - z_xmin) == (36, 38)
+
+    def test_a_located_crop_carries_its_zoom_bytes_but_the_stored_crop_is_unchanged(
+        self, tiny_video_path: Path
+    ) -> None:
+        result = crop_evidence_item(tiny_video_path, 0, "x", FakeDetector(detections=self.LOCATED))
+        assert result is not None and result.zoom_bytes is not None and result.image_bytes is not None
+        assert result.zoom_frame_bytes is not None
+        context = cv2.imdecode(np.frombuffer(result.zoom_frame_bytes, np.uint8), cv2.IMREAD_COLOR)
+        assert context.shape[:2] == (80, 120)  # the whole frame, with the box drawn on it
+        _, green, red = (int(v) for v in context[16, 24])  # the top-left corner of the drawn box (BGR)
+        assert red > 150 and green < 60  # red ink on the blue frame, allowing for JPEG chroma blur
+        crop_h = cv2.imdecode(np.frombuffer(result.image_bytes, np.uint8), cv2.IMREAD_COLOR).shape[0]
+        zoom_h = cv2.imdecode(np.frombuffer(result.zoom_bytes, np.uint8), cv2.IMREAD_COLOR).shape[0]
+        assert crop_h < 80 and zoom_h >= 256  # the 80 px frame yields a small stored crop and an upscaled close-up
+
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            {"description": "x", "confidence": 0.9, "changed": True},
+            {"name": "bag", "description": "x", "confidence": 1.5, "changed": True},
+            {"name": "bag", "description": "x", "confidence": "high", "changed": True},
+            {"name": "bag", "description": "x", "confidence": 0.9, "changed": "yes"},
+            {"name": "", "description": "x", "confidence": 0.9, "changed": False},
+        ],
+    )
+    def test_parse_zoom_reply_is_strict(self, reply: dict) -> None:
+        with pytest.raises(ValueError):
+            parse_zoom_reply(reply)
+
+    def test_parse_zoom_reply_normalises_whitespace(self) -> None:
+        assert parse_zoom_reply(
+            {"name": " plastic  bag ", "description": " a bag ", "confidence": 1, "changed": False}
+        ) == (ZoomVerdict(name="plastic bag", description="a bag", confidence=1.0, changed=False))
+
+    def test_flag_is_on_unless_set_to_a_false_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("INCIDENT_ZOOM_NAMES_ENABLED", raising=False)
+        assert zoom_names_enabled() is True
+        for value in ("0", "false", "No", " off "):
+            monkeypatch.setenv("INCIDENT_ZOOM_NAMES_ENABLED", value)
+            assert zoom_names_enabled() is False, value
+        monkeypatch.setenv("INCIDENT_ZOOM_NAMES_ENABLED", "1")
+        assert zoom_names_enabled() is True
+
+    @pytest.mark.asyncio
+    async def test_a_confident_correction_renames_the_entry_and_the_report_item(self, tiny_video_path: Path) -> None:
+        report = copy.deepcopy(REPORT)
+        namer = FakeZoomNamer({"cash register": self.BAG_REPLY})
+        by_id = await self._run(self._service(namer), tiny_video_path, report, zoom_names=True)
+
+        asset = by_id["A1"]
+        assert asset["item_name"] == "plastic bag" and asset["description"] == self.BAG_REPLY["description"]
+        assert asset["name_before"] == "cash register" and asset["description_before"] == "Store register"
+        assert asset["zoom_checked"] is True and asset["zoom_confidence"] == 0.9 and asset["zoom_gap"] is None
+        # Never touched: id, label (the detector query), timestamps, image keys.
+        assert asset["item_id"] == "A1" and asset["label"] == "cash register" and asset["timestamp_seconds"] == 1
+        assert asset["image"] == "evidence/v/run-1/A1.jpg" and asset["located"] is True
+        # The report payload agrees, so the title-level text the console shows matches the evidence card.
+        assert report["assets"][0]["name"] == "plastic bag"
+        assert report["assets"][0]["description"] == self.BAG_REPLY["description"]
+        assert report["assets"][0]["asset_id"] == "A1" and report["assets"][0]["label"] == "cash register"
+        assert report["instruments"] == REPORT["instruments"] and report["entities"] == REPORT["entities"]
+        # The model saw the close-up with the item's kind, name and description.
+        call = next(c for c in namer.calls if c["name"] == "cash register")
+        assert call["item_type"] == "asset" and call["description"] == "Store register"
+        assert call["jpeg_bytes"] > 0 and call["context_bytes"] > 0  # the close-up and the frame with the box
+
+    @pytest.mark.asyncio
+    async def test_an_instrument_correction_updates_its_name_and_description(self, tiny_video_path: Path) -> None:
+        report = copy.deepcopy(REPORT)
+        reply = {"name": "tyre iron", "description": "An L-shaped tyre iron.", "confidence": 0.75, "changed": True}
+        by_id = await self._run(
+            self._service(FakeZoomNamer({"crowbar": reply})), tiny_video_path, report, zoom_names=True
+        )
+        assert by_id["I1"]["item_name"] == "tyre iron" and by_id["I1"]["name_before"] == "crowbar"
+        assert report["instruments"][0]["name"] == "tyre iron"
+        assert report["instruments"][0]["description"] == "An L-shaped tyre iron."
+        assert report["instruments"][0]["threat_level"] == 3 and report["instruments"][0]["entity_id"] == "E1"
+
+    @pytest.mark.asyncio
+    async def test_an_entity_keeps_its_type_but_its_description_can_be_corrected(self, tiny_video_path: Path) -> None:
+        report = copy.deepcopy(REPORT)
+        reply = {"name": "animal", "description": "Person in a dark jacket.", "confidence": 0.95, "changed": True}
+        by_id = await self._run(
+            self._service(FakeZoomNamer({"human": reply})), tiny_video_path, report, zoom_names=True
+        )
+        entity = by_id["E1"]
+        assert entity["item_name"] == "human" and entity["description"] == "Person in a dark jacket."
+        assert entity["name_before"] == "human" and entity["description_before"] == "Suspect in hoodie"
+        assert (
+            report["entities"][0]["type"] == "human"
+            and report["entities"][0]["description"] == "Person in a dark jacket."
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_low_confidence_correction_is_ignored_and_recorded(self, tiny_video_path: Path) -> None:
+        report = copy.deepcopy(REPORT)
+        reply = {**self.BAG_REPLY, "confidence": 0.69}
+        by_id = await self._run(
+            self._service(FakeZoomNamer({"cash register": reply})), tiny_video_path, report, zoom_names=True
+        )
+        asset = by_id["A1"]
+        assert asset["item_name"] == "cash register" and asset["name_before"] is None
+        assert asset["zoom_checked"] is True and asset["zoom_confidence"] == 0.69
+        assert "plastic bag" in asset["zoom_gap"] and "below 0.7" in asset["zoom_gap"]
+        assert report == REPORT
+
+    @pytest.mark.asyncio
+    async def test_an_unchanged_verdict_only_records_the_check(self, tiny_video_path: Path) -> None:
+        report = copy.deepcopy(REPORT)
+        by_id = await self._run(self._service(FakeZoomNamer()), tiny_video_path, report, zoom_names=True)
+        for entry in by_id.values():
+            assert entry["zoom_checked"] is True and entry["zoom_confidence"] == 1.0
+            assert entry["name_before"] is None and entry["zoom_gap"] is None and "description_before" not in entry
+        assert report == REPORT
+
+    @pytest.mark.asyncio
+    async def test_a_malformed_or_failed_reply_never_fails_the_item(self, tiny_video_path: Path) -> None:
+        report = copy.deepcopy(REPORT)
+        namer = FakeZoomNamer({"cash register": "not json at all", "crowbar": RuntimeError("gateway timed out")})
+        by_id = await self._run(self._service(namer), tiny_video_path, report, zoom_names=True)
+        assert by_id["A1"]["image"] == "evidence/v/run-1/A1.jpg" and by_id["A1"]["image_gap"] is None
+        assert by_id["A1"]["zoom_checked"] is False and by_id["A1"]["zoom_confidence"] is None
+        assert by_id["A1"]["zoom_gap"].startswith("second look failed: JSONDecodeError")
+        assert by_id["I1"]["zoom_checked"] is False and "gateway timed out" in by_id["I1"]["zoom_gap"]
+        assert by_id["E1"]["zoom_checked"] is True
+        assert report == REPORT
+
+    @pytest.mark.asyncio
+    async def test_the_flag_off_makes_no_call(self, tiny_video_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("INCIDENT_ZOOM_NAMES_ENABLED", "0")
+        namer = FakeZoomNamer({"cash register": self.BAG_REPLY})
+        report = copy.deepcopy(REPORT)
+        by_id = await self._run(self._service(namer), tiny_video_path, report)  # default: the flag decides
+        assert namer.calls == []
+        for entry in by_id.values():
+            assert entry["image"] is not None and entry["zoom_checked"] is False
+            assert entry["zoom_gap"] == "zoomed second look disabled (INCIDENT_ZOOM_NAMES_ENABLED)"
+        assert report == REPORT
+
+    @pytest.mark.asyncio
+    async def test_an_item_that_is_not_located_gets_no_second_look(self, tiny_video_path: Path) -> None:
+        namer = FakeZoomNamer({"cash register": self.BAG_REPLY})
+        service = CropEvidenceService(detector=FakeDetector(), store=InMemoryEvidenceStore(), namer=namer)
+        by_id = await self._run(service, tiny_video_path, copy.deepcopy(REPORT), zoom_names=True)
+        assert namer.calls == []
+        assert all(e["zoom_checked"] is False and e["zoom_gap"] == "object not located" for e in by_id.values())
+
+    @pytest.mark.asyncio
+    async def test_a_detector_without_credentials_is_not_asked_for_a_second_look(self, tiny_video_path: Path) -> None:
+        service = CropEvidenceService(
+            detector=FakeDetector(detections=self.LOCATED),
+            store=InMemoryEvidenceStore(),
+            namer=DefaultDetector(api_key=""),
+        )
+        with patch("vss_agents.utils.crop_evidence.httpx.post") as post:
+            by_id = await self._run(service, tiny_video_path, copy.deepcopy(REPORT), zoom_names=True)
+        post.assert_not_called()
+        assert all("key missing" in e["zoom_gap"] and e["zoom_checked"] is False for e in by_id.values())
+
+    def test_the_default_detector_is_also_the_namer_and_its_zoom_calls_are_outside_the_budget(self) -> None:
+        detector = DefaultDetector(api_key="k", base_url="https://vlm.example", model_name="m")
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
+        assert service.namer is detector
+        budget = CropCallBudget(1)
+        budgeted = detector.with_call_budget(budget)
+
+        def reply(content: str) -> MagicMock:
+            response = MagicMock(status_code=200)
+            response.json.return_value = {"choices": [{"message": {"content": content}}]}
+            return response
+
+        replies = [
+            reply('{"name": "plastic bag", "description": "A crumpled bag.", "confidence": 0.9}'),  # frame look
+            reply(
+                '```json\n{"name": "plastic bag", "description": "A white bag.", "confidence": 0.8}\n```'
+            ),  # close-up
+            reply('{"name": "plastic bag", "description": "A bag on the floor.", "confidence": 0.95, "changed": true}'),
+        ]
+        with patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=replies) as post:
+            verdict = budgeted.zoom_name(
+                b"jpeg", item_type="asset", name="soccer ball", description="A ball.", context_jpeg=b"frame"
+            )
+        assert verdict == ZoomVerdict(
+            name="plastic bag",
+            description="A bag on the floor.",
+            confidence=0.8,  # the lowest of the three calls
+            changed=True,
+            seen={"frame": "plastic bag", "close_up": "plastic bag"},
+        )
+        assert budget.calls == 0  # three zoom calls, none counted against the grounding cap
+        assert post.call_count == 3 and all(
+            c.args[0] == "https://vlm.example/v1/chat/completions" for c in post.call_args_list
+        )
+        bodies = [c.kwargs["json"] for c in post.call_args_list]
+        assert all(b["model"] == "m" and b["response_format"] == {"type": "json_object"} for b in bodies)
+        contents = [b["messages"][0]["content"] for b in bodies]
+        assert [[part["type"] for part in c] for c in contents] == [
+            ["image_url", "text"],  # the frame with the box
+            ["image_url", "image_url", "text"],  # the frame and the close-up
+            ["text"],  # the text-only merge
+        ]
+        assert contents[1][1]["image_url"]["url"].endswith(base64.b64encode(b"jpeg").decode())
+        # The blind looks never see the report's name; only the merge does.
+        assert "soccer ball" not in contents[0][1]["text"] and "soccer ball" not in contents[1][2]["text"]
+        assert '"soccer ball"' in contents[2][0]["text"] and '"plastic bag"' in contents[2][0]["text"]
+
+    def test_a_rate_limited_zoom_call_is_retried_once(self) -> None:
+        detector = DefaultDetector(api_key="k")
+        limited = MagicMock(status_code=429, headers={"retry-after": "0"})
+        ok = MagicMock(status_code=200, headers={})
+        ok.json.return_value = {
+            "choices": [{"message": {"content": '{"name": "bag", "description": "", "confidence": 1}'}}]
+        }
+        with (
+            patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=[limited, ok, limited, limited]) as post,
+            patch("vss_agents.utils.crop_evidence.time.sleep") as sleep,
+        ):
+            assert detector._chat_json([b"jpeg"], "look")["name"] == "bag"
+            limited.raise_for_status.side_effect = RuntimeError("429")
+            with pytest.raises(RuntimeError):
+                detector._chat_json([b"jpeg"], "look")  # a second 429 is not retried again
+        assert post.call_count == 4 and sleep.call_count == 2
+
+    def test_disagreeing_looks_skip_the_merge_call_and_keep_the_report(self) -> None:
+        detector = DefaultDetector(api_key="k")
+
+        def reply(content: str) -> MagicMock:
+            response = MagicMock(status_code=200)
+            response.json.return_value = {"choices": [{"message": {"content": content}}]}
+            return response
+
+        replies = [
+            reply('{"name": "wheelchair", "description": "", "confidence": 0.8}'),
+            reply('{"name": "shoe", "description": "", "confidence": 0.6}'),
+        ]
+        with patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=replies) as post:
+            verdict = detector.zoom_name(
+                b"jpeg", item_type="asset", name="soccer ball", description="A ball.", context_jpeg=b"frame"
+            )
+        assert post.call_count == 2  # no text merge
+        assert verdict == ZoomVerdict(
+            name="soccer ball",
+            description="A ball.",
+            confidence=0.6,
+            changed=False,
+            seen={"frame": "wheelchair", "close_up": "shoe"},
+        )
+
+    @pytest.mark.parametrize(
+        ("first", "second", "agree"),
+        [
+            ("plastic bag", "crumpled plastic bag", True),
+            ("A plastic bag", "plastic bag", True),
+            ("Plastic Bag", "plastic bag", True),
+            ("wheelchair", "shoe", False),
+            ("black bag", "black ball", False),
+            ("", "bag", False),
+        ],
+    )
+    def test_looks_agree_on_content_words(self, first: str, second: str, agree: bool) -> None:
+        assert looks_agree(ZoomLook(first, "", 1.0), ZoomLook(second, "", 1.0)) is agree
+
+    def test_without_a_context_frame_the_close_up_is_the_only_look(self) -> None:
+        detector = DefaultDetector(api_key="k")
+        look = MagicMock(status_code=200)
+        look.json.return_value = {
+            "choices": [{"message": {"content": '{"name": "bag", "description": "", "confidence": 1}'}}]
+        }
+        merge = MagicMock(status_code=200)
+        merge.json.return_value = {
+            "choices": [
+                {"message": {"content": '{"name": "bag", "description": "", "confidence": 1, "changed": false}'}}
+            ]
+        }
+        with patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=[look, merge]) as post:
+            verdict = detector.zoom_name(b"jpeg", item_type="asset", name="bag", description="")
+        assert post.call_count == 2 and verdict.seen == {"frame": "bag", "close_up": "bag"}
+
+    @pytest.mark.asyncio
+    async def test_disagreeing_looks_keep_the_report_and_say_so(self, tiny_video_path: Path) -> None:
+        report = copy.deepcopy(REPORT)
+        service = self._service(FakeZoomNamer())
+        service.namer.replies["cash register"] = ZoomVerdict(
+            name="cash register",
+            description="Store register",
+            confidence=0.0,
+            changed=False,
+            seen={"frame": "wheelchair", "close_up": "shoe"},
+        )
+        by_id = await self._run(service, tiny_video_path, report, zoom_names=True)
+        asset = by_id["A1"]
+        assert asset["item_name"] == "cash register" and asset["zoom_checked"] is True
+        assert asset["zoom_seen"] == {"frame": "wheelchair", "close_up": "shoe"}
+        assert asset["zoom_gap"] == "looks disagree, report kept: frame saw 'wheelchair', close_up saw 'shoe'"
+        assert report == REPORT
+
+    def test_the_default_detector_raises_on_a_malformed_zoom_reply(self) -> None:
+        detector = DefaultDetector(api_key="k")
+        reply = MagicMock(status_code=200)
+        reply.json.return_value = {"choices": [{"message": {"content": '{"bbox_2d": [1, 2, 3, 4]}'}}]}
+        with patch("vss_agents.utils.crop_evidence.httpx.post", return_value=reply), pytest.raises(ValueError):
+            detector.zoom_name(b"jpeg", item_type="asset", name="ball", description="")

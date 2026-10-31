@@ -247,6 +247,9 @@ PRODUCTION_KEYS = {
     "video_duration_source",
     "video_bounds_checked",
     "video_bounds_unchecked_reason",
+    # The caption pass (INCIDENT_CHUNKING_ENABLED): both null when the flag is off or the request is experimental.
+    "chunk_timeline",
+    "chunking",
 }
 EXPERIMENT = {"prompt_id": "p1-v4-e01-x", "prompt_sha256": "a" * 64, "skip_crops": True, "persisted": False}
 

@@ -22,6 +22,17 @@ native size, which the console shows with the box drawn on it, and the object cr
 the frame, JPEG quality 85), which only evidence search embeds. When the object is not found the frame is stored
 alone and the entry says so. The entries become the evidence of the AI revision the analysis run writes; the
 console builds the searchable ``evidence_crops`` rows from a revision's evidence when it is made official.
+
+Zoomed second look (``INCIDENT_ZOOM_NAMES_ENABLED``, default on): the whole-clip VLM pass names each item at
+thumbnail resolution, so a crumpled bag seen at 25 pixels can become "soccer ball". Once an item is located, the
+item is cut from the frame at native resolution with a 25% margin (upscaled to a short side of at least 256 px for
+the model only; the stored crop is unchanged) and the same VLM the grounding detector uses takes two blind looks
+(the frame with the box drawn; that frame plus the close-up), then a text-only merge weighs the looks against the
+report's current name and description and may correct them only when the looks agree (a vision prompt that carries
+the current name makes the model confirm a wrong one, and a close-up alone can name a neighbouring object). A correction is applied to the evidence entry
+and to the matching item of the report payload when the model says ``changed`` with confidence at least 0.7; the
+item id, label, timestamps and an entity's ``type`` are never changed. Zoom calls are outside ``CropCallBudget``
+(the grounding cap of an experimental request) and a failed or slow call never fails the analysis.
 """
 
 from abc import ABC
@@ -52,6 +63,7 @@ except ImportError:  # pragma: no cover
 import httpx
 import numpy as np
 from PIL import Image
+from PIL import ImageDraw
 
 from vss_agents.utils import track_evidence
 from vss_agents.utils.optional_cv2 import ensure_codecs
@@ -85,11 +97,207 @@ class CropResult:
     frame_bytes: bytes | None = None  # the whole frame the box was found in, at the video's native size
     box_seconds: float | None = None  # the second the frame was read at (the requested one unless a retry hit)
     located: bool = True
+    zoom_bytes: bytes | None = None  # the close-up the second look names (25% margin, upscaled); never stored
+    zoom_frame_bytes: bytes | None = None  # the whole frame with the box drawn, the second look's context; never stored
 
 
 # Seconds tried, in order, around the requested one when the detector finds nothing there.
 LOCATE_RETRY_OFFSETS: tuple[int, ...] = (1, -1, 2, -2)
 FRAME_JPEG_QUALITY = 90
+# Zoomed second look: the close-up's margin around the located box, the smallest short side the model sees, the
+# confidence a correction needs before it is applied, and the flag that turns the second look off.
+ZOOM_NAMES_ENV = "INCIDENT_ZOOM_NAMES_ENABLED"
+ZOOM_CROP_PADDING = 0.25
+ZOOM_MIN_SHORT_SIDE = 256
+ZOOM_CONFIDENCE_THRESHOLD = 0.7
+ZOOM_TIMEOUT_SECONDS = 60.0
+_FALSE_FLAG_VALUES = frozenset({"0", "false", "no", "off"})
+
+
+def zoom_names_enabled() -> bool:
+    """Whether the zoomed second look runs: ``INCIDENT_ZOOM_NAMES_ENABLED`` unset or anything but 0/false/no/off."""
+    return os.getenv(ZOOM_NAMES_ENV, "1").strip().lower() not in _FALSE_FLAG_VALUES
+
+
+@dataclass(frozen=True)
+class ZoomLook:
+    """One blind look at the marked item: what the model sees, without the report's text."""
+
+    name: str
+    description: str
+    confidence: float
+
+
+@dataclass(frozen=True)
+class ZoomVerdict:
+    """The second look's outcome for one item: the name and description it stands by, and how sure it is.
+
+    ``seen`` records the blind looks (``frame`` and ``close_up``: the name each gave an object, the description
+    each gave a person) so a reviewer can see what the model saw even when nothing changed.
+    """
+
+    name: str
+    description: str
+    confidence: float
+    changed: bool
+    seen: dict[str, str] | None = None
+
+
+def _confidence(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 0.0 <= float(value) <= 1.0:
+        raise ValueError(f"zoom reply confidence is not a number in 0..1: {value!r}")
+    return float(value)
+
+
+def parse_look_reply(data: dict[str, Any]) -> ZoomLook:
+    """A strict ``{name, description, confidence}`` object; anything else raises ``ValueError``."""
+    name = data.get("name")
+    description = data.get("description")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("zoom look has no name")
+    if not isinstance(description, str):
+        raise ValueError("zoom look has no description")
+    return ZoomLook(
+        name=" ".join(name.split()), description=description.strip(), confidence=_confidence(data.get("confidence"))
+    )
+
+
+def parse_zoom_reply(data: dict[str, Any]) -> ZoomVerdict:
+    """A strict ``{name, description, confidence, changed}`` object; anything else raises ``ValueError``."""
+    name = data.get("name")
+    description = data.get("description")
+    changed = data.get("changed")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("zoom reply has no name")
+    if not isinstance(description, str):
+        raise ValueError("zoom reply has no description")
+    if not isinstance(changed, bool):
+        raise ValueError(f"zoom reply changed is not a boolean: {changed!r}")
+    return ZoomVerdict(
+        name=" ".join(name.split()),
+        description=description.strip(),
+        confidence=_confidence(data.get("confidence")),
+        changed=changed,
+    )
+
+
+@runtime_checkable
+class ZoomNamer(Protocol):
+    """Port for the zoomed second look: names a located item again from its close-up and marked frame."""
+
+    def zoom_name(
+        self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None
+    ) -> ZoomVerdict:
+        """Confirm or correct ``name`` and ``description`` of the ``item_type`` item in the close-up ``jpeg``.
+
+        ``context_jpeg`` is the whole frame with the item's box drawn on it, so the model knows which object the
+        close-up shows and sees its surroundings.
+        """
+        ...
+
+
+def look_prompt(item_type: str, with_close_up: bool) -> str:
+    """A blind look: name the marked item from the image(s) alone, with no report text to lean on."""
+    images = (
+        "The first image is a video frame with one {thing} marked by a red box; the second is a close-up of that box."
+        if with_close_up
+        else "The image is a video frame with one {thing} marked by a red box."
+    )
+    if item_type == "entity":
+        return (
+            f"{images.format(thing='person')} Describe the marked person from what is visible: clothing, build, "
+            'what they carry or hold. Return JSON only, in the form {"name": "person", "description": "<one sentence>", '
+            '"confidence": <0 to 1: how sure you are>}.'
+        )
+    return (
+        f"{images.format(thing='object')} What is the object inside the red box? Ignore things that are only partly "
+        'inside it. Return JSON only, in the form {"name": "<one to four plain words>", "description": "<one '
+        'sentence>", "confidence": <0 to 1: how sure you are>}.'
+    )
+
+
+_LOOK_STOP_WORDS = frozenset({"a", "an", "the", "some", "small", "large", "big", "little"})
+
+
+def _look_words(name: str) -> frozenset[str]:
+    return frozenset(word for word in re.findall(r"[a-z0-9]+", name.lower()) if word not in _LOOK_STOP_WORDS)
+
+
+def looks_agree(first: ZoomLook, second: ZoomLook) -> bool:
+    """Whether two blind looks named the same thing: equal content words, or one name inside the other.
+
+    "plastic bag" agrees with "crumpled plastic bag"; "wheelchair" does not agree with "shoe". Decided in code,
+    not by the merge model, which proved unreliable at it.
+    """
+    a, b = _look_words(first.name), _look_words(second.name)
+    return bool(a and b) and (a <= b or b <= a)
+
+
+def merge_prompt(item_type: str, name: str, description: str, look: ZoomLook) -> str:
+    """The text-only merge: the report's text against what the agreeing blind looks found.
+
+    The report's name is kept out of the vision calls because a model that reads "soccer ball" next to a
+    25-pixel smudge confirms "soccer ball"; here the model only reconciles what the looks found with what the
+    report says, and it is only asked when the two looks agree (:func:`looks_agree`).
+    """
+    found = f'A close look at the video frame found: "{look.name}" ({look.description}).'
+    if item_type == "entity":
+        rule = (
+            'The entity type is fixed: return it unchanged as "name". Keep the report\'s description unless the close '
+            "look shows it is wrong about the person's appearance (clothing, build, what they carry); then correct "
+            "only the wrong parts and keep what the report says about their behaviour and context."
+        )
+    else:
+        rule = (
+            "Keep the report's name and description unless the close look shows the report is wrong about what the "
+            "object is; then correct the name (one to four plain words) and only the wrong parts of the description, "
+            "keeping what the report says about context."
+        )
+    return (
+        f'An incident report lists an {item_type} named "{name}" with the description: "{description}". {found} '
+        f'{rule} Return JSON only, in the form {{"name": "<name>", "description": "<description>", "changed": <true '
+        'when either differs from the report>, "confidence": <0 to 1: how sure you are the result is right>}.'
+    )
+
+
+def zoom_crop(frame: np.ndarray, box: Sequence[int | float]) -> bytes | None:
+    """The close-up the second look names: ``box`` cut from ``frame`` at native resolution with a 25% margin.
+
+    A small cut is upscaled so its short side is at least ``ZOOM_MIN_SHORT_SIDE`` pixels (bicubic), which only
+    helps the model read it; the stored evidence crop is cut separately and never upscaled.
+    """
+    frame_h, frame_w = frame.shape[:2]
+    c_ymin, c_xmin, c_ymax, c_xmax = apply_box_padding(box, frame_w, frame_h, padding_fraction=ZOOM_CROP_PADDING)
+    if c_ymin >= c_ymax or c_xmin >= c_xmax:
+        return None
+    cut = np.ascontiguousarray(frame[c_ymin:c_ymax, c_xmin:c_xmax])
+    short_side = min(cut.shape[:2])
+    if 0 < short_side < ZOOM_MIN_SHORT_SIDE:
+        scale = ZOOM_MIN_SHORT_SIDE / short_side
+        size = (max(1, round(cut.shape[1] * scale)), max(1, round(cut.shape[0] * scale)))
+        cut = np.asarray(Image.fromarray(cut[..., ::-1]).resize(size, Image.Resampling.BICUBIC))[..., ::-1]
+        cut = np.ascontiguousarray(cut)
+    return encode_jpeg(cut, quality=85)
+
+
+def zoom_context_frame(frame: np.ndarray, box: Sequence[int | float]) -> bytes | None:
+    """The whole frame with ``box`` drawn in red (at most ``GROUNDING_MAX_EDGE_PIXELS`` on the long edge).
+
+    Shown to the second look beside the close-up so the model knows which object is meant and sees its
+    surroundings; a 25-pixel object is often only recognisable in context. Never stored.
+    """
+    frame_h, frame_w = frame.shape[:2]
+    y0, x0, y1, x1 = apply_box_padding(box, frame_w, frame_h, padding_fraction=0.0)
+    if y0 >= y1 or x0 >= x1:
+        return None
+    image = Image.fromarray(np.ascontiguousarray(frame[..., ::-1]))
+    ImageDraw.Draw(image).rectangle(
+        (x0, y0, x1, y1), outline=(255, 0, 0), width=max(2, round(max(frame_w, frame_h) / 400))
+    )
+    scale = min(1.0, GROUNDING_MAX_EDGE_PIXELS / max(frame_h, frame_w))
+    if scale < 1.0:
+        image = image.resize((round(frame_w * scale), round(frame_h * scale)))
+    return encode_jpeg(np.ascontiguousarray(np.asarray(image)[..., ::-1]), quality=85)
 
 
 def evidence_key(video_key: str, batch_id: str, item_id: str) -> str:
@@ -413,6 +621,86 @@ class DefaultDetector:
                 logger.warning("Unparseable grounding reply (attempt %d); retrying", attempt)
         raise RuntimeError("unreachable")  # pragma: no cover
 
+    def _chat_json(self, images: Sequence[bytes], text: str, max_tokens: int = 256) -> dict[str, Any]:
+        """One unbudgeted chat completion (images first, then ``text``) parsed as a JSON object.
+
+        A rate limit or server error is retried once after ``retry-after`` (default 2 s); the gateway answers 429
+        when a report's items are checked concurrently.
+        """
+        body = {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        *(
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")
+                                },
+                            }
+                            for image in images
+                        ),
+                        {"type": "text", "text": text},
+                    ],
+                }
+            ],
+            "temperature": 0.0,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        for attempt in (1, 2):
+            resp = httpx.post(
+                self._chat_url(),
+                json=body,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=ZOOM_TIMEOUT_SECONDS,
+            )
+            if resp.status_code in _RETRYABLE_STATUS_CODES and attempt == 1:
+                time.sleep(float(resp.headers.get("retry-after") or 2.0))
+                continue
+            resp.raise_for_status()
+            return parse_json_object(resp.json()["choices"][0]["message"]["content"])
+        raise RuntimeError("unreachable")  # pragma: no cover
+
+    def zoom_name(
+        self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None
+    ) -> ZoomVerdict:
+        """The second look on the same endpoint and model as grounding; outside any ``CropCallBudget``.
+
+        Up to three small calls: a blind look at the frame with the box drawn (``context_jpeg``), a blind look at
+        that frame plus the close-up ``jpeg``, and, only when the two looks agree (:func:`looks_agree`), a text-only
+        merge of what they found with the report's text (:func:`merge_prompt`); disagreeing looks keep the report's
+        text with no merge call. Without ``context_jpeg`` the close-up alone is the only look. The verdict's
+        confidence is the lowest of the calls. Every call is a single attempt with its own, shorter timeout: the
+        caller treats any error as "not checked" and the analysis stands. Raises ``httpx.HTTPError`` on transport
+        or status errors and ``ValueError`` on a reply that is not the strict JSON asked for.
+        """
+        if context_jpeg is not None:
+            frame_look = parse_look_reply(self._chat_json([context_jpeg], look_prompt(item_type, with_close_up=False)))
+            close_up_look = parse_look_reply(
+                self._chat_json([context_jpeg, jpeg], look_prompt(item_type, with_close_up=True))
+            )
+        else:
+            frame_look = close_up_look = parse_look_reply(self._chat_json([jpeg], look_prompt(item_type, False)))
+        seen = {
+            "frame": frame_look.description if item_type == "entity" else frame_look.name,
+            "close_up": close_up_look.description if item_type == "entity" else close_up_look.name,
+        }
+        look_confidence = min(frame_look.confidence, close_up_look.confidence)
+        if not looks_agree(frame_look, close_up_look):  # no merge call: the report stands, both looks are recorded
+            return ZoomVerdict(name=name, description=description, confidence=look_confidence, changed=False, seen=seen)
+        # The close-up look carries the detail; the frame look confirmed it names the same thing.
+        merged = parse_zoom_reply(self._chat_json([], merge_prompt(item_type, name, description, close_up_look)))
+        return ZoomVerdict(
+            name=merged.name,
+            description=merged.description,
+            confidence=min(merged.confidence, look_confidence),
+            changed=merged.changed,
+            seen=seen,
+        )
+
     def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
         if not self.is_available():
             return []
@@ -468,6 +756,39 @@ class FakeDetector:
 
     def detect(self, frame: np.ndarray, query: str) -> list[Detection]:  # noqa: ARG002
         return self.detections
+
+
+class FakeZoomNamer:
+    """In-memory second-look fixture: a canned reply per current item name.
+
+    A reply is a parsed JSON dict, a raw reply string (parsed like a model's, so a malformed one raises), a ready
+    ``ZoomVerdict`` or an exception to raise. An item with no reply is confirmed unchanged at confidence 1. Every call is recorded.
+    """
+
+    def __init__(self, replies: dict[str, Any] | None = None) -> None:
+        self.replies = dict(replies or {})
+        self.calls: list[dict[str, Any]] = []
+
+    def zoom_name(
+        self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None
+    ) -> ZoomVerdict:
+        self.calls.append(
+            {
+                "jpeg_bytes": len(jpeg),
+                "context_bytes": len(context_jpeg or b""),
+                "item_type": item_type,
+                "name": name,
+                "description": description,
+            }
+        )
+        reply = self.replies.get(name)
+        if isinstance(reply, Exception):
+            raise reply
+        if reply is None:
+            return ZoomVerdict(name=name, description=description, confidence=1.0, changed=False)
+        if isinstance(reply, ZoomVerdict):
+            return reply
+        return parse_zoom_reply(parse_json_object(reply) if isinstance(reply, str) else reply)
 
 
 def _not_located_result(frame: np.ndarray, seconds: int | float) -> CropResult | None:
@@ -527,6 +848,8 @@ def _locate_in_frame(
         frame_size=(frame_w, frame_h),
         frame_bytes=frame_bytes,
         box_seconds=seconds,
+        zoom_bytes=zoom_crop(frame, best.box),
+        zoom_frame_bytes=zoom_context_frame(frame, best.box),
     )
 
 
@@ -737,6 +1060,85 @@ def evidence_items(report: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in items if item["item_id"]]
 
 
+ZOOM_ENTRY_FIELDS: dict[str, Any] = {
+    "zoom_checked": False,
+    "zoom_confidence": None,
+    "zoom_seen": None,
+    "name_before": None,
+    "zoom_gap": None,
+}
+
+
+def blank_evidence_entries(
+    report: dict[str, Any], image_gap: str | None, zoom_gap: str | None = None
+) -> list[dict[str, Any]]:
+    """The evidence entries of ``report`` before any image or second look: every image field null, the gaps given."""
+    return [
+        {
+            **item,
+            "bounding_box": None,
+            "image": None,
+            "frame": None,
+            "box_seconds": None,
+            "located": None,
+            "image_gap": image_gap,
+            **ZOOM_ENTRY_FIELDS,
+            "zoom_gap": zoom_gap,
+        }
+        for item in evidence_items(report)
+    ]
+
+
+_REPORT_ITEM_ID_FIELDS = {
+    "entity": ("entities", "entity_id"),
+    "instrument": ("instruments", "instrument_id"),
+    "asset": ("assets", "asset_id"),
+}
+
+
+def apply_zoom_verdict(entry: dict[str, Any], report: dict[str, Any], verdict: ZoomVerdict) -> bool:
+    """Record the second look on ``entry`` and apply its correction to the entry and the report payload item.
+
+    A correction is applied only when the model says ``changed`` with confidence at least
+    ``ZOOM_CONFIDENCE_THRESHOLD``: the entry's ``item_name`` and ``description`` and the matching report item's
+    name and description (an entity keeps its ``type``; only its description changes) are replaced, and the entry
+    keeps the previous name as ``name_before`` (and ``description_before``). ``zoom_seen`` records what the blind
+    looks found. The item id, label and timestamps are never touched. Returns whether a correction was applied.
+    """
+    entry["zoom_checked"] = True
+    entry["zoom_confidence"] = verdict.confidence
+    entry["zoom_seen"] = verdict.seen
+    if not verdict.changed:
+        if entry["item_type"] != "entity" and verdict.seen and len(set(verdict.seen.values())) > 1:
+            entry["zoom_gap"] = "looks disagree, report kept: " + ", ".join(
+                f"{where} saw {what!r}" for where, what in verdict.seen.items()
+            )
+        return False
+    if verdict.confidence < ZOOM_CONFIDENCE_THRESHOLD:
+        entry["zoom_gap"] = (
+            f"correction to {verdict.name!r} ignored: confidence {verdict.confidence:.2f} is below "
+            f"{ZOOM_CONFIDENCE_THRESHOLD}"
+        )
+        return False
+    is_entity = entry["item_type"] == "entity"
+    new_name = entry["item_name"] if is_entity else verdict.name
+    new_description = verdict.description or entry["description"]
+    if new_name == entry["item_name"] and new_description == entry["description"]:
+        return False  # the model said changed but repeated the current text
+    entry["name_before"] = entry["item_name"]
+    entry["description_before"] = entry["description"]
+    entry["item_name"] = new_name
+    entry["description"] = new_description
+    collection, id_field = _REPORT_ITEM_ID_FIELDS[entry["item_type"]]
+    for item in report.get(collection) or []:
+        if str(item.get(id_field) or "") == entry["item_id"]:
+            item["description"] = new_description
+            if not is_entity:
+                item["name"] = new_name
+            break
+    return True
+
+
 def _whole_seconds(value: Any) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return 0
@@ -751,9 +1153,12 @@ class CropEvidenceService:
         self,
         detector: Any | None = None,
         store: EvidenceStore | None = None,
+        namer: Any | None = None,
     ) -> None:
         self.detector = detector if detector is not None else DefaultDetector()
         self.store = store
+        # The second look's VLM client: the detector itself when it can name (DefaultDetector does, unbudgeted).
+        self.namer = namer if namer is not None else (self.detector if hasattr(self.detector, "zoom_name") else None)
 
     def is_detector_available(self) -> bool:
         """Check whether the active detector is ready and available."""
@@ -792,6 +1197,7 @@ class CropEvidenceService:
         detector: Any | None = None,
         store: EvidenceStore | None = None,
         tracking: track_evidence.TrackingRequest | None = None,
+        zoom_names: bool | None = None,
     ) -> list[dict[str, Any]]:
         """Locate every entity, instrument and asset of a report and upload its frame and crop.
 
@@ -803,11 +1209,19 @@ class CropEvidenceService:
         nothing). ``located`` is true when the detector found the object; when it did not, only ``frame`` is stored, ``image``
         and ``bounding_box`` are null, ``located`` is false and ``image_gap`` says so. When no frame could be produced, ``frame``
         is null as well and ``image_gap`` says why. Never raises for a single item.
+
+        Zoomed second look (``zoom_names``, default :func:`zoom_names_enabled`): each located item's close-up is
+        shown to the service's ``namer`` (the grounding VLM) and :func:`apply_zoom_verdict` records the outcome on
+        the entry (``zoom_checked``, ``zoom_confidence``, ``name_before`` when corrected, ``zoom_gap`` when not
+        checked or ignored) and corrects the matching item of ``report`` **in place**, so the payload the caller
+        persists agrees with the evidence. Zoom calls run inside the item's concurrency slot and outside any
+        ``CropCallBudget``: ``max_crop_calls`` counts grounding attempts only. A zoom failure never fails the item.
         """
         active_detector = detector if detector is not None else self.detector
+        zoom_on = zoom_names_enabled() if zoom_names is None else zoom_names
+        namer = self.namer if zoom_on else None
         active_store = store if store is not None else self.store
         folder = video_key or video_id
-        items = evidence_items(report)
         batch = batch_id or (await active_store.next_batch_id(folder) if active_store is not None else "run-1")
 
         if detector is not None:
@@ -885,10 +1299,13 @@ class CropEvidenceService:
                     entry["track_last_seen_seconds"] = track.last_seen
                     if tracking is not None:
                         tracking.summary.matched += 1
+                async with semaphore:
+                    await _zoom_second_look(entry, crop)
             else:
                 entry["image_gap"] = (
                     f"object not located at {entry['timestamp_seconds']}s or within {max(LOCATE_RETRY_OFFSETS)}s either side"
                 )
+                entry["zoom_gap"] = "object not located"
 
         async def _recut(entry: dict[str, Any], track: track_evidence.Track) -> track_evidence.Track | None:
             """Re-cut a matched entity's frame and crop at the track's best moment; None keeps today's result."""
@@ -915,18 +1332,42 @@ class CropEvidenceService:
             crops[entry["item_id"]] = recut
             return track
 
-        entries = [
-            {
-                **item,
-                "bounding_box": None,
-                "image": None,
-                "frame": None,
-                "box_seconds": None,
-                "located": None,
-                "image_gap": None,
-            }
-            for item in items
-        ]
+        async def _zoom_second_look(entry: dict[str, Any], crop: CropResult) -> None:
+            if not zoom_on:
+                entry["zoom_gap"] = f"zoomed second look disabled ({ZOOM_NAMES_ENV})"
+                return
+            if namer is None or (hasattr(namer, "is_available") and not namer.is_available()):
+                entry["zoom_gap"] = "no second-look VLM client is configured (VLM grounding key missing)"
+                return
+            try:
+                if crop.zoom_bytes is None:
+                    entry["zoom_gap"] = "no close-up could be cut from the frame"
+                    return
+                verdict = await asyncio.to_thread(
+                    namer.zoom_name,
+                    crop.zoom_bytes,
+                    item_type=entry["item_type"],
+                    name=entry["item_name"],
+                    description=entry["description"],
+                    context_jpeg=crop.zoom_frame_bytes,
+                )
+            except Exception as exc:
+                logger.warning("Zoomed second look failed for %s %s: %s", video_id, entry["item_id"], exc)
+                entry["zoom_gap"] = f"second look failed: {type(exc).__name__}: {exc}"
+                return
+            if apply_zoom_verdict(entry, report, verdict):
+                logger.info(
+                    "Zoomed second look corrected %s %s: name %r -> %r, description %r -> %r (confidence %.2f)",
+                    video_id,
+                    entry["item_id"],
+                    entry["name_before"],
+                    entry["item_name"],
+                    entry["description_before"],
+                    entry["description"],
+                    verdict.confidence,
+                )
+
+        entries = blank_evidence_entries(report, image_gap=None)
         await asyncio.gather(*(_crop(entry) for entry in entries))
 
         matched_tracks: dict[str, track_evidence.Track] = {}
@@ -957,6 +1398,7 @@ class CropEvidenceService:
             matched_tracks = {item_id: track for item_id, track in zip(candidates, recut, strict=True) if track}
 
         await asyncio.gather(*(_upload(entry, matched_tracks.get(entry["item_id"])) for entry in entries))
+
         return entries
 
 

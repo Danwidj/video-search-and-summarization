@@ -87,5 +87,14 @@ if [ -n "$DOCKER_SERVICES" ]; then
   fi
 fi
 
+# 3. Stop the person-tracking stack when its containers exist (tracking-stack.sh stop only stops, never removes)
+tracking_script="$REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/tracking-stack.sh"
+if [ -f "$tracking_script" ] && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx 'vss-rtvi-cv'; then
+  echo "--- Stopping Tracking Stack ---"
+  bash "$tracking_script" stop || {
+    echo "start.sh: warning: tracking-stack.sh stop exited with $?" >&2
+  }
+fi
+
 echo "start.sh: backend services stopped successfully."
 exit 0
