@@ -126,6 +126,10 @@ load_env() {
 
 load_env
 
+# Person tracking is on for vss-agent unless the env file (or the caller) turns it off. With the
+# tracking stack down the agent skips the step and the analysis runs as before.
+export INCIDENT_TRACKING_ENABLED="${INCIDENT_TRACKING_ENABLED:-true}"
+
 # -----------------------------------------------------------------------------
 # Service Helpers
 # -----------------------------------------------------------------------------
