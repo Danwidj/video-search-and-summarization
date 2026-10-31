@@ -45,6 +45,20 @@ class TestChartGeneratorInner:
         return builder
 
     @pytest.mark.asyncio
+    async def test_each_drawn_figure_is_closed(self, config, mock_builder):
+        plt.close("all")
+        gen = chart_generator.__wrapped__(config, mock_builder)
+        function_info = await gen.__anext__()
+        for _ in range(3):
+            await function_info.single_fn(
+                ChartGeneratorInput(
+                    charts_data=[PieChartData(sizes=[1, 2], labels=["a", "b"])],
+                    output_dir="charts",
+                )
+            )
+        assert plt.get_fignums() == []
+
+    @pytest.mark.asyncio
     async def test_generate_bar_chart(self, config, mock_builder):
         gen = chart_generator.__wrapped__(config, mock_builder)
         function_info = await gen.__anext__()

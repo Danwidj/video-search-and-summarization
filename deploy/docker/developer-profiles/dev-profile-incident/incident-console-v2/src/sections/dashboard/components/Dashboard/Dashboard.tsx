@@ -28,6 +28,7 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { cn } from 'cn';
+import { ChartRequest } from '@/sections/dashboard/components/ChartRequest';
 
 const NONE: Filters = { type: '', severity: '', day: '', hour: '' };
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -254,6 +255,7 @@ export function Dashboard() {
           </Panel>
         </div>
       )}
+      <ChartRequest />
     </div>
   );
 }

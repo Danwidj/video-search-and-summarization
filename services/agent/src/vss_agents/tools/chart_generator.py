@@ -258,6 +258,7 @@ async def chart_generator(config: ChartGeneratorConfig, builder: Builder) -> Asy
                     case other:
                         raise RuntimeError(f"Unsupported chart data type: {other}")
                 chart_bytes = convert_to_format(chart, chart_data.chart_file_format)
+                plt.close(chart)
                 key = None
                 success = True
                 if object_store and chart_generator_input.output_dir:
