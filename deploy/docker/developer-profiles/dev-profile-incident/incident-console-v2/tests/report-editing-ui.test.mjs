@@ -19,9 +19,9 @@ test('report page separates structured fields, read-only model output and run de
 
   assert.match(report, /Severity rationale/);
   assert.match(report, /reviewer set/, 'an edited severity is shown against the model severity');
-  assert.match(report, /Model event timeline/);
-  assert.match(report, /Model-reported uncertainties/);
-  assert.match(report, /Original model output · read-only/);
+  assert.doesNotMatch(report, /Model event timeline/);
+  assert.doesNotMatch(report, /Model-reported uncertainties/);
+  assert.doesNotMatch(report, /timeline-inconsistent/);
   assert.match(report, /Run &amp; model output details/);
   assert.match(report, /Additional instruction/);
   assert.match(report, /Prompt SHA-256/);
@@ -35,14 +35,6 @@ test('report page separates structured fields, read-only model output and run de
   assert.match(report, /Edit from v/, 'the report opens edit mode from the shown version');
   assert.match(report, /Model classified this as/);
   assert.match(report, /model window/);
-  assert.match(report, /not consistent with the detected incident window/, 'an inconsistent timeline is labelled as such');
-  assert.match(report, /outside incident window/);
-  assert.match(report, /outside the video/);
-  assert.match(
-    report,
-    /event\.seekable !== false && \(playerDuration === null \|\| timestampWithinVideo\(/,
-    'seeking is blocked only for a time outside the video',
-  );
   assert.match(report, /Validation policy/);
   assert.match(report, /Full contract validity \(first response\)/);
 });

@@ -112,7 +112,7 @@ Records written before attempt statuses existed lack `status`; they are shown as
 | Class | Fields | Source | Editable |
 |---|---|---|---|
 | **A: structured** | type, start/end (integer seconds as text), duration (derived), description, severity level, confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`), and each item's description, detail and image | `report_revisions.payload` and `.evidence` | Yes, into a new `human` revision only, except duration (recomputed) and confidence |
-| **B: model output** | title, severity rationale, location, timeline, uncertainties | the report in notes | No (read-only) |
+| **B: model output** | title, severity rationale, location (shown); timeline and uncertainties (stored in the report, not shown by the console since 2026-11-01) | the report in notes | No (read-only) |
 | **C: provenance** | model, contract version, run id, instruction, settings, fingerprints, raw response, reasoning, finish reason, usage, repair record | notes + `model_runs` | No |
 
 ### Report revisions (AI and human)
