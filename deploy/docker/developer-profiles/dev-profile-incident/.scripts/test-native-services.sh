@@ -289,6 +289,18 @@ rm -f "$fd_leak_check"
 ) 200>>"$RUN_DIR/native-services.lock"
 assert_eq "closed" "$(cat "$fd_leak_check")" "fd 200 is closed in daemon launch subshell"
 
+# -----------------------------------------------------------------------------
+# Person tracking: on for vss-agent by default, the env file can turn it off
+# -----------------------------------------------------------------------------
+# shellcheck disable=SC1090
+tracking_default="$(unset INCIDENT_TRACKING_ENABLED; source "$SUT" status >/dev/null; echo "$INCIDENT_TRACKING_ENABLED")"
+assert_eq "true" "$tracking_default" "INCIDENT_TRACKING_ENABLED defaults to true"
+tracking_env="$TMP/tracking-off.env"
+echo "INCIDENT_TRACKING_ENABLED=false" >"$tracking_env"
+# shellcheck disable=SC1090
+tracking_off="$(unset INCIDENT_TRACKING_ENABLED; ENV_FILE="$tracking_env"; source "$SUT" status >/dev/null; echo "$INCIDENT_TRACKING_ENABLED")"
+assert_eq "false" "$tracking_off" "an env file INCIDENT_TRACKING_ENABLED=false wins"
+
 echo ""
 echo "=== Summary ==="
 echo "Passed: $PASSED"
