@@ -15,6 +15,7 @@
 
 """Unit tests for crop_evidence utility and CropEvidenceService (MVP2 VM Step 3)."""
 
+import base64
 from collections.abc import Generator
 import copy
 import io
@@ -660,6 +661,11 @@ class TestZoomSecondLook:
     ) -> None:
         result = crop_evidence_item(tiny_video_path, 0, "x", FakeDetector(detections=self.LOCATED))
         assert result is not None and result.zoom_bytes is not None and result.image_bytes is not None
+        assert result.zoom_frame_bytes is not None
+        context = cv2.imdecode(np.frombuffer(result.zoom_frame_bytes, np.uint8), cv2.IMREAD_COLOR)
+        assert context.shape[:2] == (80, 120)  # the whole frame, with the box drawn on it
+        _, green, red = (int(v) for v in context[16, 24])  # the top-left corner of the drawn box (BGR)
+        assert red > 150 and green < 60  # red ink on the blue frame, allowing for JPEG chroma blur
         crop_h = cv2.imdecode(np.frombuffer(result.image_bytes, np.uint8), cv2.IMREAD_COLOR).shape[0]
         zoom_h = cv2.imdecode(np.frombuffer(result.zoom_bytes, np.uint8), cv2.IMREAD_COLOR).shape[0]
         assert crop_h < 80 and zoom_h >= 256  # the 80 px frame yields a small stored crop and an upscaled close-up
@@ -712,7 +718,8 @@ class TestZoomSecondLook:
         assert report["instruments"] == REPORT["instruments"] and report["entities"] == REPORT["entities"]
         # The model saw the close-up with the item's kind, name and description.
         call = next(c for c in namer.calls if c["name"] == "cash register")
-        assert call["item_type"] == "asset" and call["description"] == "Store register" and call["jpeg_bytes"] > 0
+        assert call["item_type"] == "asset" and call["description"] == "Store register"
+        assert call["jpeg_bytes"] > 0 and call["context_bytes"] > 0  # the close-up and the frame with the box
 
     @pytest.mark.asyncio
     async def test_an_instrument_correction_updates_its_name_and_description(self, tiny_video_path: Path) -> None:
@@ -826,16 +833,26 @@ class TestZoomSecondLook:
             ]
         }
         with patch("vss_agents.utils.crop_evidence.httpx.post", return_value=reply) as post:
-            verdict = budgeted.zoom_name(b"jpeg", item_type="asset", name="soccer ball", description="A ball.")
+            verdict = budgeted.zoom_name(
+                b"jpeg", item_type="asset", name="soccer ball", description="A ball.", context_jpeg=b"frame"
+            )
             second = budgeted.zoom_name(b"jpeg", item_type="asset", name="soccer ball", description="A ball.")
         assert verdict == second == ZoomVerdict(name="plastic bag", description="A bag.", confidence=0.8, changed=True)
         assert budget.calls == 0  # two zoom calls, none counted against the grounding cap
         assert post.call_args.args[0] == "https://vlm.example/v1/chat/completions"
         body = post.call_args.kwargs["json"]
         assert body["model"] == "m" and body["response_format"] == {"type": "json_object"}
-        image, text = body["messages"][0]["content"]
+        image, text = body["messages"][0]["content"]  # the last call sent the close-up alone
         assert image["image_url"]["url"].startswith("data:image/jpeg;base64,")
         assert '"soccer ball"' in text["text"] and "asset" in text["text"] and '"changed"' in text["text"]
+        first_content = post.call_args_list[0].kwargs["json"]["messages"][0]["content"]
+        assert [part["type"] for part in first_content] == ["image_url", "image_url", "text"]
+        assert first_content[0]["image_url"]["url"].endswith(base64.b64encode(b"frame").decode())
+        assert "red box" in first_content[2]["text"]
+        # The question comes before the report's current name, so the model is not led by it.
+        assert first_content[2]["text"].index("decide what the marked object is") < first_content[2]["text"].index(
+            '"soccer ball"'
+        )
 
     def test_the_default_detector_raises_on_a_malformed_zoom_reply(self) -> None:
         detector = DefaultDetector(api_key="k")

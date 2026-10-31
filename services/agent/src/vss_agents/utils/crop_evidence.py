@@ -26,8 +26,9 @@ console builds the searchable ``evidence_crops`` rows from a revision's evidence
 Zoomed second look (``INCIDENT_ZOOM_NAMES_ENABLED``, default on): the whole-clip VLM pass names each item at
 thumbnail resolution, so a crumpled bag seen at 25 pixels can become "soccer ball". Once an item is located, the
 item is cut from the frame at native resolution with a 25% margin (upscaled to a short side of at least 256 px for
-the model only; the stored crop is unchanged) and the same VLM the grounding detector uses is asked, with the
-report's current name and description, to confirm or correct them. A correction is applied to the evidence entry
+the model only; the stored crop is unchanged) and the same VLM the grounding detector uses is shown the frame with
+the box drawn and that close-up, asked what the marked object is, and only then given the report's current name and
+description to confirm or correct (a prompt that leads with the current name makes it confirm a wrong one). A correction is applied to the evidence entry
 and to the matching item of the report payload when the model says ``changed`` with confidence at least 0.7; the
 item id, label, timestamps and an entity's ``type`` are never changed. Zoom calls are outside ``CropCallBudget``
 (the grounding cap of an experimental request) and a failed or slow call never fails the analysis.
@@ -61,6 +62,7 @@ except ImportError:  # pragma: no cover
 import httpx
 import numpy as np
 from PIL import Image
+from PIL import ImageDraw
 
 from vss_agents.utils.optional_cv2 import ensure_codecs
 from vss_agents.utils.r2 import get_r2_client
@@ -94,6 +96,7 @@ class CropResult:
     box_seconds: float | None = None  # the second the frame was read at (the requested one unless a retry hit)
     located: bool = True
     zoom_bytes: bytes | None = None  # the close-up the second look names (25% margin, upscaled); never stored
+    zoom_frame_bytes: bytes | None = None  # the whole frame with the box drawn, the second look's context; never stored
 
 
 # Seconds tried, in order, around the requested one when the detector finds nothing there.
@@ -147,35 +150,49 @@ def parse_zoom_reply(data: dict[str, Any]) -> ZoomVerdict:
 class ZoomNamer(Protocol):
     """Port for the zoomed second look: one VLM call that names a close-up of a located item."""
 
-    def zoom_name(self, jpeg: bytes, *, item_type: str, name: str, description: str) -> ZoomVerdict:
-        """Confirm or correct ``name`` and ``description`` of an ``item_type`` item shown in the close-up ``jpeg``."""
+    def zoom_name(
+        self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None
+    ) -> ZoomVerdict:
+        """Confirm or correct ``name`` and ``description`` of the ``item_type`` item in the close-up ``jpeg``.
+
+        ``context_jpeg`` is the whole frame with the item's box drawn on it, so the model knows which object the
+        close-up shows and sees its surroundings.
+        """
         ...
 
 
-def zoom_prompt(item_type: str, name: str, description: str) -> str:
-    """The second-look question for one item; an entity's type is fixed, so only its description may change."""
+def zoom_prompt(item_type: str, name: str, description: str, with_context: bool = True) -> str:
+    """The second-look question for one item; an entity's type is fixed, so only its description may change.
+
+    The model is asked to decide what the boxed object is from the images first and only then compare with the
+    report's current text, because a prompt that leads with the current name makes it confirm a wrong one.
+    """
+    images = (
+        "The first image is a video frame with one object marked by a red box; the second is a close-up of that box."
+        if with_context
+        else "The image is a close-up of one object from a video frame."
+    )
     if item_type == "entity":
         subject = (
-            f'This close-up shows an entity of type "{name}" from an incident report. The type is fixed and is not '
-            f'yours to change. Current description: "{description}".'
+            f'The marked object is an entity of type "{name}" in an incident report. The type is fixed and is not '
+            f'yours to change. The report currently describes it as: "{description}".'
         )
         task = (
-            "If the description is wrong or misleading for what is visible, correct it in one sentence; otherwise "
-            'keep it. Reply with the type unchanged as "name".'
+            "First look at the images and describe the marked entity in one sentence in your own words. Then, if the "
+            "report's description is wrong or misleading, replace it with yours; otherwise keep the report's. Reply "
+            'with the type unchanged as "name".'
         )
     else:
-        subject = (
-            f'This close-up shows an {item_type} from an incident report. Current name: "{name}". Current '
-            f'description: "{description}".'
-        )
+        subject = f'The report currently calls the marked object "{name}" and describes it as: "{description}".'
         task = (
-            "If the name or description is wrong for what is visible, correct them (a name is one to four plain "
-            "words; a description is one sentence); otherwise keep them."
+            "First look at the images and decide what the marked object is in your own words. Only then compare with "
+            "the report: if its name or description is wrong for what is visible, correct them (a name is one to "
+            "four plain words; a description is one sentence); otherwise keep them."
         )
     return (
-        f"{subject} Judge only what is visible in this close-up. {task} Return JSON only, in the form "
-        '{"name": "<name>", "description": "<description>", "confidence": <0 to 1: how sure you are of your '
-        'name and description>, "changed": <true when either differs from the current one>}.'
+        f"{images} It is an {item_type} from an incident report. Judge only what is visible. {task} {subject} "
+        'Return JSON only, in the form {"name": "<name>", "description": "<description>", "confidence": <0 to 1: how '
+        'sure you are of your name and description>, "changed": <true when either differs from the report\'s>}.'
     )
 
 
@@ -197,6 +214,26 @@ def zoom_crop(frame: np.ndarray, box: Sequence[int | float]) -> bytes | None:
         cut = np.asarray(Image.fromarray(cut[..., ::-1]).resize(size, Image.Resampling.BICUBIC))[..., ::-1]
         cut = np.ascontiguousarray(cut)
     return encode_jpeg(cut, quality=85)
+
+
+def zoom_context_frame(frame: np.ndarray, box: Sequence[int | float]) -> bytes | None:
+    """The whole frame with ``box`` drawn in red (at most ``GROUNDING_MAX_EDGE_PIXELS`` on the long edge).
+
+    Shown to the second look beside the close-up so the model knows which object is meant and sees its
+    surroundings; a 25-pixel object is often only recognisable in context. Never stored.
+    """
+    frame_h, frame_w = frame.shape[:2]
+    y0, x0, y1, x1 = apply_box_padding(box, frame_w, frame_h, padding_fraction=0.0)
+    if y0 >= y1 or x0 >= x1:
+        return None
+    image = Image.fromarray(np.ascontiguousarray(frame[..., ::-1]))
+    ImageDraw.Draw(image).rectangle(
+        (x0, y0, x1, y1), outline=(255, 0, 0), width=max(2, round(max(frame_w, frame_h) / 400))
+    )
+    scale = min(1.0, GROUNDING_MAX_EDGE_PIXELS / max(frame_h, frame_w))
+    if scale < 1.0:
+        image = image.resize((round(frame_w * scale), round(frame_h * scale)))
+    return encode_jpeg(np.ascontiguousarray(np.asarray(image)[..., ::-1]), quality=85)
 
 
 def evidence_key(video_key: str, batch_id: str, item_id: str) -> str:
@@ -515,24 +552,36 @@ class DefaultDetector:
                 logger.warning("Unparseable grounding reply (attempt %d); retrying", attempt)
         raise RuntimeError("unreachable")  # pragma: no cover
 
-    def zoom_name(self, jpeg: bytes, *, item_type: str, name: str, description: str) -> ZoomVerdict:
+    def zoom_name(
+        self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None
+    ) -> ZoomVerdict:
         """One second-look call on the same endpoint and model as grounding; outside any ``CropCallBudget``.
 
-        A single attempt with its own, shorter timeout: the caller treats any error as "not checked" and the
-        analysis stands. Raises ``httpx.HTTPError`` on transport or status errors and ``ValueError`` on a reply
-        that is not the strict zoom JSON.
+        Sends the frame with the box drawn (``context_jpeg``, when given) and then the close-up. A single attempt
+        with its own, shorter timeout: the caller treats any error as "not checked" and the analysis stands. Raises
+        ``httpx.HTTPError`` on transport or status errors and ``ValueError`` on a reply that is not the strict zoom
+        JSON.
         """
+        images = [image for image in (context_jpeg, jpeg) if image is not None]
         body = {
             "model": self.model_name,
             "messages": [
                 {
                     "role": "user",
                     "content": [
+                        *(
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")
+                                },
+                            }
+                            for image in images
+                        ),
                         {
-                            "type": "image_url",
-                            "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")},
+                            "type": "text",
+                            "text": zoom_prompt(item_type, name, description, with_context=context_jpeg is not None),
                         },
-                        {"type": "text", "text": zoom_prompt(item_type, name, description)},
                     ],
                 }
             ],
@@ -617,8 +666,18 @@ class FakeZoomNamer:
         self.replies = dict(replies or {})
         self.calls: list[dict[str, Any]] = []
 
-    def zoom_name(self, jpeg: bytes, *, item_type: str, name: str, description: str) -> ZoomVerdict:
-        self.calls.append({"jpeg_bytes": len(jpeg), "item_type": item_type, "name": name, "description": description})
+    def zoom_name(
+        self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None
+    ) -> ZoomVerdict:
+        self.calls.append(
+            {
+                "jpeg_bytes": len(jpeg),
+                "context_bytes": len(context_jpeg or b""),
+                "item_type": item_type,
+                "name": name,
+                "description": description,
+            }
+        )
         reply = self.replies.get(name)
         if isinstance(reply, Exception):
             raise reply
@@ -685,6 +744,7 @@ def _locate_in_frame(
         frame_bytes=frame_bytes,
         box_seconds=seconds,
         zoom_bytes=zoom_crop(frame, best.box),
+        zoom_frame_bytes=zoom_context_frame(frame, best.box),
     )
 
 
@@ -1122,6 +1182,7 @@ class CropEvidenceService:
                     item_type=entry["item_type"],
                     name=entry["item_name"],
                     description=entry["description"],
+                    context_jpeg=crop.zoom_frame_bytes,
                 )
             except Exception as exc:
                 logger.warning("Zoomed second look failed for %s %s: %s", video_id, entry["item_id"], exc)
@@ -1129,11 +1190,13 @@ class CropEvidenceService:
                 return
             if apply_zoom_verdict(entry, report, verdict):
                 logger.info(
-                    "Zoomed second look renamed %s %s: %r -> %r (confidence %.2f)",
+                    "Zoomed second look corrected %s %s: name %r -> %r, description %r -> %r (confidence %.2f)",
                     video_id,
                     entry["item_id"],
                     entry["name_before"],
                     entry["item_name"],
+                    entry["description_before"],
+                    entry["description"],
                     verdict.confidence,
                 )
 
