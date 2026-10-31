@@ -220,6 +220,8 @@ class TestToolRuns:
         persist.assert_not_awaited()
         crops.assert_not_awaited()
         assert all(entry["image"] is None and "skip_crops" in entry["image_gap"] for entry in result.evidence)
+        # No crop, no located item, so the zoomed second look is off too.
+        assert all(entry["zoom_checked"] is False and "skip_crops" in entry["zoom_gap"] for entry in result.evidence)
 
     @pytest.mark.asyncio
     async def test_extraction_is_identical_with_and_without_crops(self, enabled: None, registry: Path):
