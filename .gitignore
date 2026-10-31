@@ -22,6 +22,7 @@ deploy/docker/rag-secret.override.yml
 # (dev-profile-incident native-services.sh, dev-profile.sh, sdrc config
 # rendering). Runtime state only, never source.
 .run/
+.tools/
 .tmp/
 
 *.log

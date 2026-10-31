@@ -130,6 +130,17 @@ load_env
 # tracking stack down the agent skips the step and the analysis runs as before.
 export INCIDENT_TRACKING_ENABLED="${INCIDENT_TRACKING_ENABLED:-true}"
 
+# The caption pass is on for vss-agent unless the env file (or the caller) sets it to 0; the agent reads
+# only "1" as on, and with it off the analysis runs without it.
+export INCIDENT_CHUNKING_ENABLED="${INCIDENT_CHUNKING_ENABLED:-1}"
+
+# ffmpeg and ffprobe (caption pass, tracking) come from the repo-local tools dir when the host has none;
+# _start_vss_agent installs them there on first start. See media-tools.sh.
+# shellcheck source=SCRIPTDIR/media-tools.sh
+source "${SCRIPT_DIR}/media-tools.sh"
+PATH="$(media_tools_path)"
+export PATH
+
 # -----------------------------------------------------------------------------
 # Service Helpers
 # -----------------------------------------------------------------------------
@@ -207,6 +218,10 @@ _start_vss_agent() {
   if [ ! -f "${cfg}" ]; then
     echo "ERROR: vss-agent config file not found: ${cfg}" >&2
     return 1
+  fi
+
+  if ! media_tools_install; then
+    echo "WARNING: ffmpeg/ffprobe unavailable; vss-agent will skip the caption pass and person tracking" >&2
   fi
 
   # Loopback by default: the agent has no auth. The laptop reaches it through the SSH tunnel.
@@ -520,6 +535,12 @@ status_service() {
       printf "  %-22s RUNNING  (pid %-7s port %-5s)%s\n" "${svc}" "${pid:-unknown}" "${port}" "${health_note}"
     else
       printf "  %-22s STOPPED  (port %s)\n" "${svc}" "${port}"
+    fi
+    if [ "${svc}" = "vss-agent" ]; then
+      local tool_line
+      while read -r tool_line; do
+        printf "    %s\n" "${tool_line}"
+      done < <(media_tools_check || true)
     fi
   fi
 }
