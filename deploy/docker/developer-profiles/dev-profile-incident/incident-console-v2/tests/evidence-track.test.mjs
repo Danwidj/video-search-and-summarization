@@ -91,7 +91,7 @@ test('under contain-fit a wide frame is letterboxed and a tall frame pillarboxed
   assert.equal(containedBoxStyle(null, 1, 1), null);
 });
 
-test('the presence bar places the span over the clip, keeps a short span visible and seeks inside the clip', () => {
+test('the presence bar places the span over the clip, keeps a short span visible and seeks into the span', () => {
   const near = (actual, expected) => {
     assert.ok(Math.abs(actual.left - expected.left) < 1e-9 && Math.abs(actual.width - expected.width) < 1e-9, JSON.stringify(actual));
   };
@@ -102,9 +102,9 @@ test('the presence bar places the span over the clip, keeps a short span visible
   assert.equal(presenceRegion(20, 60, null), null);
   assert.equal(presenceRegion(60, 20, 100), null);
   assert.equal(presenceRegion(120, 130, 100), null);
-  assert.equal(presenceSeekSeconds(0.25, 80), 20);
-  assert.equal(presenceSeekSeconds(1.5, 80), 80);
-  assert.equal(presenceSeekSeconds(-0.1, 80), 0);
+  assert.equal(presenceSeekSeconds(0.25, 80, 15, 30), 20, 'a click on the span seeks to the second under it');
+  assert.equal(presenceSeekSeconds(0.9, 80, 15, 30), 15, 'a click on empty clip seeks to the span start');
+  assert.equal(presenceSeekSeconds(-1, 80, 15, 30), 15, 'a key press seeks to the span start');
 });
 
 const payload = {

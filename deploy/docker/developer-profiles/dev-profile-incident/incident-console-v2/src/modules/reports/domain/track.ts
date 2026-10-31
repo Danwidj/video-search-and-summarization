@@ -102,9 +102,13 @@ export function presenceRegion(
   return { left: Math.min(left, 1 - width), width };
 }
 
-/** The second a click at `fraction` (0-1) of a presence bar seeks to, kept inside the clip. */
-export function presenceSeekSeconds(fraction: number, durationSeconds: number): number {
-  return Math.min(durationSeconds, Math.max(0, fraction * durationSeconds));
+/**
+ * The second a click at `fraction` (0-1) of a presence bar seeks to: the second under the pointer when it is inside the
+ * span, else the span's start (the bar is mostly empty clip, where the person is not on screen).
+ */
+export function presenceSeekSeconds(fraction: number, durationSeconds: number, firstSeconds: number, lastSeconds: number): number {
+  const at = fraction * durationSeconds;
+  return Number.isFinite(at) && at >= firstSeconds && at <= lastSeconds ? at : firstSeconds;
 }
 
 /** One stable colour per tracked item, by its position among the report's tracked items (sorted by id). */

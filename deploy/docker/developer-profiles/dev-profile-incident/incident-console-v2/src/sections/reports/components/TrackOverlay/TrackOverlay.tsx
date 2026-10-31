@@ -136,7 +136,7 @@ export function TrackOverlay({
           >
             <span
               className={cn(
-                'absolute -top-[1.35rem] -left-[2px] rounded-sm px-1 py-px font-mono text-[10.5px] font-bold whitespace-nowrap text-white',
+                'absolute -top-[1.35rem] -left-[2px] max-w-56 truncate rounded-sm px-1 py-px font-mono text-[10.5px] font-bold text-white',
                 selected && 'text-[11.5px]',
               )}
               style={{ backgroundColor: item.colour }}

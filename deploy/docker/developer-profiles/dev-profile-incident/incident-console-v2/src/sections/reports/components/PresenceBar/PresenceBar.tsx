@@ -7,8 +7,9 @@ import { formatClock } from '@/modules/reports/domain/normalize';
 import { presenceRegion, presenceSeekSeconds } from '@/modules/reports/domain/track';
 
 /**
- * Where a tracked person is on screen, drawn over the whole clip: the track's span in its colour. A click seeks the player
- * to the second under the pointer (a click beside the span still seeks there). Rendered only with a known clip length.
+ * Where a tracked person is on screen, drawn over the whole clip: the track's span in its colour. A click on the span seeks
+ * the player to the second under the pointer; anywhere else on the bar, or a key press, seeks to the span's start. Rendered
+ * only with a known clip length.
  */
 export function PresenceBar({
   firstSeconds,
@@ -35,8 +36,8 @@ export function PresenceBar({
   const seek = (event: MouseEvent<HTMLButtonElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
     // A keyboard press has no pointer position: it plays from the start of the span.
-    const fraction = event.detail === 0 || bounds.width <= 0 ? region.left : (event.clientX - bounds.left) / bounds.width;
-    onSeek(presenceSeekSeconds(fraction, durationSeconds));
+    const fraction = event.detail === 0 || bounds.width <= 0 ? -1 : (event.clientX - bounds.left) / bounds.width;
+    onSeek(presenceSeekSeconds(fraction, durationSeconds, firstSeconds, lastSeconds));
   };
   return (
     <div className="flex flex-col gap-1" data-testid="presence-bar">
