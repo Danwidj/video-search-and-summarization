@@ -461,6 +461,9 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 ├── thumbnails/                      # browser-captured report-card screenshots for new uploads
 │   └── <video-key>.webp             # e.g. thumbnails/uploads/Animal001_x264.mp4.webp
 ├── Report/                          # empty folder marker, unused by code
+├── scratch/analyze/<video-key>/     # agent scratch, deleted by the agent when the step ends (success or failure)
+│   ├── <run-id>/<index>.mp4         # caption pass windows (INCIDENT_CHUNKING_ENABLED)
+│   └── <run-id>-marks/marked.mp4    # set-of-marks copy P1 sees (INCIDENT_SOM_ENABLED), deleted right after P1
 └── evidence/                        # evidence images: agent crops and reviewer replacements
     └── <video-key>/run-<N>/<itemId>.jpg    # AI crops (what evidence search embeds), one run-<N> per analysis
         <video-key>/run-<N>/<itemId>-frame.jpg  # the whole video frame the box was found in, native size (the console draws the box on it)

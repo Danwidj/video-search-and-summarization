@@ -1341,6 +1341,9 @@ class CropEvidenceService:
                     entry["track_last_seen_seconds"] = track.last_seen
                     if tracking is not None:
                         tracking.summary.matched += 1
+                        if tracking.summary.marks is not None:
+                            path = "parsed" if entry["item_id"] in tracking.marked else "fallback"
+                            tracking.summary.marks[path] += 1
                 async with semaphore:
                     await _zoom_second_look(entry, crop)
             else:
@@ -1523,6 +1526,14 @@ class CropEvidenceService:
             tracking.summary.elapsed_ms = outcome.elapsed_ms
             tracking.summary.skipped = outcome.skipped
             by_id = {entry["item_id"]: entry for entry in entries}
+            # Entities set-of-marks matched keep their track; the rest are associated by box overlap with the
+            # tracks no mark took.
+            marked = {
+                item_id: track
+                for item_id, track in tracking.marked.items()
+                if item_id in by_id and by_id[item_id]["item_type"] == "entity"
+            }
+            taken = {track.track_id for track in marked.values()}
             located = [
                 (
                     entry["item_id"],
@@ -1531,11 +1542,13 @@ class CropEvidenceService:
                 )
                 for entry in entries
                 if entry["item_type"] == "entity"
+                and entry["item_id"] not in marked
                 and (crop := crops.get(entry["item_id"])) is not None
                 and crop.located
                 and crop.normalized_box
             ]
-            candidates = track_evidence.associate_tracks(located, outcome.tracks, tracking.min_iou)
+            free = [track for track in outcome.tracks if track.track_id not in taken]
+            candidates = {**marked, **track_evidence.associate_tracks(located, free, tracking.min_iou)}
             recut = await asyncio.gather(*(_recut(by_id[item_id], track) for item_id, track in candidates.items()))
             matched_tracks = {item_id: track for item_id, track in zip(candidates, recut, strict=True) if track}
 
