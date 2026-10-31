@@ -137,7 +137,7 @@ A report is a list of immutable revisions in `report_revisions`; the columns, th
 The report page:
 - shows "Model severity rationale";
 - when a human revision changed the severity, adds "Model assessed N/5; reviewer set M/5";
-- marks every other changed structured field ("Reviewer-edited after generation").
+- marks every other changed structured field ("Reviewer-edited after generation"). Entities, instruments and assets are compared with the stored payload of the AI revision the version derives from (its own for an AI version), not the first pass in the run notes, so the zoomed second look's corrections are never reviewer edits.
 
 ## 5. Legacy data
 
