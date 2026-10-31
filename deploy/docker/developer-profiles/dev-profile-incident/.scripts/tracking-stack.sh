@@ -81,6 +81,18 @@ set_host_ip() {
   say "HOST_IP=${HOST_IP}"
 }
 
+# The compose volumes for Elasticsearch, Kafka and the API are bind mounts of $VSS_DATA_DIR/data_log/...
+# and fail to mount when the directory is missing (dev-profile.sh creates them). Idempotent.
+stage_dirs() {
+  local data_dir d
+  data_dir="$(env_value VSS_DATA_DIR)"
+  [ -n "$data_dir" ] || fail "VSS_DATA_DIR is not set in ${ENV_FILE}."
+  for d in analytics_cache elastic/data elastic/logs kafka vss_video_analytics_api nvstreamer/vst_data; do
+    mkdir -p "${data_dir}/data_log/${d}"
+    chmod 777 "${data_dir}/data_log/${d}" 2>/dev/null || true
+  done
+}
+
 # Stage rtdetr_warehouse_v1.0.2.fp16.onnx into $VSS_DATA_DIR/models (no container downloads it; without
 # it vss-rtvi-cv exits at start). Same download as dev-profile.sh. Idempotent.
 stage_model() {
@@ -145,6 +157,7 @@ check_name_conflicts() {
 cmd_start() {
   setup
   set_host_ip
+  stage_dirs
   stage_model
   check_name_conflicts
   say "bringing up the tracking stack under compose project '${PROJECT}'..."
