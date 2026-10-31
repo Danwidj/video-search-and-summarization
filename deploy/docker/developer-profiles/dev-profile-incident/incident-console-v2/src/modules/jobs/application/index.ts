@@ -5,6 +5,7 @@
 // of the loop in lib/jobs/loop.ts). Analysis itself is injected, so a job runs
 // exactly what POST /api/analysis runs (modules/analysis/application/analyse-upload.ts).
 
+import { compactId } from '@/lib/ids';
 import { resolveAllowedModel } from '@/modules/analysis/application/run-contract-analysis';
 import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 import type { AnalysisJobRepository } from '@/modules/jobs/domain/AnalysisJobRepository';
@@ -42,6 +43,14 @@ export async function enqueueAnalysisJob(
   const model = resolveAllowedModel(chosen, catalog).id;
   return jobs.enqueue({ filePath, filename, model });
 }
+
+/**
+ * The video every attempt of a job analyses into: fixed by the job, so a run
+ * cut short by a restart, and a retry, reuse one video row instead of leaving
+ * another on the same R2 object (the row is created once; later runs add revisions).
+ */
+export const jobVideoId = (job: Pick<AnalysisJob, 'id' | 'createdAt' | 'filePath'>): string =>
+  compactId('v', `analysis-job:${job.id}:${job.createdAt}:${job.filePath}`);
 
 export const listAnalysisJobs = (jobs: AnalysisJobRepository): Promise<AnalysisJob[]> => jobs.list(RECENT_FINISHED);
 

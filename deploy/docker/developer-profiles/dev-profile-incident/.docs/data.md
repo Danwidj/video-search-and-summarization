@@ -16,11 +16,12 @@ There is one Supabase project per project phase ([decision](decisions.md)): **fi
 - `20261023120000_report_revision_embeddings.sql` — adds `report_revisions.embedding` with its HNSW index, and `search_report_revisions`.
 - `20261024090000_save_human_revision_with_crops.sql` — adds `save_human_revision_with_crops`.
 - `20261028090000_r2_rename.sql` — adds `apply_r2_rename` (used once by [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py)) and lets it, and nothing else, change a revision's `evidence` column.
+- `20261031120000_analysis_jobs.sql` — adds the background analysis queue: the `analysis_jobs` table and `claim_analysis_job`, `touch_analysis_job`, `finish_analysis_job`, `retry_analysis_job` and `cancel_analysis_job`.
 
 Which of these are applied to finals is in [`status.md`](status.md#3-database-status). The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres.
 
-Finals holds six tables: `videos`, `queries`, `model_runs`, `report_revisions`, `evidence_crops`
-and `query_results`. Every report is a `report_revisions` snapshot; there are no relational report
+Finals holds seven tables: `videos`, `queries`, `model_runs`, `report_revisions`, `evidence_crops`,
+`query_results` and `analysis_jobs` (the console's analysis queue, not report data). Every report is a `report_revisions` snapshot; there are no relational report
 tables (`incidents`, `reports`, `entities`, `instruments`, `assets`, `human_reports*`,
 `review_status`, `gt_*`, `severity_eval_log` are gone).
 
@@ -172,6 +173,28 @@ There is **no foreign key to `evidence_crops`**: changing the official revision 
 audit trail. Indexes: `(revision_id, item_type, item_id)` and `(query_id, rank)`. RLS is on; only
 `service_role` can read or write.
 
+#### `analysis_jobs`
+
+The console's background analysis queue: one row per uploaded video waiting for, running or finished with its analysis ([architecture](architecture.md#background-analysis-jobs)). Written only by the console, and only through the functions below apart from the insert.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `BIGINT` | GENERATED ALWAYS AS IDENTITY; PRIMARY KEY | Job identifier |
+| `file_path` | `TEXT` | NOT NULL | The uploaded video's R2 key (`uploads/<name>.mp4`) |
+| `filename` | `TEXT` | NOT NULL | The stored file name, shown in the jobs list |
+| `model` | `VARCHAR(128)` | NULLABLE | The allowlisted model chosen at upload (the console stores the default when none was chosen); NULL runs the console's default |
+| `status` | `VARCHAR(16)` | NOT NULL, DEFAULT `'queued'`; CHECK `IN ('queued','running','done','failed','cancelled')` | Where the job is |
+| `attempts` | `INTEGER` | NOT NULL, DEFAULT 0; CHECK `>= 0` | Claims since the job was queued or last retried; a stale job with 2 fails instead of queueing again |
+| `error` | `TEXT` | NULLABLE | The plain reason a job failed |
+| `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC enqueue time; claims take the oldest queued job first |
+| `started_at` | `TIMESTAMP` | NULLABLE | Naive UTC start of the latest claim |
+| `finished_at` | `TIMESTAMP` | NULLABLE | Naive UTC time it was done, failed or cancelled |
+| `heartbeat_at` | `TIMESTAMP` | NULLABLE | Naive UTC time of the running claim's latest heartbeat (every 15 s); NULL when not running |
+| `video_id` | `VARCHAR(20)` | NULLABLE; FK → `videos.id` ON DELETE SET NULL | The analysed video, once done |
+| `revision_id` | `BIGINT` | NULLABLE; FK → `report_revisions.id` ON DELETE SET NULL | The new AI revision, once done |
+
+Deleting a video keeps its job rows as history with `video_id` and `revision_id` set to NULL. Indexes: `(status, created_at, id)` for the claim, `(created_at DESC)` for the list. RLS is on; only `service_role` can read or write.
+
 ### Relationships
 
 - `report_revisions.video_id` → `videos.id` (CASCADE). `videos.official_revision_id` is a composite
@@ -185,10 +208,12 @@ audit trail. Indexes: `(revision_id, item_type, item_id)` and `(query_id, rank)`
   its revisions to their crops.
 - `query_results.query_id` → `queries.id` and `query_results.revision_id` →
   `report_revisions.id` (both CASCADE).
+- `analysis_jobs.video_id` → `videos.id` and `analysis_jobs.revision_id` → `report_revisions.id`
+  (both SET NULL).
 
 Deleting a `videos` row removes its `report_revisions`, their `evidence_crops` and any
 `query_results` that reference those revisions. `model_runs` and `queries` rows are not deleted by
-that cascade.
+that cascade; `analysis_jobs` rows stay, with their links cleared.
 
 ---
 
@@ -319,6 +344,18 @@ AI revisions).
 
 ---
 
+### Analysis job functions
+
+All `VOLATILE`, `SECURITY INVOKER`, `search_path = ''`, `service_role` only, and all on the database clock, so the stale rule does not depend on the console machine's clock. `p_attempt` is the `attempts` value a claim returned: it names one claim, so a runner whose job was recovered and claimed again cannot overwrite the newer claim.
+
+| Function | Does | Returns |
+|---|---|---|
+| `claim_analysis_job(p_stale_seconds DEFAULT 180)` | First recovers stale running jobs (no heartbeat, else start, for `p_stale_seconds`): back to `queued` when `attempts < 2`, else `failed` with "The console stopped twice while analysing this video". Then claims the oldest queued job (`created_at`, `id`; `FOR UPDATE SKIP LOCKED`): `running`, `attempts + 1`, `started_at` and `heartbeat_at` now | The claimed row, or no rows |
+| `touch_analysis_job(p_id, p_attempt)` | Heartbeat for a running claim | `true`, or `false` when the claim is no longer running |
+| `finish_analysis_job(p_id, p_attempt, p_status, p_error, p_video_id, p_revision_id)` | `done` (needs the video and revision) or `failed` (blank reason becomes "The analysis failed"), only for the running claim | The row, or no rows |
+| `retry_analysis_job(p_id)` | `failed` or `cancelled` back to `queued`, attempts 0, timestamps, reason and links cleared | The row, or no rows |
+| `cancel_analysis_job(p_id)` | `queued` to `cancelled` | The row, or no rows |
+
 ### Revision search (`search_report_revisions`)
 
 Cosine search over `report_revisions.embedding`, across every revision that has a vector (AI revisions; human revisions have none today). It returns one row per revision, best first, with the title and description from the payload and the facet columns. It is `SECURITY INVOKER`, pins `search_path`, and is executable by `service_role` only. The agent calls it through `IncidentDB.search_revisions` for `POST /api/v1/incidents/revisions/search`. It is separate from `search_evidence_items`, which searches the crops of each video's searchable revision.
@@ -377,7 +414,7 @@ Database access is split across two client implementations according to operatio
 
 **Finals is locked down from its first migration.** The baseline turns off Supabase's default grants before it creates any object, so nothing is ever exposed, even for a moment:
 
-- **Default-deny:** RLS is on for all six tables, with no policies, so `anon` and `authenticated` cannot read, insert, update or delete rows anywhere.
+- **Default-deny:** RLS is on for all seven tables, with no policies, so `anon` and `authenticated` cannot read, insert, update or delete rows anywhere.
 - **No grants to the public roles:** every privilege on every table, view, sequence and function in `public` is revoked from `PUBLIC`, `anon` and `authenticated`. Every function is `service_role`-only, `SECURITY INVOKER`, with `SET search_path = ''`.
 - **Default privileges:** objects that `postgres` creates in `public` later get nothing for `anon`/`authenticated` and everything for `service_role`; new functions get no `EXECUTE` for `PUBLIC` in any schema. Objects created by other roles are not covered, so a new function should still be checked by `supabase/tests/security_check.sql`.
 - **pgvector lives in `extensions`**, so none of its functions are REST RPCs.

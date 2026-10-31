@@ -212,16 +212,27 @@ Server-only variables, read from `incident-console-v2/.env.local` (a symlink to 
 | `CONTRACTS_DIR` | the shared `contracts/` directory (default `../contracts`) |
 | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | PostgREST |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | video and evidence storage |
+| `ANALYSIS_JOB_LOOP` | `off` keeps this console's [background analysis loop](#background-analysis-jobs) stopped (its queued jobs then wait for another console); unset runs it |
 
 `GET /api/health` answers `status` (`ready` or `degraded`) and per-service booleans only; the `gateway` row is omitted (and not probed) in agent mode and reported only in gateway and mock modes.
 
 ### Console pages
 
-- **`/` (upload):** the model picker and a drop zone that takes one file or several. One file on an empty page runs as before: the stored-name warning, a preview, the five stages and a redirect to its report. Several files, or any file added while a batch is on screen, form a **batch**: a row per file shows Queued, then Uploading (with percent), Converting and Analysing (with elapsed time), then Done with an **Open report** link, Failed with the step and the reason ("The file was not accepted as a video" when the upload fails without a message of its own; a non-video name or type fails at once without being sent), or Cancelled. Files run strictly one at a time, in the order added, each through the same `uploadVideo` and `POST /api/analysis` as a single upload, so each becomes its own video and report. A failure never stops the next file. A queued file can be removed; **Cancel batch** cancels every queued file and aborts the running one only while its bytes upload (once the console is converting or the agent analysing, it finishes, as a single upload does). The model is fixed per file when it is queued. The queue is pure functions in `src/sections/analysis/batch-upload.ts` ([decision](decisions.md#2026-10-31-batch-upload-runs-files-strictly-one-at-a-time-each-as-a-single-upload)).
+- **`/` (upload):** the model picker, a drop zone that takes one file or several, and the **Analysis jobs** list. The browser uploads and converts each file (`/api/uploads/r2`), then queues its analysis as a [background job](#background-analysis-jobs) (`POST /api/jobs`); the console's server analyses jobs one at a time, so once a file is queued, closing the tab no longer stops it (a file whose bytes are still being sent is lost with the tab, and the page says so). One file on an empty page runs as before for the person watching: the stored-name warning, a preview, the five stages, and a redirect to its report when its job is done (or the job's failure reason, with **Retry analysis** retrying the job without re-sending the file). Several files, or any file added while a batch is on screen, form a **batch**: a row per file shows Queued, then Uploading (with percent) and Converting (with elapsed time), then Queued again while its job waits, Analysing (elapsed time from the job's start, so a reopened page shows the real time), Done with an **Open report** link, Failed with the step and the reason, or Cancelled. Uploads run strictly one at a time, in the order added; a file waiting for or in analysis does not hold the next upload back. A failure never stops the next file. **Retry** on a failed row re-sends a file whose upload or conversion failed, or queues a failed job again; **Cancel** on a row whose job is queued cancels that job. A queued file can be removed; **Cancel batch** cancels every file not uploaded yet, aborts the running one only while its bytes upload, and cancels the batch's queued jobs (one already analysing finishes). The model is fixed per file when it is queued. The page reads `GET /api/jobs` every 3 s; the Analysis jobs list shows every running and queued job, then the latest 10 finished ones, except those already shown as this page's own rows, so a reopened tab shows the same jobs and their progress. The queue is pure functions in `src/sections/analysis/batch-upload.ts` ([decision](decisions.md#2026-10-31-batch-upload-runs-files-strictly-one-at-a-time-each-as-a-single-upload)).
 - **`/library`** (the old `/reports` redirects here with its query string): Find incidents shows six cards per page, one per video (official revision, else newest), with severity, the title led by "Official vN" (when the shown version is official) or a "No official version" marker, summary, evidence and version counts, and MVP1's thumbnail: the upload-time screenshot only, with the severity and AI/Human badges on it, and MVP1's skeleton when the screenshot is missing or fails to load; filters are text, type, official only, severity band, added date and sort, shown as chips and kept in the URL. The text search falls back to the library's ILIKE match, with a note, when the agent fails or finds nothing. Find evidence shows the agent's top 20 hits with crop, match percentage, time, kind, threat and holder (no verdict badge: the critic is off); kind, threat and type filters and "Group by incident" work on the returned hits. A hit opens a viewer with the full frame and every box at that second (or the enlarged crop) and a link to the report at that second. "See evidence" on a card scopes Find evidence to that incident and loads its evidence at once; a query typed while scoped searches only that incident (the agent filters by `video_id` in the database, not in the browser).
 - **`/videos/<id>`:** one video's re-generation card and full attempt history.
 - **`/reports/<videoId>`:** View mode has a fixed top band (video; a timeline with one lane per entity over its seen span, its held instruments, then "Holder unknown" and Assets lanes; the versions graph, where each AI run is a branch and the star marks the official version; the star spins while a mark or clear saves and shows the answer at once, so a quick second mark still asks before it replaces), a scrolling pane (report fields, evidence cards by holder, where clicking a card's image opens a detail pop-up with the whole frame and box large, the id and title, the full description, "Held by" and threat for an instrument, "Holds" and the on-screen span for an entity, the time and a Play from here button that closes the pop-up and seeks the video (disabled with a note when the item has no time), read-only model output, run details, the version chat) and a bottom bar with "Edit from vN". Edit mode is described below.
 - **`/dashboard`:** see [Dashboard analytics](#dashboard-analytics-and-cross-filtering). The browser uploads a WebP thumbnail (the frame 25% into each new upload, at most 640×360, captured from the chosen file, which has the same frames as the stored copy) to `thumbnails/<video-key>.webp` under the stored `.mp4` key; a failure never blocks analysis.
+
+### Background analysis jobs
+
+An upload's analysis runs as a row in `analysis_jobs` ([`data.md`](data.md#analysis_jobs)), not inside the browser's request, so it survives a closed tab ([decision](decisions.md#2026-10-31-background-analysis-jobs-a-supabase-table-and-one-in-process-loop-per-console)).
+
+- **Routes:** `POST /api/jobs {filepath, filename, model?}` checks the model against the allowlist (400 for an unsupported one) and queues a job with the model stored (the default model when none is sent) -> 201 `{job}`; `GET /api/jobs` -> `{jobs}`: every running and queued job, then the latest 10 finished; `POST /api/jobs/<id>/retry` (failed or cancelled -> queued) and `POST /api/jobs/<id>/cancel` (queued -> cancelled) -> `{job}`, or 422 for a job in any other state. Code: `src/modules/jobs/` (domain rules in `domain/job.ts`, use cases in `application/`, PostgREST adapter in `infrastructure/supabase/`). `POST /api/analysis` still runs one analysis inside its request for scripts and tools; the upload page no longer calls it.
+- **The loop:** `src/instrumentation.ts` starts `src/lib/jobs/loop.ts` once per console process (Node.js runtime only; a `globalThis` flag stops the dev server starting a second one, and the atomic claim makes a second loop harmless anyway). Every 3 s it calls `claim_analysis_job`, which takes the oldest queued job (`FOR UPDATE SKIP LOCKED`), then runs `analyseUpload` (`src/modules/analysis/application/analyse-upload.ts`), the same code `POST /api/analysis` runs, heartbeats the job every 15 s (`touch_analysis_job`), and stores done with the new video and AI revision, or failed with the plain reason (`finish_analysis_job`). It takes the next job at once when one finished. One job at a time per console keeps it in line with the batch upload and the Switchyard rate limits. The loop is not a request, so the route's 360 s `maxDuration` does not bind it; each model's own timeout in `contracts/inference.json` still does.
+- **One video per job:** every attempt of a job analyses into the same video id, derived from the job (`jobVideoId`), so a run cut short and run again, or a retry, adds revisions to one video instead of leaving a second video row on the same R2 object.
+- **Recovery:** a running job with no heartbeat for 180 s lost its console (stopped or restarted). The next claim, by any console, sends it back to the queue after its first stale run and fails it ("The console stopped twice while analysing this video") after the second, so nothing hangs. A heartbeat or finish names its claim (`p_attempt`), so a runner whose job was recovered cannot overwrite the newer claim.
+- **Shared queue:** every console pointed at finals with the loop on claims from the same table, and a job runs against the agent or gateway of whichever console claims it. Set `ANALYSIS_JOB_LOOP=off` on a console that must not take other people's jobs.
 
 ### Report library pagination and deferred report loading
 
@@ -312,9 +323,10 @@ sequenceDiagram
     User->>UI: Choose a model (allowlist from contracts/inference.json), then a video
     UI->>UI: /api/uploads/r2: ffprobe; ffmpeg to H.264 MP4 (video only, same size) unless it is one already
     UI->>R2: PutObject (uploads/<name>.mp4, If-None-Match *) + HeadObject via /api/uploads/r2 (the only upload)
-    UI->>UI: POST /api/analysis {filepath, filename, model}
+    UI->>DB: POST /api/jobs {filepath, filename, model}: analysis_jobs row (queued); the page polls GET /api/jobs every 3 s
+    UI->>DB: Job loop in the console process: claim_analysis_job (oldest queued); touch_analysis_job every 15 s while it runs
     UI->>R2: HeadObject (object must exist and be nonempty)
-    UI->>DB: Insert videos row if absent (upload lifecycle; never updated later)
+    UI->>DB: Insert videos row if absent (the job's video id; upload lifecycle; never updated later)
     UI->>UI: Sign R2 GET URL; build P1 request = eval P1 (video, canonical prompt, strict response_format, 16384 tokens, 64 frames)
     UI->>Gateway: POST /v1/chat/completions (per-model timeout)
     Gateway->>Brev: Forward with Bearer auth (VLM_GATEWAY_TIMEOUT_SECONDS)
@@ -325,11 +337,11 @@ sequenceDiagram
     alt valid_first_pass / valid_after_structural_repair
         UI->>DB: model_runs (immutable notes: request, raw response, validation, repair, report)
         UI->>DB: report_revisions (kind ai: payload, evidence, facets)
-        UI->>DB: Read back and verify
-        UI-->>User: Redirect to /reports/[videoId]?revision=[revisionId]
+        UI->>DB: Read back and verify; finish_analysis_job done (video id, revision id)
+        UI-->>User: The polled row links to /reports/[videoId]?revision=[revisionId] (a single upload redirects there)
     else contract_failed / request_failed
-        UI->>DB: model_runs attempt record only (no revision)
-        UI-->>User: 422 / 502 / 504 with the reason; the attempt appears in the video's history
+        UI->>DB: model_runs attempt record only (no revision); finish_analysis_job failed with the reason
+        UI-->>User: The row shows Failed with the reason and Retry; the attempt appears in the video's history
     end
 ```
 
@@ -357,9 +369,10 @@ sequenceDiagram
     R2-->>UI: Durable R2 object key
     UI->>R2: HeadObject (exact stored byte length required)
 
-    UI->>UI: Trigger POST /api/analysis
+    UI->>DB: POST /api/jobs: analysis_jobs row (queued); the page polls GET /api/jobs every 3 s
+    UI->>DB: Job loop in the console process: claim_analysis_job (oldest queued); touch_analysis_job every 15 s while it runs
     UI->>R2: HeadObject (object must exist and be nonempty)
-    UI->>DB: Insert videos row if absent (fresh id, filepath=R2 key; source stays null)
+    UI->>DB: Insert videos row if absent (the job's video id, filepath=R2 key; source stays null)
     UI->>UI: Sign 1-hour R2 GET URL locally
 
     UI->>Tunnel: POST localhost:8000/api/v1/incidents/[id]/analyze {model_run_id, video_url, skip_rp1: true}
@@ -385,11 +398,11 @@ sequenceDiagram
     alt valid_first_pass / valid_after_structural_repair
         UI->>DB: model_runs (immutable notes: request, raw response with chunkTimeline and chunking, validation, repair, report)
         UI->>DB: Verify the agent's AI revision (insert it only when revision_id is missing)
-        UI->>DB: Read back and verify
-        UI-->>User: Redirect to /reports/[videoId]?revision=[revisionId]
+        UI->>DB: Read back and verify; finish_analysis_job done (video id, revision id)
+        UI-->>User: The polled row links to /reports/[videoId]?revision=[revisionId] (a single upload redirects there)
     else contract_failed / request_failed
-        UI->>DB: model_runs attempt record only (no revision)
-        UI-->>User: 422 / 502 / 504 with the reason; the attempt appears in the video's history
+        UI->>DB: model_runs attempt record only (no revision); finish_analysis_job failed with the reason
+        UI-->>User: The row shows Failed with the reason and Retry; the attempt appears in the video's history
     end
 ```
 

@@ -218,8 +218,9 @@ Verify deployment health against this checklist before declaring a build ready:
 - [ ] **Automated Report Generation:** Trigger incident analysis. Verify all structured fields populate
       (type, severity, confidence, summary, timeline, entities, instruments, assets). Confirm ambiguous footage
       gracefully degrades (e.g. empty persons array, unconfirmed start time).
-- [ ] **Persistence Read-Back:** Confirm `POST /api/analysis` returns 200 only after `videos`, `model_runs`,
+- [ ] **Persistence Read-Back:** Confirm a job (`GET /api/jobs`) reaches `done`, and `POST /api/analysis` returns 200, only after `videos`, `model_runs`,
       `report_revisions` (the AI revision) can be read back and `videos.filepath` exactly matches the submitted R2 key.
+- [ ] **Background Jobs:** Upload two clips, close the tab while one is Analysing, reopen `/` and confirm the Analysis jobs list shows it still running and then Done. Stop the console mid-job and start it again: after 180 s without a heartbeat the job is queued again and finishes.
 - [ ] **Re-Generation:** Re-generate with a different model and a reviewer prompt, and confirm a new AI revision appears in
       History while earlier revisions remain openable.
 - [ ] **Pipeline Error Handling:** Induce an invalid video or disconnect the tunnel; verify that the frontend surfaces

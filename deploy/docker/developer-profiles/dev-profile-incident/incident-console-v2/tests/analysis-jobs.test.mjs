@@ -410,3 +410,10 @@ test('jobs routes: POST queues an upload with the default model, GET lists it, r
 beforeEach(() => {
   globalThis.fetch = originalFetch;
 });
+
+test('every attempt of a job analyses into the same video id', () => {
+  const first = app.jobVideoId(job(7));
+  assert.match(first, /^v[0-9a-f]{19}$/);
+  assert.equal(app.jobVideoId({ ...job(7), status: 'running', attempts: 2 }), first, 'a re-run or retry keeps the video');
+  assert.notEqual(app.jobVideoId(job(8)), first);
+});

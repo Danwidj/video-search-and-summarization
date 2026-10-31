@@ -75,6 +75,15 @@ To record an out-of-band change on finals without re-executing SQL:
 supabase migration repair --workdir $W --db-url "$FINALS_DSN" --status applied <YYYYMMDDHHMMSS>
 ```
 
+**Finals history is not in step with `main` (2026-10-31):** the two `20261028090000` files were applied by hand without history rows, and `20261031090000` (`dashboard_official_else_newest`) is recorded but is in no file on `main`. A plain `db push` would therefore re-run the `20261028090000` files and stop on the unknown remote version. Check `migration list` first. To apply one new file on its own, run it with a Postgres client (it holds its own `BEGIN`/`COMMIT`), then record it with `migration repair` as above.
+
+**The laptop could not reach the pooler on 2026-10-31** (5432 and 6543 timed out), but `kwanz-ws` could. Tunnel through the VM and point the DSN's host and port at the tunnel (the pooler routes on the `postgres.<ref>` user name, so the host change is fine), then close the tunnel by PID:
+
+```bash
+ssh -f -N -o ExitOnForwardFailure=yes -L 127.0.0.1:15432:aws-0-ap-southeast-1.pooler.supabase.com:5432 kwanz-ws
+# FINALS_DSN with @aws-0-ap-southeast-1.pooler.supabase.com:5432 replaced by @127.0.0.1:15432
+```
+
 ### Read via PostgREST (works from anywhere with HTTPS)
 
 ```bash

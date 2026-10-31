@@ -2,8 +2,9 @@
 
 // Analyse one uploaded video: the whole of what an upload's analysis does, so
 // POST /api/analysis and the background job loop (lib/jobs/loop.ts) run the
-// same code. The video is new, so it gets a fresh id; the AI revision is
-// stored, then its evidence crops so the video is searchable at once.
+// same code. The video is new: it gets a fresh id unless the caller names one
+// (a job's id, see jobVideoId); the video row is created once and never reset.
+// The AI revision is stored, then its evidence crops so the video is searchable at once.
 
 import { compactId } from '@/lib/ids';
 import { type AnalysisMode, type AnalysisPorts, runContractAnalysis } from '@/modules/analysis/application/run-contract-analysis';
@@ -14,6 +15,12 @@ import type { DbAdapters } from '@/modules/shared/domain/adapters';
 export interface UploadAnalysisInput {
   /** The uploaded video's R2 key. */
   r2Key: string;
+  /**
+   * The video id to use; omitted mints a fresh one. A background job passes the
+   * same id on every attempt, so a re-run after a restart or a retry adds to the
+   * one video instead of leaving a second video row on the same R2 object.
+   */
+  videoId?: string;
   /** The model id; empty or missing runs the default model. */
   model?: string | null;
   additionalInstruction?: string;
@@ -45,7 +52,7 @@ export interface AnalysisRunSummary {
 export async function analyseUpload(input: UploadAnalysisInput, deps: UploadAnalysisDeps): Promise<AnalysisRunSummary> {
   const { run, revisionId } = await runContractAnalysis(
     {
-      videoId: compactId('v', deps.ports.randomUUID()),
+      videoId: input.videoId || compactId('v', deps.ports.randomUUID()),
       r2Key: input.r2Key,
       model: input.model || deps.defaultModel,
       additionalInstruction: input.additionalInstruction,

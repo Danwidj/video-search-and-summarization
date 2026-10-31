@@ -28,6 +28,7 @@ supabase/
                 20261023120000_report_revision_embeddings.sql — revision summary vectors, HNSW index, search RPC
                 20261024090000_save_human_revision_with_crops.sql — a human save that stores its crops in the same call
                 20261028090000_r2_rename.sql — apply_r2_rename: points rows at renamed R2 keys (evidence-only exception to append-only)
+                20261031120000_analysis_jobs.sql — the console's background analysis queue (table + claim/heartbeat/finish/retry/cancel)
   tests/        SQL harness (test_baseline.py, test_freeze.py), security_check.sql, supabase_stub.sql,
                 parity_check.py, rehearse.py, probe_api.sh
   r2/           migrate_r2_names.py (+ test): copy every old R2 object to a readable key, verify, update the rows; never deletes
@@ -47,7 +48,7 @@ anon/authenticated**, so the lockdown is tested against what a new project start
 
 ```bash
 cd supabase/tests
-# Finals schema: applies every file in ../migrations/ in order; 31 tests (security and behaviour)
+# Finals schema: applies every file in ../migrations/ in order; 38 tests (security and behaviour)
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
 # Midterm freeze/unfreeze on a local replica of midterm
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py

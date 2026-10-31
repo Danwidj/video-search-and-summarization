@@ -12,7 +12,7 @@
 import { getAnalysisJobs, getUploadAnalysis } from '@/lib/container';
 import { getServiceConfiguration, isSupabaseConfigured, requireAnalysisConfiguration } from '@/lib/env';
 import { analyseUpload } from '@/modules/analysis/application/analyse-upload';
-import { runNextJob } from '@/modules/jobs/application';
+import { jobVideoId, runNextJob } from '@/modules/jobs/application';
 
 export const POLL_MS = 3000;
 
@@ -30,7 +30,11 @@ export async function tick(): Promise<boolean> {
   if (!isSupabaseConfigured(config)) return false;
   const finished = await runNextJob({
     jobs: getAnalysisJobs(config),
-    analyse: (job) => analyseUpload({ r2Key: job.filePath, model: job.model }, getUploadAnalysis(requireAnalysisConfiguration(config))),
+    analyse: (job) =>
+      analyseUpload(
+        { r2Key: job.filePath, model: job.model, videoId: jobVideoId(job) },
+        getUploadAnalysis(requireAnalysisConfiguration(config)),
+      ),
     every: (ms, fn) => {
       const timer = setInterval(fn, ms);
       return () => clearInterval(timer);
@@ -45,6 +49,7 @@ export function startAnalysisJobLoop(): void {
   const scope = globalThis as LoopGlobal;
   if (scope[STARTED] || process.env.ANALYSIS_JOB_LOOP?.trim().toLowerCase() === 'off') return;
   scope[STARTED] = true;
+  log(`loop started: one job at a time, polling every ${POLL_MS / 1000} s`);
   let lastError = '';
   const run = async () => {
     let busy = false;
