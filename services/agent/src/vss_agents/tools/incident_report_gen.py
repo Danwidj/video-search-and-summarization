@@ -21,13 +21,10 @@ Runs the same calls as ``incident-console-v2`` (gateway mode, P1 only) and the `
 0. **Caption pass** (``INCIDENT_CHUNKING_ENABLED=1``, production requests only) - the clip is cut into
    overlapping windows, each captioned by the same VLM at its full frame rate, and the timed captions are
    appended to the P1 request as one more user message (``utils/chunk_captions.py``). The prompt file,
-   ``inference.json`` and the schema are untouched. A failure of this pass never fails the analysis:
-   ``chunking.skipped`` carries the reason and P1 runs without context. Experimental requests
+   ``inference.json`` and the schema are untouched. The captions are context for P1 only: the response
+   does not return them and nothing stores them (their telemetry is logged). A failure of this pass never
+   fails the analysis: the reason is logged and P1 runs without context. Experimental requests
    (``experiment_prompt_id``, ``skip_crops``, ``max_crop_calls``) never run it, so eval runs are unchanged.
-   With ``INCIDENT_ALERTS_ENABLED=1`` as well, the window captions and the alert rules
-   (``utils/chunk_alert_rules.json``) go to the RP1 language model in one text call, and the windows it
-   matches come back as ``chunk_alerts`` (``utils/chunk_alerts.py``). A failure leaves the alerts out, with
-   ``alerting.skipped`` carrying the reason; it never fails the analysis.
 1. **P1** - the video as a signed R2 URL first, then the contract extraction prompt (plus the
    reviewer prompt of a re-generation, framed exactly as the console frames its additional
    instruction), with the contract JSON Schema enforced through ``response_format`` and the fixed
@@ -89,7 +86,6 @@ from pydantic import Field
 from vss_agents import incident_contract
 from vss_agents.incident_contract import IncidentExtractionError
 from vss_agents.tools import incident_experiments
-from vss_agents.utils import chunk_alerts
 from vss_agents.utils import chunk_captions
 from vss_agents.utils import crop_evidence
 from vss_agents.utils import incident_db
@@ -274,36 +270,6 @@ class IncidentReportGenOutput(BaseModel):
     )
     p1_elapsed_ms: float | None = Field(default=None, description="Experimental requests only: the P1 round trip.")
     usage: dict[str, Any] | None = Field(default=None, description="Experimental requests only: P1 token usage.")
-    chunk_timeline: list[dict[str, Any]] | None = Field(
-        default=None,
-        description=(
-            "Caption pass (INCIDENT_CHUNKING_ENABLED): one entry per window, {start, end, caption, events: "
-            "[{start, end, text}]} in whole-video seconds; null when the pass did not run."
-        ),
-    )
-    chunking: dict[str, Any] | None = Field(
-        default=None,
-        description=(
-            "Caption pass telemetry (window_seconds, overlap_seconds, num_frames, model, calls, retries, "
-            "prompt_tokens, completion_tokens, elapsed_ms), or {skipped: reason}; null when the flag is off or "
-            "the request is experimental."
-        ),
-    )
-    chunk_alerts: list[dict[str, Any]] | None = Field(
-        default=None,
-        description=(
-            "Alert rules per chunk (INCIDENT_ALERTS_ENABLED, after a caption pass that produced a timeline): one "
-            "entry per matching (rule, window), {rule_id, rule, window_index, start, end, reason}, where "
-            "window_index indexes chunk_timeline; [] when no rule matched; null when the check did not run."
-        ),
-    )
-    alerting: dict[str, Any] | None = Field(
-        default=None,
-        description=(
-            "Alert check telemetry (model, rules, windows, matches, prompt_tokens, completion_tokens, elapsed_ms), "
-            "or {skipped: reason}; null when INCIDENT_ALERTS_ENABLED is off or the request is experimental."
-        ),
-    )
     tracking: dict[str, Any] | None = Field(
         default=None,
         description=(
@@ -658,7 +624,7 @@ async def run_caption_pass(
 ) -> chunk_captions.ChunkCaptions | None:
     """The caption pass of a production request. Never raises.
 
-    ``None`` when ``INCIDENT_CHUNKING_ENABLED`` is not ``1`` (the response then carries no chunking fields).
+    ``None`` when ``INCIDENT_CHUNKING_ENABLED`` is not ``1``.
     Otherwise the captions and their telemetry, or an empty timeline with ``telemetry = {"skipped": reason}``
     when the pass did not run (short clip, unknown length, ffmpeg missing, a failed window call, ...): the
     analysis goes on without context.
@@ -698,45 +664,6 @@ async def run_caption_pass(
         captions.telemetry["elapsed_ms"],
     )
     return captions
-
-
-async def run_alert_pass(
-    client: httpx.AsyncClient,
-    config: IncidentReportGenConfig,
-    tool_input: IncidentReportGenInput,
-    captions: chunk_captions.ChunkCaptions | None,
-) -> chunk_alerts.ChunkAlerts | None:
-    """The alert check over the caption pass's timeline. Never raises.
-
-    ``None`` when ``INCIDENT_ALERTS_ENABLED`` is not ``1`` (the response then carries no alert fields). Otherwise
-    the matches and their telemetry, or no alerts with ``telemetry = {"skipped": reason}`` when there is no
-    timeline (chunking off or skipped) or the check failed (bad rules file, HTTP error, malformed answer).
-    """
-    if not chunk_alerts.alerts_enabled():
-        return None
-    if captions is None or not captions.timeline:
-        if captions is None:
-            reason = f"no chunk timeline ({chunk_captions.CHUNKING_FLAG} is off)"
-        else:
-            reason = f"no chunk timeline (caption pass skipped: {captions.telemetry.get('skipped', 'no windows')})"
-        logger.info("incident_report_gen: alert check skipped for %s: %s", tool_input.incident_id, reason)
-        return chunk_alerts.ChunkAlerts(alerts=None, telemetry={"skipped": reason})
-    try:
-        result = await chunk_alerts.check_alerts(
-            client=client, base_url=config.rp1_base_url, timeline=captions.timeline
-        )
-    except Exception as exc:
-        reason = str(exc) if isinstance(exc, chunk_alerts.ChunkAlertError) else f"{type(exc).__name__}: {exc}"
-        logger.warning("incident_report_gen: alert check skipped for %s: %s", tool_input.incident_id, reason)
-        return chunk_alerts.ChunkAlerts(alerts=None, telemetry={"skipped": reason})
-    logger.info(
-        "incident_report_gen: alert check for %s: %d matches over %d windows and %d rules",
-        tool_input.incident_id,
-        result.telemetry["matches"],
-        result.telemetry["windows"],
-        result.telemetry["rules"],
-    )
-    return result
 
 
 def experiment_settings(tool_input: IncidentReportGenInput, reviewer_prompt: str | None) -> dict[str, Any] | None:
@@ -803,7 +730,6 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 if experiment is not None
                 else await run_caption_pass(client, config, tool_input, model_name, video_length.seconds)
             )
-            alerts = None if experiment is not None else await run_alert_pass(client, config, tool_input, captions)
             try:
                 report, raw_output, finish_reason, p1_attempts = await run_p1_with_retry(
                     client,
@@ -912,10 +838,6 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             experiment=experiment,
             p1_elapsed_ms=(telemetry or {}).get("p1_elapsed_ms"),
             usage=(telemetry or {}).get("usage") if telemetry is not None else None,
-            chunk_timeline=captions.timeline if captions else None,
-            chunking=captions.telemetry if captions else None,
-            chunk_alerts=alerts.alerts if alerts else None,
-            alerting=alerts.telemetry if alerts else None,
             tracking=tracking.summary.to_dict() if tracking is not None else None,
             privacy=privacy.to_dict() if privacy is not None else None,
         )

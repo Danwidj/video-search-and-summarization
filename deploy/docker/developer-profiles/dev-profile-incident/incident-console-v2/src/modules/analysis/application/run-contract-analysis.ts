@@ -336,10 +336,6 @@ export async function runContractAnalysis(
         contract_version?: unknown;
         revision_id?: unknown;
         evidence?: unknown;
-        chunk_timeline?: unknown;
-        chunking?: unknown;
-        chunk_alerts?: unknown;
-        alerting?: unknown;
         tracking?: unknown;
         privacy?: unknown;
       };
@@ -386,14 +382,6 @@ export async function runContractAnalysis(
       if (typeof agentP1.revision_id === 'number' && Number.isInteger(agentP1.revision_id)) fromAgent.revisionId = agentP1.revision_id;
       if (Array.isArray(agentP1.evidence)) fromAgent.evidence = evidenceEntries(agentP1.evidence);
       if (typeof agentP1.finish_reason === 'string') response.finishReason = agentP1.finish_reason;
-      // The caption pass (agent INCIDENT_CHUNKING_ENABLED): kept in the run's notes as the agent returned them.
-      if (Array.isArray(agentP1.chunk_timeline)) response.chunkTimeline = agentP1.chunk_timeline;
-      if (agentP1.chunking && typeof agentP1.chunking === 'object' && !Array.isArray(agentP1.chunking))
-        response.chunking = agentP1.chunking as Record<string, unknown>;
-      // Alert rules per chunk (agent INCIDENT_ALERTS_ENABLED): the matches and telemetry, kept as returned.
-      if (Array.isArray(agentP1.chunk_alerts)) response.chunkAlerts = agentP1.chunk_alerts;
-      if (agentP1.alerting && typeof agentP1.alerting === 'object' && !Array.isArray(agentP1.alerting))
-        response.alerting = agentP1.alerting as Record<string, unknown>;
       // Person tracking (agent INCIDENT_TRACKING_ENABLED): its summary {enabled, matched, tracks, elapsed_ms, skipped}, as returned.
       if (agentP1.tracking && typeof agentP1.tracking === 'object' && !Array.isArray(agentP1.tracking))
         response.tracking = agentP1.tracking as Record<string, unknown>;

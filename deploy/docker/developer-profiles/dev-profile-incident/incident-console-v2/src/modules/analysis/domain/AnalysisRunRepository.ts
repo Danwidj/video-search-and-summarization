@@ -50,14 +50,6 @@ export interface AnalysisAttemptRecord {
     reasoningContent?: string | null;
     finishReason?: string | null;
     usage?: Record<string, unknown> | null;
-    /** Agent mode, caption pass on: the agent's chunk_timeline ([{start, end, caption, events}]) as returned. */
-    chunkTimeline?: unknown[];
-    /** Agent mode, caption pass on: the agent's chunking telemetry, or { skipped: reason }, as returned. */
-    chunking?: Record<string, unknown>;
-    /** Agent mode, alert check on: the agent's chunk_alerts ([{rule_id, rule, window_index, start, end, reason}]) as returned. */
-    chunkAlerts?: unknown[];
-    /** Agent mode, alert check on: the agent's alerting telemetry, or { skipped: reason }, as returned. */
-    alerting?: Record<string, unknown>;
     /** Agent mode, person tracking on: the agent's tracking summary ({enabled, matched, tracks, elapsed_ms, skipped}) as returned. */
     tracking?: Record<string, unknown>;
     /** Agent mode, blur_faces asked: the agent's privacy summary ({blur_faces, regions, frames, heads, head_queries, failed}) as returned. */

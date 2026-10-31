@@ -221,22 +221,11 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
         contract_version: contractVersion(),
         raw_output: JSON.stringify(rawContract),
         finish_reason: 'stop',
+        // An older agent that still returns its captions: the console never stores them.
         chunk_timeline: [
           { start: 0, end: 20, caption: '[0.0s-20.0s] E1 forces A1.', events: [{ start: 0, end: 20, text: 'E1 forces A1.' }] },
         ],
-        chunking: {
-          window_seconds: 20,
-          overlap_seconds: 2,
-          num_frames: 32,
-          model: 'agent/vlm-on-the-vm',
-          calls: 1,
-          retries: 0,
-          prompt_tokens: 8516,
-          completion_tokens: 117,
-          elapsed_ms: 5840,
-        },
-        chunk_alerts: [{ rule_id: 'person-falls', rule: 'A person falls.', window_index: 0, start: 0, end: 20, reason: 'E1 falls.' }],
-        alerting: { model: 'llm', rules: 3, windows: 1, matches: 1, prompt_tokens: 900, completion_tokens: 30, elapsed_ms: 800 },
+        chunking: { window_seconds: 20, calls: 1 },
         tracking: { enabled: true, matched: 2, tracks: 3, elapsed_ms: 91000, skipped: null },
       };
       return new Response(JSON.stringify(mockAgentResponse), {
@@ -294,23 +283,9 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
     {
       content: JSON.stringify(rawContract),
       finishReason: 'stop',
-      chunkTimeline: [{ start: 0, end: 20, caption: '[0.0s-20.0s] E1 forces A1.', events: [{ start: 0, end: 20, text: 'E1 forces A1.' }] }],
-      chunking: {
-        window_seconds: 20,
-        overlap_seconds: 2,
-        num_frames: 32,
-        model: 'agent/vlm-on-the-vm',
-        calls: 1,
-        retries: 0,
-        prompt_tokens: 8516,
-        completion_tokens: 117,
-        elapsed_ms: 5840,
-      },
-      chunkAlerts: [{ rule_id: 'person-falls', rule: 'A person falls.', window_index: 0, start: 0, end: 20, reason: 'E1 falls.' }],
-      alerting: { model: 'llm', rules: 3, windows: 1, matches: 1, prompt_tokens: 900, completion_tokens: 30, elapsed_ms: 800 },
       tracking: { enabled: true, matched: 2, tracks: 3, elapsed_ms: 91000, skipped: null },
     },
-    'only what the agent returned, the caption pass and its alerts included',
+    'the raw output and tracking summary only; captions are never stored',
   );
 });
 
