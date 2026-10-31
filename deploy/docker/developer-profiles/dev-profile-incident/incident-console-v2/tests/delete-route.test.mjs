@@ -58,25 +58,6 @@ mock.module('@aws-sdk/client-s3', {
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.test/x' } });
 
 const { DELETE } = await import('../src/app/api/reports/[videoId]/delete/route.ts');
-
-// The VST calls the route makes (method, path, streamId header); `vstDeleteStatus` is the answer to a sensor delete.
-const vstCalls = [];
-let vstDeleteStatus = 204;
-/** Serves a VST request from the fake, or null for any other URL. */
-function serveVst(url, init = {}) {
-  const parsed = new URL(String(url));
-  if (parsed.origin !== 'http://vst.test') return null;
-  vstCalls.push(`${init.method ?? 'GET'} ${parsed.pathname} streamId=${init.headers?.streamId ?? ''}`);
-  if (init.method === 'DELETE') {
-    // R2 objects deleted while the camera still stood would be a bug.
-    if (deletedObjects.length > 0) throw new Error('an R2 object was deleted before the camera');
-    return new Response(null, { status: vstDeleteStatus });
-  }
-  return Response.json([
-    { sensorId: 'sensor-by-name', name: 'v', state: 'online' },
-    { sensorId: 'sensor-removed', name: 'v', state: 'removed' },
-  ]);
-}
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 
@@ -88,11 +69,8 @@ beforeEach(() => {
     R2_ACCESS_KEY: 'b',
     R2_SECRET_KEY: 'c',
     R2_BUCKET: 'd',
-    INCIDENT_VST_BASE_URL: 'http://vst.test',
   });
   deletedObjects.length = 0;
-  vstCalls.length = 0;
-  vstDeleteStatus = 204;
   listedPrefixes.length = 0;
   storedEvidence = [];
   failingKeys = new Set();
@@ -132,15 +110,13 @@ test('deleting a video removes its objects, the video row, and the run records t
   ];
   const deletes = [];
   globalThis.fetch = async (url, init = {}) => {
-    const vst = serveVst(url, init);
-    if (vst) return vst;
     const parsed = new URL(String(url));
     const table = parsed.pathname.replace('/rest/v1/', '');
     if (init.method === 'DELETE') {
       deletes.push(`${table}?${parsed.searchParams}`);
       return new Response(null, { status: 204 });
     }
-    if (table === 'videos') return new Response(JSON.stringify([{ id: 'v-target', filepath: 'uploads/s/v.mp4', source: 'sensor-stored' }]));
+    if (table === 'videos') return new Response(JSON.stringify([{ id: 'v-target', filepath: 'uploads/s/v.mp4' }]));
     if (table === 'model_runs') {
       assert.match(parsed.searchParams.get('notes'), /^like\.\*"videoId":"v-target"\*$/);
       return new Response(
@@ -168,11 +144,6 @@ test('deleting a video removes its objects, the video row, and the run records t
   const response = await call();
 
   assert.equal(response.status, 200);
-  assert.deepEqual(
-    vstCalls,
-    ['DELETE /vst/api/v1/sensor/sensor-stored streamId=sensor-stored'],
-    'the stored camera goes, with no name lookup',
-  );
   assert.deepEqual(deletes.filter((d) => d.startsWith('model_runs')).sort(), [
     'model_runs?id=eq.m-failed',
     'model_runs?id=eq.m-legacy',
@@ -202,42 +173,14 @@ test('an evidence image that cannot be removed keeps the video row, so the delet
   failingKeys = new Set(['evidence/uploads/s/v.mp4/0b9c/E1.jpg']);
   const deletes = [];
   globalThis.fetch = async (url, init = {}) => {
-    const vst = serveVst(url, init);
-    if (vst) return vst;
     if (init.method === 'DELETE') deletes.push(String(url));
-    return new Response(JSON.stringify([{ id: 'v-target', filepath: 'uploads/s/v.mp4', source: null }]));
+    return new Response(JSON.stringify([{ id: 'v-target', filepath: 'uploads/s/v.mp4' }]));
   };
   const response = await call();
   assert.equal(response.status, 500);
-  assert.deepEqual(
-    vstCalls,
-    ['GET /vst/api/v1/sensor/list streamId=', 'DELETE /vst/api/v1/sensor/sensor-by-name streamId=sensor-by-name'],
-    'a row without a sensor id resolves the one live camera named after the file',
-  );
   assert.match((await response.json()).error, /1 of 2 evidence images.*evidence\/uploads\/s\/v\.mp4\/0b9c\/E1\.jpg: R2 refused/);
   assert.deepEqual(deletes, [], 'no row is deleted');
   assert.ok(deletedObjects.includes('evidence/uploads/s/v.mp4/0b9c/I1.jpg'), 'the other images are still removed');
-});
-
-test('a camera VST refuses to delete keeps the objects and the row; one VST no longer has counts as deleted', async () => {
-  storedEvidence = ['evidence/uploads/s/v.mp4/0b9c/E1.jpg'];
-  const deletes = [];
-  globalThis.fetch = async (url, init = {}) => {
-    const vst = serveVst(url, init);
-    if (vst) return vst;
-    if (init.method === 'DELETE') deletes.push(String(url));
-    return new Response(JSON.stringify([{ id: 'v-target', filepath: 'uploads/s/v.mp4', source: 'sensor-stored' }]));
-  };
-  vstDeleteStatus = 503;
-  const refused = await call();
-  assert.equal(refused.status, 500);
-  assert.match((await refused.json()).error, /VST sensor delete returned HTTP 503/);
-  assert.deepEqual(deletedObjects, [], 'no object is removed');
-  assert.deepEqual(deletes, [], 'no row is deleted');
-
-  vstDeleteStatus = 404;
-  assert.equal((await call()).status, 200, 'a camera VST no longer has lets the delete finish');
-  assert.ok(deletedObjects.includes('uploads/s/v.mp4'));
 });
 
 test('a video without a stored object is refused and nothing is deleted', async () => {
@@ -248,5 +191,4 @@ test('a video without a stored object is refused and nothing is deleted', async 
   };
   assert.notEqual((await call()).status, 200);
   assert.deepEqual(deletes, []);
-  assert.deepEqual(vstCalls, [], 'no camera is touched for a video that is refused');
 });

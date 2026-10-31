@@ -83,7 +83,7 @@ export interface ContractAnalysisInput {
   /** The reviewer prompt typed on re-generation: appended to the gateway request, or sent to the agent as reviewer_prompt. */
   additionalInstruction?: unknown;
   /** Present only for a newly uploaded video; its row is created once and never reset. */
-  newVideo?: { sensorId: string; uploadedAt: string };
+  newVideo?: { uploadedAt: string };
 }
 
 export interface ContractAnalysisResult {
@@ -253,7 +253,6 @@ export async function runContractAnalysis(
       await ports.runs.recordUploadedVideo({
         videoId: input.videoId,
         r2Key: input.r2Key,
-        sensorId: input.newVideo.sensorId,
         uploadedAt: input.newVideo.uploadedAt,
       });
     }

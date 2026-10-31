@@ -26,8 +26,8 @@
 #
 # Run this in the foreground (Ctrl-C closes it). Run it first, then start
 # the console locally against the tunneled backend. The `start.sh` wrapper
-# backgrounds a tunnel with the same forwards automatically and cleans it up
-# when the console exits.
+# backgrounds a tunnel with only the :8000 forward (the console uploads
+# straight to R2 and never uses :7777) and cleans it up when the console exits.
 #
 # VM username resolution (VSS_SSH_TARGET / VSS_SSH_USER / VSS_SSH_HOST) is
 # non-interactive (no prompt) — see vm-preflight.sh for the full order.

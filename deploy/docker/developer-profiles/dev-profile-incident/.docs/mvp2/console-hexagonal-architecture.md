@@ -32,7 +32,7 @@ Enforced by `tests/import-boundaries.test.mjs` (paths relative to `src/`):
 
 1. Domain and application code (`modules/*/domain`, `modules/*/application`, `lib/application`, `lib/ports`) imports no infrastructure (`modules/*/infrastructure`, `lib/adapters`, `lib/postgrest`, `lib/r2/config`, `lib/r2/frame-source`, `lib/container`), no UI (`app`, `sections`), and not `next`, `react` or `node:*`.
 2. Sections import no infrastructure and not `node:*`.
-3. Each exception is listed in the test's `ALLOWED` with its reason, and an entry that matches no import fails the test. Today: the upload hook imports the browser-safe `videos/infrastructure/vst/chunked-upload` (by design). Strict Step 6 (PR 236) eliminated the earlier contract loader and `node:crypto` exceptions by injecting a `ContractCatalog` port and moving `randomUUID` behind a port in `AnalysisPorts`.
+3. Each exception is listed in the test's `ALLOWED` with its reason, and an entry that matches no import fails the test. Today there are none (the upload hook's VST chunked-upload exception went with VST on 2026-10-31). Strict Step 6 (PR 236) eliminated the earlier contract loader and `node:crypto` exceptions by injecting a `ContractCatalog` port and moving `randomUUID` behind a port in `AnalysisPorts`.
 
 Not checked by the test, upheld in review: routes reach the database only through the container, and only `lib/container.ts` constructs adapters.
 

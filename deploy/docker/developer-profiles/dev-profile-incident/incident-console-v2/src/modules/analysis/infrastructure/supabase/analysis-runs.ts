@@ -49,11 +49,7 @@ export class SupabaseAnalysisRunAdapter implements AnalysisRunRepository {
    * the original upload timestamp.
    */
   async recordUploadedVideo(video: UploadedVideo): Promise<void> {
-    await this.db.insertIfAbsent(
-      'videos',
-      { id: video.videoId, filepath: video.r2Key, source: video.sensorId, uploaded_datetime: video.uploadedAt },
-      'id',
-    );
+    await this.db.insertIfAbsent('videos', { id: video.videoId, filepath: video.r2Key, uploaded_datetime: video.uploadedAt }, 'id');
   }
 
   async saveFailedAttempt(attempt: AnalysisAttemptRecord): Promise<void> {

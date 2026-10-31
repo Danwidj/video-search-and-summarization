@@ -26,13 +26,7 @@ const UI = [/^app(\/|$)/, /^sections(\/|$)/];
 const NEXT_REACT = /^(next(\/|$)|react(-dom)?(\/|$))/;
 const NODE = /^node:/;
 
-const ALLOWED = [
-  {
-    from: 'sections/analysis/hooks/use-video-upload.ts',
-    to: 'modules/videos/infrastructure/vst/chunked-upload',
-    why: 'plan rule 5: the browser-safe upload helper is reached only through a section hook',
-  },
-];
+const ALLOWED = [];
 
 const matchesAny = (value, patterns) => patterns.some((pattern) => pattern.test(value));
 

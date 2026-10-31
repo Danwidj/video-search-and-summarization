@@ -59,7 +59,7 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
 
 `start.sh` waits on the console. Ctrl-C, closing the terminal or `kill <start.sh pid>` stops it, along with the backgrounded mock, gateway and tunnel, including the servers those wrappers started (no `next-server` or `uvicorn` is left listening). In vm mode, exiting also stops the VM backend services (`vss-agent` and Docker containers in-place via `docker stop`, never removed) if this run was the last active session on `kwanz-ws`.
 
-Environment overrides such as `ENABLE_ANALYTICS`, `VSS_VM_IP`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are documented in the header of [`start.sh`](../../start.sh). In vm mode `VSS_VM_IP` is detected from the VM over SSH when unset (fallback `10.131.1.5`); set it only to force an address.
+Environment overrides such as `ENABLE_ANALYTICS`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are documented in the header of [`start.sh`](../../start.sh). The vm-mode tunnel forwards only `localhost:8000` to the agent: uploads go from the console straight to R2, so it needs no `:7777` forward (`VSS_VM_IP` matters only to the standalone `.scripts/tunnel.sh`).
 
 ## Verify
 
@@ -70,7 +70,7 @@ Environment overrides such as `ENABLE_ANALYTICS`, `VSS_VM_IP`, `VSS_REPO_ROOT`, 
 | Search route (always-on): `curl -s -X POST 127.0.0.1:7777/api/v1/incidents/search -H "Content-Type: application/json" -d '{"query":"test","top_k":1}'` | yes | - |
 | Chat route: `curl -s -X POST 127.0.0.1:7777/api/v1/incidents/chat -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"test"}]}'` | yes | - |
 | Gateway: `curl -s 127.0.0.1:8600/health` returns `{"status":"ok"}` | yes | - |
-| Tunnel, agent, proxy and search: `./.scripts/tunnel-check.sh` or `curl -s localhost:8000/health` | - | yes |
+| Tunnel, agent and search: `./.scripts/tunnel-check.sh` or `curl -s localhost:8000/health` | - | yes |
 
 In vm mode the console's health check leaves out gateway readiness. HTTP 503 from the VM for the first 60-90 s after a cold start is normal.
 

@@ -13,7 +13,7 @@ Like NVIDIA's skills, these are for **deploying and operating** the profile from
 ```
   LAPTOP                                    kwanz-ws (shared, GPU 0)
   ┌───────────────────────────┐ SSH tunnel  ┌──────────────────────────────┐
-  │ incident-console-v2 :3200 │─8000, 7777─▶│ vss-agent :8000 (native)     │
+  │ incident-console-v2 :3200 │────8000────▶│ vss-agent :8000 (native)     │
   │                           │             │ HAProxy :7777 → VIOS/VST     │
   │ mock mode only:           │             │ (Docker appliances)          │
   │   mock-backend  :7777     │             └──────────────┬───────────────┘

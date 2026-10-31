@@ -5,16 +5,10 @@ import { useCallback } from 'react';
 import { inspectUploadName } from '@/lib/r2/names';
 import { isValidR2Key } from '@/lib/r2/key';
 import { thumbnailCaptureTime } from '@/lib/ui/thumbnail';
-import { chunkedUpload } from '@/modules/videos/infrastructure/vst/chunked-upload';
 
 export interface UploadedVideo {
-  sensorId: string;
   filePath: string;
   filename: string;
-}
-
-interface UploadInitialization {
-  url?: string;
 }
 
 interface ApiError {
@@ -43,33 +37,52 @@ export async function checkUploadName(filename: string): Promise<UploadNameRepor
   return payload;
 }
 
-async function initUpload(filename: string): Promise<UploadInitialization> {
-  const response = await fetch('/api/uploads', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename }),
-  });
-  const payload = (await response.json()) as UploadInitialization & ApiError;
-  if (!response.ok) throw new Error(payload.error || `Request failed with HTTP ${response.status}`);
-  return payload;
-}
-
 /**
- * Uploads the video directly to R2 via the console's own server-side route.
- * Needed only when the chunk-upload response has no durable R2 object key —
- * the real VST/NvStreamer case, since only mock-backend's own reimplementation
- * fakes that field by doing its own R2 upload.
+ * Uploads the video directly to R2 via the console's own server-side route,
+ * which keeps the R2 credentials server-side, and returns its R2 key.
+ * XMLHttpRequest rather than fetch, because only it reports upload progress.
  */
-async function uploadToR2(file: File, filename: string, signal: AbortSignal): Promise<string> {
-  const form = new FormData();
-  form.append('file', file, filename);
-  form.append('filename', filename);
-  const response = await fetch('/api/uploads/r2', { method: 'POST', body: form, signal });
-  const payload = (await response.json()) as { filePath?: string } & ApiError;
-  if (!response.ok || !isValidR2Key(payload.filePath)) {
-    throw new Error(payload.error || 'Could not upload the video to R2');
-  }
-  return payload.filePath;
+function uploadToR2(file: File, filename: string, signal: AbortSignal, onProgress: (progress: number) => void): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new Error('Upload was cancelled'));
+      return;
+    }
+    const form = new FormData();
+    form.append('file', file, filename);
+    form.append('filename', filename);
+    const request = new XMLHttpRequest();
+    const cancel = () => request.abort();
+    signal.addEventListener('abort', cancel, { once: true });
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onload = () => {
+      signal.removeEventListener('abort', cancel);
+      let payload: { filePath?: string } & ApiError = {};
+      try {
+        payload = JSON.parse(request.responseText) as typeof payload;
+      } catch {
+        // A non-JSON answer falls through to the generic error below.
+      }
+      if (request.status >= 200 && request.status < 300 && isValidR2Key(payload.filePath)) {
+        onProgress(100);
+        resolve(payload.filePath);
+      } else {
+        reject(new Error(payload.error || `Could not upload the video to R2 (HTTP ${request.status})`));
+      }
+    };
+    request.onerror = () => {
+      signal.removeEventListener('abort', cancel);
+      reject(new Error('Could not upload the video to R2'));
+    };
+    request.onabort = () => {
+      signal.removeEventListener('abort', cancel);
+      reject(new Error('Upload was cancelled'));
+    };
+    request.open('POST', '/api/uploads/r2');
+    request.send(form);
+  });
 }
 
 async function captureThumbnail(file: File): Promise<Blob> {
@@ -147,41 +160,19 @@ async function uploadThumbnail(thumbnail: Blob, videoKey: string, signal: AbortS
   }
 }
 
-/** Uploads a selected video and its thumbnail, returning the sensor ID and the R2 key the analysis reads. */
+/** Uploads a selected video once, to R2, and its thumbnail, returning the R2 key the analysis reads. */
+export async function uploadVideo(file: File, signal: AbortSignal, onProgress: (progress: number) => void): Promise<UploadedVideo> {
+  const thumbnail = captureThumbnail(file).catch(() => null);
+  const filename = inspectUploadName(file.name).name;
+  const filePath = await uploadToR2(file, filename, signal, onProgress);
+
+  const thumbnailBlob = await thumbnail;
+  if (thumbnailBlob) await uploadThumbnail(thumbnailBlob, filePath, signal).catch(() => undefined);
+
+  return { filePath, filename: filePath.split('/').pop() || filename };
+}
+
 export function useVideoUpload() {
-  const upload = useCallback(async (file: File, signal: AbortSignal, onProgress: (progress: number) => void): Promise<UploadedVideo> => {
-    const thumbnail = captureThumbnail(file).catch(() => null);
-    const filename = inspectUploadName(file.name).name;
-    const initialized = await initUpload(filename);
-    if (!initialized.url) throw new Error('The upload service did not return an upload URL');
-
-    const uploaded = await chunkedUpload({
-      file,
-      fileName: filename,
-      uploadUrl: initialized.url,
-      // The development mock records only the current request body and does
-      // not reassemble multiple chunks. A single request keeps the R2 object
-      // as a valid video and matches v1's verified upload behavior. Restore
-      // the helper's default chunk size when the real nvstreamer backend is
-      // the active upload target and large-video limits are exercised.
-      chunkSize: Math.max(file.size, 1),
-      onProgress,
-      abortSignal: signal,
-    });
-    if (!uploaded.sensorId) {
-      throw new Error('Upload completed without a sensor ID');
-    }
-
-    // Mock-backend's chunk-upload response already carries a valid R2 key
-    // (it does its own R2 upload); real VST/NvStreamer never returns one,
-    // so fall back to uploading the file to R2 ourselves in that case.
-    const filePath = isValidR2Key(uploaded.filePath) ? uploaded.filePath : await uploadToR2(file, filename, signal);
-
-    const thumbnailBlob = await thumbnail;
-    if (thumbnailBlob) await uploadThumbnail(thumbnailBlob, filePath, signal).catch(() => undefined);
-
-    return { sensorId: uploaded.sensorId, filePath, filename: filePath.split('/').pop() || filename };
-  }, []);
-
+  const upload = useCallback(uploadVideo, []);
   return { upload };
 }

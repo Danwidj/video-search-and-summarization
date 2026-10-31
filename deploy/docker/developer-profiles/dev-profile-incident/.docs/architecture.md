@@ -27,7 +27,6 @@ flowchart TB
 
     subgraph Tunnel["SSH Port Forwarding Tunnel"]
         FwdAgent["localhost:8000 -> VM:8000"]
-        FwdHAProxy["localhost:7777 -> VM:7777"]
     end
 
     subgraph VM["kwanz-ws Shared Workstation"]
@@ -61,7 +60,6 @@ flowchart TB
     UI -->|Mock Mode Inference| Gateway
     UI -->|Mock Mode Upload| Mock
     UI -->|VM Mode HTTP /analyze| FwdAgent
-    UI -->|VM Mode Video Upload| FwdHAProxy
     UI -->|Direct Upload Fallback & Presigned URLs| R2
     UI -->|REST report_revisions insert| Supabase
     UI -->|/rpc/save_human_revision, /rpc/set_official_revision| Supabase
@@ -71,7 +69,6 @@ flowchart TB
 
     %% Tunnel Connections
     FwdAgent --> Agent
-    FwdHAProxy --> HAProxy
 
     %% VM Internal Routing
     HAProxy --> VIOSIngress
@@ -93,8 +90,8 @@ flowchart TB
 | `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis, search, and chat workflows (`/api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`, `POST /api/v1/incidents/revisions/search`, `POST /api/v1/incidents/chat`), tool calling, report persistence; remote inference via Brev |
 | `video-analytics-api` | `kwanz-ws` | 8081 | Node.js (Native) | `services/analytics/video-analytics-api/` | Optional MVP2 video analytics ingestion and query layer (`ENABLE_ANALYTICS=true`) |
 | `behavior-analytics` | `kwanz-ws` | none (8080 is a HAProxy/label placeholder) | Python (Native) | `services/analytics/behavior-analytics/` | Optional MVP2 behavior perception pipeline (`ENABLE_ANALYTICS=true`) |
-| `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `deploy/docker/services/infra/haproxy/` | Public reverse proxy on :7777: /api,/chat → vss-agent :8000; /vst,/storage → vss-vios-ingress :30888; /phoenix → :6006; optional analytics/kibana backends |
-| `vss-vios-streamprocessing`| `kwanz-ws` | 10000 | Docker container (GPU 0) | `deploy/docker/services/vios/` | VST storage/upload + replay API (receives chunked uploads via the ingress) |
+| `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `deploy/docker/services/infra/haproxy/` | Public reverse proxy on :7777: /api,/chat → vss-agent :8000; /vst,/storage → vss-vios-ingress :30888; /phoenix → :6006; optional analytics/kibana backends. Still running, but the console no longer uses it |
+| `vss-vios-streamprocessing`| `kwanz-ws` | 10000 | Docker container (GPU 0) | `deploy/docker/services/vios/` | VST storage/upload + replay API (still running; the console no longer uploads to it) |
 | `vss-vios-nvstreamer` | `kwanz-ws` | 31000 | Docker container (GPU 0) | `deploy/docker/developer-profiles/dev-profile-alerts/compose.yml` | NvStreamer RTSP file streamer (not in the upload path; not routed by ingress/HAProxy) |
 | `vss-vios-ingress` | `kwanz-ws` | 30888 | Docker container | `deploy/docker/services/vios/` (foundational) | Nginx VST ingress: /vst/api/v1/sensor → sensor-ms :30000; other /vst/api/v1 and /vst/storage → streamprocessing :10000 |
 | `vss-vios-sensor` | `kwanz-ws` | 30000 | Docker container (GPU 0) | `deploy/docker/services/vios/initiator/` | VST sensor registration service (`sensor-ms`; pinned to GPU 0 in `compose.override.yml`, but not started by `start.sh`) |
@@ -148,15 +145,15 @@ flowchart TD
     SelfHeal --> OpenTunnel
     Ready --> OpenTunnel
 
-    OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh; same forwards as .scripts/tunnel.sh)<br/>8000, 7777<br/>then wait for localhost:8000/health and localhost:7777/storage"] --> CheckConsole{--no-console?}
+    OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh)<br/>8000 only<br/>then wait for localhost:8000/health"] --> CheckConsole{--no-console?}
     CheckConsole -->|yes| Hold["Hold tunnel open (wait)"]
-    CheckConsole -->|no| VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>INCIDENT_VST_BASE_URL=http://localhost:7777,<br/>ANALYSIS_MODE=agent"]
+    CheckConsole -->|no| VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>ANALYSIS_MODE=agent"]
     VMInit --> RunV2VM["Launch incident-console-v2 (Port 3200)"]
 ```
 
 ### SSH Tunnel Port Forwards
 
-VM mode forwards `localhost:8000` to the native `vss-agent` and `localhost:7777` to `vss-haproxy-ingress`. The forwards and their checks are in [`vm-api-contracts.md`](vm-api-contracts.md#tunnel); the VM address detection and SSH troubleshooting are in [`incident-profile-operations.md`](incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).
+VM mode forwards only `localhost:8000`, to the native `vss-agent`. The console no longer talks to `vss-haproxy-ingress` (:7777): uploads go from the console straight to R2, so no VST camera is created ([decision](decisions.md)). The VIOS/VST containers still run on the VM. The forwards and their checks are in [`vm-api-contracts.md`](vm-api-contracts.md#tunnel); the VM address detection and SSH troubleshooting are in [`incident-profile-operations.md`](incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).
 
 ### Two Supabase projects (one per phase)
 
@@ -216,8 +213,7 @@ Server-only variables, read from `incident-console-v2/.env.local` (a symlink to 
 |---|---|
 | `ANALYSIS_MODE` | `gateway` (default) or `agent` |
 | `VLM_GATEWAY_URL` | the gateway, required in gateway mode |
-| `INCIDENT_AGENT_BASE_URL` | the agent or the mock (upload, chat, search, embeddings, and analysis in agent mode) |
-| `INCIDENT_VST_BASE_URL` | the VST API through HAProxy (`/vst/api/v1/sensor/...`), for deleting a video's camera; `start.sh --mode vm` exports `http://localhost:7777`, and the agent URL is used when unset (the mock) |
+| `INCIDENT_AGENT_BASE_URL` | the agent or the mock (chat, search, embeddings, and analysis in agent mode); uploads do not use it |
 | `VLM_MODEL` | default model in the picker, one of `contracts/inference.json` (default `nvidia/cosmos-3-nano-reasoner`) |
 | `CONTRACTS_DIR` | the shared `contracts/` directory (default `../contracts`) |
 | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | PostgREST |
@@ -311,20 +307,14 @@ sequenceDiagram
     autonumber
     actor User as Reviewer (Browser)
     participant UI as incident-console-v2 (Next.js)
-    participant VST as VST / NvStreamer (Mock 7777)
     participant R2 as Cloudflare R2 Bucket
     participant Gateway as vlm-gateway (Port 8600)
     participant Brev as Brev Switchyard API
     participant DB as Supabase PostgREST & RPC
 
     User->>UI: Choose a model (allowlist from contracts/inference.json), then a video
-    UI->>VST: POST /api/v1/videos, chunked upload, complete (via /api/uploads*)
-    alt Chunk response lacks a valid R2 key (real VST)
-        UI->>R2: PutObject + HeadObject via /api/uploads/r2
-    else Mock backend returns its durable R2 key
-        VST->>R2: PutObject (uploads/<name>, If-None-Match *)
-    end
-    UI->>UI: POST /api/analysis {sensorId, filepath, filename, model}
+    UI->>R2: PutObject (uploads/<name>, If-None-Match *) + HeadObject via /api/uploads/r2 (the only upload)
+    UI->>UI: POST /api/analysis {filepath, filename, model}
     UI->>R2: HeadObject (object must exist and be nonempty)
     UI->>DB: Insert videos row if absent (upload lifecycle; never updated later)
     UI->>UI: Sign R2 GET URL; build P1 request = eval P1 (video, canonical prompt, strict response_format, 16384 tokens, 64 frames)
@@ -356,35 +346,22 @@ sequenceDiagram
     autonumber
     actor User as Reviewer (Browser)
     participant UI as incident-console-v2 (Next.js)
-    participant Tunnel as SSH Tunnel (:7777 / :8000)
-    participant VIOS as HAProxy :7777 → vss-vios-ingress :30888 → VST streamprocessing :10000
+    participant Tunnel as SSH Tunnel (:8000)
     participant R2 as Cloudflare R2 Bucket
     participant Agent as vss-agent (:8000)
     participant Brev as Brev Switchyard API
     participant DB as Supabase PostgREST & RPC
 
     User->>UI: Select and upload video clip
-    UI->>UI: POST /api/uploads
-    UI->>Tunnel: POST localhost:8000/api/v1/videos (INCIDENT_AGENT_BASE_URL)
-    Tunnel->>Agent: Forward /api/v1/videos
-    Agent-->>UI: upload url (http://localhost:7777/vst/api/v1/storage/file)
-
-    UI->>Tunnel: Single-request chunked upload to localhost:7777
-    Tunnel->>VIOS: Forward chunked upload (mediaFile, filename, nvstreamer-* headers)
-    VIOS-->>UI: Sensor registration (sensorId)
-
-    %% R2 Fallback
+    %% The only upload: straight to R2 through the console (no VST, no :7777)
     UI->>UI: POST /api/uploads/r2
     UI->>R2: PutObject (uploads/<name>, If-None-Match *)
     R2-->>UI: Durable R2 object key
     UI->>R2: HeadObject (exact uploaded byte length required)
 
-    UI->>Tunnel: POST localhost:8000/api/v1/videos/{sensorId}/complete
-    Tunnel->>Agent: Forward complete (fetches timeline & storage URL)
-
     UI->>UI: Trigger POST /api/analysis
     UI->>R2: HeadObject (object must exist and be nonempty)
-    UI->>DB: Upsert videos (id, filepath=R2 key, source=sensorId)
+    UI->>DB: Insert videos row if absent (fresh id, filepath=R2 key; source stays null)
     UI->>UI: Sign 1-hour R2 GET URL locally
 
     UI->>Tunnel: POST localhost:8000/api/v1/incidents/[id]/analyze {model_run_id, video_url, skip_rp1: true}

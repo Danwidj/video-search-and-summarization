@@ -77,8 +77,6 @@ export interface ContractRunRecord extends AnalysisAttemptRecord {
 export interface UploadedVideo {
   videoId: string;
   r2Key: string;
-  /** The uploading sensor; stored as the video's source. */
-  sensorId: string;
   uploadedAt: string;
 }
 

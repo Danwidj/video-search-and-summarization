@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 const KEY = 'uploads/sensor-1/v1.mp4';
-const UPLOAD = { videoId: 'v1', r2Key: KEY, sensorId: 'sensor-1', uploadedAt: '2026-10-01T08:00:00.000Z' };
+const UPLOAD = { videoId: 'v1', r2Key: KEY, uploadedAt: '2026-10-01T08:00:00.000Z' };
 const INCIDENT = {
   type: 'assault',
   start_timestamp: 10,

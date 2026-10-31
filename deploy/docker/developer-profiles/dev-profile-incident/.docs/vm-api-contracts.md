@@ -9,26 +9,15 @@ HTTP contracts of the native `vss-agent` on `kwanz-ws` and the SSH tunnel the fr
 | Local port | VM target | Service | Frontend use |
 |---|---|---|---|
 | `8000` | `127.0.0.1:8000` (loopback) | native `vss-agent` (FastAPI) | all endpoints below; set `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (start.sh exports it) |
-| `7777` | `<vm-ip>:7777` | `vss-haproxy-ingress` (VIOS/VST) | video upload and storage API, and the VST sensor API for deleting a video's camera; set `INCIDENT_VST_BASE_URL=http://localhost:7777` (start.sh exports it) |
 
-- In mock mode `7777` is the mock backend instead (it also serves the incident search, revision search, chat, analyze and evidence-embeddings routes). There is no tunnel.
-- `<vm-ip>` is detected over SSH unless `VSS_VM_IP` is set ([how](incident-profile-operations.md#ssh-port-tunneling-manual--standalone)).
-- A local port already in use stops start.sh before the tunnel opens: `laptop port <p> is already in use by <holder>`.
-- After opening, start.sh polls `localhost:8000/health` and `localhost:7777/storage` (HEAD) for up to 60 s each. Run `./.scripts/tunnel-check.sh` to check tunneled routes.
+- start.sh forwards nothing else. The console does not use `vss-haproxy-ingress` (`:7777`, VIOS/VST) any more: it uploads each video straight to R2 through its own `/api/uploads/r2` route, so it never calls the VST upload or sensor API and creates no VST camera ([decision](decisions.md)). The VST containers still run on the VM; `.scripts/tunnel.sh` can still forward `:7777` for the stock VSS UI.
+- In mock mode `127.0.0.1:7777` is the mock backend instead (it serves the incident search, revision search, chat, analyze and evidence-embeddings routes). There is no tunnel.
+- A laptop port 8000 already in use stops start.sh before the tunnel opens: `laptop port 8000 is already in use by <holder>`.
+- After opening, start.sh polls `localhost:8000/health` for up to 60 s. Run `./.scripts/tunnel-check.sh` to check tunneled routes.
 
 ### When the VM is unreachable
 
 start.sh probes SSH before it opens the tunnel and, when the VM or a tunnelled health check fails, prints the cause and the next step; the causes are listed in [`incident-profile-operations.md`](incident-profile-operations.md#ssh-username-resolution--troubleshooting).
-
-## VST sensor API (`:7777`, `/vst/api/v1/sensor`)
-
-Every upload creates one camera (sensor) in VST, which holds at most 100 across every console that shares the VM; past that an upload fails with `Maximum number of sensors limit reached`. The console frees the slot when a video is deleted ([data.md](data.md#bucket-key-tree-layout)).
-
-| Call | Use |
-|---|---|
-| `GET /vst/api/v1/sensor/list` | every sensor VST knows, including removed placeholders: `[{sensorId, name, state, ...}]`; `state` is `online` or `removed`. The console uses it only for a row without `videos.source`, to find the one live sensor named after the file (file name without its extension). |
-| `GET /vst/api/v1/sensor/streams` | the live streams only; a deleted sensor is absent here while `sensor/list` keeps it as `removed`. |
-| `DELETE /vst/api/v1/sensor/<sensorId>` with header `streamId: <sensorId>` | removes the camera and frees its slot. VST ignores the delete without the header. `404` (`CameraNotFoundError`) for a camera VST no longer has; the console treats that as already removed. |
 
 ## Common behaviour
 

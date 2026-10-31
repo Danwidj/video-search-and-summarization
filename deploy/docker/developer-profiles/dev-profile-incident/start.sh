@@ -7,7 +7,8 @@
 #
 # Modes (via --mode or VSS_START_MODE, default: vm):
 #   vm    — real VM agent (checks/deploys kwanz-ws over SSH, opens the SSH
-#           tunnel). Exports ANALYSIS_MODE=agent so v2 calls the agent's
+#           tunnel for the agent on :8000 only; uploads go straight from the
+#           console to R2, so nothing forwards the VM's :7777 VST proxy). Exports ANALYSIS_MODE=agent so v2 calls the agent's
 #           /analyze endpoint directly. No local vlm-gateway. The search route
 #           (POST /api/v1/incidents/search) is always mounted on vss-agent (:8000)
 #           with an always-on VLM critic and persisted ranking/verdicts.
@@ -81,9 +82,6 @@
 #                            VSS_SSH_HOST (default: kwanz-ws) sets the host.
 #   VSS_SSH_USER             VM username override (see VSS_SSH_TARGET above)
 #   VSS_SSH_HOST             VM hostname (default: kwanz-ws)
-#   VSS_VM_IP                VM address for the tunnel forwards. If unset, detected
-#                            from the VM over SSH (its default-route source address),
-#                            falling back to 10.131.1.5 if detection fails.
 #   VSS_REPO_ROOT            the VM's shared checkout (default: /srv/rise-up/vss)
 #   VSS_REPO_URL             git URL to clone if the VM has no checkout (default: this
 #                            clone's `origin`)
@@ -274,7 +272,6 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   if ! vm_preflight_ssh; then
     exit 1
   fi
-  VSS_VM_IP="$(vm_detect_ip)"
 
   VSS_PULL_TIMEOUT="${VSS_PULL_TIMEOUT:-1800}"
   VSS_COMPOSE_UP_TIMEOUT="${VSS_COMPOSE_UP_TIMEOUT:-600}"
@@ -457,17 +454,14 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   fi
 
   echo "=== NEXT STEP — Opening the SSH tunnel (laptop-side, backgrounded) ==="
-  for port in 8000 7777; do
-    if holder="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (pid "$2")"}')" && [ -n "$holder" ]; then
-      echo "start.sh: laptop port $port is already in use by $holder, so the tunnel cannot forward it." >&2
-      echo "  Stop that process (a previous start.sh/tunnel.sh?) and re-run." >&2
-      exit 1
-    fi
-  done
+  if holder="$(lsof -nP -iTCP:8000 -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (pid "$2")"}')" && [ -n "$holder" ]; then
+    echo "start.sh: laptop port 8000 is already in use by $holder, so the tunnel cannot forward it." >&2
+    echo "  Stop that process (a previous start.sh/tunnel.sh?) and re-run." >&2
+    exit 1
+  fi
   TUNNEL_LOG="$(mktemp)"
   ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o BatchMode=yes \
     -L 8000:127.0.0.1:8000 \
-    -L 7777:"$VSS_VM_IP":7777 \
     "$VSS_SSH_TARGET" 2>"$TUNNEL_LOG" &
   TUNNEL_PID=$!
 
@@ -502,38 +496,8 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   echo "  agent ok (localhost:8000 -> VM loopback :8000)"
   echo "  search route ready (POST http://localhost:8000/api/v1/incidents/search, always-on critic)"
 
-  echo "  waiting for the tunneled proxy health check (localhost:7777)..."
-  proxy_ok=""
-  proxy_deadline=$((SECONDS + 60))
-  while [ "$SECONDS" -lt "$proxy_deadline" ]; do
-    if curl -sf -I --max-time 5 http://localhost:7777/storage 2>/dev/null | grep -qi accept-ranges; then
-      proxy_ok=1
-      break
-    fi
-    if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
-      break
-    fi
-    sleep 2
-  done
-  if [ -z "$proxy_ok" ]; then
-    echo "start.sh: the tunneled proxy never came up on localhost:7777." >&2
-    # The SSH log repeats one line per failed connection; show each distinct line once.
-    tunnel_err="$(sed 's/^channel [0-9]*: //' "$TUNNEL_LOG" | sort -u | head -n 3 | tr '\n' ';')"
-    if ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" 'curl -sf -I --max-time 5 http://localhost:7777/storage' 2>/dev/null | grep -qi accept-ranges; then
-      echo "  The proxy is healthy ON the VM, but the tunnel cannot reach it at ${VSS_VM_IP}:7777${tunnel_err:+ (${tunnel_err})}." >&2
-      echo "  Fix: the SSH connection or forward is blocked; check the SSH target and VSS_VM_IP." >&2
-    else
-      [ -n "$tunnel_err" ] && echo "  SSH tunnel said: ${tunnel_err}" >&2
-      echo "  The proxy does not answer on the VM either: the vss-haproxy-ingress container may be down or restarting. Check: ssh $VSS_SSH_TARGET 'docker logs --tail 40 vss-haproxy-ingress'" >&2
-    fi
-    echo "  Run ./.scripts/tunnel-check.sh for a per-port breakdown." >&2
-    cleanup
-    exit 1
-  fi
-  echo "  proxy ok (localhost:7777 -> ${VSS_VM_IP}:7777)"
 
   export INCIDENT_AGENT_BASE_URL="http://localhost:8000"
-  export INCIDENT_VST_BASE_URL="http://localhost:7777"
   export ANALYSIS_MODE="agent"
 elif [ "$VSS_START_MODE" = "mock" ]; then
   # Each local service reads its own .env.local symlink to the shared
@@ -587,9 +551,6 @@ elif [ "$VSS_START_MODE" = "mock" ]; then
 fi
 
 echo "  INCIDENT_AGENT_BASE_URL=${INCIDENT_AGENT_BASE_URL}"
-if [ -n "${INCIDENT_VST_BASE_URL:-}" ]; then
-  echo "  INCIDENT_VST_BASE_URL=${INCIDENT_VST_BASE_URL}"
-fi
 if [ -n "${VLM_GATEWAY_URL:-}" ]; then
   echo "  VLM_GATEWAY_URL=${VLM_GATEWAY_URL}"
 fi

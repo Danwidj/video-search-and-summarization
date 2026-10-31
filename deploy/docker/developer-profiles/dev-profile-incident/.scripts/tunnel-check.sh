@@ -4,7 +4,9 @@
 # `mdx-tunnel-incident-check` shell alias from deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh —
 # same behavior, standalone script). LAPTOP SIDE ONLY, like tunnel.sh.
 #
-# The agent and proxy health checks must pass.
+# The agent health check must pass. The proxy (:7777) is optional: start.sh
+# forwards only :8000, since the console uploads straight to R2; tunnel.sh
+# still forwards :7777 for the stock VSS UI.
 
 VSS_VM_IP="${VSS_VM_IP:-the VM}"
 
@@ -25,6 +27,5 @@ fi
 if curl -sf -I --max-time 15 http://localhost:7777/storage 2>/dev/null | grep -qi accept-ranges; then
   echo "proxy ok (localhost:7777 -> ${VSS_VM_IP}:7777)"
 else
-  echo "proxy unreachable - is the tunnel running? (tunnel.sh or start.sh)" >&2
-  exit 1
+  echo "proxy not forwarded (only tunnel.sh forwards :7777; the console does not need it)"
 fi
