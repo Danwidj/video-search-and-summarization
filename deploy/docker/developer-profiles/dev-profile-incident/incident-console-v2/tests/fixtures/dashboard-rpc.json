@@ -1,36 +1,158 @@
 {
   "total": 3,
-  "videos": { "uploaded": 5, "withOfficial": 3, "awaitingSelection": 1, "withoutReport": 1 },
-  "previous": { "total": 2, "human": 1, "ai": 1, "high": 0 },
+  "videos": {
+    "uploaded": 5,
+    "withOfficial": 3,
+    "awaitingSelection": 1,
+    "withoutReport": 1
+  },
+  "previous": {
+    "total": 2,
+    "human": 1,
+    "ai": 1,
+    "high": 0
+  },
   "averageConfidence": 0.8166666666666667,
   "confidenceNotProvided": 0,
-  "severity": { "low": 1, "medium": 0, "high": 2 },
-  "revisions": { "ai": 2, "human": 1 },
+  "severity": {
+    "low": 1,
+    "medium": 0,
+    "high": 2
+  },
+  "revisions": {
+    "ai": 2,
+    "human": 1
+  },
   "types": [
     {
       "type": "assault",
       "count": 2,
-      "severity": { "low": 0, "medium": 0, "high": 2 },
-      "entities": [{ "label": "human", "count": 2 }],
-      "instruments": [{ "label": "machete", "count": 1 }],
-      "assets": []
+      "severity": {
+        "low": 0,
+        "medium": 0,
+        "high": 2
+      },
+      "entities": [
+        {
+          "label": "human",
+          "count": 2
+        }
+      ],
+      "instruments": [
+        {
+          "label": "machete",
+          "count": 1
+        }
+      ],
+      "assets": [],
+      "official": 1,
+      "notOfficial": 1
     },
     {
       "type": "road accident",
       "count": 1,
-      "severity": { "low": 1, "medium": 0, "high": 0 },
-      "entities": [{ "label": "human", "count": 1 }, { "label": "unknown", "count": 1 }],
+      "severity": {
+        "low": 1,
+        "medium": 0,
+        "high": 0
+      },
+      "entities": [
+        {
+          "label": "human",
+          "count": 1
+        },
+        {
+          "label": "unknown",
+          "count": 1
+        }
+      ],
       "instruments": [],
-      "assets": [{ "label": "car", "count": 1 }]
+      "assets": [
+        {
+          "label": "car",
+          "count": 1
+        }
+      ],
+      "official": 0,
+      "notOfficial": 1
     }
   ],
-  "trend": [{ "date": "2026-09-27", "count": 1 }, { "date": "2026-09-28", "count": 0 }, { "date": "2026-09-29", "count": 2 }],
-  "heatmap": [{ "day": 0, "hour": 9, "count": 1 }, { "day": 2, "hour": 23, "count": 2 }],
-  "confidence": [{ "bucket": 7, "count": 1 }, { "bucket": 8, "count": 2 }],
-  "entityTypes": [{ "label": "human", "count": 3 }, { "label": "unknown", "count": 1 }],
-  "topInstruments": [{ "label": "machete", "count": 1 }],
-  "topAssets": [{ "label": "car", "count": 1 }],
-  "threatLevels": [{ "level": 4, "count": 1 }],
+  "trend": [
+    {
+      "date": "2026-09-27",
+      "count": 1,
+      "official": 1,
+      "notOfficial": 0
+    },
+    {
+      "date": "2026-09-28",
+      "count": 0,
+      "official": 0,
+      "notOfficial": 0
+    },
+    {
+      "date": "2026-09-29",
+      "count": 2,
+      "official": 0,
+      "notOfficial": 2
+    }
+  ],
+  "heatmap": [
+    {
+      "day": 0,
+      "hour": 9,
+      "count": 1,
+      "official": 1,
+      "notOfficial": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "count": 2,
+      "official": 0,
+      "notOfficial": 2
+    }
+  ],
+  "confidence": [
+    {
+      "bucket": 7,
+      "count": 1
+    },
+    {
+      "bucket": 8,
+      "count": 2
+    }
+  ],
+  "entityTypes": [
+    {
+      "label": "human",
+      "count": 3
+    },
+    {
+      "label": "unknown",
+      "count": 1
+    }
+  ],
+  "topInstruments": [
+    {
+      "label": "machete",
+      "count": 1
+    }
+  ],
+  "topAssets": [
+    {
+      "label": "car",
+      "count": 1,
+      "official": 0,
+      "notOfficial": 1
+    }
+  ],
+  "threatLevels": [
+    {
+      "level": 4,
+      "count": 1
+    }
+  ],
   "modelCoverage": [
     {
       "model": "qwen/qwen3-vl-8b-instruct",
@@ -41,6 +163,28 @@
       "contractFailed": 1,
       "requestFailed": 0
     },
-    { "model": "Unknown model", "withReport": 1, "validFirstPass": 0, "repaired": 0, "legacy": 1, "contractFailed": 0, "requestFailed": 0 }
-  ]
+    {
+      "model": "Unknown model",
+      "withReport": 1,
+      "validFirstPass": 0,
+      "repaired": 0,
+      "legacy": 1,
+      "contractFailed": 0,
+      "requestFailed": 0
+    }
+  ],
+  "official": 1,
+  "notOfficial": 2,
+  "severityByScope": {
+    "official": {
+      "low": 0,
+      "medium": 0,
+      "high": 1
+    },
+    "notOfficial": {
+      "low": 1,
+      "medium": 0,
+      "high": 1
+    }
+  }
 }

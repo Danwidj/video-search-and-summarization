@@ -298,7 +298,8 @@ newest revision (so reports awaiting selection still appear). Facets come from t
 description/title/confidence from `payload.incident`. Filters: `p_search`, `p_type`, `p_severity`
 (`low`/`medium`/`high` or a number), `p_kind` (`ai`/`human`), date range, local time-of-day and
 weekday (`p_timezone`, default UTC), entity/instrument/asset text or exact-name match,
-`p_entity_types`, `p_sort`, and `p_scope` (`all` or `official`). Returns
+`p_entity_types`, `p_sort`, and `p_scope` (`all`, `official` or `not_official`). `p_type`
+`Unclassified` selects a NULL `incident_type`. Returns
 `{reports: [...], totalItems, incidentTypes}`. Each card carries `revisionId`, `revisionNo`,
 `videoId`, `modelRunId`, `kind`, `createdBy`, `note`, `isOfficial`, `outcome`, and the display
 fields, plus `officialSince` (when the official revision was marked; null if none), `versionCount`
@@ -309,13 +310,19 @@ stored. It never returns `payload`, notes, signed URLs or video content.
 
 #### `get_incident_dashboard`
 
-Aggregates **official revisions only**, filtered by the revision's `created_at` plus optional type,
-severity band, weekday and hour (in `p_timezone`, default UTC). Returns `total`, all-time `videos`
-counts (`uploaded`, `withOfficial`, `awaitingSelection`, `withoutReport`), `previous`, severity,
-`revisions` (`ai`/`human`), types with per-type evidence, daily trend, heatmap, `entityTypes`,
-`topInstruments`, `topAssets`, `threatLevels`, a confidence histogram with `confidenceNotProvided`,
-and `modelCoverage` (attempts by outcome: failed attempts from `model_runs`, successful ones from
-AI revisions).
+Counts each video once through `searchable_revision_id`: its **official revision, else its newest**,
+the same rule as the library and search (migration `20261031090000_dashboard_official_else_newest.sql`).
+It only reads `videos.official_revision_id`, to report the split, and never sets it. Filtered by the
+revision's `created_at` plus optional type, severity band, weekday and hour (in `p_timezone`, default
+UTC) and `p_scope` (`all`, `official` or `not_official`, default `all`). Returns `total` with
+`official` and `notOfficial`, all-time `videos` counts (`uploaded`, `withOfficial`,
+`awaitingSelection`, `withoutReport`), `previous`, `severity` and `severityByScope`, `revisions`
+(`ai`/`human`), types with per-type evidence, daily `trend` (days in `p_timezone`), `heatmap`,
+`entityTypes`, `topInstruments`, `topAssets`, `threatLevels`, a confidence histogram with
+`confidenceNotProvided`, and `modelCoverage` (attempts by outcome: failed attempts from `model_runs`,
+successful ones from AI revisions). Each `types`, `trend`, `heatmap` and `topAssets` entry also
+carries `official` and `notOfficial`. `videos` and `modelCoverage` ignore every filter except that
+`modelCoverage` follows the period. A `type` of `Unclassified` selects a NULL `incident_type`.
 
 ---
 

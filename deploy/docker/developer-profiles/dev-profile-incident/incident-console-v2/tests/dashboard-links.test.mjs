@@ -7,7 +7,13 @@ import { href } from '../src/modules/dashboard/domain/links.ts';
 
 const components = new URL('../src/sections/', import.meta.url);
 
-test('dashboard numbers link to the library page with official scope and exact filters (URL is the state)', async () => {
+test('each half of the official split opens its own library list', () => {
+  assert.equal(new URL(href({ scope: 'official' }, null), 'http://localhost').searchParams.get('scope'), 'official');
+  assert.equal(new URL(href({ scope: 'not_official' }, null), 'http://localhost').searchParams.get('scope'), 'not_official');
+  assert.equal(new URL(href({}, null), 'http://localhost').searchParams.get('scope'), 'all', 'always a URL filter, never remembered state');
+});
+
+test('dashboard numbers link to the library page with every report and exact filters (URL is the state)', async () => {
   const link = new URL(
     href(
       { entityType: 'vehicle', instrument: 'Knife', day: '2', hour: '9' },
@@ -17,7 +23,7 @@ test('dashboard numbers link to the library page with official scope and exact f
   );
   assert.equal(link.pathname, '/library');
   assert.deepEqual(Object.fromEntries(link.searchParams), {
-    scope: 'official',
+    scope: 'all',
     after: '2026-09-01T00:00:00',
     before: '2026-09-30T00:00:00',
     day: '2',

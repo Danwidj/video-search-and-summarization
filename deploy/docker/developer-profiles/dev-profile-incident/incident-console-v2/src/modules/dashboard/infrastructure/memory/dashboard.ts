@@ -9,11 +9,14 @@ import type { DashboardQuery, DashboardRepository } from '@/modules/dashboard/do
 
 const NO_INCIDENTS: DashboardAnalytics = {
   total: 0,
+  official: 0,
+  notOfficial: 0,
   videos: { uploaded: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 },
   previous: { total: 0, human: 0, ai: 0, high: 0 },
   averageConfidence: null,
   confidenceNotProvided: 0,
   severity: { low: 0, medium: 0, high: 0 },
+  severityByScope: { official: { low: 0, medium: 0, high: 0 }, notOfficial: { low: 0, medium: 0, high: 0 } },
   revisions: { ai: 0, human: 0 },
   types: [],
   trend: [],

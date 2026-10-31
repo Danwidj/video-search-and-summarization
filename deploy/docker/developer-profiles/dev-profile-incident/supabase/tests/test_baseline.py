@@ -157,6 +157,11 @@ with tempfile.TemporaryDirectory() as tmp:
             refused(conn, "SELECT public.get_incident_dashboard()", kind=errors.InsufficientPrivilege)
             conn.execute("RESET ROLE")
 
+    @test("security: the dashboard has one signature, for the service role only")
+    def _():
+        rows = conn.execute("SELECT oid::regprocedure::text, has_function_privilege('anon', oid, 'EXECUTE'), has_function_privilege('authenticated', oid, 'EXECUTE'), has_function_privilege('service_role', oid, 'EXECUTE') FROM pg_proc WHERE proname = 'get_incident_dashboard'").fetchall()
+        assert len(rows) == 1 and rows[0][1:] == (False, False, True), rows
+
     @test("security: objects created later in public are not exposed either (default privileges)")
     def _():
         conn.execute("CREATE TABLE public.zz_later (id INT)")
@@ -310,6 +315,7 @@ with tempfile.TemporaryDirectory() as tmp:
     @test("the library filters by scope, kind, type, evidence and search")
     def _():
         assert [r["videoId"] for r in summaries(p_scope="official")["reports"]] == ["v1"]
+        assert sorted(r["videoId"] for r in summaries(p_scope="not_official")["reports"]) == ["v2", "v3"]
         assert summaries(p_kind="human")["totalItems"] == 1  # only v3's newest card is human
         assert [r["videoId"] for r in summaries(p_type="burglary")["reports"]] == ["v2"]
         assert summaries(p_entities=["red jacket"])["totalItems"] == 3
@@ -322,15 +328,100 @@ with tempfile.TemporaryDirectory() as tmp:
         assert sorted(r["videoId"] for r in summaries(p_kind="human")["reports"]) == ["v1", "v3"]
         conn.execute("SELECT public.set_official_revision(%s, %s, %s)", ("v1", ai1, json.dumps(crops)))
 
-    @test("the dashboard counts official revisions only")
+    def dashboard_of(**kwargs):
+        named = ", ".join(f"{key} => %({key})s" for key in kwargs)
+        return one(conn, f"SELECT public.get_incident_dashboard({named})", kwargs)[0]
+
+    @test("the dashboard counts each video once: official, else newest, and reports the split")
     def _():
-        dashboard = one(conn, "SELECT public.get_incident_dashboard()")[0]
-        assert dashboard["total"] == 1 and dashboard["revisions"] == {"ai": 1, "human": 0}, dashboard
+        dashboard = dashboard_of()
+        assert dashboard["total"] == 3 and (dashboard["official"], dashboard["notOfficial"]) == (1, 2), dashboard
+        assert dashboard["revisions"] == {"ai": 2, "human": 1}, dashboard
         assert dashboard["videos"] == {"uploaded": 4, "withOfficial": 1, "awaitingSelection": 2, "withoutReport": 1}, dashboard["videos"]
-        assert dashboard["types"][0]["type"] == "assault" and dashboard["topInstruments"] == [{"label": "bottle", "count": 1}], dashboard
-        assert dashboard["threatLevels"] == [{"level": 3, "count": 1}] and dashboard["averageConfidence"] == 0.8, dashboard
+        assert {t["type"]: (t["count"], t["official"], t["notOfficial"]) for t in dashboard["types"]} == {"assault": (2, 1, 1), "burglary": (1, 0, 1)}, dashboard["types"]
+        assert dashboard["topInstruments"] == [{"label": "bottle", "count": 3}], dashboard["topInstruments"]
+        assert dashboard["threatLevels"] == [{"level": 3, "count": 3}] and abs(dashboard["averageConfidence"] - 0.8) < 1e-9, dashboard
+        by_scope = dashboard["severityByScope"]
+        for band in ("low", "medium", "high"):
+            assert by_scope["official"][band] + by_scope["notOfficial"][band] == dashboard["severity"][band], dashboard
+        assert sum(day["official"] for day in dashboard["trend"]) == 1 and sum(day["notOfficial"] for day in dashboard["trend"]) == 2, dashboard["trend"]
+        assert sum(cell["official"] for cell in dashboard["heatmap"]) == 1 and sum(cell["notOfficial"] for cell in dashboard["heatmap"]) == 2, dashboard["heatmap"]
+        assert all(asset["official"] + asset["notOfficial"] == asset["count"] for asset in dashboard["topAssets"]), dashboard["topAssets"]
         coverage = {row["model"]: row for row in dashboard["modelCoverage"]}
         assert coverage["model-a"]["withReport"] == 2 and coverage["model-b"]["legacy"] == 1, coverage
+
+    @test("every dashboard number equals the total of the library list it opens")
+    def _():
+        dashboard = dashboard_of()
+        assert summaries()["totalItems"] == dashboard["total"]
+        assert summaries(p_scope="official")["totalItems"] == dashboard["official"]
+        assert summaries(p_scope="not_official")["totalItems"] == dashboard["notOfficial"]
+        for item in dashboard["types"]:
+            assert summaries(p_type=item["type"])["totalItems"] == item["count"], item
+            assert summaries(p_type=item["type"], p_scope="official")["totalItems"] == item["official"], item
+        for band, count in dashboard["severity"].items():
+            assert summaries(p_severity=band)["totalItems"] == count, band
+        for asset in dashboard["topAssets"]:
+            assert summaries(p_assets=[asset["label"]], p_evidence_match="exact")["totalItems"] == asset["count"], asset
+        for kind, count in dashboard["revisions"].items():
+            assert summaries(p_kind=kind)["totalItems"] == count, kind
+
+    @test("the dashboard filters by report status, and leaves the video and model counts alone")
+    def _():
+        everything = dashboard_of()
+        for scope, expected in (("all", 3), ("official", 1), ("not_official", 2)):
+            dashboard = dashboard_of(p_scope=scope)
+            assert dashboard["total"] == expected == summaries(p_scope=scope)["totalItems"], (scope, dashboard["total"])
+            assert dashboard["videos"] == everything["videos"] and dashboard["modelCoverage"] == everything["modelCoverage"], scope
+        official = dashboard_of(p_scope="official")
+        assert (official["official"], official["notOfficial"]) == (1, 0), official
+        assert [t["type"] for t in official["types"]] == ["assault"], official["types"]
+        assert (dashboard_of(p_scope="not_official")["official"]) == 0
+        assert dashboard_of(p_scope=None)["total"] == 3
+        bounds = {"p_period_start": "2026-01-01 00:00:00", "p_period_end": "2099-01-01 00:00:00"}
+        assert dashboard_of(**bounds, p_scope="official")["previous"]["total"] == 0, "the comparison is scoped too"
+
+    @test("the dashboard with no official revision still counts every report and marks nothing official")
+    def _():
+        with conn.transaction(force_rollback=True):
+            conn.execute("SELECT public.set_official_revision('v1', NULL)")
+            before = conn.execute("SELECT id, official_revision_id, official_since FROM public.videos ORDER BY id").fetchall()
+            dashboard = dashboard_of()
+            assert dashboard["total"] == 3 and (dashboard["official"], dashboard["notOfficial"]) == (0, 3), dashboard
+            assert dashboard["videos"]["withOfficial"] == 0 and dashboard["videos"]["awaitingSelection"] == 3, dashboard["videos"]
+            assert conn.execute("SELECT id, official_revision_id, official_since FROM public.videos ORDER BY id").fetchall() == before
+        volatility = one(conn, "SELECT provolatile FROM pg_proc WHERE proname = 'get_incident_dashboard'")[0]
+        assert volatility == "s", "STABLE: the dashboard cannot write"
+
+    @test("the dashboard's trend days are the viewer's days, like the heatmap")
+    def _():
+        with conn.transaction(force_rollback=True):
+            # 20:00 UTC on the 30th is 04:00 on the 31st in Singapore.
+            conn.execute("""INSERT INTO public.videos (id, filepath, uploaded_datetime) VALUES ('v-late', 'uploads/late.mp4', '2026-10-30 19:00:00')""")
+            conn.execute("""INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, payload, evidence,
+                incident_type, severity_level, start_seconds, end_seconds, created_at)
+                VALUES ('v-late', 1, 'ai', 'm1', %s, '[]', 'assault', 3, 1, 2, '2026-10-30 20:00:00')""", (json.dumps(report()),))
+            bounds = {"p_period_start": "2026-10-30 12:00:00", "p_period_end": "2026-10-30 23:00:00"}
+            utc = dashboard_of(**bounds, p_timezone="UTC")
+            singapore = dashboard_of(**bounds, p_timezone="Asia/Singapore")
+            assert [(d["date"], d["count"]) for d in utc["trend"]] == [("2026-10-30", 1)], utc["trend"]
+            assert [(d["date"], d["count"]) for d in singapore["trend"]] == [("2026-10-30", 0), ("2026-10-31", 1)], singapore["trend"]
+            assert singapore["heatmap"] == [{"day": 6, "hour": 4, "count": 1, "official": 0, "notOfficial": 1}], singapore["heatmap"]
+
+    @test("an Unclassified row opens its reports in the library")
+    def _():
+        with conn.transaction(force_rollback=True):
+            conn.execute("""INSERT INTO public.videos (id, filepath, uploaded_datetime) VALUES ('v-none', 'uploads/none.mp4', now())""")
+            conn.execute("""INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, payload, evidence,
+                incident_type, severity_level, start_seconds, end_seconds)
+                VALUES ('v-none', 1, 'ai', 'm1', %s, '[]', NULL, 3, 1, 2)""", (json.dumps(report()),))
+            dashboard = dashboard_of()
+            row = next(item for item in dashboard["types"] if item["type"] == "Unclassified")
+            assert row["count"] == 1 and row["notOfficial"] == 1, row
+            result = summaries(p_type="Unclassified")
+            assert result["totalItems"] == 1 and result["reports"][0]["videoId"] == "v-none", result
+            assert dashboard_of(p_type="Unclassified")["total"] == 1
+            assert summaries(p_type="assault")["totalItems"] == dashboard_of(p_type="assault")["total"] == 2
 
     def cards():
         return {item["videoId"]: item for item in summaries()["reports"]}

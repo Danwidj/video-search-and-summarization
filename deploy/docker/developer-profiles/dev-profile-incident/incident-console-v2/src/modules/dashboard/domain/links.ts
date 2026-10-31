@@ -2,10 +2,14 @@
 
 export type Filters = { type: string; severity: string; day: string; hour: string };
 export type Range = { after: string; before: string } | null;
-export type LinkFilters = Partial<Filters> & { kind?: string; entityType?: string; instrument?: string; asset?: string };
-/** The library-page URL whose total equals the clicked number: official scope, the same period and filters, exact names. */
+export type LinkScope = 'all' | 'official' | 'not_official';
+export type LinkFilters = Partial<Filters> & { scope?: LinkScope; kind?: string; entityType?: string; instrument?: string; asset?: string };
+/**
+ * The library-page URL whose total equals the clicked number: the same period and filters, exact
+ * names. The Library's cards are the revisions the dashboard counts, so every report is scope=all.
+ */
 export function href(f: LinkFilters, range: Range) {
-  const p = new URLSearchParams({ scope: 'official' });
+  const p = new URLSearchParams({ scope: f.scope ?? 'all' });
   if (range) {
     p.set('after', range.after);
     p.set('before', range.before);

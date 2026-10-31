@@ -8,7 +8,7 @@ import type { OfficialCrop } from '@/modules/reports/domain/revision';
 
 export type VideoListFilter = 'all' | 'without-report' | 'awaiting-selection' | 'with-report' | 'needs-analysis' | 'failed';
 
-/** One row of the /videos list. */
+/** One row of a video list. */
 export interface VideoListItem {
   videoId: string;
   filename: string;

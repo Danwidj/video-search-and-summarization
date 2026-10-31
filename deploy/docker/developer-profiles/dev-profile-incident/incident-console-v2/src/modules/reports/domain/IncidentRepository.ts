@@ -38,7 +38,7 @@ export interface ReportListQuery {
   dayOfWeek: number | null;
   sort: ReportSort;
   /** 'official' keeps only incidents with an official revision. */
-  scope: 'all' | 'official';
+  scope: 'all' | 'official' | 'not_official';
   /** Canonical entity types (human, animal, unknown). */
   entityTypes: string[] | null;
   evidenceMatch: 'contains' | 'exact';

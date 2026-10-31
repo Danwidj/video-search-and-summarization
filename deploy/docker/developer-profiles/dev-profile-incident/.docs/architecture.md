@@ -255,13 +255,15 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 
 ### Dashboard analytics and cross-filtering
 
-`GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC through `DashboardRepository.getDashboard`. It counts **official versions only**: one per video, through `videos.official_revision_id`.
-- Videos with revisions but no official one ("awaiting official report"), videos without any report, and all uploaded videos are counted separately, all time, as static summary metric cards on the dashboard.
-- Evidence statistics are canonical entity types plus normalised instrument and asset names, counted per distinct incident.
-- Model coverage counts every analysis attempt in the period by outcome.
-- Every other number links to `/library?scope=official&...` with the same period and filters, using `match=exact` for instrument and asset names, so the reports total equals the clicked number. The URL is the reports page's filter state.
+`GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC through `DashboardRepository.getDashboard`. It counts **one report per video: the official revision, else the newest**, the Library's rule, and reports how many are official and how many are not yet official. Nothing is marked official by being counted.
+- The page shows six fixed displays: Total reports (with official and not-yet-official counts), Incidents over time, Incidents by type, Severity breakdown, Top targeted assets, and Activity by day and hour. Every one shows the split. The RPC still returns the other sections (entity types, instruments, threat levels, confidence, model coverage) for the port's other callers.
+- `DashboardQuery.scope` (`all`, `official`, `not_official`; `GET /api/dashboard?scope=`) narrows the statistics to one report status, and defaults to `all`.
+- All-time video counts are shown as a static note on the Total card.
+- Evidence statistics are normalised asset names (and canonical entity types and instrument names in the RPC), counted per distinct incident.
+- The total, its official and not-yet-official counts, and the type and asset rows link to `/library?scope=all|official|not_official&...` with the same period and filters, using `match=exact` for asset names, so the Library total equals the clicked number. The URL is the reports page's filter state. Severity rows and heatmap cells filter the page instead.
+- Before the first load the panels show skeletons, and a failed first load shows an error with Try again: the page never shows a 0 it has not loaded. A failed refresh keeps the last figures under an error.
 - The period window is computed in the browser after mount and sent as zoneless UTC; the API reads it as UTC.
-- The heatmap and weekday/hour cross-filters use the viewer's local time: `GET /api/dashboard` forwards the browser's detected `timezone` (e.g. `America/New_York`) to `p_timezone`, which groups and filters `generated_datetime` in that zone. `/library` detects the same zone itself, so drill-down links carry no timezone and the totals still match. The old `/reports` URL redirects to `/library` with its query string.
+- The trend days, the heatmap and the weekday/hour cross-filters use the viewer's local time: `GET /api/dashboard` forwards the browser's detected `timezone` (e.g. `America/New_York`) to `p_timezone`, which groups and filters `generated_datetime` in that zone. `/library` detects the same zone itself, so drill-down links carry no timezone and the totals still match. The old `/reports` URL redirects to `/library` with its query string.
 
 ### Report versions: View, Edit and History
 
