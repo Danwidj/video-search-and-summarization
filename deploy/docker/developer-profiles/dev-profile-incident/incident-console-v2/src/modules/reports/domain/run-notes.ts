@@ -25,6 +25,10 @@ export interface ContractRunResponse {
   reasoningContent?: string | null;
   finishReason?: string | null;
   usage?: Record<string, unknown> | null;
+  /** Agent mode with the caption pass on: the agent's chunk_timeline as returned (read by chunkTimelineFrom). */
+  chunkTimeline?: unknown;
+  /** Agent mode with the caption pass on: the agent's chunking telemetry, or { skipped: reason }. */
+  chunking?: Record<string, unknown>;
 }
 
 export type ValidStatus = 'valid_first_pass' | 'valid_after_structural_repair';

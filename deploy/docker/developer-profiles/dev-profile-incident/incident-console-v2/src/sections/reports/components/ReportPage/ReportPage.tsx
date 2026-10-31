@@ -27,6 +27,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { chatTarget } from '@/lib/chat/report-chat';
 import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
+import { seekToWindow } from '@/lib/reports/chunk-seek';
 import { draftChangeCount } from '@/lib/reports/compare';
 import {
   DEFAULT_REPORT_BAND_HEIGHT,
@@ -47,6 +48,7 @@ import {
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
+import { ChunkTimeline } from '@/sections/reports/components/ChunkTimeline';
 import { ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
@@ -82,7 +84,7 @@ export function ReportPage({
   const [revisions, setRevisions] = useState<RevisionSummary[] | null>(null);
   const [revisionsError, setRevisionsError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('view');
-  const [_currentTime, setCurrentTime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   // The player's own length, a second guard (besides the recorded length) before jumping to a time.
   const [playerDuration, setPlayerDuration] = useState<number | null>(null);
   // The stage is sized to the clip's own shape so a 4:3 clip is not letterboxed inside a 16:9 box.
@@ -526,6 +528,13 @@ export function ReportPage({
               onStart={startHeightResize}
             />
           </div>
+          {report.chunkTimeline.length > 0 && (
+            <ChunkTimeline
+              currentTime={currentTime}
+              onSeek={(window) => seekToWindow(videoRef.current, window)}
+              windows={report.chunkTimeline}
+            />
+          )}
         </div>
 
         {mode === 'edit' && !officialRevision && revisions && (
