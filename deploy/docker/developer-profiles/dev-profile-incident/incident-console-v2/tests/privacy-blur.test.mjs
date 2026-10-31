@@ -114,34 +114,113 @@ test('a run is blurred only when its notes carry the agent privacy summary with 
 
 const WINDOW = { startSeconds: 5, lengthSeconds: 4 };
 
-test("a blurred clip blurs the item's track per second and the recorded heads for the whole clip", () => {
-  const track = [
+test('a blurred clip blurs every stored track per second and the recorded heads for the whole clip', () => {
+  const own = [
     { t: 4.0, box: [0, 0, 100, 100] }, // before the clip (beyond the half-second margin): ignored
     { t: 5.2, box: [100, 100, 500, 300] },
     { t: 5.6, box: [120, 140, 520, 340] },
     { t: 7.1, box: [200, 200, 600, 400] },
   ];
-  const regions = privacy.clipBlurRegions({ window: WINDOW, track, recorded: [[600, 600, 700, 700]], personBox: [1, 1, 900, 900] });
+  const bystander = [{ t: 6.0, box: [300, 700, 800, 800] }];
+  const regions = privacy.clipBlurRegions({
+    window: WINDOW,
+    tracks: [own, bystander],
+    recorded: [[600, 600, 700, 700]],
+    personBoxes: [[1, 1, 900, 900]],
+  });
   assert.deepEqual(regions, [
-    { box: [60, 80, 240, 360], fromSeconds: 0, toSeconds: 1 }, // the union of the two heads in the clip's first second
+    // the first track: the union of its heads in (and, for a sample near a boundary, just around) each second
+    { box: [60, 80, 240, 360], fromSeconds: 0, toSeconds: 1 },
+    { box: [160, 180, 320, 420], fromSeconds: 1, toSeconds: 2 },
     { box: [160, 180, 320, 420], fromSeconds: 2, toSeconds: 3 },
-    { box: [575, 575, 725, 725], fromSeconds: null, toSeconds: null }, // recorded at the item's second, padded for movement
+    // another person's track, blurred in its own seconds, not merged with the first
+    { box: [250, 690, 450, 810], fromSeconds: 0, toSeconds: 1 },
+    { box: [250, 690, 450, 810], fromSeconds: 1, toSeconds: 2 },
+    { box: [575, 575, 725, 725], fromSeconds: null, toSeconds: null }, // recorded at an item's second, padded for movement
+    { box: [0, 0, 339, 1000], fromSeconds: null, toSeconds: null }, // a located person's own head
   ]);
 });
 
+test('a person who stands up stays blurred second by second, as the head moves out of any fixed region (IMG_9170 3.0-3.8 s)', () => {
+  const standing = [
+    { t: 5.0, box: [500, 600, 800, 700], score: 0.9 }, // kneeling: the head is low
+    { t: 5.8, box: [500, 600, 800, 700], score: 0.9 },
+    { t: 8.0, box: [200, 600, 800, 700], score: 0.9 }, // standing: the head is far higher
+  ];
+  const regions = privacy.clipBlurRegions({ window: WINDOW, tracks: [standing], recorded: null, personBoxes: [] });
+  const first = regions.find((r) => r.fromSeconds === 0);
+  const last = regions.find((r) => r.fromSeconds === 3);
+  assert.ok(first.box[0] >= 450 && first.box[2] <= 600, `first second ${first.box}`);
+  assert.ok(last.box[0] < 200 && last.box[2] < 400, `last second ${last.box}`);
+});
+
+test("a track's drifting tracker-only boxes are not blurred, so no blur box lands on the ceiling", () => {
+  const drifting = [
+    { t: 5.0, box: [400, 400, 800, 500], score: 0.9 },
+    { t: 5.2, box: [400, 400, 800, 500], score: -0.1 },
+    { t: 5.4, box: [380, 420, 780, 520], score: -0.1 },
+    // the tracker flies on after the person stood up and left it: these land at the top of the frame
+    { t: 5.8, box: [0, 550, 330, 850], score: -0.1 },
+    { t: 6.6, box: [0, 550, 330, 850], score: -0.1 },
+    { t: 7.0, box: [0, 550, 330, 850], score: -0.1 },
+    { t: 7.4, box: [0, 550, 330, 850], score: -0.1 },
+  ];
+  assert.deepEqual(
+    privacy.visibleSamples(drifting).map((s) => s.t),
+    [5.0, 5.2, 5.4],
+  );
+  const regions = privacy.clipBlurRegions({ window: WINDOW, tracks: [drifting], recorded: null, personBoxes: [] });
+  assert.ok(regions.length > 0);
+  assert.ok(
+    regions.every((r) => r.box[0] > 100),
+    'nothing is blurred in the top of the frame',
+  );
+  // a tracker-only box with no detection before it is drift too
+  assert.deepEqual(privacy.visibleSamples([{ t: 1, box: [0, 0, 10, 10], score: -0.1 }]), []);
+  // a sample without a score (an older track file) counts as a detection
+  assert.equal(privacy.visibleSamples([{ t: 1, box: [0, 0, 10, 10] }]).length, 1);
+});
+
+test('a track file keeps its scores and drops malformed samples', () => {
+  assert.equal(privacy.parseBlurSamples({}), null);
+  assert.deepEqual(
+    privacy.parseBlurSamples([
+      { t: 2, box: [0, 0, 10, 10], score: -0.1 },
+      { t: 1, box: [0, 0, 10, 10] },
+      { t: 3, box: [5, 5, 1, 1] },
+      null,
+    ]),
+    [
+      { t: 1, box: [0, 0, 10, 10] },
+      { t: 2, box: [0, 0, 10, 10], score: -0.1 },
+    ],
+  );
+});
+
+test('a busy clip merges its closest regions instead of dropping any head', () => {
+  const heads = Array.from({ length: 50 }, (_, i) => [i * 10, i * 10, i * 10 + 100, i * 10 + 100]);
+  const regions = privacy.clipBlurRegions({ window: WINDOW, tracks: [], recorded: heads, personBoxes: [] });
+  assert.equal(regions.length, privacy.MAX_CLIP_REGIONS);
+  for (const head of heads) {
+    const padded = privacy.padBox(head, privacy.STATIC_HEAD_PADDING);
+    assert.ok(
+      regions.some((r) => r.box[0] <= padded[0] && r.box[1] <= padded[1] && r.box[2] >= padded[2] && r.box[3] >= padded[3]),
+      `the head ${head} is still covered`,
+    );
+  }
+});
+
 test("without recorded heads a person's own head stands in for the whole clip; with nothing known no blurred clip is cut", () => {
-  assert.deepEqual(privacy.clipBlurRegions({ window: WINDOW, track: null, recorded: null, personBox: [200, 400, 600, 500] }), [
+  assert.deepEqual(privacy.clipBlurRegions({ window: WINDOW, tracks: [], recorded: null, personBoxes: [[200, 400, 600, 500]] }), [
     { box: [120, 360, 360, 540], fromSeconds: null, toSeconds: null },
   ]);
-  assert.equal(privacy.clipBlurRegions({ window: WINDOW, track: null, recorded: null, personBox: null }), null);
-  assert.deepEqual(privacy.clipBlurRegions({ window: WINDOW, track: [], recorded: [], personBox: null }), [], 'the agent saw no head');
+  assert.equal(privacy.clipBlurRegions({ window: WINDOW, tracks: [], recorded: null, personBoxes: [] }), null);
+  assert.deepEqual(privacy.clipBlurRegions({ window: WINDOW, tracks: [], recorded: [], personBoxes: [] }), [], 'the agent saw no head');
   assert.deepEqual(
-    privacy.clipBlurRegions({ window: WINDOW, track: null, recorded: [[0, 0, 4, 900]], personBox: null }),
+    privacy.clipBlurRegions({ window: WINDOW, tracks: [], recorded: [[0, 0, 4, 900]], personBoxes: [] }),
     [],
     'a sliver would crop to zero pixels (the whole frame for ffmpeg), so it is dropped',
   );
-  const many = Array.from({ length: 50 }, (_, i) => [i, i, i + 100, i + 100]);
-  assert.equal(privacy.clipBlurRegions({ window: WINDOW, track: null, recorded: many, personBox: null }).length, privacy.MAX_CLIP_REGIONS);
 });
 
 test('the clip filter scales, then box-blurs each region over its span, and ends on [blurred]', () => {
@@ -264,6 +343,69 @@ test('a run analysed with blur gets a blurred clip even after the toggle was swi
   const record = clipRecord([entry('E1', { blur_regions: [] })], { runBlurred: true });
   assert.equal(await clipFor(record, 'E1', store), `signed:${RUN}/E1-clip-blur.mp4`);
   assert.deepEqual(store.calls.cut[0].regions, [], 'the agent saw no head at that second');
+});
+
+test("an older version's blurred clip blurs every person its other items tracked, second by second (IMG_9170 v1)", async () => {
+  const keyOf = (id) => `${RUN}/${id}-track.json`;
+  const store = fakeStore({
+    [keyOf('E2')]: [{ t: 7.0, box: [100, 100, 500, 300], score: 0.9 }],
+    [keyOf('E3')]: [{ t: 5.4, box: [300, 700, 800, 800], score: 0.9 }], // another person, in the clip's first second
+    [keyOf('E4')]: [{ t: 7.0, box: [0, 0, 100, 100], score: 0.9 }], // outside the clip by its recorded span: never read
+  });
+  const record = clipRecord(
+    [
+      entry('E2', { track: keyOf('E2'), track_first_seen_seconds: 6, track_last_seen_seconds: 8 }), // no blur_regions: older version
+      entry('E3', {
+        track: keyOf('E3'),
+        track_first_seen_seconds: 5,
+        track_last_seen_seconds: 6,
+        box_seconds: 5.4,
+        bounding_box: [300, 700, 800, 800],
+      }),
+      entry('E4', {
+        track: keyOf('E4'),
+        track_first_seen_seconds: 60,
+        track_last_seen_seconds: 62,
+        box_seconds: 61,
+        timestamp_seconds: 61,
+      }),
+    ],
+    { blurFaces: true },
+  );
+  assert.equal(await clipFor(record, 'E2', store), `signed:${RUN}/E2-clip-blur.mp4`);
+  assert.deepEqual(store.calls.read.sort(), [keyOf('E2'), keyOf('E3')]);
+  const { regions } = store.calls.cut[0];
+  const timed = regions.filter((r) => r.fromSeconds !== null);
+  assert.ok(
+    timed.some((r) => r.fromSeconds === 2 && r.box[0] === 60),
+    "E2's head, in its own second",
+  );
+  assert.ok(
+    timed.some((r) => r.fromSeconds === 0 && r.box[1] === 690),
+    "E3's head, in the first second",
+  );
+  assert.ok(
+    regions.some((r) => r.fromSeconds === null),
+    'located people with no recorded heads are blurred for the whole clip too',
+  );
+});
+
+test('a blurred clip of a run that recorded heads also blurs the heads other items recorded near it', async () => {
+  const store = fakeStore();
+  const record = clipRecord(
+    [
+      entry('E1', { blur_regions: [[300, 600, 400, 700]] }),
+      entry('I1', { item_type: 'instrument', blur_regions: [[10, 10, 110, 110]], box_seconds: 6.5 }),
+      entry('E9', { blur_regions: [[800, 800, 900, 900]], box_seconds: 40, timestamp_seconds: 40 }), // far away: not in this clip
+    ],
+    { runBlurred: true },
+  );
+  await clipFor(record, 'E1', store);
+  const boxes = store.calls.cut[0].regions.map((r) => r.box);
+  assert.deepEqual(boxes, [
+    [275, 575, 425, 725],
+    [0, 0, 135, 135],
+  ]);
 });
 
 test('a blurred clip is refused when nothing is known about the heads, and when the track cannot be read', async () => {

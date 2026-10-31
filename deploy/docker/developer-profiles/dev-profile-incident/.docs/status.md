@@ -70,9 +70,10 @@ Deliberate behaviour that can look like an issue (the Cosmos timeline, chat abou
 
 13. **Open (found 2026-11-01): what the privacy blur does not cover.**
     - Without tracking, an object's frame blurs only the heads of the person items at the same second, so a bystander there stays clear.
-    - A blurred clip blurs the item's own track per second, but the other heads only where they were at the item's second; someone who walks far within the 4 s can leave that region.
+    - A blurred clip blurs every stored track of the video per second, but a bystander the run never matched to an entity, and a detector or box head, are blurred only where they were at their item's second (padded, for the whole clip); someone who walks far within the 4 s can leave that region.
     - A reviewer's own crop drawn in edit mode is cut from the unblurred video and stored as is; an object analysed before the toggle gets no blurred clip (422 until the re-analysis finishes).
     - Not yet checked live: deferred to the end-to-end test ([decision](decisions.md#2026-11-01-privacy-blur-blurs-the-head-region-of-person-tracks-and-detector-heads-not-a-face-model)).
+14. **Open (2026-11-01): live check of the privacy-blur leak fixes** ([decision](decisions.md#2026-11-01-privacy-blur-ignores-ghost-tracks-and-blurs-every-stored-track-in-a-clip)). Unit and local checks pass; the end-to-end test must verify on the VM: IMG_4569 E1 frame at 5.0 s has the man's face blurred; IMG_9170 v2 clip at 3.0-3.8 s and the whole v1 clip have every person blurred; no grey box on the ceiling in either clip (the stray box's cause is inferred, not confirmed).
 
 ## 5. Action items
 

@@ -1434,10 +1434,7 @@ class CropEvidenceService:
             boxes = [d.box for d in _parse_detections(raw, query) if privacy_blur.valid_box(d.box)]
             if not boxes:
                 return None
-            head = privacy_blur.pad_box(boxes[0], privacy_blur.DETECTED_HEAD_PADDING)
-            if crop.located and crop.normalized_box and not privacy_blur.centre_inside(head, crop.normalized_box):
-                return None  # another person's head: the item's own box stands in
-            return head
+            return privacy_blur.pad_box(boxes[0], privacy_blur.DETECTED_HEAD_PADDING)
 
         def _blurred(crop: CropResult, regions: list[privacy_blur.Box]) -> CropResult:
             """The crop result encoded again from the frame blurred on ``regions`` (the decoded frame is dropped)."""
@@ -1471,7 +1468,7 @@ class CropEvidenceService:
                     continue
                 seconds = seconds_of(entry, crop)
                 box = crop.normalized_box if crop.located else None
-                track_heads = privacy_blur.track_heads_at(tracks, seconds)
+                track_heads = privacy_blur.track_heads_at(tracks, seconds, solid_only=True)
                 if box and any(privacy_blur.centre_inside(head, box) for head in track_heads):
                     privacy.track_heads += 1
                     continue
@@ -1479,6 +1476,10 @@ class CropEvidenceService:
                 if head is not None:
                     privacy.detector_heads += 1
                     people.append((seconds, head))
+                    # The model's box may be on the wrong thing (a panel, not the man): the detected head is blurred
+                    # wherever it is, and the box's own head too unless the detected head sits inside the box.
+                    if box and not privacy_blur.centre_inside(head, box):
+                        people.append((seconds, privacy_blur.head_region(box)))
                 elif box:
                     privacy.box_heads += 1
                     people.append((seconds, privacy_blur.head_region(box)))
@@ -1531,7 +1532,7 @@ class CropEvidenceService:
             marked = {
                 item_id: track
                 for item_id, track in tracking.marked.items()
-                if item_id in by_id and by_id[item_id]["item_type"] == "entity"
+                if item_id in by_id and by_id[item_id]["item_type"] == "entity" and track_evidence.is_solid(track)
             }
             taken = {track.track_id for track in marked.values()}
             located = [

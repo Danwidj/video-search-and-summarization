@@ -5,14 +5,23 @@
 // and its folder come from the stored revision's evidence entry, never from the browser.
 //
 // Face blur: when the video's toggle is on, or the revision's run was analysed with blur_faces, the clip is cut with the
-// heads blurred (privacy-blur.ts clipBlurRegions: per second from the item's own track, and for the whole clip the heads
-// the agent blurred in the item's frame, else a person's own head) and cached under the separate -clip-blur.mp4 key.
+// heads blurred (privacy-blur.ts clipBlurRegions: per second from every track the revision stored for the video, not only
+// the item's own, and for the whole clip the heads the agent blurred in the frames of the items near it, else the heads
+// of the located people near it) and cached under the separate -clip-blur.mp4 key.
 
 import type { IncidentRepository } from '@/modules/reports/domain/IncidentRepository';
 import { ClipError, type ClipWindow, clipCentreSeconds, clipWindow, evidenceClipKey } from '@/modules/reports/domain/evidence-clip';
-import { type ClipBlurRegion, clipBlurRegions, recordedBlurRegions, runBlurredFaces } from '@/modules/reports/domain/privacy-blur';
+import {
+  type BlurSample,
+  type ClipBlurRegion,
+  CONTEXT_SECONDS,
+  clipBlurRegions,
+  type NormalisedBox,
+  parseBlurSamples,
+  recordedBlurRegions,
+  runBlurredFaces,
+} from '@/modules/reports/domain/privacy-blur';
 import type { EvidenceItemType } from '@/modules/reports/domain/revision';
-import { parseTrackSamples, type TrackSample } from '@/modules/reports/domain/track';
 import { isValidR2Key } from '@/lib/r2/key';
 
 /** Reads the source video and keeps cut clips; the route supplies R2 and ffmpeg, tests a fake. */
@@ -43,9 +52,9 @@ const cutting = new Map<string, Promise<void>>();
 
 /** What a blurred clip is built from; null for a clip cut as it is. */
 interface BlurSource {
-  track: TrackSample[] | null;
-  recorded: ReturnType<typeof recordedBlurRegions>;
-  personBox: number[] | null;
+  tracks: BlurSample[][];
+  recorded: NormalisedBox[] | null;
+  personBoxes: number[][];
 }
 
 async function ensureClip(
@@ -53,7 +62,7 @@ async function ensureClip(
   key: string,
   videoKey: string,
   centreSeconds: number,
-  blurSource: () => Promise<BlurSource | null>,
+  blurSource: (window: ClipWindow) => Promise<BlurSource | null>,
 ): Promise<void> {
   if (await store.exists(key)) return;
   let duration: number | null;
@@ -66,7 +75,7 @@ async function ensureClip(
     throw new ClipError(422, `The item's second ${centreSeconds} s is outside the video, which is ${+duration.toFixed(3)} s long`);
   }
   const window = clipWindow(centreSeconds, duration);
-  const blur = await blurSource();
+  const blur = await blurSource(window);
   if (!blur) {
     await store.put(key, await store.cut(videoKey, window));
     return;
@@ -100,22 +109,52 @@ export async function getEvidenceClip(incidents: IncidentRepository, store: Clip
 
   let pending = cutting.get(key);
   if (!pending) {
-    const blur = async (): Promise<BlurSource | null> => {
+    const blur = async (window: ClipWindow): Promise<BlurSource | null> => {
       if (!blurred) return null;
-      const trackKey = typeof entry.track === 'string' && TRACK_KEY.test(entry.track) ? entry.track : null;
-      let track: TrackSample[] | null = null;
-      if (trackKey) {
-        try {
-          track = parseTrackSamples(await store.readJson(trackKey));
-        } catch {
-          throw new ClipError(502, "The item's track could not be read, so its clip cannot be cut with the faces blurred");
-        }
+      const from = window.startSeconds - CONTEXT_SECONDS;
+      const to = window.startSeconds + window.lengthSeconds + CONTEXT_SECONDS;
+      const secondOf = (candidate: (typeof record.evidence)[number]) => {
+        const at = candidate.box_seconds ?? candidate.timestamp_seconds;
+        return typeof at === 'number' ? at : null;
+      };
+      const near = record.evidence.filter((candidate) => {
+        const at = secondOf(candidate);
+        return at !== null && at >= from && at <= to;
+      });
+      // Every track the revision stored that can show in the clip, not only the item's own: a person who moves, stands up
+      // or walks past stays covered. A track whose recorded span lies outside the clip is not read.
+      const trackKeys = new Set<string>();
+      for (const candidate of record.evidence) {
+        const key = candidate.track;
+        if (typeof key !== 'string' || !TRACK_KEY.test(key)) continue;
+        const first = candidate.track_first_seen_seconds;
+        const last = candidate.track_last_seen_seconds;
+        if (typeof first === 'number' && typeof last === 'number' && (last < from || first > to)) continue;
+        trackKeys.add(key);
       }
-      const located = entry.located !== false && Array.isArray(entry.bounding_box);
+      let tracks: BlurSample[][];
+      try {
+        tracks = (await Promise.all([...trackKeys].map(async (key) => parseBlurSamples(await store.readJson(key))))).filter(
+          (samples): samples is BlurSample[] => samples !== null,
+        );
+      } catch {
+        throw new ClipError(502, 'A track of this video could not be read, so the clip cannot be cut with the faces blurred');
+      }
+      const recordedLists = near.map((candidate) => recordedBlurRegions(candidate.blur_regions)).filter((list) => list !== null);
+      const personBoxes = near
+        .filter(
+          (candidate) =>
+            candidate.item_type === 'entity' &&
+            candidate.located !== false &&
+            Array.isArray(candidate.bounding_box) &&
+            recordedBlurRegions(candidate.blur_regions) === null,
+        )
+        .map((candidate) => candidate.bounding_box as number[]);
       return {
-        track,
-        recorded: recordedBlurRegions(entry.blur_regions),
-        personBox: request.itemType === 'entity' && located ? entry.bounding_box : null,
+        tracks,
+        // Null (nothing recorded: an older version) only when no item near the clip, and the item itself, recorded heads.
+        recorded: recordedLists.length ? recordedLists.flat() : null,
+        personBoxes,
       };
     };
     pending = ensureClip(store, key, videoKey, seconds, blur).finally(() => cutting.delete(key));

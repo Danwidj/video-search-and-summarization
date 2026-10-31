@@ -80,6 +80,13 @@ class TestHeadRegionMaths:
         assert track_heads_at([near, far], 3.0) == []
         assert track_heads_at([Track("3", [])], 0.0) == []
 
+    def test_a_ghosts_drifting_boxes_are_not_blurred_and_do_not_count_as_a_solid_head(self) -> None:
+        ghost = Track("g", [Sample(5.0, (100, 400, 600, 500), 0.6)])
+        ghost.samples += [Sample(5.0 + 0.2 * i, (0, 100, 100, 300), -0.1) for i in range(1, 20)]
+        assert track_heads_at([ghost], 5.2) == [head_region((0, 100, 100, 300))]  # soon after the detection: kept
+        assert track_heads_at([ghost], 8.0) == []  # drift, 3 s on
+        assert track_heads_at([ghost], 5.0, solid_only=True) == []  # one detection is not a solid track
+
     def test_unique_regions_drop_duplicates_and_empty_boxes(self) -> None:
         assert unique_regions([(0, 0, 10, 10), (0, 0, 10, 10), (5, 5, 5, 9), (1, 2, 3)]) == [(0, 0, 10, 10)]
 
@@ -234,8 +241,8 @@ class TestEvidenceWriteSites:
     async def test_a_track_that_covers_the_person_needs_no_head_query_and_every_track_is_blurred(
         self, textured_video: Path
     ) -> None:
-        person = Track("1", [Sample(0.0, tuple(PERSON_BOX), 0.95)])
-        bystander = Track("2", [Sample(0.1, (0, 700, 400, 900), 0.9)])  # never matched to a report entity
+        person = Track("1", [Sample(t, tuple(PERSON_BOX), 0.95) for t in (0.0, 0.1, 0.2)])
+        bystander = Track("2", [Sample(t, (0, 700, 400, 900), 0.9) for t in (0.1, 0.2, 0.3)])  # never matched
         privacy = PrivacySummary()
         detector = RecordingDetector()
         request = _tracking(person, bystander)
@@ -257,11 +264,34 @@ class TestEvidenceWriteSites:
         assert privacy.box_heads == 1 and privacy.detector_heads == 0
 
     @pytest.mark.asyncio
-    async def test_a_detected_head_outside_the_person_is_not_trusted(self, textured_video: Path) -> None:
+    async def test_a_detected_head_outside_the_items_box_is_blurred_with_the_boxs_own_head(
+        self, textured_video: Path
+    ) -> None:
         privacy = PrivacySummary()
-        entries, _ = await _run(textured_video, detector=RecordingDetector(head=[0, 900, 100, 1000]), privacy=privacy)
-        assert entries["E1"]["blur_regions"] == [list(head_region(entries["E1"]["bounding_box"]))]
-        assert privacy.box_heads == 1
+        outside = [0, 900, 100, 1000]
+        entries, _ = await _run(textured_video, detector=RecordingDetector(head=outside), privacy=privacy)
+        detected = list(privacy_blur.pad_box(outside, privacy_blur.DETECTED_HEAD_PADDING))
+        boxed = list(head_region(entries["E1"]["bounding_box"]))
+        assert sorted(entries["E1"]["blur_regions"]) == sorted([detected, boxed])
+        assert privacy.detector_heads == 1 and privacy.box_heads == 0
+
+    @pytest.mark.asyncio
+    async def test_a_ghost_track_on_the_items_box_does_not_stand_for_the_head(self, textured_video: Path) -> None:
+        """IMG_4569 E1: the model's box is on the panel, a ghost track (one detection, then predicted boxes) sits on it,
+        and the man's real head is elsewhere. The ghost must not match, and the detected head is blurred."""
+        ghost = Track("ghost", [Sample(0.0, tuple(PERSON_BOX), 0.6)])
+        ghost.samples += [Sample(0.2 * i, (200, 200 - 40 * i, 800, 500 - 40 * i), -0.1) for i in range(1, 10)]
+        man = [0, 800, 400, 950]
+        privacy = PrivacySummary()
+        entries, _ = await _run(
+            textured_video, detector=RecordingDetector(head=man), privacy=privacy, tracking=_tracking(ghost)
+        )
+        detected = list(privacy_blur.pad_box(man, privacy_blur.DETECTED_HEAD_PADDING))
+        assert "track" not in entries["E1"]  # the ghost matched nothing
+        assert privacy.track_heads == 0 and privacy.detector_heads == 1 and privacy.head_queries == 1
+        assert detected in entries["E1"]["blur_regions"]
+        assert detected in entries["I1"]["blur_regions"]
+        assert list(head_region(PERSON_BOX)) in entries["E1"]["blur_regions"]
 
     @pytest.mark.asyncio
     async def test_the_head_query_draws_on_the_crop_call_budget_and_a_full_cap_falls_back(
