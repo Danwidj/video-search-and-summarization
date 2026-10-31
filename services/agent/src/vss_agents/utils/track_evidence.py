@@ -72,6 +72,12 @@ FALLBACK_LOSS_SECONDS = 2.85
 SAMPLES_PER_SECOND = 5
 BEST_MOMENT_MIN_SCORE = 0.85
 ASSOCIATION_WINDOW_SECONDS = 0.5
+# A track backs an entity (and a blurred head) only when it is solid: at least this many real detections, and at
+# least this share of its samples real. A ghost is one detection followed by tracker-only boxes drifting away.
+MIN_REAL_SAMPLES = 2
+MIN_REAL_SHARE = 0.5
+# A tracker-only box counts as seen only within this long of the latest real detection before it; later ones are drift.
+PREDICTED_GRACE_SECONDS = 0.6
 DOWNLOAD_TIMEOUT_SECONDS = 600.0
 _SENSOR_UNSAFE = re.compile(r"[^A-Za-z0-9_-]+")
 _HDR_TRANSFERS = frozenset({"arib-std-b67", "smpte2084"})
@@ -144,6 +150,32 @@ class Track:
     @property
     def last_seen(self) -> float:
         return self.samples[-1].t
+
+
+def is_real(sample: Sample) -> bool:
+    """Whether the detector saw the person in this sample (score -0.1 is a tracker-only box)."""
+    return sample.score >= 0
+
+
+def visible_samples(track: Track) -> list[Sample]:
+    """The samples to trust: real detections, and tracker-only boxes within :data:`PREDICTED_GRACE_SECONDS` of the
+    latest real detection before them (a short occlusion). Predicted boxes after that, or with no detection
+    before them, are drift."""
+    kept: list[Sample] = []
+    last_real: float | None = None
+    for sample in track.samples:
+        if is_real(sample):
+            last_real = sample.t
+            kept.append(sample)
+        elif last_real is not None and sample.t - last_real <= PREDICTED_GRACE_SECONDS:
+            kept.append(sample)
+    return kept
+
+
+def is_solid(track: Track) -> bool:
+    """Whether the track is a person the detector really followed: enough real detections, and mostly real."""
+    real = sum(1 for sample in track.samples if is_real(sample))
+    return real >= MIN_REAL_SAMPLES and real >= MIN_REAL_SHARE * len(track.samples)
 
 
 @dataclass
@@ -377,7 +409,10 @@ def _box_area(box: Sequence[float]) -> float:
 
 
 def _sample_near(track: Track, seconds: float) -> Sample | None:
-    nearest = min(track.samples, key=lambda sample: abs(sample.t - seconds))
+    samples = visible_samples(track)
+    if not samples:
+        return None
+    nearest = min(samples, key=lambda sample: abs(sample.t - seconds))
     return nearest if abs(nearest.t - seconds) <= ASSOCIATION_WINDOW_SECONDS else None
 
 
@@ -387,13 +422,16 @@ def associate_tracks(
     """Match entities to tracks: ``{item_id: track}``.
 
     ``entities`` are ``(item_id, box, seconds)`` with the locate step's box and the second it was found at. An
-    entity's candidate for a track is the track sample nearest to ``seconds`` (within 0.5 s); pairs with an IoU of
+    entity's candidate for a track is the visible sample nearest to ``seconds`` (within 0.5 s); pairs with an IoU of
     at least ``min_iou`` are taken greedily, best first, so every entity gets at most one track and every track at
-    most one entity.
+    most one entity. Only solid tracks (:func:`is_solid`) are candidates: a ghost with one detection and drifting
+    tracker-only boxes matches nothing, so the entity keeps its own box.
     """
     pairs: list[tuple[float, int, int]] = []
     for e_index, (_, box, seconds) in enumerate(entities):
         for t_index, track in enumerate(tracks):
+            if not is_solid(track):
+                continue
             sample = _sample_near(track, seconds)
             if sample is None:
                 continue
@@ -412,9 +450,10 @@ def associate_tracks(
 
 
 def best_moment(track: Track) -> Sample:
-    """The sample with the largest box among those scoring at least 0.85, else the largest box of the track."""
+    """The sample with the largest box among those scoring at least 0.85, else among the real ones, else of the track."""
     confident = [sample for sample in track.samples if sample.score >= BEST_MOMENT_MIN_SCORE]
-    return max(confident or track.samples, key=lambda sample: _box_area(sample.box))
+    real = [sample for sample in track.samples if is_real(sample)]
+    return max(confident or real or track.samples, key=lambda sample: _box_area(sample.box))
 
 
 def track_json(track: Track) -> bytes:
