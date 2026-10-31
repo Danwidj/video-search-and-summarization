@@ -30,7 +30,7 @@ bound to VST, the NAT object store and a LangChain VLM, none of which the incide
 
 Everything here is best-effort for the caller: :func:`caption_video` raises :class:`ChunkCaptionError` with a
 plain reason (ffmpeg missing, a window call that failed after retries, ...) and ``incident_report_gen`` turns
-that into ``chunking.skipped`` and runs P1 without context.
+that into a logged skip reason and runs P1 without context.
 """
 
 from __future__ import annotations
@@ -145,7 +145,7 @@ _EMPTY_WINDOW_PATTERN = re.compile(
 
 
 class ChunkCaptionError(RuntimeError):
-    """The caption pass could not run or finish; the message is the plain reason ``chunking.skipped`` reports."""
+    """The caption pass could not run or finish; the message is the plain skip reason the agent logs."""
 
 
 @dataclass(frozen=True)

@@ -79,9 +79,7 @@ def test_passes_incident_id_video_url_and_model_run_id_to_the_tool():
         {"incident_id": "v1", "video_url": VIDEO_URL, "model_run_id": "run1", "skip_rp1": True}
     )
     assert response.json() == {
-        k: v
-        for k, v in OUTPUT.model_dump().items()
-        if k not in EXPERIMENT_OUTPUT_FIELDS and k not in ("tracking", "chunk_alerts", "alerting")
+        k: v for k, v in OUTPUT.model_dump().items() if k not in EXPERIMENT_OUTPUT_FIELDS and k != "tracking"
     }
 
 
@@ -249,9 +247,6 @@ PRODUCTION_KEYS = {
     "video_duration_source",
     "video_bounds_checked",
     "video_bounds_unchecked_reason",
-    # The caption pass (INCIDENT_CHUNKING_ENABLED): both null when the flag is off or the request is experimental.
-    "chunk_timeline",
-    "chunking",
 }
 EXPERIMENT = {"prompt_id": "p1-v4-e01-x", "prompt_sha256": "a" * 64, "skip_crops": True, "persisted": False}
 
@@ -262,26 +257,6 @@ def test_a_tracking_summary_is_kept_in_the_response_only_when_the_tool_returned_
     response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL})
     assert response.json()["tracking"] == summary
     assert set(response.json()) == PRODUCTION_KEYS | {"tracking"}
-
-
-def test_alert_fields_are_kept_only_when_the_check_ran_or_was_skipped():
-    alert = {
-        "rule_id": "person-falls",
-        "rule": "A person falls.",
-        "window_index": 4,
-        "start": 72,
-        "end": 92,
-        "reason": "r",
-    }
-    telemetry = {"model": "m", "rules": 3, "windows": 6, "matches": 1, "prompt_tokens": 1, "completion_tokens": 1}
-    client, _ = _client(result=OUTPUT.model_copy(update={"chunk_alerts": [alert], "alerting": telemetry}))
-    body = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL}).json()
-    assert body["chunk_alerts"] == [alert] and body["alerting"] == telemetry
-    assert set(body) == PRODUCTION_KEYS | {"chunk_alerts", "alerting"}
-    skipped = {"skipped": "no chunk timeline (INCIDENT_CHUNKING_ENABLED is off)"}
-    client, _ = _client(result=OUTPUT.model_copy(update={"alerting": skipped}))
-    body = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL}).json()
-    assert body["chunk_alerts"] is None and body["alerting"] == skipped
 
 
 def test_a_production_response_keeps_exactly_its_documented_keys(monkeypatch):
