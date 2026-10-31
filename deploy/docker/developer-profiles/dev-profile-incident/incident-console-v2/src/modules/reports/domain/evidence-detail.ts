@@ -91,6 +91,8 @@ export interface EvidenceDetailLines {
   threat: string | null;
   /** Entities with a recorded span: "On screen 0:02–0:09". */
   onScreen: string | null;
+  /** Items with a track: the span the tracker followed them, "On screen 0:02–0:09 (tracked)", beside the report's own span. */
+  trackedOnScreen: string | null;
   /** The time the item is shown at, as a clock. */
   time: string | null;
   /** Why Play from here is disabled; null when it can play. */
@@ -107,6 +109,10 @@ export function evidenceDetailLines(item: EvidenceDetailItem): EvidenceDetailLin
     onScreen:
       item.kind === 'entity' && item.onScreen
         ? `On screen ${formatClock(item.onScreen.firstSeenSeconds)}–${formatClock(item.onScreen.lastSeenSeconds)}`
+        : null,
+    trackedOnScreen:
+      item.evidence?.track && item.evidence.trackFirstSeenSeconds !== null && item.evidence.trackLastSeenSeconds !== null
+        ? `On screen ${formatClock(item.evidence.trackFirstSeenSeconds)}–${formatClock(item.evidence.trackLastSeenSeconds)} (tracked)`
         : null,
     time: item.seconds === null ? null : formatClock(item.seconds),
     playNote: item.seconds === null ? 'No time was recorded for this item, so it cannot be played from here.' : null,
