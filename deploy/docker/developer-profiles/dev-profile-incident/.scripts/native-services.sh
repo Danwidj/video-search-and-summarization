@@ -131,8 +131,7 @@ load_env
 export INCIDENT_TRACKING_ENABLED="${INCIDENT_TRACKING_ENABLED:-true}"
 
 # The caption pass is on for vss-agent unless the env file (or the caller) sets it to 0; the agent reads
-# only "1" as on, and with it off the analysis runs without it. The alert check (INCIDENT_ALERTS_ENABLED)
-# stays off unless the env file sets it to 1.
+# only "1" as on, and with it off the analysis runs without it.
 export INCIDENT_CHUNKING_ENABLED="${INCIDENT_CHUNKING_ENABLED:-1}"
 
 # ffmpeg and ffprobe (caption pass, tracking) come from the repo-local tools dir when the host has none;

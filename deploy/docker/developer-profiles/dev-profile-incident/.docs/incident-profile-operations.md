@@ -64,17 +64,16 @@ On by default in vm mode (since 31 Oct 2026): `./start.sh --mode vm` runs `track
 
 ### Default analysis stack in vm mode
 
-Since 1 Nov 2026 one `./start.sh --mode vm` brings up the full default stack: person tracking and the caption timeline. Each piece is on by default and can be turned off on its own; the alert flags are off by default and can be turned on. With any of them off the analysis still runs and the report simply lacks that part.
+Since 1 Nov 2026 one `./start.sh --mode vm` brings up the full default stack: person tracking and the caption pass. Each piece is on by default and can be turned off on its own; with any of them off the analysis still runs without it.
 
-| Piece | Where the default lives | Turn it off (or on) |
+| Piece | Where the default lives | Turn it off |
 |---|---|---|
 | Tracking stack (perception containers) | `start.sh`: `ENABLE_TRACKING` defaults to `true` in vm mode | `ENABLE_TRACKING=false ./start.sh` (the agent then reports `tracking.skipped`) |
 | Tracking in the agent | `native-services.sh`: `INCIDENT_TRACKING_ENABLED=true` | `INCIDENT_TRACKING_ENABLED=false` in `generated.env.remote` (ask first), then `./native-services.sh restart vss-agent` |
-| Caption pass (caption timeline, clips over 30 s) | `native-services.sh`: `INCIDENT_CHUNKING_ENABLED=1`; window 20 s and overlap 2 s are the agent defaults (`INCIDENT_CHUNK_WINDOW_SECONDS`, `INCIDENT_CHUNK_OVERLAP_SECONDS`) | `INCIDENT_CHUNKING_ENABLED=0` in `generated.env.remote` (ask first), then restart the agent. The alert check needs the timeline, so it does nothing then |
-| Alert rules (flags on the timeline, Alerts list) | **Off by default** (not set by `native-services.sh`; `.env` says `0`); rules in `services/agent/src/vss_agents/utils/chunk_alert_rules.json` | To turn it on: `INCIDENT_ALERTS_ENABLED=1` in `generated.env.remote` (ask first), then restart the agent |
+| Caption pass (window captions as P1 context, clips over 30 s) | `native-services.sh`: `INCIDENT_CHUNKING_ENABLED=1`; window 20 s and overlap 2 s are the agent defaults (`INCIDENT_CHUNK_WINDOW_SECONDS`, `INCIDENT_CHUNK_OVERLAP_SECONDS`) | `INCIDENT_CHUNKING_ENABLED=0` in `generated.env.remote` (ask first), then restart the agent |
 | `ffmpeg` and `ffprobe` for the agent | `.scripts/media-tools.sh`, run by `native-services.sh` before it starts the agent: BtbN static build, SHA-256 checked, into `/srv/rise-up/vss/.tools/ffmpeg/bin` (gitignored), first on the agent's `PATH`; skipped when both are already on `PATH` | Not needed off; without them the agent skips the caption pass and tracking. Check with `./native-services.sh status` (prints both with versions, or `MISSING`) or `./media-tools.sh check`; install alone with `./media-tools.sh install` |
 
-The defaults reach the shared agent only when it starts (`native-services.sh restart vss-agent`, or `start.sh` finding it down); a running agent keeps the environment it started with. Check a running agent with `tr '\0' '\n' < /proc/<pid>/environ | grep -E '^INCIDENT_(TRACKING|CHUNKING|ALERTS)_ENABLED='`. Cost and time with tracking and the caption pass on: [status](status.md#1-what-is-live).
+The defaults reach the shared agent only when it starts (`native-services.sh restart vss-agent`, or `start.sh` finding it down); a running agent keeps the environment it started with. Check a running agent with `tr '\0' '\n' < /proc/<pid>/environ | grep -E '^INCIDENT_(TRACKING|CHUNKING)_ENABLED='`. Time and model calls with both on are not measured yet: they are deferred to the end-to-end test after the current PRs land.
 
 On the VM:
 
