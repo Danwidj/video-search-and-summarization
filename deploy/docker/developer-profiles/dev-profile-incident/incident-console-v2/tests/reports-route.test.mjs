@@ -142,7 +142,7 @@ test('a dashboard heatmap link filters the reports RPC by the same weekday and w
   link.searchParams.set('timezone', 'America/New_York');
   const response = await GET(new Request(`http://localhost/api/reports?${link.searchParams}`));
   assert.equal(response.status, 200);
-  assert.equal(rpcBody.p_scope, 'official');
+  assert.equal(rpcBody.p_scope, 'all');
   assert.equal(rpcBody.p_day_of_week, 2);
   assert.equal(rpcBody.p_time_from, '09:00');
   assert.equal(rpcBody.p_time_to, '09:59:59.999');
@@ -211,7 +211,7 @@ test('thumbnail capture samples exactly one quarter into the video', () => {
   assert.equal(thumbnailCaptureTime(Number.NaN), 0);
 });
 
-test('dashboard links: official scope, exact evidence names and entity types reach the RPC; invalid values are refused', async () => {
+test('dashboard links: a report status, exact evidence names and entity types reach the RPC; invalid values are refused', async () => {
   let rpcBody;
   globalThis.fetch = async (_url, init) => {
     rpcBody = JSON.parse(String(init?.body));
@@ -228,6 +228,8 @@ test('dashboard links: official scope, exact evidence names and entity types rea
   assert.deepEqual(rpcBody.p_entity_types, ['human', 'animal']);
   assert.deepEqual(rpcBody.p_instruments, ['knife']);
   assert.equal(rpcBody.p_evidence_match, 'exact');
+  await GET(new Request('http://localhost/api/reports?scope=not_official'));
+  assert.equal(rpcBody.p_scope, 'not_official');
   for (const bad of ['scope=latest', 'match=fuzzy', 'entityType=person']) {
     assert.equal((await GET(new Request(`http://localhost/api/reports?${bad}`))).status, 400, bad);
   }

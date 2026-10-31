@@ -10,7 +10,9 @@
 #           tunnel for the agent on :8000 only; uploads go straight from the
 #           console to R2, and the VM runs no VST/HAProxy). Exports
 #           ANALYSIS_MODE=agent so v2 calls the agent's
-#           /analyze endpoint directly. No local vlm-gateway. The search route
+#           /analyze endpoint directly. Also starts the local vlm-gateway
+#           (127.0.0.1:8600), used only by the dashboard's chart requests, when
+#           uv and vlm-gateway/.env.local are present. The search route
 #           (POST /api/v1/incidents/search) is always mounted on vss-agent (:8000)
 #           with an always-on VLM critic and persisted ranking/verdicts.
 #   mock  — fully local, no VM/SSH. Starts mock-backend (127.0.0.1:7777)
@@ -97,6 +99,13 @@
 #                            and hold the tunnel open (for checking the VM side only)
 #   ENABLE_ANALYTICS         set to 'true' to include video-analytics-api and
 #                            behavior-analytics natively, plus elasticsearch in Docker
+#   ENABLE_TRACKING          set to 'true' (vm mode only, default 'false') to also start the
+#                            person-tracking stack on the VM after Phoenix and the agent, via
+#                            .scripts/tracking-stack.sh start: NvStreamer, DeepStream perception
+#                            (RT-DETR warehouse), Kafka, Logstash, Elasticsearch and the
+#                            video-analytics API. Stages the RT-DETR model on first use; the first
+#                            start builds TensorRT engines (about 10 minutes). Stopped again by
+#                            vm-stop-backend.sh when the last session exits.
 #   INCIDENT_DOCKER_SERVICES space-separated list of Docker services to expect/run
 #   INCIDENT_NATIVE_SERVICES space-separated list of native VM services to expect/run
 set -euo pipefail
@@ -238,9 +247,21 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM HUP
 
+start_vlm_gateway() {
+  echo "=== Starting local vlm-gateway (:8600) ==="
+  (
+    cd "${SCRIPT_DIR}/vlm-gateway"
+    uv sync
+    exec uv run --env-file "${SCRIPT_DIR}/vlm-gateway/.env.local" \
+      uvicorn app:app --host 127.0.0.1 --port 8600
+  ) &
+  VLM_GATEWAY_PID=$!
+}
+
 if [ "$VSS_START_MODE" = "vm" ]; then
   VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
   ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
+  ENABLE_TRACKING="${ENABLE_TRACKING:-false}"
 
   # Docker appliances: only Phoenix (VIOS/VST, HAProxy, Redis and Kafka were dropped)
   default_docker_services="phoenix"
@@ -441,6 +462,18 @@ if [ "$VSS_START_MODE" = "vm" ]; then
     echo "start.sh: missing services started successfully."
   fi
 
+  if [ "$ENABLE_TRACKING" = "true" ]; then
+    echo "=== Person-tracking stack (ENABLE_TRACKING=true) ==="
+    tracking_rc=0
+    # shellcheck disable=SC2029
+    vm_ssh_limited $((VSS_COMPOSE_UP_TIMEOUT + 900)) "$VSS_SSH_TARGET" \
+      "bash '$vm_profile_dir/.scripts/tracking-stack.sh' start" || tracking_rc=$?
+    if [ "$tracking_rc" -ne 0 ]; then
+      echo "start.sh: the tracking stack did not come up (exit $tracking_rc); see the [tracking] lines above." >&2
+      exit 1
+    fi
+  fi
+
   echo "=== NEXT STEP — Opening the SSH tunnel (laptop-side, backgrounded) ==="
   if holder="$(lsof -nP -iTCP:8000 -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (pid "$2")"}')" && [ -n "$holder" ]; then
     echo "start.sh: laptop port 8000 is already in use by $holder, so the tunnel cannot forward it." >&2
@@ -487,6 +520,18 @@ if [ "$VSS_START_MODE" = "vm" ]; then
 
   export INCIDENT_AGENT_BASE_URL="http://localhost:8000"
   export ANALYSIS_MODE="agent"
+
+  # The agent does the analysis; the dashboard's chart requests are the one model call the console
+  # makes itself, and the gateway holds the key for it. Nothing else depends on it, so a laptop
+  # without it still starts, and a chart request says it is not set up.
+  if [ "$NO_CONSOLE" = 1 ]; then
+    :
+  elif [ -f "${SCRIPT_DIR}/vlm-gateway/.env.local" ] && command -v uv >/dev/null 2>&1; then
+    start_vlm_gateway
+    export VLM_GATEWAY_URL="http://127.0.0.1:8600"
+  else
+    echo "start.sh: no local vlm-gateway (it needs uv and vlm-gateway/.env.local); dashboard chart requests are off." >&2
+  fi
 elif [ "$VSS_START_MODE" = "mock" ]; then
   # Each local service reads its own .env.local symlink to the shared
   # ../.env.local (README.md §1, kept in place by .githooks/setup-worktree.sh).
@@ -507,14 +552,7 @@ elif [ "$VSS_START_MODE" = "mock" ]; then
   ) &
   MOCK_BACKEND_PID=$!
 
-  echo "=== Starting local vlm-gateway (:8600) ==="
-  (
-    cd "${SCRIPT_DIR}/vlm-gateway"
-    uv sync
-    exec uv run --env-file "${SCRIPT_DIR}/vlm-gateway/.env.local" \
-      uvicorn app:app --host 127.0.0.1 --port 8600
-  ) &
-  VLM_GATEWAY_PID=$!
+  start_vlm_gateway
 
   # Wait for local mock backend readiness (<5s)
   echo "  waiting for mock backend and search route (http://127.0.0.1:7777/health)..."

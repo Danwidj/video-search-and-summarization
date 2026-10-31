@@ -48,7 +48,7 @@ anon/authenticated**, so the lockdown is tested against what a new project start
 
 ```bash
 cd supabase/tests
-# Finals schema: applies every file in ../migrations/ in order; 38 tests (security and behaviour)
+# Finals schema: applies every file in ../migrations/ in order; 39 tests (security and behaviour)
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
 # Midterm freeze/unfreeze on a local replica of midterm
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py

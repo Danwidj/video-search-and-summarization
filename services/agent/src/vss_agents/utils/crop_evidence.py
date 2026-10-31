@@ -65,6 +65,7 @@ import numpy as np
 from PIL import Image
 from PIL import ImageDraw
 
+from vss_agents.utils import track_evidence
 from vss_agents.utils.optional_cv2 import ensure_codecs
 from vss_agents.utils.r2 import get_r2_client
 from vss_agents.utils.r2 import is_r2_configured
@@ -313,6 +314,11 @@ def evidence_key(video_key: str, batch_id: str, item_id: str) -> str:
 def evidence_frame_key(video_key: str, batch_id: str, item_id: str) -> str:
     """Return the R2 key for one evidence item's whole frame: ``evidence/<video key>/<batchId>/<itemId>-frame.jpg``."""
     return f"evidence/{video_key}/{batch_id}/{item_id}-frame.jpg"
+
+
+def evidence_track_key(video_key: str, batch_id: str, item_id: str) -> str:
+    """Return the R2 key for one matched entity's track: ``evidence/<video key>/<batchId>/<itemId>-track.json``."""
+    return f"evidence/{video_key}/{batch_id}/{item_id}-track.json"
 
 
 _BATCH_PATTERN = re.compile(r"^run-(\d+)$")
@@ -1190,6 +1196,7 @@ class CropEvidenceService:
         batch_id: str | None = None,
         detector: Any | None = None,
         store: EvidenceStore | None = None,
+        tracking: track_evidence.TrackingRequest | None = None,
         zoom_names: bool | None = None,
     ) -> list[dict[str, Any]]:
         """Locate every entity, instrument and asset of a report and upload its frame and crop.
@@ -1222,8 +1229,22 @@ class CropEvidenceService:
         else:
             detector_ready = self.is_detector_available()
         semaphore = asyncio.Semaphore(EVIDENCE_CROP_CONCURRENCY)
+        crops: dict[str, CropResult] = {}
 
-        async def _crop_and_upload(entry: dict[str, Any]) -> None:
+        tracking_task: asyncio.Task[track_evidence.TrackingOutcome] | None = None
+        if tracking is not None:
+            if active_store is None:
+                tracking.summary.skipped = "no evidence image store is configured (R2 settings missing)"
+            elif isinstance(video_ref, np.ndarray):
+                tracking.summary.skipped = "tracking needs a video file or URL"
+            else:
+                # Runs beside the locate step; the images are uploaded only once both are done, because a stored
+                # key is never overwritten and a matched entity's image is re-cut at its best moment.
+                tracking_task = asyncio.create_task(
+                    tracking.runner(video_ref, sensor_id=tracking.sensor_id, **tracking.options)
+                )
+
+        async def _crop(entry: dict[str, Any]) -> None:
             if active_store is None:
                 entry["image_gap"] = "no evidence image store is configured (R2 settings missing)"
                 return
@@ -1242,33 +1263,74 @@ class CropEvidenceService:
                     logger.warning("Evidence crop failed for %s %s: %s", video_id, entry["item_id"], exc)
                     entry["image_gap"] = f"crop failed: {type(exc).__name__}: {exc}"
                     return
-                if crop is None or crop.frame_bytes is None:
-                    entry["image_gap"] = (
-                        f"no frame produced at {entry['timestamp_seconds']}s (frame unreadable or detector failed)"
-                    )
-                    return
-                frame_key = evidence_frame_key(folder, batch, entry["item_id"])
-                key = evidence_key(folder, batch, entry["item_id"])
-                try:
-                    await active_store.put_image(frame_key, crop.frame_bytes)
-                    if crop.image_bytes is not None:
-                        await active_store.put_image(key, crop.image_bytes)
-                except Exception as exc:
-                    logger.warning("Evidence image upload failed for %s: %s", key, exc)
-                    entry["image_gap"] = f"image upload failed: {type(exc).__name__}: {exc}"
-                    return
-                entry["frame"] = frame_key
-                entry["box_seconds"] = crop.box_seconds
-                entry["located"] = crop.located
-                if crop.located and crop.image_bytes is not None:
-                    entry["image"] = key
-                    entry["bounding_box"] = crop.normalized_box
+            if crop is None or crop.frame_bytes is None:
+                entry["image_gap"] = (
+                    f"no frame produced at {entry['timestamp_seconds']}s (frame unreadable or detector failed)"
+                )
+                return
+            crops[entry["item_id"]] = crop
+
+        async def _upload(entry: dict[str, Any], track: track_evidence.Track | None) -> None:
+            crop = crops.get(entry["item_id"])
+            if crop is None or crop.frame_bytes is None or active_store is None:
+                return
+            frame_key = evidence_frame_key(folder, batch, entry["item_id"])
+            key = evidence_key(folder, batch, entry["item_id"])
+            track_key = evidence_track_key(folder, batch, entry["item_id"])
+            try:
+                await active_store.put_image(frame_key, crop.frame_bytes)
+                if crop.image_bytes is not None:
+                    await active_store.put_image(key, crop.image_bytes)
+                if track is not None:
+                    await active_store.put_image(track_key, track_evidence.track_json(track), "application/json")
+            except Exception as exc:
+                logger.warning("Evidence image upload failed for %s: %s", key, exc)
+                entry["image_gap"] = f"image upload failed: {type(exc).__name__}: {exc}"
+                return
+            entry["frame"] = frame_key
+            entry["box_seconds"] = crop.box_seconds
+            entry["located"] = crop.located
+            if crop.located and crop.image_bytes is not None:
+                entry["image"] = key
+                entry["bounding_box"] = crop.normalized_box
+                if track is not None:
+                    entry["track"] = track_key
+                    entry["track_first_seen_seconds"] = track.first_seen
+                    entry["track_last_seen_seconds"] = track.last_seen
+                    if tracking is not None:
+                        tracking.summary.matched += 1
+                async with semaphore:
                     await _zoom_second_look(entry, crop)
-                else:
-                    entry["image_gap"] = (
-                        f"object not located at {entry['timestamp_seconds']}s or within {max(LOCATE_RETRY_OFFSETS)}s either side"
-                    )
-                    entry["zoom_gap"] = "object not located"
+            else:
+                entry["image_gap"] = (
+                    f"object not located at {entry['timestamp_seconds']}s or within {max(LOCATE_RETRY_OFFSETS)}s either side"
+                )
+                entry["zoom_gap"] = "object not located"
+
+        async def _recut(entry: dict[str, Any], track: track_evidence.Track) -> track_evidence.Track | None:
+            """Re-cut a matched entity's frame and crop at the track's best moment; None keeps today's result."""
+            moment = track_evidence.best_moment(track)
+
+            def _cut() -> CropResult | None:
+                if isinstance(video_ref, np.ndarray):
+                    return None
+                frame = extract_frame(video_ref, moment.t)
+                if frame is None:
+                    return None
+                return _locate_in_frame(
+                    frame, moment.t, [Detection(box=list(moment.box), score=1.0)], entry["label"], 0.0
+                )
+
+            try:
+                async with semaphore:
+                    recut = await asyncio.to_thread(_cut)
+            except Exception as exc:
+                logger.warning("Track re-cut failed for %s %s: %s", video_id, entry["item_id"], exc)
+                return None
+            if recut is None:
+                return None
+            crops[entry["item_id"]] = recut
+            return track
 
         async def _zoom_second_look(entry: dict[str, Any], crop: CropResult) -> None:
             if not zoom_on:
@@ -1306,7 +1368,37 @@ class CropEvidenceService:
                 )
 
         entries = blank_evidence_entries(report, image_gap=None)
-        await asyncio.gather(*(_crop_and_upload(entry) for entry in entries))
+        await asyncio.gather(*(_crop(entry) for entry in entries))
+
+        matched_tracks: dict[str, track_evidence.Track] = {}
+        if tracking is not None and tracking_task is not None:
+            try:
+                outcome = await tracking_task
+            except Exception as exc:  # run_tracking never raises; a custom runner might
+                logger.warning("Tracking failed for %s: %s", video_id, type(exc).__name__)
+                outcome = track_evidence.TrackingOutcome(skipped=f"tracking failed: {type(exc).__name__}")
+            tracking.summary.tracks = len(outcome.tracks)
+            tracking.summary.elapsed_ms = outcome.elapsed_ms
+            tracking.summary.skipped = outcome.skipped
+            by_id = {entry["item_id"]: entry for entry in entries}
+            located = [
+                (
+                    entry["item_id"],
+                    crop.normalized_box,
+                    crop.box_seconds if crop.box_seconds is not None else entry["timestamp_seconds"],
+                )
+                for entry in entries
+                if entry["item_type"] == "entity"
+                and (crop := crops.get(entry["item_id"])) is not None
+                and crop.located
+                and crop.normalized_box
+            ]
+            candidates = track_evidence.associate_tracks(located, outcome.tracks, tracking.min_iou)
+            recut = await asyncio.gather(*(_recut(by_id[item_id], track) for item_id, track in candidates.items()))
+            matched_tracks = {item_id: track for item_id, track in zip(candidates, recut, strict=True) if track}
+
+        await asyncio.gather(*(_upload(entry, matched_tracks.get(entry["item_id"])) for entry in entries))
+
         return entries
 
 

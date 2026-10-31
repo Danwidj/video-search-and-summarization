@@ -44,6 +44,9 @@ Runs the same calls as ``incident-console-v2`` (gateway mode, P1 only) and the `
 3. **Evidence** - each entity, instrument and asset is cropped from the video at its
    ``timestamp_seconds`` and uploaded to R2 under ``evidence/<video key>/run-<n>/<itemId>.jpg``
    (the video's own R2 key and the next unused run number) (``crop_evidence``). An item without an image keeps a plain ``image_gap`` reason.
+   With ``INCIDENT_TRACKING_ENABLED`` set, a production request also pushes the clip through the stock VSS
+   perception stack (``track_evidence``) and re-cuts each entity it matches to a person track at the track's best
+   moment; the response carries a ``tracking`` summary and a tracking failure never fails the analysis.
 4. **Revision** - the validated report is appended best-effort as a new ``kind='ai'``
    ``report_revisions`` row (``payload`` = report, ``evidence`` = step 3, facet columns,
    ``parent_id`` NULL). A re-generation is a new branch and copies nothing from earlier revisions.
@@ -82,6 +85,7 @@ from vss_agents.tools import incident_experiments
 from vss_agents.utils import chunk_captions
 from vss_agents.utils import crop_evidence
 from vss_agents.utils import incident_db
+from vss_agents.utils import track_evidence
 from vss_agents.utils import video_duration
 from vss_agents.utils.embeddings import RemoteTextEmbedder
 from vss_agents.utils.r2 import is_r2_configured
@@ -267,6 +271,13 @@ class IncidentReportGenOutput(BaseModel):
             "Caption pass telemetry (window_seconds, overlap_seconds, num_frames, model, calls, retries, "
             "prompt_tokens, completion_tokens, elapsed_ms), or {skipped: reason}; null when the flag is off or "
             "the request is experimental."
+        ),
+    )
+    tracking: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Person tracking (INCIDENT_TRACKING_ENABLED, production requests only): {enabled, matched, tracks, "
+            "elapsed_ms, skipped}. Null when tracking is off or the request is experimental."
         ),
     )
 
@@ -487,6 +498,7 @@ async def collect_evidence(
     store: crop_evidence.EvidenceStore | None = None,
     video_key: str | None = None,
     detector: Any | None = None,
+    tracking: track_evidence.TrackingRequest | None = None,
 ) -> list[dict[str, Any]]:
     """Crop and upload every evidence item. Never raises: a failure becomes an ``image_gap`` reason.
 
@@ -501,11 +513,22 @@ async def collect_evidence(
             store=store,
             video_key=video_key,
             detector=detector,
+            tracking=tracking,
         )
     except Exception as exc:
         logger.warning("incident_report_gen: evidence cropping failed for %s: %s", incident_id, exc)
+        if tracking is not None:
+            tracking.summary.skipped = "evidence cropping failed"
         reason = f"evidence cropping failed: {type(exc).__name__}: {exc}"
         return crop_evidence.blank_evidence_entries(report, image_gap=reason, zoom_gap=reason)
+
+
+def tracking_request(tool_input: IncidentReportGenInput) -> track_evidence.TrackingRequest:
+    """The tracking run of one production request: its own sensor id on the perception stack."""
+    run_id = tool_input.model_run_id or f"{tool_input.incident_id}-{int(time.time())}"
+    return track_evidence.TrackingRequest(
+        sensor_id=track_evidence.sensor_id_for(tool_input.video_key or tool_input.incident_id, run_id)
+    )
 
 
 def crop_telemetry(evidence: list[dict[str, Any]], budget: crop_evidence.CropCallBudget, elapsed_s: float) -> dict:
@@ -724,6 +747,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 (None, None) if tool_input.skip_rp1 else await run_rp1(client, config, report)
             )
 
+        tracking: track_evidence.TrackingRequest | None = None
         if tool_input.skip_crops:
             # No crop means no located item, so the zoomed second look is off as well.
             evidence = crop_evidence.blank_evidence_entries(
@@ -749,12 +773,27 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             experiment["evidence_store"] = EXPERIMENT_EVIDENCE_STORE
             experiment["crop"] = crop_telemetry(evidence, budget, time.perf_counter() - crop_started)
         else:
+            tracking = tracking_request(tool_input) if track_evidence.tracking_enabled() else None
             evidence = await collect_evidence(
                 video_url=tool_input.video_url,
                 incident_id=tool_input.incident_id,
                 report=report,
                 video_key=tool_input.video_key,
+                tracking=tracking,
             )
+        if tracking is not None:
+            logger.info("incident_report_gen: tracking for %s: %s", tool_input.incident_id, tracking.summary.to_dict())
+            for entry in evidence:
+                if entry.get("track"):
+                    logger.info(
+                        "incident_report_gen: %s matched track %s (%s s to %s s), frame %s at %s s",
+                        entry["item_id"],
+                        entry["track"],
+                        entry.get("track_first_seen_seconds"),
+                        entry.get("track_last_seen_seconds"),
+                        entry.get("frame"),
+                        entry.get("box_seconds"),
+                    )
         # An experimental request never writes a report revision: its output is an experiment result.
         revision_id = (
             None
@@ -790,6 +829,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             usage=(telemetry or {}).get("usage") if telemetry is not None else None,
             chunk_timeline=captions.timeline if captions else None,
             chunking=captions.telemetry if captions else None,
+            tracking=tracking.summary.to_dict() if tracking is not None else None,
         )
 
     yield FunctionInfo.create(

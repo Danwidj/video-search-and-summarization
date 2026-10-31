@@ -16,6 +16,7 @@ There is one Supabase project per project phase ([decision](decisions.md)): **fi
 - `20261023120000_report_revision_embeddings.sql` — adds `report_revisions.embedding` with its HNSW index, and `search_report_revisions`.
 - `20261024090000_save_human_revision_with_crops.sql` — adds `save_human_revision_with_crops`.
 - `20261028090000_r2_rename.sql` — adds `apply_r2_rename` (used once by [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py)) and lets it, and nothing else, change a revision's `evidence` column.
+- `20261031090000_dashboard_official_else_newest.sql` — rewrites `get_incident_dashboard` to count official, else newest, with the official split and `p_scope`, and adds `not_official` to `list_incident_report_summaries`.
 - `20261031120000_analysis_jobs.sql` — adds the background analysis queue: the `analysis_jobs` table and `claim_analysis_job`, `touch_analysis_job`, `finish_analysis_job`, `retry_analysis_job` and `cancel_analysis_job`.
 
 Which of these are applied to finals is in [`status.md`](status.md#3-database-status). The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres.
@@ -28,7 +29,7 @@ tables (`incidents`, `reports`, `entities`, `instruments`, `assets`, `human_repo
 ### The report model
 
 - **An upload analysis appends one AI revision.** `kind='ai'`, a new `model_run_id`, the full
-  contract report as `payload` JSONB, the evidence list as `evidence` JSONB (one entry per item: `item_type`, `item_id`, `timestamp_seconds`, `frame` (R2 key of the whole video frame), `image` (R2 key of the crop, what evidence search embeds), `bounding_box` (the crop box in that frame), `box_seconds` (the second the frame was read at), `located` (false when the detector found nothing: a frame, no crop, no box), `image_gap`, and the zoomed second look's `zoom_checked` (true when the zoomed second look named the item from its close-up), `zoom_confidence` (the second look's 0-1 confidence, the lowest of its calls, null when unchecked), `zoom_seen` (what the two blind looks found: `{frame, close_up}`, names for objects and descriptions for people), `name_before` (the whole-clip name when the second look corrected it, else null; `description_before` beside it), `zoom_gap` (why the item was not checked or a correction was ignored: flag off, not located, below the 0.7 threshold, call failed); a correction also rewrites the item's name and description in `payload`, see [architecture.md](architecture.md#report-versions-view-edit-and-history)), and `parent_id` NULL.
+  contract report as `payload` JSONB, the evidence list as `evidence` JSONB (one entry per item: `item_type`, `item_id`, `timestamp_seconds`, `frame` (R2 key of the whole video frame), `image` (R2 key of the crop, what evidence search embeds), `bounding_box` (the crop box in that frame), `box_seconds` (the second the frame was read at), `located` (false when the detector found nothing: a frame, no crop, no box), `image_gap`; for a person matched to a track, with `INCIDENT_TRACKING_ENABLED` on, also `track` (R2 key of the track JSON), `track_first_seen_seconds` and `track_last_seen_seconds`, and `frame`, `image`, `bounding_box` and `box_seconds` are those of the track's best moment, and the zoomed second look's `zoom_checked` (true when the zoomed second look named the item from its close-up), `zoom_confidence` (the second look's 0-1 confidence, the lowest of its calls, null when unchecked), `zoom_seen` (what the two blind looks found: `{frame, close_up}`, names for objects and descriptions for people), `name_before` (the whole-clip name when the second look corrected it, else null; `description_before` beside it), `zoom_gap` (why the item was not checked or a correction was ignored: flag off, not located, below the 0.7 threshold, call failed); a correction also rewrites the item's name and description in `payload`, see [architecture.md](architecture.md#report-versions-view-edit-and-history)), and `parent_id` NULL.
   The agent writes it (`IncidentDB.insert_ai_revision`); the console never edits it.
 - **A human edit appends a human revision.** `save_human_revision` writes `kind='human'`,
   `parent_id` = the revision the reviewer opened, the full edited report as `payload`, and the
@@ -323,7 +324,8 @@ newest revision (so reports awaiting selection still appear). Facets come from t
 description/title/confidence from `payload.incident`. Filters: `p_search`, `p_type`, `p_severity`
 (`low`/`medium`/`high` or a number), `p_kind` (`ai`/`human`), date range, local time-of-day and
 weekday (`p_timezone`, default UTC), entity/instrument/asset text or exact-name match,
-`p_entity_types`, `p_sort`, and `p_scope` (`all` or `official`). Returns
+`p_entity_types`, `p_sort`, and `p_scope` (`all`, `official` or `not_official`). `p_type`
+`Unclassified` selects a NULL `incident_type`. Returns
 `{reports: [...], totalItems, incidentTypes}`. Each card carries `revisionId`, `revisionNo`,
 `videoId`, `modelRunId`, `kind`, `createdBy`, `note`, `isOfficial`, `outcome`, and the display
 fields, plus `officialSince` (when the official revision was marked; null if none), `versionCount`
@@ -334,13 +336,21 @@ stored. It never returns `payload`, notes, signed URLs or video content.
 
 #### `get_incident_dashboard`
 
-Aggregates **official revisions only**, filtered by the revision's `created_at` plus optional type,
-severity band, weekday and hour (in `p_timezone`, default UTC). Returns `total`, all-time `videos`
-counts (`uploaded`, `withOfficial`, `awaitingSelection`, `withoutReport`), `previous`, severity,
-`revisions` (`ai`/`human`), types with per-type evidence, daily trend, heatmap, `entityTypes`,
-`topInstruments`, `topAssets`, `threatLevels`, a confidence histogram with `confidenceNotProvided`,
-and `modelCoverage` (attempts by outcome: failed attempts from `model_runs`, successful ones from
-AI revisions).
+Counts each video once through `searchable_revision_id`: its **official revision, else its newest**,
+the same rule as the library and search (migration `20261031090000_dashboard_official_else_newest.sql`).
+It only reads `videos.official_revision_id`, to report the split, and never sets it. Filtered by the
+revision's `created_at` plus optional type, severity band, weekday and hour (in `p_timezone`, default
+UTC) and `p_scope` (`all`, `official` or `not_official`; a caller that omits it gets `official`,
+because a console from before this change labels its numbers official; the console always sends
+it). Returns `total` with
+`official` and `notOfficial`, all-time `videos` counts (`uploaded`, `withOfficial`,
+`awaitingSelection`, `withoutReport`), `previous`, `severity` and `severityByScope`, `revisions`
+(`ai`/`human`), types with per-type evidence, daily `trend` (days in `p_timezone`), `heatmap`,
+`entityTypes`, `topInstruments`, `topAssets`, `threatLevels`, a confidence histogram with
+`confidenceNotProvided`, and `modelCoverage` (attempts by outcome: failed attempts from `model_runs`,
+successful ones from AI revisions). Each `types`, `trend`, `heatmap` and `topAssets` entry also
+carries `official` and `notOfficial`. `videos` and `modelCoverage` ignore every filter except that
+`modelCoverage` follows the period. A `type` of `Unclassified` selects a NULL `incident_type`.
 
 ---
 
@@ -449,6 +459,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 └── evidence/                        # evidence images: agent crops and reviewer replacements
     └── <video-key>/run-<N>/<itemId>.jpg    # AI crops (what evidence search embeds), one run-<N> per analysis
         <video-key>/run-<N>/<itemId>-frame.jpg  # the whole video frame the box was found in, native size (the console draws the box on it)
+        <video-key>/run-<N>/<itemId>-track.json # person tracking only: [{t, box, score}], t in seconds, box [top,left,bottom,right] on 0..1000, at most 5 per second
         <video-key>/edit-<N>/<itemId>.jpg   # reviewer replacements, one edit-<N> per upload
 ```
 
@@ -457,7 +468,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 > In addition to the five fixture categories, live R2 storage includes `assault/` and `shooting/`.
 > The `Report/` prefix is a 0-byte directory marker and is unused by code.
 > The `evidence/` tree holds two writers' images, both under `evidence/<video key>/` where `<video key>` is `videos.filepath` (item ids `E#`, `I#` and `A#` are unique across types). No key holds a hash or UUID, and no key is ever overwritten: each write takes the next free number, and the put is conditional (`If-None-Match: *`):
-> - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, `run-<N>` with N one above the highest existing run of that video), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason;
+> - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, `run-<N>` with N one above the highest existing run of that video), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason; with `INCIDENT_TRACKING_ENABLED` a person matched to a track also has `<itemId>-track.json` in the same run (`score` -0.1 marks a sample the tracker carried without a detection) ([decision](decisions.md#2026-10-31-person-tracks-give-matched-evidence-its-best-moment-and-a-track-file));
 > - reviewer replacements, uploaded by the console's `POST /api/reports/<videoId>/evidence-image` during Save, as `edit-<N>` with the smallest free N.
 > - Two analyses of one video that start at the same moment can pick the same `run-<N>`; the conditional put stops the overwrite, so one of them fails instead of replacing the other.
 >

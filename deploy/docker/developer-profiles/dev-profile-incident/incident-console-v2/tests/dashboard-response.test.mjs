@@ -60,6 +60,7 @@ test('the analytics reach the browser exactly as get_incident_dashboard returns 
       p_day_of_week: null,
       p_hour: null,
       p_timezone: 'Asia/Singapore',
+      p_scope: 'all',
     },
   ]);
 });
@@ -71,14 +72,23 @@ test('an all-time dashboard sends no period and keeps the null comparison and a 
     previous: null,
     averageConfidence: null,
     confidenceNotProvided: 3,
-    heatmap: [...analytics.heatmap, { day: null, hour: null, count: 1 }],
+    heatmap: [...analytics.heatmap, { day: null, hour: null, count: 1, official: 0, notOfficial: 1 }],
   };
   const bodies = serve(allTime);
   const response = await GET(new Request('http://localhost/api/dashboard?days=all&type=%20assault%20&severity=high&day=2&hour=23'));
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { analytics: allTime });
   assert.deepEqual(bodies, [
-    { p_period_start: null, p_period_end: null, p_type: 'assault', p_severity: 'high', p_day_of_week: 2, p_hour: 23, p_timezone: 'UTC' },
+    {
+      p_period_start: null,
+      p_period_end: null,
+      p_type: 'assault',
+      p_severity: 'high',
+      p_day_of_week: 2,
+      p_hour: 23,
+      p_timezone: 'UTC',
+      p_scope: 'all',
+    },
   ]);
 });
 

@@ -57,6 +57,7 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 | Refresh one service | `./rebuild-svc.sh <service>`: restarts native services, rebuilds and recreates Docker ones |
 | Start missing appliances | From `deploy/docker`: `docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>` |
 | Stop everything safely | `./down.sh` from `.scripts/` (native stop + `docker compose -p mdx stop`, no `-v`). Containers and data are kept; restart is `./start.sh --mode vm`. Exited orphan containers are no longer cleaned up by `down.sh`; use manual `docker compose -p mdx down --remove-orphans` when a clean slate is wanted (still never `-v`). Stack appliances use `unless-stopped` via `compose.override.yml`, so stopped containers stay stopped across VM reboots. |
+| Person-tracking stack (`ENABLE_TRACKING`) | `./tracking-stack.sh start\|stop\|status\|restart-perception`: NvStreamer, perception (RT-DETR, GPU 0 about 7.6 GB), Kafka, Logstash, Elasticsearch, video-analytics API `:8081`. `start` stages the RT-DETR model with `ngc` when missing; the first start builds engines (about 10 min). `stop` keeps containers, volumes and engines. `status` is the health check (`stream-count`, not `/ready`). HDR clips crash DeepStream. Details: [operations §2](../../.docs/incident-profile-operations.md#person-tracking-stack-scriptstracking-stacksh-enable_trackingtrue). |
 | Load NGC credentials | `source ./ngc-env.sh` |
 | Populate or refresh search evidence (`evidence_crops`) | Use [`incident-search`](../incident-search/SKILL.md). |
 
@@ -72,6 +73,8 @@ uv pip install --python .venv/bin/python --no-deps --index-url https://pypi.org/
 uv pip install --python .venv/bin/python supabase opencv-python-headless setuptools
 cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts && ./native-services.sh restart vss-agent
 ```
+
+Person tracking (`INCIDENT_TRACKING_ENABLED=1`) also needs `ffmpeg` and `ffprobe` on the agent's PATH and the perception stack on localhost (:31000, :9000, :8081); without them tracking is skipped and the analysis is unaffected. Install them user-locally, not system-wide.
 
 Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json` has `"editable": true`.
 

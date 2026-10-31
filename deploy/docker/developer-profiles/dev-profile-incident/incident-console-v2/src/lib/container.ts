@@ -6,6 +6,10 @@
 
 import { randomUUID } from 'node:crypto';
 
+import type { ChartInterpreter } from '@/modules/dashboard/domain/ChartInterpreter';
+import type { ChartRenderer } from '@/modules/dashboard/domain/ChartRenderer';
+import { AgentChartRenderer } from '@/modules/dashboard/infrastructure/agent/chart-renderer';
+import { GatewayChartInterpreter } from '@/modules/dashboard/infrastructure/gateway/chart-interpreter';
 import { SupabaseDashboardAdapter } from '@/modules/dashboard/infrastructure/supabase/dashboard';
 import { SupabaseHealthAdapter } from '@/modules/health/infrastructure/supabase/health';
 import { SupabaseVideoAdapter } from '@/modules/videos/infrastructure/supabase/videos';
@@ -78,4 +82,14 @@ export function getUploadAnalysis(config: ServiceConfiguration): UploadAnalysisD
 /** The background analysis queue. Throws like getDbAdapters when the database is not configured. */
 export function getAnalysisJobs(config?: ServiceConfiguration): AnalysisJobRepository {
   return new SupabaseAnalysisJobAdapter(createPostgrestClient(config));
+}
+
+/** The chart request port, in either analysis mode; null when VLM_GATEWAY_URL is not configured. */
+export function getChartInterpreter(config: ServiceConfiguration = getServiceConfiguration()): ChartInterpreter | null {
+  return config.gatewayUrl ? new GatewayChartInterpreter(new GatewayClient(config.gatewayUrl), config.chartModel) : null;
+}
+
+/** The chart drawing port: VSS chart_generator on the agent; null when the agent URL is not configured. */
+export function getChartRenderer(config: ServiceConfiguration = getServiceConfiguration()): ChartRenderer | null {
+  return config.agentUrl ? new AgentChartRenderer(config.agentUrl) : null;
 }
