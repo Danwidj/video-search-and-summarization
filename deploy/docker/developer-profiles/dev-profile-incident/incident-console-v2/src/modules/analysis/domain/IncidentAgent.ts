@@ -20,6 +20,8 @@ export interface AgentAnalyzeRequest {
    * the header itself).
    */
   videoDurationSeconds: number | null;
+  /** Ask the agent to blur the faces in the stored evidence (sent as blur_faces only when true). */
+  blurFaces?: boolean;
 }
 
 export interface AgentHttpResponse {

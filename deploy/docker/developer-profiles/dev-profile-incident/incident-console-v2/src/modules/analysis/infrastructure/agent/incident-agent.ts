@@ -38,6 +38,7 @@ export class HttpIncidentAgent implements IncidentAgent {
           skip_rp1: true,
           ...(request.additionalInstruction ? { reviewer_prompt: request.additionalInstruction } : {}),
           ...(isUsableDuration(request.videoDurationSeconds) ? { video_duration_seconds: request.videoDurationSeconds } : {}),
+          ...(request.blurFaces ? { blur_faces: true } : {}),
         }),
         signal,
       });

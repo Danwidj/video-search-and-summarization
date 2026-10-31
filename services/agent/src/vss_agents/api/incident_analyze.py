@@ -45,6 +45,9 @@ tokens, images and gaps), ``p1_elapsed_ms`` and ``usage``.
 A request without them gets exactly the production response.
 With ``INCIDENT_TRACKING_ENABLED`` on, a production response adds ``tracking`` (``{enabled, matched, tracks,
 elapsed_ms, skipped}``); with it off the key is absent.
+``blur_faces: true`` pixelates the heads of the people in every stored evidence frame and crop and adds
+``privacy`` (``{blur_faces, regions, frames, heads, head_queries, failed}``) to the response, and each evidence
+entry gains ``blur_regions``; without it the key is absent and the evidence is unchanged.
 """
 
 from __future__ import annotations
@@ -138,6 +141,14 @@ class AnalyzeIncidentRequest(BaseModel):
         ),
     )
 
+    blur_faces: bool = Field(
+        default=False,
+        description=(
+            "Pixelate the heads of the people in every stored evidence frame and crop (person tracks, else one "
+            "detector call for a person item's head). Model calls still see the unblurred images."
+        ),
+    )
+
     def is_experimental(self) -> bool:
         return self.experiment_prompt_id is not None or self.skip_crops or self.max_crop_calls is not None
 
@@ -205,6 +216,8 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             tool_input["skip_crops"] = True
         if body.max_crop_calls is not None:
             tool_input["max_crop_calls"] = body.max_crop_calls
+        if body.blur_faces:
+            tool_input["blur_faces"] = True
 
         try:
             result = await incident_report_gen_tool.ainvoke(tool_input)
@@ -245,8 +258,10 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
         if not body.is_experimental():
             for key in EXPERIMENT_OUTPUT_FIELDS:  # production responses keep exactly their documented shape
                 response.pop(key, None)
-        if response.get("tracking") is None:
-            response.pop("tracking", None)  # tracking off (the default): the response is exactly as it was
+        # Tracking off or no blur asked (the defaults): the response is exactly as it was.
+        for key in ("tracking", "privacy"):
+            if response.get(key) is None:
+                response.pop(key, None)
         return response
 
     return router

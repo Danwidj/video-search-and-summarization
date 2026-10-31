@@ -48,6 +48,9 @@ Runs the same calls as ``incident-console-v2`` (gateway mode, P1 only) and the `
    With ``INCIDENT_TRACKING_ENABLED`` set, a production request also pushes the clip through the stock VSS
    perception stack (``track_evidence``) and re-cuts each entity it matches to a person track at the track's best
    moment; the response carries a ``tracking`` summary and a tracking failure never fails the analysis.
+   With ``blur_faces`` the heads of the people at each stored frame's second are pixelated before the frame and
+   crop are encoded (``privacy_blur``): from every person track, else one detector call for the head of a person
+   item. Model calls still see the unblurred images; the response carries a ``privacy`` summary.
    With ``INCIDENT_SOM_ENABLED`` set as well (set-of-marks prompting, ``utils/set_of_marks.py``), tracking runs
    before P1 instead: P1 sees a scratch copy of the clip with a numbered box on each person track and one more
    context message asking for the number in each person entity's label, and the entities are matched to tracks by
@@ -92,6 +95,7 @@ from vss_agents.tools import incident_experiments
 from vss_agents.utils import chunk_captions
 from vss_agents.utils import crop_evidence
 from vss_agents.utils import incident_db
+from vss_agents.utils import privacy_blur
 from vss_agents.utils import set_of_marks
 from vss_agents.utils import track_evidence
 from vss_agents.utils import video_duration
@@ -218,6 +222,13 @@ class IncidentReportGenInput(BaseModel):
             "Required for an experimental crops-on request; items beyond it keep an image_gap."
         ),
     )
+    blur_faces: bool = Field(
+        default=False,
+        description=(
+            "Pixelate the heads of the people in every stored evidence frame and crop (person tracks, else one "
+            "detector call for a person item's head). Model calls still see the unblurred images."
+        ),
+    )
 
 
 class ExperimentRefusedError(RuntimeError):
@@ -272,6 +283,13 @@ class IncidentReportGenOutput(BaseModel):
             "Person tracking (INCIDENT_TRACKING_ENABLED, production requests only): {enabled, matched, tracks, "
             "elapsed_ms, skipped}, plus marks {rendered, parsed, fallback, invalid, skipped, elapsed_ms} when "
             "INCIDENT_SOM_ENABLED is on. Null when tracking is off or the request is experimental."
+        ),
+    )
+    privacy: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Privacy blur (blur_faces): {blur_faces, regions, frames, heads: {track, detector, box, none}, "
+            "head_queries, failed}. Null when blur_faces was not asked for or no cropping ran."
         ),
     )
 
@@ -499,11 +517,12 @@ async def collect_evidence(
     video_key: str | None = None,
     detector: Any | None = None,
     tracking: track_evidence.TrackingRequest | None = None,
+    privacy: privacy_blur.PrivacySummary | None = None,
 ) -> list[dict[str, Any]]:
     """Crop and upload every evidence item. Never raises: a failure becomes an ``image_gap`` reason.
 
     ``store`` and ``detector`` override the service's own (R2 and the shared detector in production) for this
-    call only.
+    call only. ``privacy`` turns the privacy blur on and receives its summary.
     """
     try:
         return await crop_evidence.get_crop_evidence_service().process_incident_report(
@@ -514,6 +533,7 @@ async def collect_evidence(
             video_key=video_key,
             detector=detector,
             tracking=tracking,
+            privacy=privacy,
         )
     except Exception as exc:
         logger.warning("incident_report_gen: evidence cropping failed for %s: %s", incident_id, exc)
@@ -781,6 +801,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 (None, None) if tool_input.skip_rp1 else await run_rp1(client, config, report)
             )
 
+        privacy = privacy_blur.PrivacySummary() if tool_input.blur_faces and not tool_input.skip_crops else None
         if tool_input.skip_crops:
             # No crop means no located item, so the zoomed second look is off as well.
             evidence = crop_evidence.blank_evidence_entries(
@@ -802,6 +823,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 store=crop_evidence.InMemoryEvidenceStore(),
                 video_key=tool_input.video_key,
                 detector=detector,
+                privacy=privacy,
             )
             experiment["evidence_store"] = EXPERIMENT_EVIDENCE_STORE
             experiment["crop"] = crop_telemetry(evidence, budget, time.perf_counter() - crop_started)
@@ -812,6 +834,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 report=report,
                 video_key=tool_input.video_key,
                 tracking=tracking,
+                privacy=privacy,
             )
         if tracking is not None:
             logger.info("incident_report_gen: tracking for %s: %s", tool_input.incident_id, tracking.summary.to_dict())
@@ -826,6 +849,8 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                         entry.get("frame"),
                         entry.get("box_seconds"),
                     )
+        if privacy is not None:
+            logger.info("incident_report_gen: privacy blur for %s: %s", tool_input.incident_id, privacy.to_dict())
         # An experimental request never writes a report revision: its output is an experiment result.
         revision_id = (
             None
@@ -860,6 +885,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             p1_elapsed_ms=(telemetry or {}).get("p1_elapsed_ms"),
             usage=(telemetry or {}).get("usage") if telemetry is not None else None,
             tracking=tracking.summary.to_dict() if tracking is not None else None,
+            privacy=privacy.to_dict() if privacy is not None else None,
         )
 
     yield FunctionInfo.create(

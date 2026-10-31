@@ -3,7 +3,8 @@
 // The background analysis loop: runs inside the console's Node process,
 // started once by src/instrumentation.ts. Every POLL_MS it runs one tick
 // (modules/jobs/application runNextJob): claim the oldest queued job, analyse
-// it with the same code as POST /api/analysis, store done or failed. One job at
+// it with the same code as POST /api/analysis (a re-analysis job, queued by the
+// privacy toggle, analyses its existing video again), store done or failed. One job at
 // a time per console, like the batch upload, which keeps within the model
 // provider's rate limits. It is not a request, so no route maxDuration applies;
 // each model's own timeout (contracts/inference.json) still bounds a run.
@@ -32,7 +33,13 @@ export async function tick(): Promise<boolean> {
     jobs: getAnalysisJobs(config),
     analyse: (job) =>
       analyseUpload(
-        { r2Key: job.filePath, model: job.model, videoId: jobVideoId(job) },
+        {
+          r2Key: job.filePath,
+          model: job.model,
+          videoId: jobVideoId(job),
+          existingVideo: job.reanalyseVideoId !== null,
+          blurFaces: job.blurFaces,
+        },
         getUploadAnalysis(requireAnalysisConfiguration(config)),
       ),
     every: (ms, fn) => {

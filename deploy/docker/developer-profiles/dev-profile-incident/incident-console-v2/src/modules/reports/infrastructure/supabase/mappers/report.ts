@@ -79,6 +79,7 @@ export function revisionRecordFromRows(input: RevisionRows): RevisionRecord {
       storageKey: typeof video.filepath === 'string' && video.filepath ? video.filepath : null,
       filename: (text(video.filepath) ?? '').split('/').pop() || videoId,
       officialRevisionId,
+      blurFaces: video.blur_faces === true,
     },
     modelRun: modelRun
       ? {
