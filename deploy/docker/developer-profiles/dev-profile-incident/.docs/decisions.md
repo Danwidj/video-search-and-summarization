@@ -2,6 +2,30 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-01: A minimal CI workflow for the incident profile (proposed; awaits the captain's reversal of #16)
+- **Status:** approved by the evaluation owner for Evaluation V2. It is **not active** until the captain agrees to reverse #16 ("remove all GitHub Actions workflows", 12 Sep) and a repository admin enables Actions on the fork.
+- **Decision:** one workflow, `.github/workflows/incident-profile.yml`, runs the hermetic suites in this profile's AGENTS.md:
+  - console lint, typecheck and tests;
+  - contract drift and schema checks (Python and Node);
+  - the SQL and freeze harnesses and the R2 script tests;
+  - both mocks and the gateway;
+  - eval's hermetic tests;
+  - the agent's ruff, mypy and unit tests;
+  - the VM shell tests.
+- **Triggers and guards:** it runs on pushes to `main` and on pull requests that touch the profile or `services/agent`. Draft pull requests are skipped. It has read-only permissions and no secrets, and actions are pinned by SHA.
+- **Why:** Evaluation V2 depends on parity tests (the same prompts and requests in the console, the agent and eval) that only protect anything when they run on every change. Today nothing runs automatically.
+- **Two checks never ran, and this change fixes or wires them:**
+  - `contracts/test_schema.py` listed two chat fixtures under the search contract;
+  - `contracts/test-schema.mjs` could not resolve Ajv.
+- **Install shortcuts:**
+  - The eval job skips the CUDA torch stack (about 2.8 GB), which only the embedding server imports. The suite passes without it.
+  - The console installs with `--ignore-scripts`, which skips the ffmpeg-static download. Its tests mock the binaries.
+- **Alternatives rejected:**
+  - restoring the deleted upstream `ci.yml`: its `pull-request/*` triggers depend on NVIDIA's copy-pr-bot, it pins uv 0.6.2, which can't read this lockfile, and its copyright job would fail on 52 profile files;
+  - pre-commit hooks only: not enforced, and nobody runs them today;
+  - running on drafts: it would spend Actions minutes on work in progress.
+- **Links:** [`../../../../../.github/workflows/incident-profile.yml`](../../../../../.github/workflows/incident-profile.yml), [AGENTS.md commands](../AGENTS.md#commands).
+
 ### 2026-11-01: Instruments and assets are followed by a seeded OpenCV tracker corrected by the detector (flag, off by default)
 - **Decision:** behind a new agent flag `INCIDENT_OBJECT_TRACKING_ENABLED` (off unless `1`, `true`, `yes` or `on`; production requests only; independent of `INCIDENT_TRACKING_ENABLED`), the evidence step follows every located instrument and asset through the clip. The seed is the item's own unpadded detector box at its `timestamp_seconds` (`CropResult.detected_box`). `utils/object_tracking.py` decodes the clip with OpenCV at about 4 fps, scaled to at most 960 px, and runs a single-object OpenCV tracker forwards and then backwards from the seed, up to 12 s each way. Every 2.5 s, and at once when the tracker fails, it asks the existing open-vocabulary detector (`DefaultDetector.detect`, on the whole frame) for the item's label and takes the detection that overlaps the tracked box most; at IoU 0.3 or more the box is re-anchored (the tracker is re-initialised on it) and the sample scores as detected. Two misses in a row, or a tracker failure with no agreeing detection, end the segment. The track has the shape of a person track (`utils/track_evidence.py` `Track`: `{t, box, score}` samples, score -0.1 for tracked and not detected), is stored as `<itemId>-track.json`, and sets `track_first_seen_seconds`, `track_last_seen_seconds` and the best-moment frame and crop exactly as a person track does; the entry also carries `track_source: "object-tracker"` (person tracks have none). The console reads it unchanged (overlay, presence bar, scrubber, Edit's frame picker, clip route). Every detector call goes through the request's `CropCallBudget` (default 80, `INCIDENT_OBJECT_TRACKING_MAX_DETECTOR_CALLS`) and the whole run stops at 120 s (`INCIDENT_OBJECT_TRACKING_MAX_SECONDS`), keeping what it has. The `/analyze` response carries `object_tracking` (`{enabled, seeds, tracked, tracker, elapsed_ms, time_cap_reached, skipped, detector, items}`, per-item samples, detector calls, re-anchors, lost, time) and the console copies it into `model_runs.notes.response.object_tracking`. The report's own `first_seen`/`last_seen` are never rewritten; contract v4 is unchanged.
 - **Why a seeded tracker plus the detector, not the alternatives:** the person path (DeepStream RT-DETR warehouse, NvDCF) is closed-vocabulary and would need a new open-vocabulary DeepStream model for arbitrary crowbars and cash registers (a new model, a new deployment, GPU memory). Calling the open-vocabulary detector on every sampled frame costs a VLM call per frame (about 5 a second of clip); a cheap tracker carries the box between calls, so a clip costs one call per 2.5 s and item, bounded by the budget. The detector still corrects drift and says when the item has gone. OpenCV is already an agent dependency, and the existing decoding, locate and budget code is reused.

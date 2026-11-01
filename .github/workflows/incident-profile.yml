@@ -1,0 +1,221 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Incident profile checks: the hermetic suites named in
+# deploy/docker/developer-profiles/dev-profile-incident/AGENTS.md (console, contracts, SQL
+# harness, mocks, gateway, eval, agent incident code, VM scripts). No secrets are used and nothing
+# reaches a database, R2, the VM or a model endpoint; the only network access is to package
+# registries. Draft pull requests are skipped, so nothing runs until a PR is ready for review.
+name: Incident profile checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "deploy/docker/developer-profiles/dev-profile-incident/**"
+      - "services/agent/**"
+      - ".github/workflows/incident-profile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "deploy/docker/developer-profiles/dev-profile-incident/**"
+      - "services/agent/**"
+      - ".github/workflows/incident-profile.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: incident-profile-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  console:
+    name: Console (lint, typecheck, tests) and contract schemas (Node)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2/package-lock.json
+      - name: Install (no install scripts; the tests mock ffmpeg and ffprobe)
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2
+        run: npm ci --ignore-scripts
+      - name: Lint and typecheck (Biome, tsc --noEmit)
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2
+        run: npm run lint
+      - name: Unit tests (import boundaries included)
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2
+        run: npm test
+      - name: Contract schemas (Node, Ajv from the console's dependencies)
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/contracts
+        run: |
+          ln -sfn ../incident-console-v2/node_modules node_modules
+          node test-schema.mjs
+
+  contracts:
+    name: Contracts (vendored copy, schemas)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5.4.2
+        with:
+          version: "0.12.10"
+      - name: Vendored agent copy matches contracts/ (sync.py --check)
+        run: python3 deploy/docker/developer-profiles/dev-profile-incident/contracts/sync.py --check
+      - name: Contract schemas (Python)
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/contracts
+        run: uv run --no-project --python 3.12 --with jsonschema --with pytest pytest -q -p no:cacheprovider test_schema.py
+
+  supabase-sql:
+    name: Supabase SQL harness and R2 script
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5.4.2
+        with:
+          version: "0.12.10"
+      - name: Baseline schema harness (throwaway Postgres 16 + pgvector)
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/supabase/tests
+        run: uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
+      - name: Freeze harness
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/supabase/tests
+        run: uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
+      - name: R2 rename script
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/supabase/r2
+        run: uv run --no-project --python 3.12 --with boto3 --with pytest pytest -q -p no:cacheprovider
+
+  mocks:
+    name: Mock backend (${{ matrix.mock }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        mock: [base_profile_mock, search_profile_mock]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5.4.2
+        with:
+          version: "0.12.10"
+      - name: Install
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/mock-backend/${{ matrix.mock }}
+        run: uv sync --frozen
+      - name: Ruff
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/mock-backend/${{ matrix.mock }}
+        run: uv run --frozen ruff check .
+      - name: Tests
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/mock-backend/${{ matrix.mock }}
+        run: uv run --frozen pytest -q -p no:cacheprovider
+
+  vlm-gateway:
+    name: VLM gateway (ruff)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5.4.2
+        with:
+          version: "0.12.10"
+      - name: Ruff (the gateway has no tests directory)
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway
+        run: |
+          uv sync --frozen
+          uv run --frozen ruff check .
+
+  eval:
+    name: Eval (hermetic tests)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Fetch origin/main (the prompt registry's append-only guard compares against it)
+        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5.4.2
+        with:
+          version: "0.12.10"
+      - name: Install (without the CUDA torch stack, which only the embedding server imports)
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/eval
+        run: |
+          skip=$(grep -E '^name = "(torch|triton|nvidia-[a-z0-9-]+|cuda-[a-z0-9-]+)"' uv.lock \
+            | sed -E 's/name = "(.*)"/--no-install-package \1/' | tr '\n' ' ')
+          uv sync --frozen $skip
+      - name: Hermetic tests
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident/eval
+        run: uv run --frozen --no-sync pytest tests/ -q -p no:cacheprovider
+
+  agent:
+    name: Agent (ruff, mypy, unit tests)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # hatch-vcs needs a version; a shallow checkout has no tags to derive it from.
+      SETUPTOOLS_SCM_PRETEND_VERSION: "0.0.0+ci"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - name: System packages (pycairo builds from source)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcairo2-dev pkg-config
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5.4.2
+        with:
+          version: "0.12.10"
+      - name: Install
+        working-directory: services/agent
+        run: uv sync --group dev --frozen
+      - name: Ruff
+        working-directory: services/agent
+        run: |
+          uv run --frozen ruff check src/
+          uv run --frozen ruff format --check src/
+      - name: Mypy
+        working-directory: services/agent
+        run: uv run --frozen mypy src/vss_agents/
+      - name: Unit tests
+        working-directory: services/agent
+        run: uv run --frozen pytest tests/unit_test/ -q -p no:cacheprovider -m "not slow and not integration"
+
+  scripts:
+    name: VM scripts (hermetic shell tests)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Shell tests (fake docker, ssh and flock on PATH)
+        working-directory: deploy/docker/developer-profiles/dev-profile-incident
+        run: |
+          for t in .scripts/test-*.sh; do
+            echo "::group::$t"
+            bash "$t"
+            echo "::endgroup::"
+          done

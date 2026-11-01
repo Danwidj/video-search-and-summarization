@@ -47,7 +47,13 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 
 # services/agent incident code: see services/agent/AGENTS.md (ruff, ruff format, mypy, pytest)
 # `uv sync --group dev` there needs a C compiler and the cairo headers for pycairo
+
+# contracts (vendored-copy drift, schema fixtures)
+python3 contracts/sync.py --check
+cd contracts && uv run --no-project --python 3.12 --with jsonschema --with pytest pytest -q test_schema.py
 ```
+
+`.github/workflows/incident-profile.yml` runs all of these, plus the VM shell tests in `.scripts/`, on pushes to `main` and on pull requests that are ready for review (drafts are skipped). It is inactive until GitHub Actions is enabled on the fork, which needs the captain's approval because #16 removed all CI.
 
 ## Architecture rules
 
