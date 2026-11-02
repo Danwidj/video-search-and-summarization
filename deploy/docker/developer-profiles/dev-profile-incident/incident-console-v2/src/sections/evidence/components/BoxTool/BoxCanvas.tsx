@@ -6,7 +6,7 @@ import { useRef, useState } from 'react';
 
 import { boxRegion } from '@/lib/evidence/frame-geometry';
 import { dragRegion, type FramePoint, regionBox } from '@/lib/evidence/frame-picker';
-import type { Box } from '@/modules/reports/domain/box-item';
+import type { Box } from '@/modules/reports/domain/reviewer-item';
 
 const percent = (fraction: number) => `${+(fraction * 100).toFixed(3)}%`;
 

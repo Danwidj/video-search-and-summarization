@@ -1,52 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The box tool's two calls to the console's proxy routes (contract: POST /api/reports/[videoId]/box/describe and /box/track).
-// Kept in this one small module so the routes' owner can change how they are called without touching the dialog.
+// The box tool's two calls, in one replaceable place: it uses the typed browser client for the console's box routes
+// (box-client.ts). A tracker answer with no usable track is `null` here, so the dialog can offer redraw or a still image.
 
-import { parseDescribeResponse, parseTrackResponse } from '@/lib/evidence/box-tool';
-import type { Box, BoxItemType, BoxProposal, ReviewerTrack } from '@/modules/reports/domain/box-item';
-
-export interface DescribeRequest {
-  seconds: number;
-  box: Box;
-}
-
-export interface TrackRequest {
-  seconds: number;
-  box: Box;
-  itemType: BoxItemType;
-  name: string;
-  description: string;
-  backSeconds?: number;
-  forwardSeconds?: number;
-}
+import { describeBoxRegion, trackBoxRegion, type TrackBoxRequest } from '@/lib/evidence/box-client';
+import type { Box, BoxDescribeResult, ReviewerTrack } from '@/modules/reports/domain/reviewer-item';
 
 export interface BoxToolClient {
-  describe(
-    videoId: string,
-    request: DescribeRequest,
-    signal?: AbortSignal,
-  ): Promise<{ proposal: BoxProposal | null; reason: string | null }>;
-  track(videoId: string, request: TrackRequest, signal?: AbortSignal): Promise<ReviewerTrack | null>;
-}
-
-async function post(videoId: string, route: 'describe' | 'track', body: unknown, signal?: AbortSignal): Promise<unknown> {
-  const response = await fetch(`/api/reports/${encodeURIComponent(videoId)}/box/${route}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    signal,
-  });
-  const json = await response.json().catch(() => null);
-  if (!response.ok) throw new Error((json as { error?: string } | null)?.error ?? `The ${route} request failed (${response.status})`);
-  return json;
+  describe(videoId: string, at: { seconds: number; box: Box }, signal?: AbortSignal): Promise<BoxDescribeResult>;
+  track(videoId: string, request: TrackBoxRequest, signal?: AbortSignal): Promise<ReviewerTrack | null>;
 }
 
 export const boxToolClient: BoxToolClient = {
-  async describe(videoId, request, signal) {
-    return parseDescribeResponse(await post(videoId, 'describe', request, signal));
-  },
+  describe: (videoId, at, signal) => describeBoxRegion(videoId, at.seconds, at.box, signal),
   async track(videoId, request, signal) {
-    return parseTrackResponse(await post(videoId, 'track', request, signal));
+    try {
+      return await trackBoxRegion(videoId, request, signal);
+    } catch (cause) {
+      if (cause instanceof Error && /no usable track/.test(cause.message)) return null;
+      throw cause;
+    }
   },
 };

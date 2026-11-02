@@ -31,7 +31,8 @@ import {
 } from '@/lib/reports/compare';
 import { severityStyle } from '@/lib/ui/severity';
 import { cn } from '@/lib/utils';
-import type { BoxItemType, BoxToolItem } from '@/modules/reports/domain/box-item';
+import type { ReviewerDraftItem as BoxToolItem } from '@/modules/reports/domain/reviewer-item';
+import type { EvidenceItemType as BoxItemType } from '@/modules/reports/domain/revision';
 import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, type EditDraft } from '@/modules/reports/domain/edit-draft';
 import { formatClock } from '@/modules/reports/domain/normalize';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
@@ -111,7 +112,7 @@ export function ReportEditPane({
     description: item.description,
     holder: isDraftInstrument(item) && item.holderKey ? draftHolder(item) : null,
     threatLevel: isDraftInstrument(item) ? item.threat_level : null,
-    firstSeenSeconds: item.boxItem?.track?.samples[0].t ?? item.timestampSeconds ?? 0,
+    firstSeenSeconds: item.reviewer?.track?.samples[0].t ?? item.timestampSeconds ?? 0,
   });
   const holderOptions = draft.entities.map((entity, index) => ({
     key: entity.key,
@@ -682,7 +683,7 @@ function EditCard({
           Held by <b>{draftHolder(item)}</b>
         </p>
       )}
-      {item.boxItem ? (
+      {item.reviewer ? (
         <>
           <p className="text-ink/50">
             First seen at <b className="font-mono">{clock(item.timestampSeconds)}</b> · this frame is the evidence image
@@ -691,14 +692,14 @@ function EditCard({
             <Badge className="text-[10px]" variant="outline">
               Added by reviewer
             </Badge>
-            {item.boxItem.track ? (
+            {item.reviewer.track ? (
               <span>
-                Your track · {draftItemName(item)} · {clock(item.boxItem.track.span[0])}–{clock(item.boxItem.track.span[1])}
+                Your track · {draftItemName(item)} · {clock(item.reviewer.track.span[0])}–{clock(item.reviewer.track.span[1])}
               </span>
             ) : (
               <span>Still image</span>
             )}
-            {item.boxItem.track?.partial && (
+            {item.reviewer.track?.partial && (
               <Badge className="border-clay/40 text-[10px] text-clay" variant="outline">
                 Incomplete track
               </Badge>

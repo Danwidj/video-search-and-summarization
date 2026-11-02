@@ -39,56 +39,6 @@ const item = (extra = {}) => ({
   ...extra,
 });
 
-test('the describe answer is read into camelCase fields, and a null proposal keeps its plain reason', () => {
-  const ok = tool.parseDescribeResponse({
-    proposal: {
-      item_type: 'x',
-      itemType: 'instrument',
-      name: ' Knife ',
-      description: 'A knife',
-      holder: 'Person 1',
-      threatLevel: 4,
-      confidence: 0.8,
-    },
-    reason: null,
-  });
-  assert.deepEqual(ok.proposal, {
-    itemType: 'instrument',
-    name: 'Knife',
-    description: 'A knife',
-    holder: 'Person 1',
-    threatLevel: 4,
-    confidence: 0.8,
-  });
-  assert.deepEqual(tool.parseDescribeResponse({ proposal: null, reason: 'Too blurry' }), { proposal: null, reason: 'Too blurry' });
-  assert.equal(
-    tool.parseDescribeResponse({ proposal: { itemType: 'instrument', name: 'x', description: 'y', threatLevel: 9 } }).proposal.threatLevel,
-    null,
-  );
-});
-
-test('the track answer keeps good samples in time order and reads lostAt and partial', () => {
-  const read = tool.parseTrackResponse({
-    track: {
-      source: 'reviewer',
-      samples: [sample(5), { t: 'x', box: [1, 2, 3, 4] }, sample(3), { t: 4, box: [10, 10, 5, 5] }],
-      span: [3, 5],
-      partial: true,
-      lostAt: 5,
-      reason: 'gone',
-    },
-  });
-  assert.deepEqual(
-    read.samples.map((s) => s.t),
-    [3, 5],
-  );
-  assert.equal(read.partial, true);
-  assert.equal(read.lostAt, 5);
-  assert.deepEqual(read.span, [3, 5]);
-  assert.equal(tool.parseTrackResponse({ track: { samples: [] } }), null);
-  assert.equal(tool.parseTrackResponse(null), null);
-});
-
 test('extending back or on keeps the old samples, adds only the new side and takes the latest run', () => {
   const base = track([3, 4, 5, 6]);
   const back = tool.extendTrack(base, track([0, 1, 2, 3, 4]), 'back');
@@ -121,21 +71,19 @@ test('"Gone from here on" drops later samples and clears the incomplete mark; wi
   assert.equal(tool.endTrackAt(track([3, 4]), 1), null);
 });
 
-test('the evidence image is the first second the item is seen: the track start, else the still image', () => {
-  assert.deepEqual(tool.firstSeen(item()), { seconds: 3, box: [100, 200, 300, 400] });
-  assert.deepEqual(tool.firstSeen(item({ track: null, stillSeconds: 7, stillBox: [1, 2, 30, 40] })), { seconds: 7, box: [1, 2, 30, 40] });
-  assert.equal(tool.firstSeen(item({ track: null })), null);
-});
-
 test('adding an asset puts the draft item, its first-seen image and the box item in the draft', () => {
   const next = tool.addBoxItem(emptyDraft(), item(), null);
   assert.equal(next.assets.length, 1);
   const [asset] = next.assets;
   assert.deepEqual([asset.name, asset.description], ['Black duffel bag', 'A black bag on the floor.']);
-  assert.deepEqual([asset.timestampSeconds, asset.imageTimestampSeconds, asset.imageBox], [3, 3, [100, 200, 300, 400]]);
-  assert.equal(asset.boxItem.track.source, 'reviewer');
+  assert.equal(asset.timestampSeconds, 3, 'visible from the first-seen second');
+  assert.equal(asset.reviewer.track.source, 'reviewer');
   assert.equal(asset.sourceId, null);
-  assert.equal(editFromDraft(next).assets[0].image_timestamp_seconds, 3, 'the save path carries the first-seen second');
+  assert.deepEqual(
+    editFromDraft(next).assets[0].reviewer.track.samples[0].t,
+    3,
+    'Save sends the track, which the server cuts the image from',
+  );
 });
 
 test('adding an entity names it, spans the track and keeps its most visible second inside', () => {
@@ -163,7 +111,7 @@ test('adding an instrument keeps its holder and threat, and a still image sits a
     key,
   );
   const [knife] = next.instruments;
-  assert.deepEqual([knife.holderKey, knife.threat_level, knife.timestampSeconds, knife.imageTimestampSeconds], [key, 4, 7, 7]);
+  assert.deepEqual([knife.holderKey, knife.threat_level, knife.timestampSeconds, knife.reviewer.stillSeconds], [key, 4, 7, 7]);
   assert.deepEqual(tool.holderChoices(next), [{ key, name: 'Person 1' }], 'holders are offered by name');
 });
 

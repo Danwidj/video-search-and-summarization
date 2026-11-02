@@ -115,6 +115,12 @@ Called by the console when a revision becomes a video's searchable revision: mad
 
 Request: exactly one of `{"revision_id": <int >= 1>}` (the route reads that revision's `evidence`) or `{"evidence": [{"item_type", "item_id", "item_name"?, "description"?}, ...]}` (nothing is read). Response `200`: a list of `{"item_type", "item_id", "embedding"}` (empty when there are no items). Errors: `404` unknown revision, `422` neither or both sources, `502` embedding service failed, `503` database or embedding key not configured.
 
+## `POST /api/v1/incidents/{video_id}/box/describe`
+
+What is the box a reviewer drew? The agent reads the frame at `seconds` from the video's stored file (`videos.filepath`, an R2 key), cuts the zoomed second look's close-up and its whole frame with the box drawn, and makes one VLM call with the `zoom/describe-box` prompt (same model, endpoint and 60 s timeout as the second look). Nothing is stored. Part of the reviewer box tool (see the add/track evidence contract).
+
+Request: `{"seconds": <float >= 0>, "box": [ymin, xmin, ymax, xmax]}`, the box normalised 0-1000 with min below max. Response `200`: `{"proposal": {"item_type": "entity"|"instrument"|"asset", "name", "description", "holder": str|null, "threat_level": 1-5|null, "confidence": 0-1} | null, "reason": str|null}`. `proposal` is null with a plain `reason` when the model cannot tell. `holder` (instruments only) is a few plain words describing who holds the item, not an entity id; `holder` and `threat_level` are null for an entity or asset. Errors: `404` unknown video, `422` bad body or no frame at that second, `502` the model failed or did not answer the strict JSON, `503` database or VLM key not configured.
+
 ## `POST /api/v1/incidents/revisions/search`
 
 Searches saved report revisions by their summary embedding. The route embeds `query` with the search query model (1024 dimensions, `query` input type), then calls `search_report_revisions`. Only revisions with a stored vector are searched: AI revisions saved with an embedding; human revisions and AI revisions saved while the embedding endpoint was unavailable are not. The zero-GPU mocks answer this route from their finals snapshot.
@@ -273,3 +279,14 @@ Host requirement: `ffmpeg` on the agent's `PATH`. The VM has no system `ffmpeg`;
 - **Never persisted:** an experimental request writes no `report_revisions` row and no `model_runs` placeholder (`revision_id` is `null`). With `skip_crops` every evidence entry has `image: null` and `image_gap: "evidence cropping skipped (skip_crops)"`.
 - **Response additions:** `experiment` (`prompt_id` (null for the production prompt), `prompt_sha256`, `skip_crops`, `max_crop_calls`, `captions` and `max_caption_calls` (null unless asked for), `persisted: false`, `caption` when captions were asked for, and for a crops-on request `evidence_store` and `crop`: `elapsed_ms` (the crop stage's wall time), `items`, `images`, `gaps` (count per reason), `cap`, `calls`, `refused_by_cap`, `cap_reached`, `tokens` and `calls_without_usage`), `p1_elapsed_ms` (the P1 HTTP round trip) and `usage` (P1 token usage). A 422 contract violation of an experimental request carries the same three in `detail`.
 - **Where it runs:** a local agent started for the experiment with no Supabase or R2 settings (plan decision D14 (b)). Either caption store needs `ffmpeg` on that agent's `PATH`; `experiment_captions: "r2"` also needs R2 settings (ideally limited to the approved prefix) and `INCIDENT_EXPERIMENT_SCRATCH_PREFIX`, the one exception to that rule. Restarting or reconfiguring the shared VM agent is ask-first.
+
+## Reviewer box tool (console proxy)
+
+The console proxies two agent endpoints for the report page's box tool (boxes `[ymin, xmin, ymax, xmax]` on 0-1000, seconds are floats). The agent side is in its own unit; the console side answers camelCase.
+
+| Console route | Agent route | Body | Answer |
+|---|---|---|---|
+| `POST /api/reports/[videoId]/box/describe` | `POST /api/v1/incidents/{video_id}/box/describe` | `{seconds, box}` | `{proposal: {itemType, name, description, holder, threatLevel, confidence} or null, reason}` |
+| `POST /api/reports/[videoId]/box/track` | `POST /api/v1/incidents/{video_id}/box/track` | `{seconds, box, itemType, name, description, backSeconds=3, forwardSeconds=3}` | `{track: {source: "reviewer", samples: [{t, box, conf}], span, partial, lostAt, reason}}` |
+
+A bad body is 400, an agent 4xx is passed on, an unreachable agent or a 5xx is 502.

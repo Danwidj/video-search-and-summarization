@@ -18,7 +18,8 @@ import { endTrackAt, extendTrack, extensionRequest, TRACK_WINDOW_SECONDS } from 
 import { videoFrameUrl } from '@/lib/evidence/evidence-view';
 import { pickSeconds } from '@/lib/evidence/frame-picker';
 import { scrubberBoxAt, trackSecond, trackSpan } from '@/lib/evidence/track';
-import type { Box, BoxItemType, BoxProposal, BoxToolItem, ReviewerTrack } from '@/modules/reports/domain/box-item';
+import type { Box, BoxProposal, ReviewerDraftItem as BoxToolItem, ReviewerTrack } from '@/modules/reports/domain/reviewer-item';
+import type { EvidenceItemType as BoxItemType } from '@/modules/reports/domain/revision';
 import { formatClock } from '@/modules/reports/domain/normalize';
 import { BoxCanvas } from './BoxCanvas';
 
