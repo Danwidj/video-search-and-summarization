@@ -60,6 +60,7 @@ def _client(tool=None, *, configured=True, llm=None, chart_llm_name="openai_llm"
 def _llm(content=None, *, error: Exception | None = None) -> MagicMock:
     llm = MagicMock()
     llm.ainvoke = AsyncMock(side_effect=error) if error else AsyncMock(return_value=AIMessage(content=content))
+    llm.bind.return_value = llm  # the route invokes the bound model; here it is the same mock
     return llm
 
 
@@ -129,6 +130,12 @@ def test_the_chart_request_model_reads_the_system_and_the_one_user_message():
     assert isinstance(sent[0], SystemMessage) and sent[0].content == "You classify one request."
     assert isinstance(sent[1], HumanMessage) and sent[1].content == "severity breakdown"
     assert len(sent) == 2
+
+
+def test_the_chart_request_caps_the_reply_at_200_tokens():
+    llm = _llm('{"unsupported": true}')
+    assert _client(llm=llm).post("/api/v1/incidents/chart-requests", json=CHAT_BODY).status_code == 200
+    llm.bind.assert_called_once_with(max_tokens=200)
 
 
 def test_the_chart_request_reads_the_object_from_a_fence_and_gives_null_for_anything_else():

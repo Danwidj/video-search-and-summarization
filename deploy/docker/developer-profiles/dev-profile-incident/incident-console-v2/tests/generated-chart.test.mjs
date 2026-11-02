@@ -636,6 +636,13 @@ describe('POST /api/dashboard/chart', () => {
     assert.ok(!(await response.text()).includes('secret'));
   });
 
+  test('a profile with no chart LLM says so instead of blaming the model', async () => {
+    globalThis.fetch = async () => new Response('chart LLM not configured', { status: 501 });
+    const response = await post({ request: 'severity breakdown', chartType: 'bar' });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: 'Chart requests are not set up on this profile.' });
+  });
+
   test('a drawing failure is a plain 502 that does not echo the agent', async () => {
     const working = globalThis.fetch;
     globalThis.fetch = async (url, init) =>

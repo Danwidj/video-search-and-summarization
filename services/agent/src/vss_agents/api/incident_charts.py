@@ -61,8 +61,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# The console gives the whole request 45 s; the model call must end sooner so its 502 can arrive.
+# Per-call timeouts, not one budget for the whole chart. This model call gives up at 40 s, so its 502 can
+# reach the console, which gives its fetch to this route 45 s. The console's chart draw calls each give up at
+# 30 s (chart-renderer.ts), and a split bar chart makes up to three of them.
 CHART_REQUEST_TIMEOUT_SECONDS = 40.0
+# The reply is one small JSON object, so the model is capped well below the LLM entry's own max_tokens.
+CHART_REPLY_MAX_TOKENS = 200
 
 
 class ChartMessage(BaseModel):
@@ -123,8 +127,9 @@ def create_incident_charts_router(builder: WorkflowBuilder, chart_llm_name: str 
             raise HTTPException(status_code=501, detail="chart requests are not configured on this profile") from exc
         try:
             system, user = body.messages
+            bounded = llm.bind(max_tokens=CHART_REPLY_MAX_TOKENS)
             message = await asyncio.wait_for(
-                llm.ainvoke([SystemMessage(content=system.content), HumanMessage(content=user.content)]),
+                bounded.ainvoke([SystemMessage(content=system.content), HumanMessage(content=user.content)]),
                 timeout=CHART_REQUEST_TIMEOUT_SECONDS,
             )
         except Exception as exc:

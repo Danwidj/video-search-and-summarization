@@ -44,6 +44,8 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (error instanceof ChartInterpreterError) {
+      // The agent answers 501 when this profile has no chart LLM: a setup problem, not a model failure to retry.
+      if (error.status === 501) return NextResponse.json({ error: 'Chart requests are not set up on this profile.' }, { status: 503 });
       return NextResponse.json({ error: 'The model that reads chart requests did not answer. Try again.' }, { status: 502 });
     }
     if (error instanceof ChartRenderError) {

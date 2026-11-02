@@ -34,7 +34,7 @@ export class AgentChartInterpreter implements ChartInterpreter {
     } catch (error) {
       throw new ChartInterpreterError(`The agent could not be reached: ${error instanceof Error ? error.message : String(error)}`);
     }
-    if (!response.ok) throw new ChartInterpreterError(`The agent returned HTTP ${response.status} for a chart request`);
+    if (!response.ok) throw new ChartInterpreterError(`The agent returned HTTP ${response.status} for a chart request`, response.status);
     const payload = (await response.json().catch(() => null)) as { reply?: unknown } | null;
     if (!payload || !('reply' in payload)) throw new ChartInterpreterError('The agent sent no reply field for a chart request');
     return payload.reply ?? null;
