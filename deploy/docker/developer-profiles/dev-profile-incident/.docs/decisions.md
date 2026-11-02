@@ -5,7 +5,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 ### 2026-11-02: Object tracking's detector calls get a 15 s timeout and one attempt
 - **Decision:** object tracking sends each detector request once, with a 15 s timeout (`INCIDENT_OBJECT_TRACKING_DETECTOR_TIMEOUT_SECONDS`), through `DefaultDetector.with_request_limits` applied in `run_object_tracking`. A timeout or a 429 is a `detector_errors` and not a miss, so a failed call never ends a segment. Each item reports `detector_ms` and `detector_max_ms`.
 - **Why:** the 10-65 s per item came from the detector's stall tail, not the tracker. In the speed scout, 11% of 320 calls took 60-130 s and made up 77% of detector time (median 2.3 s); a 429 cost 62 s with one retry and 122 s with two. Tracker and decode cost 1-3 s per item.
-- **Checked on kwanz-ws (live detector, 4569 and 8206, once, 29 calls):** slowest call 8.6 s, no errors, wall time 47 s for five items.
+- **Checked on kwanz-ws (live detector, 4569 and 8206, once, 26 calls):** slowest call 8.6 s, no errors, wall time 47 s for five items.
 - **Rejected:** a shorter budget for the shared detector (grounding, zoom and evidence calls need the long timeout); fewer re-anchor checks (the reanchor scout found no gain).
 - **Links:** [`object_tracking.py`](../../../../../services/agent/src/vss_agents/utils/object_tracking.py), [`crop_evidence.py`](../../../../../services/agent/src/vss_agents/utils/crop_evidence.py).
 
