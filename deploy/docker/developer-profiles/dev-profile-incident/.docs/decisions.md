@@ -2,6 +2,15 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-02: A person pictured on a screen is not the entity, and tracks confirm a person's box
+- **Decision:**
+  - The grounding prompt (`grounding/best-match`) says that only a real, physically present person or object counts, and that one shown on a screen, TV, monitor, poster, sign, picture, painting or reflection gets `{"bbox_2d": null}`.
+  - With solid person tracks, the evidence step treats a located person's box as unconfirmed when no track sample within 0.5 s of its second overlaps it (the association's own test, IoU of at least 0.3). It then tries the locate seconds not yet tried (+1, -1, +2, -2 s after the one found) and keeps the first box a track confirms. With none, the box becomes the nearest track sample inside the entity's first to last seen span, each fallback taking a track of its own. A confirmed first box costs no extra detector call. Persons only; instruments and assets keep the first box.
+  - Nothing changes without solid person tracks (tracking off, skipped, or only ghost tracks). The confirmation runs once tracking has finished; locate and tracking still start together.
+- **Why:** on IMG_8206 the report model put both men one second before they walk in, and the detector boxed the person shown on the hallway TV with a fixed score of 1.0. The retry never ran, the association found no track, and the TV frame was stored as located. The prompt removes the cause; the track check catches the same failure when the model is fooled by something else, independently of its judgement.
+- **Rejected:** set-of-marks as the fix (its own open issue, X13); raising the zoom threshold (the second look cannot say "this is not the entity"); a plausibility score from the detector (it has none).
+- **Links:** [`crop_evidence.py`](../../../../../services/agent/src/vss_agents/utils/crop_evidence.py), [`track_evidence.py`](../../../../../services/agent/src/vss_agents/utils/track_evidence.py), [`best-match.txt`](../contracts/prompts/grounding/best-match.txt)
+
 ### 2026-11-02: Library questions are answered by a planned search with exact counts (Gate M2 approved by the chatbot feature owner)
 - **Status:** approved on 2026-11-02 by the authorised chatbot feature owner (Gate M2), with grounded report chat (P5) and console report chat (P7). Only in grounded mode (`INCIDENT_CHAT_MODE=grounded`); template mode stays the default until Evaluation V2 validates grounded answers, and nothing is deployed by the merge. First proposed 2026-11-01.
 - **Decision:** a chat question with no incident is answered in steps:
