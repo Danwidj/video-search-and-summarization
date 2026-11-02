@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-03: Edit mode adds and re-tracks evidence with a box tool, not a crop picker
+- **Decision:** the frame picker and **Replace image** are gone. **+ Add evidence** and one **Edit** per card (assets included) open `BoxTool`: draw a box, the AI describes it, the tracker follows it, the reviewer checks the card and adds it to the draft. The draft item carries a `boxItem` (reviewer track, AI proposal, still second/box) as the hand-off to saving; a partial track must be kept as incomplete, redrawn or kept as a still image before it is added. Edit re-tracks without touching the item's text. Track labels use item names.
+- **Why:** a reviewer can add what the model missed and fix a bad track in one flow, and the evidence image is always the first second the item is seen. The proxy calls sit in one module (`box-tool-client.ts`) so the routes unit can change them without touching the dialog.
+- **Rejected:** keeping the crop picker beside it (two ways to set an image); editing text on Edit (it only re-tracks).
+- **Links:** [`BoxTool.tsx`](../incident-console-v2/src/sections/evidence/components/BoxTool/BoxTool.tsx), [`box-tool.ts`](../incident-console-v2/src/lib/evidence/box-tool.ts)
+
 ### 2026-11-02: Object tracking is on for the VM agent
 - **Decision:** `native-services.sh` exports `INCIDENT_OBJECT_TRACKING_ENABLED=1` unless the env file or the caller sets it, like `INCIDENT_CHUNKING_ENABLED`. `=0` in `generated.env.remote` turns it off and a restart applies it.
 - **Why:** the four fixes it waited for are merged: the 15 s one-attempt detector timeout, the whole-frame seed skip with the anchor guard, NanoTrack ahead of MIL, and the pinned model fetch at agent start. The scout measurements (Nano tracked 6 of 6 seeds at 0.4-0.8 s each against MIL's 3 of 8) are the reason. It is a native-services default and not a `generated.env.remote` line so that it survives a regenerated env file.

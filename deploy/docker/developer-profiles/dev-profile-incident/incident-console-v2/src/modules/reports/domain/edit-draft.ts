@@ -10,6 +10,7 @@
 // Validation happens server-side (lib/contract/structured-edit.ts) and the
 // database function checks the rest.
 
+import type { BoxToolItem } from '@/modules/reports/domain/box-item';
 import type { ReportView } from '@/modules/reports/domain/report-view';
 
 export const EDITABLE_INCIDENT_TYPES = ['road accident', 'burglary', 'explosion', 'assault', 'animal attack'] as const;
@@ -55,6 +56,8 @@ interface DraftItemDetails {
   pendingImage: Blob | null;
   imageTimestampSeconds: number | null;
   imageBox: number[] | null;
+  /** What the box tool made of this item (its reviewer track, the AI proposal for audit); absent for an item it never touched. */
+  boxItem?: BoxToolItem | null;
 }
 
 /** An in-progress edit: values a report may lack (type, times, threat level) start empty and must be chosen. */
