@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-02: Whole-frame seeds are not tracked; a failed anchor keeps the previous tracker
+- **Decision:** `track_item` skips an item whose seed box covers more than `ObjectTrackingSettings.max_seed_area` (0.5, a field, no env var) of the frame, with `skipped: "seed box covers <n>% of the frame"` and no detector call. `_Tracker.anchor` builds and initialises the new OpenCV tracker before replacing the old one. `follow` catches a refused seed anchor (no track, `anchor_errors: 1`, the other direction is not tried) and a refused re-anchor (`anchor_errors += 1`, the detector-confirmed sample is kept and the previous tracker keeps running).
+- **Why:** in the end-to-end test OpenCV's MIL `init` raised on whole-frame and edge-touching boxes; run_object_tracking turned that into `error` and a re-anchor crash discarded the item's whole track (4569 A3 failed in 11 of 14 runs). A track of a whole-frame box carries no information. The seeds scout found items track on target up to about 44% of the frame, so the limit is 0.5, not 0.4.
+- **Rejected:** padding or shrinking seeds (hurts tracking); an env var for the limit (no case for tuning per deployment yet).
+- **Links:** [`object_tracking.py`](../../../../../services/agent/src/vss_agents/utils/object_tracking.py), plan `vss-objtrack-plan` unit U2.
+
 ### 2026-11-02: Object tracking prefers NanoTrack v2 over MIL
 - **Decision:** `select_tracker(model_dir)` returns NanoTrack when `nanotrack_backbone_sim.onnx` and `nanotrack_head_sim.onnx` are in `INCIDENT_OBJECT_TRACKING_MODEL_DIR`, else Vit (`object_tracking_vittrack_2023sep.onnx`), else CSRT, KCF, MIL as before. A model that fails to load is skipped. The files are fetched at deploy time (U4), pinned by SHA-256, and never committed.
 - **Why:** MIL never reports failure and drifts off small objects (9170 ball: 0 of 13 reference points). On the three test clips Nano tracked 6 of 6 seeds (414 samples, 0.4-0.8 s per item) where MIL gave 4 of 6 with an `error`; 74% of reference points on target against MIL's 60%, 3.9 ms per update against 24, and it initialises on whole-frame and edge-touching boxes that crash MIL. Vit is close (70%, 409 samples).
