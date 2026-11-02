@@ -141,8 +141,7 @@ export function TrackOverlay({
               )}
               style={{ backgroundColor: item.colour }}
             >
-              {item.id}
-              {selected && item.label ? ` · ${item.label}` : ''}
+              {item.label || item.id}
             </span>
           </div>
         );

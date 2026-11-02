@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-03: A reviewer's box item is cut and stored on the server at Save
+- **Decision:** the box tool's draft item reaches Save as a new optional `reviewer` object on its `StructuredEdit` item (`ai_proposal`, `track`, `still_seconds`, `still_box`). `PATCH /api/reports/[videoId]/edit` then cuts the crop and the whole frame at the first-seen second (the track's first sample, or `still_seconds`) with ffmpeg over a signed R2 URL, and stores `<itemId>.jpg`, `<itemId>-frame.jpg` and `<itemId>-track.json` under the first free `edit-<N>/`. The evidence entry gets `source: "reviewer"`, `box_seconds`, `track`, `track_first_seen_seconds`, `track_last_seen_seconds`, `track_source: "reviewer"`, `track_partial` and `ai_proposal`. The console proxies the agent through `POST /api/reports/[videoId]/box/describe` and `.../box/track`.
+- **Why:** the final item ids (E#, I#, A#) exist only when the edit is validated, so the server is the one place that can name the keys; the evidence image is then always the first-seen second, whatever the browser had on screen. A re-tracked existing item keeps its source entry (and its `source`), so only boxes the reviewer drew read "Added by reviewer".
+- **Rejected:** the browser cuts and uploads the crop (it cannot cut the whole frame the same way, and it needs ids before Save); storing the track only in the browser (lost on reload).
+- **Links:** [data](data.md), [vm-api-contracts](vm-api-contracts.md)
+
 ### 2026-11-02: Object tracking is on for the VM agent
 - **Decision:** `native-services.sh` exports `INCIDENT_OBJECT_TRACKING_ENABLED=1` unless the env file or the caller sets it, like `INCIDENT_CHUNKING_ENABLED`. `=0` in `generated.env.remote` turns it off and a restart applies it.
 - **Why:** the four fixes it waited for are merged: the 15 s one-attempt detector timeout, the whole-frame seed skip with the anchor guard, NanoTrack ahead of MIL, and the pinned model fetch at agent start. The scout measurements (Nano tracked 6 of 6 seeds at 0.4-0.8 s each against MIL's 3 of 8) are the reason. It is a native-services default and not a `generated.env.remote` line so that it survives a regenerated env file.
