@@ -1551,7 +1551,6 @@ class CropEvidenceService:
                                 base + offset,
                                 entry["label"],
                                 active_detector,
-                                keep_frame=privacy is not None,
                             )
                     except CropCallCapReachedError:
                         return None
@@ -1579,7 +1578,6 @@ class CropEvidenceService:
                     [Detection(box=list(sample.box), score=1.0)],
                     label,
                     0.0,
-                    keep_frame=privacy is not None,
                 )
 
             taken: set[str] = set()
