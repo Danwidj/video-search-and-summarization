@@ -2,6 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
@@ -9,7 +10,6 @@ register('./support/alias-loader.mjs', import.meta.url);
 const { boxRegion } = await import('../src/lib/evidence/frame-geometry.ts');
 const { dragRegion, pickSeconds, regionBox, usableRange } = await import('../src/lib/evidence/frame-picker.ts');
 const { parseRegion, ITEM_ID } = await import('../src/lib/evidence/frame-request.ts');
-const _components = new URL('../src/sections/', import.meta.url);
 
 test('a drag in either direction becomes one rectangle clipped to the frame', () => {
   assert.deepEqual(dragRegion({ x: 0.25, y: 0.125 }, { x: 0.75, y: 0.375 }), { x: 0.25, y: 0.125, w: 0.5, h: 0.25 });
@@ -65,4 +65,9 @@ test('an entity range of 0 to 0 is no range: the picked second may use the whole
   assert.equal(usableRange(null), null);
   assert.equal(pickSeconds(12.5, 60, { first: 0, last: 0 }), 12.5);
   assert.equal(pickSeconds(72, 60, { first: 0, last: 0 }), 60, 'the end of the video still caps it');
+});
+
+test('Edit mode has no Replace image and no frame picker', async () => {
+  const pane = await readFile(new URL('../src/sections/reports/components/ReportEditPane/ReportEditPane.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(pane, /Replace image|EvidenceFramePicker|onReplace/);
 });

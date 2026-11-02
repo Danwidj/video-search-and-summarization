@@ -15,7 +15,6 @@ const { boxRegion } = await import('../src/lib/evidence/frame-geometry.ts');
 const { parseRegion } = await import('../src/lib/evidence/frame-request.ts');
 const { editFromDraft } = await import('../src/modules/reports/domain/edit-draft.ts');
 const { humanRevisionContent } = await import('../src/modules/reports/domain/revision.ts');
-const _components = new URL('../src/sections/', import.meta.url);
 
 // A track as the agent stores it: [{t, box, score}], box [top, left, bottom, right] on 0..1000.
 const TRACK = [
