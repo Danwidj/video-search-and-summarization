@@ -62,6 +62,7 @@ except ImportError:  # pragma: no cover
 import numpy as np
 
 from vss_agents.utils.crop_evidence import CropCallCapReachedError
+from vss_agents.utils.crop_evidence import DefaultDetector
 from vss_agents.utils.crop_evidence import parse_detections
 from vss_agents.utils.optional_cv2 import ensure_codecs
 from vss_agents.utils.track_evidence import OBJECT_TRACK_SOURCE
@@ -84,6 +85,7 @@ MODEL_DIR_ENV_VAR = "INCIDENT_OBJECT_TRACKING_MODEL_DIR"
 NANO_BACKBONE = "nanotrack_backbone_sim.onnx"
 NANO_HEAD = "nanotrack_head_sim.onnx"
 VIT_MODEL = "object_tracking_vittrack_2023sep.onnx"
+DETECTOR_TIMEOUT_ENV_VAR = "INCIDENT_OBJECT_TRACKING_DETECTOR_TIMEOUT_SECONDS"
 
 DEFAULT_SAMPLE_FPS = 4.0
 DEFAULT_DETECT_INTERVAL_SECONDS = 2.5
@@ -91,6 +93,7 @@ DEFAULT_MIN_IOU = 0.3
 DEFAULT_SPAN_SECONDS = 12.0
 DEFAULT_TIME_CAP_SECONDS = 120.0
 DEFAULT_MAX_DETECTOR_CALLS = 80
+DEFAULT_DETECTOR_TIMEOUT_SECONDS = 15.0  # per detector request; one attempt, so a stall or a 429 costs at most this
 
 # Frames are scaled down to this longest edge for the tracker (the detector resizes on its own).
 MAX_FRAME_EDGE = 960
@@ -136,6 +139,7 @@ class ObjectTrackingSettings:
     concurrency: int = 3  # items followed at once
     max_edge: int = MAX_FRAME_EDGE
     model_dir: str = ""  # holds the NanoTrack or Vit ONNX files; empty means the OpenCV built-in trackers only
+    detector_timeout_seconds: float = DEFAULT_DETECTOR_TIMEOUT_SECONDS
 
     @classmethod
     def from_env(cls) -> "ObjectTrackingSettings":
@@ -147,6 +151,7 @@ class ObjectTrackingSettings:
             time_cap_seconds=_env_float(TIME_CAP_ENV_VAR, DEFAULT_TIME_CAP_SECONDS),
             max_detector_calls=int(_env_float(DETECTOR_CALLS_ENV_VAR, DEFAULT_MAX_DETECTOR_CALLS, minimum=0.5)),
             model_dir=(os.getenv(MODEL_DIR_ENV_VAR) or "").strip(),
+            detector_timeout_seconds=_env_float(DETECTOR_TIMEOUT_ENV_VAR, DEFAULT_DETECTOR_TIMEOUT_SECONDS),
         )
 
 
@@ -340,6 +345,8 @@ class _Pass:
     seed_refused: bool = False  # the tracker could not start on the seed box, so there is nothing to follow
     lost: bool = False  # the segment ended because the item was lost, not because the clip or the span did
     capped: str | None = None  # "time" or "detector-budget" when a cap stopped the pass
+    detector_ms: float = 0.0  # time spent in detector calls, failed ones included
+    detector_max_ms: float = 0.0  # the slowest single detector call
 
 
 def _agreeing(raw: Any, reference: Sequence[float], label: str, min_iou: float) -> tuple[tuple[int, ...], float] | None:
@@ -392,6 +399,7 @@ def follow(
         checked = False
         if due or not ok:
             last_check = second
+            call_started = time.monotonic()
             try:
                 raw = detect(frame, seed.label)
                 result.detector_calls += 1
@@ -404,6 +412,9 @@ def follow(
                 logger.warning("Object tracking detector call failed for '%s': %s", seed.label, type(exc).__name__)
                 result.detector_calls += 1
                 result.detector_errors += 1
+            call_ms = (time.monotonic() - call_started) * 1000.0
+            result.detector_ms += call_ms
+            result.detector_max_ms = max(result.detector_max_ms, call_ms)
         if agreed is not None:
             agreed_box = agreed[0]
             result.samples.append(
@@ -472,6 +483,8 @@ def track_item(
         "backward_samples": len(behind.samples),
         "detector_calls": ahead.detector_calls + behind.detector_calls,
         "detector_errors": ahead.detector_errors + behind.detector_errors,
+        "detector_ms": round(ahead.detector_ms + behind.detector_ms, 1),
+        "detector_max_ms": round(max(ahead.detector_max_ms, behind.detector_max_ms), 1),
         "reanchors": ahead.reanchors + behind.reanchors,
         "anchor_errors": ahead.anchor_errors + behind.anchor_errors,
         "lost": int(ahead.lost) + int(behind.lost),
@@ -516,6 +529,8 @@ async def run_object_tracking(
     except TrackerUnavailableError as exc:
         outcome.skipped = str(exc)
         return outcome
+    if isinstance(detector, DefaultDetector):  # a stalled or rate-limited call must not hold an item for minutes
+        detector = detector.with_request_limits(active.detector_timeout_seconds, 1)
     detect: Detect = detector.detect if hasattr(detector, "detect") else detector
     deadline = started + active.time_cap_seconds
     semaphore = asyncio.Semaphore(max(1, active.concurrency))
