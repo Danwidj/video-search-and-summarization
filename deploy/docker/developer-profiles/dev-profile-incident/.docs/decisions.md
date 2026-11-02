@@ -2,6 +2,13 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-02: Object tracking's detector calls get a 15 s timeout and one attempt
+- **Decision:** object tracking sends each detector request once, with a 15 s timeout (`INCIDENT_OBJECT_TRACKING_DETECTOR_TIMEOUT_SECONDS`), through `DefaultDetector.with_request_limits` applied in `run_object_tracking`. A timeout or a 429 is a `detector_errors` and not a miss, so a failed call never ends a segment. Each item reports `detector_ms` and `detector_max_ms`.
+- **Why:** the 10-65 s per item came from the detector's stall tail, not the tracker. In the speed scout, 11% of 320 calls took 60-130 s and made up 77% of detector time (median 2.3 s); a 429 cost 62 s with one retry and 122 s with two. Tracker and decode cost 1-3 s per item.
+- **Checked on kwanz-ws (live detector, 4569 and 8206, once, 29 calls):** slowest call 8.6 s, no errors, wall time 47 s for five items.
+- **Rejected:** a shorter budget for the shared detector (grounding, zoom and evidence calls need the long timeout); fewer re-anchor checks (the reanchor scout found no gain).
+- **Links:** [`object_tracking.py`](../../../../../services/agent/src/vss_agents/utils/object_tracking.py), [`crop_evidence.py`](../../../../../services/agent/src/vss_agents/utils/crop_evidence.py).
+
 ### 2026-11-02: The privacy blur is removed entirely
 - **Decision:** every form of face blur is gone. The agent no longer detects heads or pixelates evidence frames and crops (`privacy_blur.py`, `EvidenceBlur`, the `every-match` head query and `INCIDENT_BLUR_DETECTOR_CALL_CAP` are deleted), `/analyze` ignores `blur_faces` (the console no longer sends it), `POST /api/v1/incidents/{id}/reblur` and `<itemId>-heads.json` are deleted, and the console has no **Blur faces** switch, no `PUT /api/videos/<id>/privacy`, no blurred clips (`-clip-blur.mp4`) and no re-analysis job. Migration `20261102090000_drop_blur_faces.sql` drops `videos.blur_faces`, `analysis_jobs.blur_faces`, `analysis_jobs.reanalyse_video_id` and `claim_queued_analysis_job`, and restores the standalone `claim_analysis_job(p_stale_seconds)`; it cancels any queued or running re-analysis job first.
 - **Why:** the blur added processing time (a whole-frame head search per frame and per clip second, and a 2.5 minute re-blur for a four-item report) without enough benefit.
