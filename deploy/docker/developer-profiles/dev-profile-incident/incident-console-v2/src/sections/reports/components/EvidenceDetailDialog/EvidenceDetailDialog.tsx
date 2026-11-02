@@ -162,7 +162,7 @@ function Detail({
             colour={track.colour}
             durationSeconds={playerDuration}
             firstSeconds={track.firstSeconds}
-            label={`${item.id} ${item.title}`}
+            label={item.title}
             lastSeconds={track.lastSeconds}
             onSeek={(at) => {
               onClose();
