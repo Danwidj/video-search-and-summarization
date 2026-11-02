@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-03: A reviewer's box is tracked by the analysis tracker, with the name and description as the detector prompt
+- **Decision:** `POST /api/v1/incidents/{video_id}/box/track` calls `object_tracking.track_item` with the reviewer's box as the seed and `"<name>: <description>"` as the label, asymmetric back and forward windows (`spans`) and a 50 s cap. A track that cannot reach the end of the window is returned as `partial` with `lost_at`, never as an error. The video comes from `videos.filepath`, so the body stays as the shared contract has it.
+- **Why:** no new model or service; the failure modes are the ones the team already knows. Samples carry `conf` (contract) and `score` (stored track files, console reader).
+- **Rejected:** a second tracker for reviewer boxes; SAM 3 (needs a GPU service and a licence check); a `video_url` in the body.
+- **Links:** [vm-api-contracts](vm-api-contracts.md#post-apiv1incidentsvideo_idboxtrack)
+
 ### 2026-11-02: Object tracking is on for the VM agent
 - **Decision:** `native-services.sh` exports `INCIDENT_OBJECT_TRACKING_ENABLED=1` unless the env file or the caller sets it, like `INCIDENT_CHUNKING_ENABLED`. `=0` in `generated.env.remote` turns it off and a restart applies it.
 - **Why:** the four fixes it waited for are merged: the 15 s one-attempt detector timeout, the whole-frame seed skip with the anchor guard, NanoTrack ahead of MIL, and the pinned model fetch at agent start. The scout measurements (Nano tracked 6 of 6 seeds at 0.4-0.8 s each against MIL's 3 of 8) are the reason. It is a native-services default and not a `generated.env.remote` line so that it survives a regenerated env file.
