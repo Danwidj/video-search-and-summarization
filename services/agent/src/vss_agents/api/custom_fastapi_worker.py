@@ -27,6 +27,7 @@ from nat.front_ends.fastapi.fastapi_front_end_plugin_worker import FastApiFrontE
 
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
 from vss_agents.api.incident_box_describe import register_incident_box_describe_routes
+from vss_agents.api.incident_box_track import register_incident_box_track_routes
 from vss_agents.api.incident_charts import register_incident_charts_routes
 from vss_agents.api.incident_chat import register_incident_chat_routes
 from vss_agents.api.incident_evidence_embeddings import register_incident_evidence_embeddings_routes
@@ -148,3 +149,4 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         register_incident_evidence_embeddings_routes(app)
         register_incident_charts_routes(app, builder)
         register_incident_box_describe_routes(app)
+        register_incident_box_track_routes(app)
