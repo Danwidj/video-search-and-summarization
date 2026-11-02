@@ -7,6 +7,11 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:** the final item ids (E#, I#, A#) exist only when the edit is validated, so the server is the one place that can name the keys; the evidence image is then always the first-seen second, whatever the browser had on screen. A re-tracked existing item keeps its source entry (and its `source`), so only boxes the reviewer drew read "Added by reviewer".
 - **Rejected:** the browser cuts and uploads the crop (it cannot cut the whole frame the same way, and it needs ids before Save); storing the track only in the browser (lost on reload).
 - **Links:** [data](data.md), [vm-api-contracts](vm-api-contracts.md)
+### 2026-11-03: A reviewer's box is tracked by the analysis tracker, with the name and description as the detector prompt
+- **Decision:** `POST /api/v1/incidents/{video_id}/box/track` calls `object_tracking.track_item` with the reviewer's box as the seed and `"<name>: <description>"` as the label, asymmetric back and forward windows (`spans`) and a 50 s cap. A track that cannot reach the end of the window is returned as `partial` with `lost_at`, never as an error. The video comes from `videos.filepath`, so the body stays as the shared contract has it.
+- **Why:** no new model or service; the failure modes are the ones the team already knows. Samples carry `conf` (contract) and `score` (stored track files, console reader).
+- **Rejected:** a second tracker for reviewer boxes; SAM 3 (needs a GPU service and a licence check); a `video_url` in the body.
+- **Links:** [vm-api-contracts](vm-api-contracts.md#post-apiv1incidentsvideo_idboxtrack)
 
 ### 2026-11-03: An item's evidence image is the first second its track sees it
 - **Decision:** for an item with a person or object track, `frame`, `image`, `bounding_box` and `box_seconds` come from the track's first sample (`track_evidence.first_seen_sample`, replacing `best_moment`, which took the largest confident box). Items without a track keep the located second. `track_first_seen_seconds` and the stored track file are unchanged.
