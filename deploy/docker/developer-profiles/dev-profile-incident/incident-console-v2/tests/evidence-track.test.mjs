@@ -206,8 +206,18 @@ test('the track use case reads only the key the revision names, and a malformed 
   ]);
   assert.deepEqual(read, [TRACK_KEY]);
   assert.deepEqual(await getEvidenceTrack(incidents, store({ not: 'a list' }), request), []);
+  // A reviewer's track file is an object ({source, samples, span, ...}); it used to read back as empty.
+  assert.deepEqual(
+    await getEvidenceTrack(
+      incidents,
+      store({ source: 'reviewer', samples: [{ t: 2, box: [1, 2, 30, 40], conf: 0.8 }], span: [2, 2] }),
+      request,
+    ),
+    [{ t: 2, box: [1, 2, 30, 40] }],
+  );
+  assert.deepEqual(await getEvidenceTrack(incidents, store({ source: 'reviewer', samples: 'x' }), request), []);
   assert.equal(await getEvidenceTrack(incidents, store([]), { ...request, itemId: 'E2' }), null, 'not a track key');
   assert.equal(await getEvidenceTrack(incidents, store([]), { ...request, itemId: 'E9' }), null);
   assert.equal(await getEvidenceTrack(incidents, store([]), { ...request, revisionId: revisionId + 50 }), null);
-  assert.deepEqual(read, [TRACK_KEY, TRACK_KEY]);
+  assert.deepEqual(read, [TRACK_KEY, TRACK_KEY, TRACK_KEY, TRACK_KEY]);
 });

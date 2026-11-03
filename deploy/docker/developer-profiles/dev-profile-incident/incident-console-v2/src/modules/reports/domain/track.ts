@@ -19,11 +19,15 @@ export const TRACK_TOLERANCE_SECONDS = 0.5;
 /** Two samples further apart than this are a gap (the tracker lost the person), not a move to interpolate across. */
 export const TRACK_MAX_GAP_SECONDS = 1;
 
-/** The samples of a stored track, sorted by time; a malformed sample is dropped, and anything but an array reads as null. */
+/**
+ * The samples of a stored track, sorted by time; a malformed sample is dropped. The agent writes a bare list; a reviewer's
+ * track file is an object whose `samples` is that list, so both read. Anything else reads as null.
+ */
 export function parseTrackSamples(value: unknown): TrackSample[] | null {
-  if (!Array.isArray(value)) return null;
+  const list = Array.isArray(value) ? value : value && typeof value === 'object' ? (value as { samples?: unknown }).samples : null;
+  if (!Array.isArray(list)) return null;
   const samples: TrackSample[] = [];
-  for (const raw of value) {
+  for (const raw of list) {
     if (!raw || typeof raw !== 'object') continue;
     const { t, box } = raw as { t?: unknown; box?: unknown };
     if (typeof t !== 'number' || !Number.isFinite(t) || t < 0) continue;
