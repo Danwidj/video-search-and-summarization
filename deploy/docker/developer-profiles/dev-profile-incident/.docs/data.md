@@ -19,7 +19,7 @@ There is one Supabase project per project phase ([decision](decisions.md)): **fi
 - `20261031090000_dashboard_official_else_newest.sql` — rewrites `get_incident_dashboard` to count official, else newest, with the official split and `p_scope`, and adds `not_official` to `list_incident_report_summaries`.
 - `20261031120000_analysis_jobs.sql` — adds the background analysis queue: the `analysis_jobs` table and `claim_analysis_job`, `touch_analysis_job`, `finish_analysis_job`, `retry_analysis_job` and `cancel_analysis_job`.
 - `20261101090000_video_blur_faces.sql` — the privacy blur: added `videos.blur_faces`, `analysis_jobs.reanalyse_video_id` and `analysis_jobs.blur_faces`, and `claim_queued_analysis_job` (removed by the next file).
-- `20261102090000_drop_blur_faces.sql` — removes the privacy blur ([decision](decisions.md#2026-11-02-the-privacy-blur-is-removed-entirely)): cancels unfinished re-analysis jobs, restores the standalone `claim_analysis_job`, and drops the three blur columns and `claim_queued_analysis_job`. **Pending apply on finals** (see [status](status.md#3-database-status)); until then those columns still exist there and nothing reads them. Evidence entries and run notes written earlier may still carry `blur_regions`, `heads`, `privacy` or `blurFaces`; nothing reads them.
+- `20261102090000_drop_blur_faces.sql` — removes the privacy blur ([decision](decisions.md#2026-11-02-the-privacy-blur-is-removed-entirely)): cancels unfinished re-analysis jobs, restores the standalone `claim_analysis_job`, and drops the three blur columns and `claim_queued_analysis_job`. **Applied to finals on 2026-11-02** (see [status](status.md#3-database-status)). Evidence entries and run notes written earlier may still carry `blur_regions`, `heads`, `privacy` or `blurFaces`; nothing reads them.
 - `20261101120000_dashboard_byte_order_ties.sql` — the same `get_incident_dashboard`, with every tie between equal counts (types, entity, instrument and asset labels, models) broken in byte order (`COLLATE "C"`), whatever the database's collation; it also decides which tied labels make a top-3 or top-8 cut.
 
 Which of these are applied to finals is in [`status.md`](status.md#3-database-status). The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres.
@@ -213,7 +213,7 @@ Deleting a video keeps its upload job rows as history with `video_id` and `revis
 - `query_results.query_id` → `queries.id` and `query_results.revision_id` →
   `report_revisions.id` (both CASCADE).
 - `analysis_jobs.video_id` → `videos.id` and `analysis_jobs.revision_id` → `report_revisions.id`
-  (both SET NULL); `analysis_jobs.reanalyse_video_id` → `videos.id` (CASCADE).
+  (both SET NULL).
 
 Deleting a `videos` row removes its `report_revisions`, their `evidence_crops` and any
 `query_results` that reference those revisions. `model_runs` and `queries` rows are not deleted by
@@ -470,7 +470,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
     └── <video-key>/run-<N>/<itemId>.jpg    # AI crops (what evidence search embeds), one run-<N> per analysis
         <video-key>/run-<N>/<itemId>-frame.jpg  # the whole video frame the box was found in, native size (the console draws the box on it)
         <video-key>/run-<N>/<itemId>-track.json # person tracks, and object tracks with INCIDENT_OBJECT_TRACKING_ENABLED (track_source: "object-tracker" on the entry): [{t, box, score}], t in seconds, box [top,left,bottom,right] on 0..1000, at most 5 per second
-        <video-key>/edit-<N>/<itemId>.jpg   # reviewer replacements, one edit-<N> per upload
+        <video-key>/edit-<N>/<itemId>.jpg   # reviewer items cut at Save (<itemId>-frame.jpg and <itemId>-track.json beside), one edit-<N> per Save; older reviewer replacements
 ```
 
 > [!NOTE]
@@ -479,7 +479,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 > The `Report/` prefix is a 0-byte directory marker and is unused by code.
 > The `evidence/` tree holds two writers' images, both under `evidence/<video key>/` where `<video key>` is `videos.filepath` (item ids `E#`, `I#` and `A#` are unique across types). No key holds a hash or UUID, and no key is ever overwritten: each write takes the next free number, and the put is conditional (`If-None-Match: *`):
 > - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, `run-<N>` with N one above the highest existing run of that video), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason; with `INCIDENT_TRACKING_ENABLED` a person matched to a track also has `<itemId>-track.json` in the same run (`score` -0.1 marks a sample the tracker carried without a detection; the console reads it on the server through `GET /api/reports/[videoId]/track`, taking the key from the revision's evidence entry, because R2 has no CORS rule for the console origin, and keeps only `t` and `box`) ([decision](decisions.md#2026-10-31-person-tracks-give-matched-evidence-its-best-moment-and-a-track-file));
-> - reviewer replacements, uploaded by the console's `POST /api/reports/<videoId>/evidence-image` during Save, as `edit-<N>` with the smallest free N.
+> - reviewer replacements uploaded through `POST /api/reports/<videoId>/evidence-image`, as `edit-<N>` with the smallest free N (the console has not called it since the frame picker was removed on 3 Nov 2026; new reviewer images come from the next writer);
 > - reviewer items, cut by `PATCH /api/reports/<videoId>/edit` at Save from the stored video: `<itemId>.jpg` (the crop), `<itemId>-frame.jpg` and, when the item has a track, `<itemId>-track.json` under the first free `edit-<N>/`; the entry has `source: "reviewer"`, `track_source: "reviewer"`, `track_partial` (the track ended before its window, so the item is badged "Incomplete track") and `ai_proposal` (the model's reading of the box, kept for audit); a re-tracked or re-boxed item keeps what its source entry says apart from what the new image replaces: `image_gap`, `track_gap`, `detected_box`, `zoom_*`, `name_before`, `description_before` and the track fields are dropped, because they described the old crop; the track file is `{source, samples:[{t, box, conf}], span, partial, lost_at, reason}` and the console route reads it like an AI track ([decision](decisions.md#2026-11-03-a-reviewers-box-item-is-cut-and-stored-on-the-server-at-save));
 > - evidence clips (`<itemId>-clip.mp4`) from the removed Play clip feature: nothing writes or reads them now. Any left in R2 are unreferenced; the orphan sweep counts one older than `minAgeHours` as an orphan, and deleting the video removes it with the rest of `evidence/<video key>/`.
 > - Two analyses of one video that start at the same moment can pick the same `run-<N>`; the conditional put stops the overwrite, so one of them fails instead of replacing the other.
