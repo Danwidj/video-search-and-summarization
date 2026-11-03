@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-03: A person left without a track records why (`track_gap`)
+- **Decision:** when person tracking was requested, each person (entity) entry without a track gets `track_gap`: the run's `tracking.skipped` reason, else `no person track overlapped this person's box`, else `this person was not located, so no track could be matched`. The console reads it as `ItemEvidence.trackGap` and prints a quiet "Not tracked: <reason>" line on the card and the pop-up. A reviewer Save that replaces an item's image clears it (`REPLACED_FIELDS`).
+- **Why:** an untracked person was indistinguishable from "tracking off" or a tracker miss; the scout reports needed the run notes to tell. Mirrors `image_gap`.
+- **Rejected:** a badge (louder than a missing track deserves); deriving the reason in the console from run notes (the notes are per run, the entry is per item).
+- **Links:** [`crop_evidence.py`](../../../../../services/agent/src/vss_agents/utils/crop_evidence.py), [`evidence-detail.ts`](../incident-console-v2/src/modules/reports/domain/evidence-detail.ts)
+
 ### 2026-11-03: Person tracking waits for a quiet-start clip while its stream is registered
 - **Decision:** `run_tracking` no longer gives up 40 s after the stream add when no frames have appeared. At that point it reads `get-stream-info` (`stream_count`); a stream still registered keeps the run waiting up to the existing deadline (clip duration plus `INCIDENT_TRACKING_END_MARGIN_SECONDS`), and a count of 0 or an unreadable count skips as before (`no frames from perception`). The frame-poll failure log is now a warning.
 - **Why:** perception publishes only frames with an object, so a clip whose first person appears late is silent for a long time; the 40 s exit made every person in such a clip untracked (the `vss-tracker-miss` scout report).

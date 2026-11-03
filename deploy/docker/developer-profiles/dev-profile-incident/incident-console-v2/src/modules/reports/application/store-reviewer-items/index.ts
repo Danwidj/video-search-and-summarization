@@ -19,6 +19,7 @@ import type { ReviewerEvidenceStore } from '@/modules/reports/application/types'
 
 const REPLACED_FIELDS = [
   'image_gap',
+  'track_gap',
   'missing',
   'track',
   'track_first_seen_seconds',

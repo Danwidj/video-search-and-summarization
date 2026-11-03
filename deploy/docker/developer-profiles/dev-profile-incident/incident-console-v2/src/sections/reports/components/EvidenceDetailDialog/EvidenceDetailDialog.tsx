@@ -118,6 +118,11 @@ function Detail({
             {lines.trackedOnScreen}
           </p>
         )}
+        {lines.notTracked && (
+          <p className="text-xs text-muted-foreground" data-testid="evidence-dialog-not-tracked">
+            {lines.notTracked}
+          </p>
+        )}
         {track && (
           <PresenceBar
             caption={false}

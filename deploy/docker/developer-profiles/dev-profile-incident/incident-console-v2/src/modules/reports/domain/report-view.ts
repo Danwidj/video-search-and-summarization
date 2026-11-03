@@ -58,6 +58,8 @@ export interface ItemEvidence {
   trackSource: 'reviewer' | null;
   /** True when the tracker lost the item before the window ended: the View badge reads "Incomplete track". */
   trackPartial: boolean;
+  /** Why a person has no track when the run tracked people (the agent's `track_gap`); null when tracked or not recorded. */
+  trackGap: string | null;
   /** True for an item the reviewer boxed (its entry's source is 'reviewer'): the View badge reads "Added by reviewer". */
   addedByReviewer: boolean;
 }

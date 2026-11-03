@@ -142,6 +142,19 @@ test('the view carries a track when the entry has its key and both span ends, an
   assert.equal(lines[1].trackedOnScreen, null);
 });
 
+test('a person the run did not track says why, on the card and the pop-up lines, and a tracked one does not', () => {
+  const { entities } = structuredFromPayload(payload, [
+    entry('E1', { track: TRACK_KEY, track_first_seen_seconds: 78.2, track_last_seen_seconds: 95.6, track_gap: 'stale' }),
+    entry('E2', { track_gap: 'no frames from perception' }),
+    entry('E3'),
+  ]);
+  const lines = entities.map((entity) => evidenceDetailLines(entityDetail(entity, [])));
+  assert.equal(entities[1].evidence.trackGap, 'no frames from perception');
+  assert.equal(lines[1].notTracked, 'Not tracked: no frames from perception');
+  assert.equal(lines[0].notTracked, null, 'a track wins over a stale reason');
+  assert.equal(lines[2].notTracked, null, 'an entry without a reason shows nothing');
+});
+
 test('only tracked items are drawn, each with its own colour in id order', () => {
   const structured = structuredFromPayload(payload, [
     entry('E1', { track: TRACK_KEY, track_first_seen_seconds: 78, track_last_seen_seconds: 95 }),

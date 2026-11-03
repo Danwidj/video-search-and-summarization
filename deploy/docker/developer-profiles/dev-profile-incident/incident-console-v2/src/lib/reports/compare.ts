@@ -319,6 +319,7 @@ export function draftToStructured(draft: EditDraft): Structured {
     trackLastSeenSeconds: null,
     trackSource: null,
     trackPartial: false,
+    trackGap: null,
     addedByReviewer: false,
   });
   const entityIdByKey = new Map(draft.entities.map((entity) => [entity.key, entity.canonicalId]));

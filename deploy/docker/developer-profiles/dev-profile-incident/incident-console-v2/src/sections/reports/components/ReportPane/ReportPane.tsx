@@ -362,6 +362,11 @@ function Card({
           </p>
         )}
         {lines.onScreen && <p className="text-muted-foreground">{lines.onScreen}</p>}
+        {lines.notTracked && (
+          <p className="text-xs text-muted-foreground" data-testid="evidence-not-tracked">
+            {lines.notTracked}
+          </p>
+        )}
         {lines.time && (
           <p className="text-muted-foreground">
             Most visible at <b className="font-mono">{lines.time}</b>
