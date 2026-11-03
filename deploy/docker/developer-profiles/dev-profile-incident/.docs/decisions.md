@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-03: Person tracking waits for a quiet-start clip while its stream is registered
+- **Decision:** `run_tracking` no longer gives up 40 s after the stream add when no frames have appeared. At that point it reads `get-stream-info` (`stream_count`); a stream still registered keeps the run waiting up to the existing deadline (clip duration plus `INCIDENT_TRACKING_END_MARGIN_SECONDS`), and a count of 0 or an unreadable count skips as before (`no frames from perception`). The frame-poll failure log is now a warning.
+- **Why:** perception publishes only frames with an object, so a clip whose first person appears late is silent for a long time; the 40 s exit made every person in such a clip untracked (the `vss-tracker-miss` scout report).
+- **Rejected:** raising the timeout to the deadline for every run (a dead stream would hold the run to the deadline); a longer fixed timeout (still a guess).
+- **Links:** [`track_evidence.py`](../../../../../services/agent/src/vss_agents/utils/track_evidence.py), [`test_track_evidence.py`](../../../../../services/agent/tests/unit_test/utils/test_track_evidence.py)
+
 ### 2026-11-03: Every console video is silent, Play clip is removed and the chat sheet does not blur the page
 - **Decision:** every `<video>` in `incident-console-v2` is a `MutedVideo` (`src/components/muted-video.tsx`): muted, volume 0, re-muted on `volumechange` and `loadedmetadata`, with the native mute and volume controls hidden in `styles.css`. The detail pop-up's **Play clip** and everything only it used are removed: `POST /api/reports/[videoId]/evidence-clip`, `get-evidence-clip`, `evidence-clip.ts`, `ffmpeg-clip.ts`, the R2 clip store, `ItemEvidence.clipUrl` and `tests/evidence-clip.test.mjs`. **Play from here** stays. The shared sheet overlay (`components/ui/sheet.tsx`, used only by the "Ask about this incident" and library chat panels) drops `backdrop-blur`; it still dims the page.
 - **Why:** the captain asked (3 Nov 2026, minor fixes for the finals demo) that sound never plays, that the ask panel never blurs the background, and that Play clip goes entirely.
