@@ -16,6 +16,8 @@ const {
   parseTrackSamples,
   presenceRegion,
   presenceSeekSeconds,
+  stillBoxFor,
+  stillBoxHolds,
   trackBoxAt,
   trackColour,
   trackedReportItems,
@@ -140,6 +142,27 @@ test('the view carries a track when the entry has its key and both span ends, an
   assert.equal(lines[0].onScreen, 'On screen 1:20–1:30', "the report's own span is never rewritten");
   assert.equal(lines[0].trackedOnScreen, 'On screen 1:18–1:35 (tracked)');
   assert.equal(lines[1].trackedOnScreen, null);
+});
+
+test('an untracked item holds its stored box at the second it was found; a tracked or box-less one holds nothing', () => {
+  const item = (evidence) => ({ id: 'E2', title: 'man in blue', evidence });
+  const found = { track: null, located: true, boxSeconds: 12.5, boundingBox: [100, 200, 600, 700] };
+  assert.deepEqual(stillBoxFor(item(found)), { id: 'E2', label: 'man in blue', box: [100, 200, 600, 700], seconds: 12.5 });
+  assert.equal(stillBoxFor(item({ ...found, located: null }))?.seconds, 12.5, 'an entry that predates the flag still holds');
+  assert.equal(stillBoxFor(item({ ...found, track: TRACK_KEY })), null, 'a tracked item draws its track');
+  assert.equal(stillBoxFor(item({ ...found, located: false })), null, 'the detector found nothing');
+  assert.equal(stillBoxFor(item({ ...found, boxSeconds: null })), null);
+  assert.equal(stillBoxFor(item({ ...found, boundingBox: null })), null);
+  assert.equal(stillBoxFor(item({ ...found, boundingBox: [0, 0, 0, 0] })), null, 'an empty box');
+  assert.equal(stillBoxFor(item(null)), null);
+});
+
+test('a held still box stays while the player rests at its second and goes when the playhead moves on', () => {
+  const still = { id: 'E2', label: 'man in blue', box: [100, 200, 600, 700], seconds: 12.5 };
+  assert.equal(stillBoxHolds(still, 12.5), true);
+  assert.equal(stillBoxHolds(still, 12.7), true, 'a frame either side');
+  assert.equal(stillBoxHolds(still, 13), false);
+  assert.equal(stillBoxHolds(still, 3), false);
 });
 
 test('a person the run did not track says why, on the card and the pop-up lines, and a tracked one does not', () => {

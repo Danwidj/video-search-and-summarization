@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-03: An untracked item holds its stored box on the paused player
+- **Decision:** the View-mode overlay (`TrackOverlay`) also draws a still box. In the evidence pop-up, Play from here on an item with no track, a located box and a `box_seconds` seeks to `box_seconds`, pauses the video and holds the item's `bounding_box` (dashed amber, labelled) until the user plays or the playhead leaves that second by more than 0.25 s. An item with a track still seeks and plays.
+- **Why:** only tracked items had an overlay, so seeking from an untracked card showed a bare frame (the `evidence-box-findings` note). The box exists, so it is shown where it is true: at the frame it was found in.
+- **Rejected:** playing from the second with the box (it would sit still while the person moves, which reads as a bad track); a synthetic one-sample track (needs the 0.5 s tolerance, so the box would vanish after half a second).
+- **Links:** [`TrackOverlay.tsx`](../incident-console-v2/src/sections/reports/components/TrackOverlay/TrackOverlay.tsx), [`track.ts`](../incident-console-v2/src/modules/reports/domain/track.ts)
+
 ### 2026-11-03: A person left without a track records why (`track_gap`)
 - **Decision:** when person tracking was requested, each person (entity) entry without a track gets `track_gap`: the run's `tracking.skipped` reason, else `no person track overlapped this person's box`, else `this person was not located, so no track could be matched`. The console reads it as `ItemEvidence.trackGap` and prints a quiet "Not tracked: <reason>" line on the card and the pop-up. A reviewer Save that replaces an item's image clears it (`REPLACED_FIELDS`).
 - **Why:** an untracked person was indistinguishable from "tracking off" or a tracker miss; the scout reports needed the run notes to tell. Mirrors `image_gap`.

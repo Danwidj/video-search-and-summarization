@@ -54,6 +54,7 @@ import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
 import { ReportVersions } from '@/sections/reports/components/ReportVersions';
 import { TrackOverlay } from '@/sections/reports/components/TrackOverlay';
+import type { StillBox } from '@/modules/reports/domain/track';
 
 type LoadState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; report: ReportView };
 
@@ -209,12 +210,26 @@ export function ReportPage({
     }
   }, []);
 
-  const seek = useCallback((seconds: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.currentTime = seconds;
-    void video.play().catch(() => undefined);
-  }, []);
+  // An untracked item's box, held on the paused player at the second it was found; a new version starts without one.
+  const [stillPin, setStillPin] = useState<{ revisionId: number; still: StillBox } | null>(null);
+  const still = stillPin && stillPin.revisionId === shownReport?.revisionId ? stillPin.still : null;
+  const clearStill = useCallback(() => setStillPin(null), []);
+  // Plays from `seconds`; with a `held` still box (an item with no track) it only seeks there and pauses, box shown, until the user plays.
+  const seek = useCallback(
+    (seconds: number, held?: StillBox | null) => {
+      const video = videoRef.current;
+      if (!video) return;
+      video.currentTime = seconds;
+      if (held && shownReport) {
+        video.pause();
+        setStillPin({ revisionId: shownReport.revisionId, still: held });
+        return;
+      }
+      setStillPin(null);
+      void video.play().catch(() => undefined);
+    },
+    [shownReport],
+  );
 
   const startEdit = useCallback((base: ReportView) => {
     setDraft(draftFromView(base));
@@ -485,7 +500,7 @@ export function ReportPage({
                     >
                       <track kind="captions" />
                     </MutedVideo>
-                    {mode === 'view' && !inPip && trackedItems.length > 0 && (
+                    {mode === 'view' && !inPip && (trackedItems.length > 0 || still) && (
                       <TrackOverlay
                         frameAspect={videoAspect}
                         items={trackedItems.map((item) => ({
@@ -494,7 +509,9 @@ export function ReportPage({
                           colour: item.colour,
                           trackUrl: item.trackUrl,
                         }))}
+                        onStillDone={clearStill}
                         selectedId={selectedTrackId}
+                        still={still}
                         video={videoRef}
                       />
                     )}

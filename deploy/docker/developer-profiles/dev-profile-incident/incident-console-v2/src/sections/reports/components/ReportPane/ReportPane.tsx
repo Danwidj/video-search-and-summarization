@@ -21,7 +21,7 @@ import {
   instrumentDetail,
 } from '@/modules/reports/domain/evidence-detail';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
-import { type TrackedReportItem, trackedReportItems } from '@/modules/reports/domain/track';
+import { type StillBox, type TrackedReportItem, trackedReportItems } from '@/modules/reports/domain/track';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
 import { EvidenceDetailDialog } from '@/sections/reports/components/EvidenceDetailDialog';
 import { PresenceBar } from '@/sections/reports/components/PresenceBar';
@@ -53,7 +53,7 @@ export function ReportPane({
 }: {
   report: ReportView;
   playerDuration: number | null;
-  onSeek: (seconds: number) => void;
+  onSeek: (seconds: number, still?: StillBox | null) => void;
   /** True once the versions have loaded and none of them is official. */
   officialMissing?: boolean;
   /** Link to compare this version with another AI version, when there is one. */

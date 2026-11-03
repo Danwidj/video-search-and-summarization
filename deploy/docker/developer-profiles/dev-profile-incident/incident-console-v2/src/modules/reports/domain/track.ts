@@ -115,6 +115,41 @@ export function presenceSeekSeconds(fraction: number, durationSeconds: number, f
   return Number.isFinite(at) && at >= firstSeconds && at <= lastSeconds ? at : firstSeconds;
 }
 
+/**
+ * An untracked item's box held on the player: the stored box at the second it was found. An item with a track draws that
+ * track instead; one with no box, no second or a detector miss has nothing to hold.
+ */
+export interface StillBox {
+  id: string;
+  label: string;
+  /** [ymin, xmin, ymax, xmax] on 0-1000, as stored. */
+  box: number[];
+  seconds: number;
+}
+
+export function stillBoxFor(item: {
+  id: string;
+  title: string;
+  evidence: {
+    track: string | null;
+    located: boolean | null;
+    boxSeconds: number | null;
+    boundingBox: number[] | null;
+  } | null;
+}): StillBox | null {
+  const { evidence } = item;
+  if (!evidence || evidence.track || evidence.located === false) return null;
+  if (evidence.boxSeconds === null || !Number.isFinite(evidence.boxSeconds) || evidence.boxSeconds < 0) return null;
+  if (!boxRegion(evidence.boundingBox)) return null;
+  return { id: item.id, label: item.title, box: evidence.boundingBox as number[], seconds: evidence.boxSeconds };
+}
+
+/** How far the playhead may drift from a held still box before the player has moved on and the box goes. */
+export const STILL_BOX_TOLERANCE_SECONDS = 0.25;
+/** Whether a held still box still belongs to the frame on screen: the player is paused at its second, give or take. */
+export const stillBoxHolds = (still: StillBox, playheadSeconds: number): boolean =>
+  Math.abs(playheadSeconds - still.seconds) <= STILL_BOX_TOLERANCE_SECONDS;
+
 /** One stable colour per tracked item, by its position among the report's tracked items (sorted by id). */
 const TRACK_COLOURS = ['#22c55e', '#3b82f6', '#f97316', '#e11d48', '#a855f7', '#14b8a6', '#eab308', '#ec4899'] as const;
 export const trackColour = (index: number): string =>

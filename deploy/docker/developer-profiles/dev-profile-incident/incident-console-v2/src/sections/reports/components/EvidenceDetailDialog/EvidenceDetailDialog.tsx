@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { evidenceDisplay } from '@/lib/evidence/evidence-view';
 import { type EvidenceDetailItem, evidenceDetailLines } from '@/modules/reports/domain/evidence-detail';
-import type { TrackedReportItem } from '@/modules/reports/domain/track';
+import { type StillBox, stillBoxFor, type TrackedReportItem } from '@/modules/reports/domain/track';
 import { EvidenceFrame, KIND_LABEL } from '@/sections/evidence/components/EvidenceFrame';
 import { PresenceBar } from '@/sections/reports/components/PresenceBar';
 
@@ -31,7 +31,8 @@ export function EvidenceDetailDialog({
   /** The report's video; an older item's frame is cut from its stored file. */
   videoId: string;
   onClose: () => void;
-  onPlayFrom: (seconds: number) => void;
+  /** An untracked item passes its still box: the page seeks to the box's second, pauses and holds the box. */
+  onPlayFrom: (seconds: number, still?: StillBox | null) => void;
   /** The item's track, when it has one. */
   track?: TrackedReportItem | null;
   playerDuration?: number | null;
@@ -64,13 +65,14 @@ function Detail({
   item: EvidenceDetailItem;
   videoId: string;
   onClose: () => void;
-  onPlayFrom: (seconds: number) => void;
+  onPlayFrom: (seconds: number, still?: StillBox | null) => void;
   track: TrackedReportItem | null;
   playerDuration: number | null;
 }) {
   const { seconds } = item;
   const lines = evidenceDetailLines(item);
   const shown = evidenceDisplay(item.evidence, videoId);
+  const still = stillBoxFor(item);
   return (
     <DialogContent className="max-h-[calc(100dvh-2rem)] auto-rows-max overflow-y-auto sm:max-w-3xl" data-testid="evidence-dialog">
       <DialogHeader className="pr-8">
@@ -147,7 +149,9 @@ function Detail({
             onClick={() => {
               if (seconds === null) return;
               onClose();
-              onPlayFrom(seconds);
+              // An item with no track has only its stored box: seek to the second it was found, pause and hold the box.
+              if (still) onPlayFrom(still.seconds, still);
+              else onPlayFrom(seconds);
             }}
             type="button"
           >
