@@ -79,8 +79,15 @@ def snapshots(config: RunConfig, datasets: dict[str, Any], data_root: Path | Non
         system = opts["system"]
         predictions = corpora.load_system_predictions(root(data_root) / system["store"], system["run"],
                                                       system["subject"], repeat=int(system.get("repeat", 1)))
+        for extra in system.get("also_checkpointed") or ():  # C3 amendment A4 (see corpora.load_checkpointed_predictions)
+            found = corpora.load_checkpointed_predictions(root(data_root) / extra["run_dir"], system["subject"],
+                                                          extra["items"], repeat=int(system.get("repeat", 1)))
+            clash = sorted(k for k in found if predictions.get(k) is not None)
+            if clash:
+                raise corpora.CorpusError(f"also_checkpointed items already hold a report in {system['run']}: {clash}")
+            predictions.update(found)
         out["system"] = corpora.system_snapshot(predictions, clips, stage=system.get("stage", "final"),
-                                                source={k: system[k] for k in ("run", "subject") if k in system})
+                                                source={k: system[k] for k in ("run", "subject", "also_checkpointed") if k in system})
     return out
 
 

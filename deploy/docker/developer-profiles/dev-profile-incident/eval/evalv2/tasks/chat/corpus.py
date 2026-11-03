@@ -113,6 +113,34 @@ def load_system_predictions(store_root: Any, run_id: str, subject: str, *, repea
     return out
 
 
+def load_checkpointed_predictions(run_dir: Any, subject: str, item_ids: Any, *, repeat: int = 1
+                                  ) -> dict[str, Mapping[str, Any]]:
+    """C3 amendment A4: named items' pipeline predictions from a Track B run's checkpoint (the run may be unsealed).
+
+    Used only for items a later recovery run must not re-send because they already hold a model output: each named
+    item must be in the checkpoint with a prediction, or this refuses.
+    """
+    import json
+    from pathlib import Path
+
+    from evalv2.core.artifacts import ArtifactRef, ArtifactStore
+
+    run_dir = Path(run_dir)
+    store = ArtifactStore(run_dir / "store")
+    rows = {(r["subject"], str(r["item_id"]), int(r.get("repeat") or 1)): r
+            for r in (json.loads(line) for line in (run_dir / "checkpoint.jsonl").read_text(encoding="utf-8").splitlines())}
+    out: dict[str, Mapping[str, Any]] = {}
+    for item in item_ids:
+        row = rows.get((subject, str(item), repeat))
+        if row is None:
+            raise CorpusError(f"{run_dir.name}: {subject} {item} #{repeat} is not in the checkpoint")
+        ref = row.get("prediction_ref")
+        if not ref:
+            raise CorpusError(f"{run_dir.name}: {subject} {item} #{repeat} holds no prediction ({row.get('outcome')})")
+        out[str(item)] = store.get(ArtifactRef.parse(ref))
+    return out
+
+
 def snapshot_sha256(snapshot: Mapping[str, Any]) -> str:
     return sha256_json(dict(snapshot))
 
