@@ -17,7 +17,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body className="bg-background text-foreground antialiased">
         {children}
-        <Toaster />
+        <Toaster position="top-center" />
       </body>
     </html>
   );

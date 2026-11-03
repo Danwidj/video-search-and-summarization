@@ -299,6 +299,7 @@ export function TrackEditor({
       <DialogContent
         aria-label={`Edit track for ${name}`}
         className="max-h-[calc(100vh-2rem)] w-full max-w-[calc(100%-2rem)] gap-3 overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:max-w-4xl"
+        onOpenAutoFocus={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => {
           event.preventDefault();
           if (help) setHelp(false);

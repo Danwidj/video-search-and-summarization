@@ -108,5 +108,5 @@ test('the frame shows a chip per state, a veil outside the track, and draws only
 
 test('toasts have a place to show', async () => {
   const layout = await read('app/layout.tsx');
-  assert.match(layout, /<Toaster \/>/);
+  assert.match(layout, /<Toaster position="top-center" \/>/);
 });

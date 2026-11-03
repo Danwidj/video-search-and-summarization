@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-03: Edit track is a keyframe editor; Done densifies, and a track has no gaps
+- **Decision:** an Edit mode card has **Edit track** (`TrackEditor`): the saved AI track (read from its track route) is thinned to keyframes (Ramer-Douglas-Peucker, tolerance 8 on the 0-1000 grid), the reviewer moves, adds and deletes keyframes on a frame and timeline, and drags start and stop grips. Between keyframes the box slides in a straight line. **Done** re-expands to 4 samples per second with the exact start and stop (cap 2000) and goes through `retrackDraftItem` as a reviewer track, so Save, the viewer and the `-track.json` file are unchanged. Pure model: `modules/reports/domain/track-editor.ts`. A saved gap loads as continuous, and there is no cut, remove or restore stretch (dropped by the captain in board round 4).
+- **Why:** the viewer and the stored file take dense samples, and a reviewer edits intent, not samples; one start and one stop is all the viewer and Save need.
+- **Rejected:** editing the dense samples directly (hundreds of handles); a removed-stretch model (dropped by the captain); a canvas stand-in for the video (the frame uses the real clip).
+- **Links:** [`track-editor.ts`](../incident-console-v2/src/modules/reports/domain/track-editor.ts), [`TrackEditor.tsx`](../incident-console-v2/src/sections/evidence/components/TrackEditor/TrackEditor.tsx)
+
 ### 2026-11-03: A replaced reviewer image drops the old crop's detector and second-look fields; the edit preview uses the exact second
 - **Decision:** `storeReviewerItems` no longer carries `detected_box`, `zoom_checked`, `zoom_confidence`, `zoom_seen`, `zoom_gap`, `name_before` or `description_before` from the source entry onto the entry of an item whose image Save replaced (added to `REPLACED_FIELDS` beside `image_gap` and the track fields). `videoFrameUrl` sends the second with up to three decimals instead of rounding to a whole second; the frame route and ffmpeg already accept decimals.
 - **Why:** the old fields described a crop that is no longer the entry's image, and Save cuts the crop and frame at the first sample's exact second, so a rounded preview could show a different frame from the one stored.

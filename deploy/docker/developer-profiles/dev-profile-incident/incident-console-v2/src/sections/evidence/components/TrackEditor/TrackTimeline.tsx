@@ -22,7 +22,7 @@ import {
 
 type Drag =
   | { kind: 'scrub' }
-  | { kind: 'grip'; which: 'start' | 'stop'; started: boolean }
+  | { kind: 'grip'; which: 'start' | 'stop'; started: boolean; offset: number }
   | { kind: 'key'; index: number; origin: number; started: boolean };
 
 const KEY_STEP = (shift: boolean) => (shift ? 1 : SNAP_SECONDS);
@@ -74,7 +74,8 @@ export function TrackTimeline({
     if (drag.kind === 'scrub') return onSeek(t);
     if (!track) return;
     if (drag.kind === 'grip') {
-      const next = drag.which === 'start' ? setStart(track, t) : setStop(track, t, duration);
+      const edge = t - drag.offset;
+      const next = drag.which === 'start' ? setStart(track, edge) : setStop(track, edge, duration);
       const current = drag.which === 'start' ? track.start : track.stop;
       const target = drag.which === 'start' ? next.start : next.stop;
       if (target === current) return;
@@ -102,6 +103,7 @@ export function TrackTimeline({
   const begin = (drag: Drag) => (event: React.PointerEvent<HTMLElement>) => {
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    if (drag.kind === 'grip' && track) drag.offset = timeAt(event.clientX) - (drag.which === 'start' ? track.start : track.stop);
     dragRef.current = drag;
   };
 
@@ -141,7 +143,7 @@ export function TrackTimeline({
         <div
           className="absolute bottom-full z-10 mb-1 flex -translate-x-1/2 items-center gap-2 rounded-xl bg-ink px-2.5 py-1.5 text-[11px] text-white shadow-lg"
           data-testid="track-keyframe-popover"
-          style={{ left: `clamp(4.5rem, ${left(picked.t)}, calc(100% - 4.5rem))` }}
+          style={{ left: `clamp(7rem, ${left(picked.t)}, calc(100% - 7rem))` }}
         >
           <span className="font-mono">Keyframe {formatEditorClock(picked.t)}</span>
           <Button
@@ -239,13 +241,13 @@ export function TrackTimeline({
                   aria-label={`${which === 'start' ? 'Start' : 'Stop'} of the track, ${formatEditorClock(t)}`}
                   className={cn(
                     'absolute top-1.5 bottom-1.5 flex w-3 cursor-ew-resize touch-none items-center justify-center rounded-sm bg-ink outline-none focus-visible:ring-2 focus-visible:ring-signal',
-                    which === 'start' ? '-translate-x-full' : '',
+                    which === 'start' ? '-ml-2 -translate-x-full' : 'ml-2',
                   )}
                   data-testid={`track-grip-${which}`}
                   key={which}
                   onKeyDown={(event) => nudgeGrip(which, event)}
                   onPointerCancel={release}
-                  onPointerDown={begin({ kind: 'grip', which, started: false })}
+                  onPointerDown={begin({ kind: 'grip', which, started: false, offset: 0 })}
                   onPointerMove={move}
                   onPointerUp={release}
                   style={{ left: left(t) }}
