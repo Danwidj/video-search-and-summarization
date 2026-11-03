@@ -6,6 +6,7 @@ import { PictureInPicture2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { MutedVideo } from '@/components/muted-video';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -466,7 +467,7 @@ export function ReportPage({
                     className="relative max-h-full max-w-full overflow-hidden bg-black"
                     style={{ aspectRatio: videoAspect, width: `min(100cqw, calc(100cqh * ${videoAspect}))` }}
                   >
-                    <video
+                    <MutedVideo
                       className="h-full w-full object-contain"
                       controls
                       onLoadedMetadata={(event) => {
@@ -483,7 +484,7 @@ export function ReportPage({
                       src={report.run.playbackUrl}
                     >
                       <track kind="captions" />
-                    </video>
+                    </MutedVideo>
                     {mode === 'view' && !inPip && trackedItems.length > 0 && (
                       <TrackOverlay
                         frameAspect={videoAspect}
