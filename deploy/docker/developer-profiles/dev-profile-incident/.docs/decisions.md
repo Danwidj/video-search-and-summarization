@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-11-03: A replaced reviewer image drops the old crop's detector and second-look fields; the edit preview uses the exact second
+- **Decision:** `storeReviewerItems` no longer carries `detected_box`, `zoom_checked`, `zoom_confidence`, `zoom_seen`, `zoom_gap`, `name_before` or `description_before` from the source entry onto the entry of an item whose image Save replaced (added to `REPLACED_FIELDS` beside `image_gap` and the track fields). `videoFrameUrl` sends the second with up to three decimals instead of rounding to a whole second; the frame route and ffmpeg already accept decimals.
+- **Why:** the old fields described a crop that is no longer the entry's image, and Save cuts the crop and frame at the first sample's exact second, so a rounded preview could show a different frame from the one stored.
+- **Rejected:** keeping `name_before`/`description_before` (they record a correction of the old crop's name; the payload keeps the corrected name, the history belongs to the old revision).
+- **Links:** [`store-reviewer-items/index.ts`](../incident-console-v2/src/modules/reports/application/store-reviewer-items/index.ts), [`evidence-view.ts`](../incident-console-v2/src/lib/evidence/evidence-view.ts)
+
 ### 2026-11-03: An untracked item holds its stored box on the paused player
 - **Decision:** the View-mode overlay (`TrackOverlay`) also draws a still box. In the evidence pop-up, Play from here on an item with no track, a located box and a `box_seconds` seeks to `box_seconds`, pauses the video and holds the item's `bounding_box` (dashed amber, labelled) until the user plays or the playhead leaves that second by more than 0.25 s. An item with a track still seeks and plays.
 - **Why:** only tracked items had an overlay, so seeking from an untracked card showed a bare frame (the `evidence-box-findings` note). The box exists, so it is shown where it is true: at the frame it was found in.
