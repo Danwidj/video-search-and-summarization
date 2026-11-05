@@ -3,6 +3,7 @@
 import { StoreRejection, type Page } from '@/modules/shared/domain/common';
 import type {
   AttemptRunRecord,
+  MissingEmbedding,
   OfficialChange,
   RevisionCropsChange,
   RevisionRunRecord,
@@ -180,6 +181,42 @@ export class SupabaseVideoAdapter implements VideoRepository {
       revisionId: numberOrNull(result.revisionId) ?? revisionId,
       crops: numberOrNull(result.crops) ?? 0,
     };
+  }
+
+  async listRevisionsMissingCrops(videoId?: string): Promise<Array<{ videoId: string; revisionId: number }>> {
+    const rows = await this.db.rpc('list_revisions_missing_crops', { p_video_id: videoId ?? null });
+    if (!Array.isArray(rows)) return [];
+    return rows.flatMap((raw) => {
+      const found = asRow(raw);
+      const id = text(found.video_id);
+      const revisionId = numberOrNull(found.revision_id);
+      return id && revisionId !== null ? [{ videoId: id, revisionId }] : [];
+    });
+  }
+
+  async repairRevisionCrops(videoId: string, revisionId: number, crops: OfficialCrop[]): Promise<number | null> {
+    const stored = await this.db.rpc('repair_revision_crops', { p_video_id: videoId, p_revision_id: revisionId, p_crops: crops });
+    return typeof stored === 'number' ? stored : null;
+  }
+
+  async listRevisionsMissingEmbeddings(videoId?: string): Promise<MissingEmbedding[]> {
+    const rows = await this.db.rpc('list_revisions_missing_embeddings', { p_video_id: videoId ?? null });
+    if (!Array.isArray(rows)) return [];
+    return rows.flatMap((raw) => {
+      const found = asRow(raw);
+      const id = text(found.video_id);
+      const revisionId = numberOrNull(found.revision_id);
+      return id && revisionId !== null
+        ? [{ videoId: id, revisionId, title: text(found.title) ?? null, description: text(found.description) ?? null }]
+        : [];
+    });
+  }
+
+  async setRevisionEmbedding(videoId: string, revisionId: number, embedding: number[]): Promise<boolean> {
+    const stored = await this.db
+      .rpc('set_revision_embedding', { p_video_id: videoId, p_revision_id: revisionId, p_embedding: `[${embedding.join(',')}]` })
+      .catch(officialRefusal);
+    return stored === true;
   }
 
   async deleteVideo(videoId: string): Promise<void> {

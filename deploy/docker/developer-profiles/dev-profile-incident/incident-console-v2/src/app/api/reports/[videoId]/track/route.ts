@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { getDbAdapters } from '@/lib/container';
 import { getServiceConfiguration } from '@/lib/env';
-import { createR2PlaybackUrl } from '@/lib/r2/config';
+import { readStoredJson, StoredJsonError } from '@/lib/r2/stored-json';
 import { getEvidenceTrack } from '@/modules/reports/application/get-evidence-track';
 import type { EvidenceItemType } from '@/modules/reports/domain/revision';
 
@@ -12,8 +12,6 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 const ITEM_TYPES: readonly string[] = ['entity', 'instrument', 'asset'];
-/** A track holds at most 5 samples a second of about 50 bytes each; anything this large is not one. */
-const MAX_TRACK_BYTES = 4 * 1024 * 1024;
 
 /**
  * One item's track samples, ?revision=<id>&type=<entity|instrument|asset>&item=<id>, as {samples: [{t, box}]}. The track is
@@ -30,17 +28,7 @@ export async function GET(request: Request, context: { params: Promise<{ videoId
     return NextResponse.json({ error: 'revision, type and item are required' }, { status: 400 });
   }
   const config = getServiceConfiguration();
-  const read = async (key: string) => {
-    const response = await fetch(await createR2PlaybackUrl(config, key), { cache: 'no-store' });
-    if (!response.ok) throw new TrackReadError(`The stored track returned HTTP ${response.status}`);
-    const body = await response.text();
-    if (body.length > MAX_TRACK_BYTES) throw new TrackReadError('The stored track is too large');
-    try {
-      return JSON.parse(body) as unknown;
-    } catch {
-      return null;
-    }
-  };
+  const read = readStoredJson(config);
   try {
     const samples = await getEvidenceTrack(getDbAdapters(config).incidents, read, {
       videoId,
@@ -51,9 +39,7 @@ export async function GET(request: Request, context: { params: Promise<{ videoId
     if (!samples) return NextResponse.json({ error: 'This item has no track' }, { status: 404 });
     return NextResponse.json({ samples }, { headers: { 'Cache-Control': 'private, max-age=300' } });
   } catch (error) {
-    const message = error instanceof TrackReadError ? error.message : 'Could not read the track';
+    const message = error instanceof StoredJsonError ? error.message : 'Could not read the track';
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }
-
-class TrackReadError extends Error {}

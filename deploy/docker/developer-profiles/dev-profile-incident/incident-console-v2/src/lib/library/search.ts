@@ -86,11 +86,11 @@ export function hitsInFrame(hit: EvidenceSearchHit, hits: EvidenceSearchHit[]): 
   );
 }
 
-/** The report page for a hit: its version, and the second the hit was taken at (?t=). */
+/** The report page for a hit: its version, and the second the box was found at, fraction kept (?t=). */
 export function reportHref(hit: EvidenceSearchHit, version?: SearchedVersion): string {
   const query = new URLSearchParams();
   if (version) query.set('revision', String(version.revisionId));
-  query.set('t', String(Math.floor(hit.item.timestampSeconds)));
+  query.set('t', String(+Math.max(0, hit.item.timestampSeconds).toFixed(3)));
   return `/reports/${encodeURIComponent(hit.incident.videoId)}?${query}`;
 }
 

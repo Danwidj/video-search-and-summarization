@@ -8,7 +8,8 @@
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import type { RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
-import type { EmbedEvidence, ReviewerEvidenceStore } from '@/modules/reports/application/types';
+import { confirmedSpans } from '@/modules/reports/application/confirmed-spans';
+import type { EmbedEvidence, EmbedSummary, ReadStoredJson, ReviewerEvidenceStore } from '@/modules/reports/application/types';
 import { storeReviewerItems } from '@/modules/reports/application/store-reviewer-items';
 import { StoreRejection } from '@/modules/shared/domain/common';
 import { missingItemFields } from '@/modules/contract/domain/validate';
@@ -48,13 +49,39 @@ function checkImages(parent: RevisionRecord, edit: StructuredEdit, videoKey: str
  * The crops the new revision will be searchable with: embedded here, before the revision is written. An
  * embedding failure stops the save, so no revision is written without its crops.
  */
-async function searchableCrops(payload: ReportPayload, evidence: EvidenceEntry[], embed: EmbedEvidence): Promise<OfficialCrop[]> {
+async function searchableCrops(
+  payload: ReportPayload,
+  evidence: EvidenceEntry[],
+  embed: EmbedEvidence,
+  readTrack?: ReadStoredJson,
+): Promise<OfficialCrop[]> {
   const withImages = evidence.filter((entry) => entry.image);
   if (!withImages.length) return [];
   try {
-    return officialCrops(payload, evidence, await embed(withImages));
+    return officialCrops(payload, evidence, await embed(withImages), null, await confirmedSpans(evidence, readTrack));
   } catch (error) {
     throw new SearchableStepError(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/**
+ * The summary vector the new revision is searched by in Find incidents, from the same title and description text as an AI
+ * version. A failure (agent down, an agent that predates the endpoint) is not a failed save: the revision is stored without
+ * a vector and the repair step stores one when the agent is back.
+ */
+async function summaryEmbedding(payload: ReportPayload, embedSummary?: EmbedSummary): Promise<number[] | null> {
+  if (!embedSummary) return null;
+  const incident = (payload as { incident?: { title?: unknown; description?: unknown } }).incident ?? {};
+  const title = typeof incident.title === 'string' && incident.title.trim() ? incident.title : null;
+  const description = typeof incident.description === 'string' && incident.description.trim() ? incident.description : null;
+  if (!title && !description) return null;
+  try {
+    return await embedSummary({ title, description });
+  } catch (error) {
+    console.warn(
+      `[save human edit] the summary could not be embedded, saving without a vector: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
   }
 }
 
@@ -67,6 +94,8 @@ export async function saveHumanEdit(
   input: { videoId: string; parentId: number; edit: StructuredEdit; createdBy: string; note?: string | null },
   embed: EmbedEvidence,
   reviewerStore?: ReviewerEvidenceStore,
+  readTrack?: ReadStoredJson,
+  embedSummary?: EmbedSummary,
 ): Promise<RevisionSummary> {
   const parent = await incidents.getRevision(input.videoId, input.parentId);
   if (!parent) throw new StoreRejection('not-found', `Revision not found for this video: ${input.parentId}`);
@@ -91,13 +120,14 @@ export async function saveHumanEdit(
       'invalid',
       `The saved report would not satisfy incident-contract-v4: ${missing.map((v) => v.message).join('; ')}`,
     );
-  const crops = video.officialRevisionId === null ? await searchableCrops(payload, evidence, embed) : [];
+  const crops = video.officialRevisionId === null ? await searchableCrops(payload, evidence, embed, readTrack) : [];
   return incidents.saveHumanRevision({
     videoId: input.videoId,
     parentId: input.parentId,
     payload,
     evidence,
     crops,
+    embedding: video.officialRevisionId === null ? await summaryEmbedding(payload, embedSummary) : null,
     createdBy: input.createdBy,
     note: input.note?.trim() || null,
   });

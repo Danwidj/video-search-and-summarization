@@ -17,7 +17,10 @@
         "threat_level": 4,
         "holder_entity_id": "E1",
         "crop_image_url": "https://pub-r2.example.com/evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg",
-        "timestamp_seconds": 14,
+        "timestamp_seconds": 14.333,
+        "slice_start_seconds": 11.333,
+        "slice_end_seconds": 17.333,
+        "frame_image_url": "https://signed.r2.test/evidence/clip/run-1/E1-frame.jpg",
         "bounding_box": [320, 450, 510, 600]
       },
       "incident": {

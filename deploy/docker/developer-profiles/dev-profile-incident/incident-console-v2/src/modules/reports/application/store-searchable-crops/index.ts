@@ -5,7 +5,8 @@
 
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import { officialCrops } from '@/modules/reports/domain/revision';
-import type { EmbedRevisionEvidence } from '@/modules/reports/application/types';
+import { confirmedSpans } from '@/modules/reports/application/confirmed-spans';
+import type { EmbedRevisionEvidence, ReadStoredJson } from '@/modules/reports/application/types';
 
 /** What storing a new revision's crops did: the rows stored, or null when skipped or failed (error says why). */
 export interface SearchableCropsResult {
@@ -26,6 +27,7 @@ export async function storeSearchableCrops(
   videoId: string,
   revisionId: number,
   embed: EmbedRevisionEvidence,
+  readTrack?: ReadStoredJson,
 ): Promise<SearchableCropsResult> {
   try {
     const video = await videos.getVideo(videoId);
@@ -33,9 +35,9 @@ export async function storeSearchableCrops(
     const record = await incidents.getRevision(videoId, revisionId);
     if (!record) return { crops: null };
     const embeddings = record.evidence.some((entry) => entry.image) ? await embed(revisionId) : [];
-    return {
-      crops: (await videos.setRevisionCrops(videoId, revisionId, officialCrops(record.payload, record.evidence, embeddings))).crops,
-    };
+    const spans = await confirmedSpans(record.evidence, readTrack);
+    const crops = officialCrops(record.payload, record.evidence, embeddings, null, spans);
+    return { crops: (await videos.setRevisionCrops(videoId, revisionId, crops)).crops };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Could not store the evidence crops of revision ${revisionId} of ${videoId}: ${message}`);

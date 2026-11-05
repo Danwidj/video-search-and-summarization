@@ -124,7 +124,7 @@ test("/api/search asks the agent for every ranked hit and adds each video's sear
   };
   const response = await post({ query: ' blade ' });
   assert.equal(response.status, 200);
-  assert.deepEqual(agentBodies, [{ query: 'blade', top_k: 20, min_similarity: 0 }]);
+  assert.deepEqual(agentBodies, [{ query: 'blade', top_k: 20, min_similarity: 0.35 }]);
   const body = await response.json();
   assert.equal(body.hits.length, 2);
   const version = body.versions[summaries.reports[0].videoId];
@@ -145,7 +145,7 @@ test('/api/search with a videoId asks the agent for that incident only, and allo
   assert.equal((await post({ query: ' knife ', videoId: 'Assault007_x264' })).status, 200);
   assert.deepEqual(agentBodies, [
     { query: '', top_k: 50, min_similarity: 0, filters: { video_id: 'Assault007_x264' } },
-    { query: 'knife', top_k: 50, min_similarity: 0, filters: { video_id: 'Assault007_x264' } },
+    { query: 'knife', top_k: 50, min_similarity: 0.35, filters: { video_id: 'Assault007_x264' } },
   ]);
   assert.equal((await post({ query: 'x', videoId: 'v'.repeat(65) })).status, 400);
 });
@@ -178,4 +178,18 @@ test('the evidence UI shows no critic verdict, and the incident card search load
   const screen = readFileSync(join(dir, 'LibraryScreen', 'LibraryScreen.tsx'), 'utf8');
   assert.match(screen, /void searchEvidence\('', item\.videoId\)/);
   assert.match(screen, /searchEvidence\(evidenceQuery, scope\?\.videoId \?\? null\)/);
+});
+
+test('a hit carries its fractional second, slice range and stored frame; an older agent gives nulls and the viewer falls back', async () => {
+  const { hitSlice, sliceUrl } = await import('../src/lib/library/slice.ts');
+  const { hitDisplay } = await import('../src/lib/evidence/evidence-view.ts');
+  const [withSlice, plain] = fromAgentSearchResponse(full).hits;
+  assert.equal(withSlice.item.timestampSeconds, 14.333);
+  assert.deepEqual(hitSlice(withSlice.item), { start: 11.333, end: 17.333 });
+  assert.equal(hitDisplay(withSlice.item, 'v').frameSrc, 'https://signed.r2.test/evidence/clip/run-1/E1-frame.jpg');
+  assert.equal(plain.item.sliceStartSeconds, null);
+  assert.equal(plain.item.frameImageUrl, null);
+  assert.deepEqual(hitSlice({ ...plain.item, timestampSeconds: 2 }), { start: 0, end: 5 });
+  assert.match(hitDisplay(plain.item, 'v').frameSrc, /^\/api\/reports\/v\/frame\?t=/);
+  assert.equal(sliceUrl('https://x/v.mp4?sig=1', { start: 11.333, end: 17.333 }), 'https://x/v.mp4?sig=1#t=11.333,17.333');
 });

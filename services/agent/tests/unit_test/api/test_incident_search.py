@@ -258,7 +258,9 @@ class TestContractFixturesValidation:
         assert len(resp.hits) == 2
         first = resp.hits[0]
         assert first.item.item_type == "instrument"
-        assert first.item.timestamp_seconds == 14
+        assert first.item.timestamp_seconds == 14.333
+        assert (first.item.slice_start_seconds, first.item.slice_end_seconds) == (11.333, 17.333)
+        assert first.item.frame_image_url is not None
         assert first.critic.verdict == "confirmed"
         assert first.critic.confidence == 0.96
 
@@ -854,6 +856,56 @@ class TestSearchStores:
                 "p_max_severity": 5,
             },
         )
+
+    @pytest.mark.asyncio
+    async def test_supabase_search_store_keeps_fractional_second_slice_and_frame(self) -> None:
+        """The audit's 15.33 s stays 15.33 (not 15); a row without slice or frame still maps (nulls)."""
+        base = {
+            "video_id": "v1",
+            "revision_id": 7,
+            "video_filepath": "uploads/v1.mp4",
+            "item_type": "entity",
+            "item_id": "E1",
+            "image": "evidence/v1/E1.jpg",
+            "similarity_score": 0.5,
+        }
+        rows = [
+            {
+                **base,
+                "timestamp_seconds": "15.330",
+                "slice_start_seconds": "12.330",
+                "slice_end_seconds": 18.33,
+                "frame": "evidence/v1/E1-frame.jpg",
+            },
+            {**base, "item_id": "E2", "timestamp_seconds": 2},
+        ]
+        rpc_builder = MagicMock()
+        rpc_builder.execute = AsyncMock(return_value=MagicMock(data=rows))
+        mock_client = MagicMock()
+        mock_client.rpc = MagicMock(return_value=rpc_builder)
+
+        store = SupabaseSearchStore(client=mock_client, r2_resolver=lambda ref: f"https://mock-r2.test/{ref}")
+        tracked, plain = await store.search_evidence_items(query_embedding=[0.5] * 1024)
+
+        assert tracked.timestamp_seconds == 15.33
+        assert (tracked.slice_start_seconds, tracked.slice_end_seconds) == (12.33, 18.33)
+        assert tracked.frame_image_url == "https://mock-r2.test/evidence/v1/E1-frame.jpg"
+        assert plain.timestamp_seconds == 2.0
+        assert plain.slice_start_seconds is None
+        assert plain.frame_image_url is None
+        item = ItemHit(
+            item_type="entity",
+            item_id="E1",
+            name="n",
+            label="l",
+            description="d",
+            crop_image_url="https://x/c.jpg",
+            timestamp_seconds=tracked.timestamp_seconds,
+            slice_start_seconds=tracked.slice_start_seconds,
+            slice_end_seconds=tracked.slice_end_seconds,
+            frame_image_url=tracked.frame_image_url,
+        )
+        assert item.model_dump()["timestamp_seconds"] == 15.33
 
     @pytest.mark.asyncio
     async def test_supabase_search_store_persists_queries_and_results(self) -> None:

@@ -9,6 +9,7 @@
 // the revision the reviewer opened; nothing is ever updated.
 
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
+import type { ConfirmedSpan } from '@/modules/reports/domain/track';
 
 export type RevisionKind = 'ai' | 'human';
 export type EvidenceItemType = 'entity' | 'instrument' | 'asset';
@@ -234,7 +235,13 @@ export interface OfficialCrop {
   item_id: string;
   image: string;
   bounding_box: number[] | null;
+  /** The second the box was found at, to 3 decimals (not the item's own whole second). */
   timestamp_seconds: number | null;
+  /** The play range of the item's slice of the video, in seconds, to 3 decimals. */
+  slice_start_seconds: number;
+  slice_end_seconds: number;
+  /** R2 key of the whole frame the box was found in; null when the entry has none. */
+  frame: string | null;
   item_name: string;
   description: string;
   threat_level: number | null;
@@ -242,14 +249,28 @@ export interface OfficialCrop {
   embedding: number[];
 }
 
+interface PayloadDetails {
+  item_name: string;
+  label: string | null;
+  description: string;
+  threat_level: number | null;
+  holder_entity_id: string | null;
+}
+
+/** The text of a label, or null when it is missing or blank. */
+const labelText = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+/**
+ * The name a searchable crop (and so an evidence card) carries: the item's own label as the report wrote it, else the
+ * name or type the entry already had. The second look's rename changes the name, never the label.
+ */
+export function cropItemName(entry: { label?: unknown; item_name?: unknown; item_type: string }, fallback?: PayloadDetails): string {
+  return labelText(entry.label) ?? fallback?.label ?? labelText(entry.item_name) ?? fallback?.item_name ?? entry.item_type;
+}
+
 /** The item details the payload holds, used when an evidence entry (e.g. a gateway-mode placeholder) lacks them. */
-function payloadDetails(
-  payload: ReportPayload,
-): Map<string, { item_name: string; description: string; threat_level: number | null; holder_entity_id: string | null }> {
-  const details = new Map<
-    string,
-    { item_name: string; description: string; threat_level: number | null; holder_entity_id: string | null }
-  >();
+function payloadDetails(payload: ReportPayload): Map<string, PayloadDetails> {
+  const details = new Map<string, PayloadDetails>();
   const add = (
     type: EvidenceItemType,
     id: unknown,
@@ -258,10 +279,12 @@ function payloadDetails(
     threat: unknown,
     holder: unknown,
     fallback: string,
+    label: unknown,
   ) => {
     if (typeof id !== 'string' || !id) return;
     details.set(`${type}:${id}`, {
       item_name: typeof name === 'string' && name.trim() ? name : fallback,
+      label: labelText(label),
       description: typeof description === 'string' ? description : '',
       threat_level: integerOrNull(threat),
       holder_entity_id: typeof holder === 'string' && holder ? holder : null,
@@ -269,7 +292,7 @@ function payloadDetails(
   };
   for (const item of Array.isArray(payload.entities) ? payload.entities : []) {
     const entity = asRecord(item);
-    add('entity', entity.entity_id, entity.type, entity.description, null, null, 'entity');
+    add('entity', entity.entity_id, entity.type, entity.description, null, null, 'entity', entity.label);
   }
   for (const item of Array.isArray(payload.instruments) ? payload.instruments : []) {
     const instrument = asRecord(item);
@@ -281,13 +304,67 @@ function payloadDetails(
       instrument.threat_level,
       instrument.entity_id,
       'instrument',
+      instrument.label,
     );
   }
   for (const item of Array.isArray(payload.assets) ? payload.assets : []) {
     const asset = asRecord(item);
-    add('asset', asset.asset_id, asset.name, asset.description, null, null, 'asset');
+    add('asset', asset.asset_id, asset.name, asset.description, null, null, 'asset', asset.label);
   }
   return details;
+}
+
+const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+const millis = (value: number): number => Math.round(value * 1000) / 1000;
+
+/** How far either side of the box second a slice reaches when the item has no track. */
+export const SLICE_PADDING_SECONDS = 3;
+
+/**
+ * The second the box was found at: box_seconds (a fractional retry second included), else the item's own second, else 0.
+ * Kept to 3 decimals.
+ */
+export function boxSecond(entry: EvidenceEntry): number {
+  return millis(Math.max(0, numberOrNull(entry.box_seconds) ?? numberOrNull(entry.timestamp_seconds) ?? 0));
+}
+
+/** A confirmed span shorter than this is widened to MIN_SLICE_SECONDS so the slice is watchable. */
+export const MIN_SLICE_SECONDS = 2;
+
+/**
+ * The play range of an evidence item's slice of the existing video. People and other entities with a track: first to last
+ * seen. Instruments and assets: first to last detector-confirmed sample of their track (`confirmed`), widened to
+ * MIN_SLICE_SECONDS around its middle when shorter, then extended to include the box second; with no confirmed sample, or no track, SLICE_PADDING_SECONDS either side
+ * of the box second. Never negative and, when the video's length is known, never past it. Derived from the evidence entry
+ * and its track, never from a stored row's second.
+ */
+export function evidenceSlice(
+  entry: EvidenceEntry,
+  durationSeconds: number | null = null,
+  confirmed: ConfirmedSpan | null = null,
+): { start: number; end: number } {
+  const first = numberOrNull(entry.track_first_seen_seconds);
+  const last = numberOrNull(entry.track_last_seen_seconds);
+  const tracked = typeof entry.track === 'string' && entry.track !== '' && first !== null && last !== null && last >= first;
+  const at = boxSecond(entry);
+  const ceiling = durationSeconds !== null && durationSeconds > 0 ? durationSeconds : Number.POSITIVE_INFINITY;
+  let start = at - SLICE_PADDING_SECONDS;
+  let end = at + SLICE_PADDING_SECONDS;
+  if (entry.item_type === 'entity') {
+    if (tracked) [start, end] = [first, last];
+  } else if (tracked && confirmed) {
+    [start, end] = [confirmed.first, confirmed.last];
+    if (end - start < MIN_SLICE_SECONDS) {
+      const middle = (start + end) / 2;
+      [start, end] = [middle - MIN_SLICE_SECONDS / 2, middle + MIN_SLICE_SECONDS / 2];
+    }
+    // The stored evidence moment (the box second) is always inside the slice, even when the detector only confirmed the
+    // object later (137 A1: box at 0.07 s, confirmed from 2.4 s).
+    start = Math.min(start, at);
+    end = Math.max(end, at);
+  }
+  const clampedStart = Math.min(Math.max(0, start), ceiling);
+  return { start: millis(clampedStart), end: millis(Math.max(clampedStart, Math.min(end, ceiling))) };
 }
 
 /**
@@ -296,9 +373,16 @@ function payloadDetails(
  * (or, for a gateway-mode placeholder, from the payload). An item with no
  * image or no vector is not searchable and is left out. The row's second is the
  * one the box was found at (box_seconds, a retry second when the item's own
- * second found nothing), so a search hit cuts the frame the box belongs to.
+ * second found nothing), fraction kept, so a search hit shows the frame the box belongs to. The row also carries the
+ * item's slice range (`confirmed` holds the confirmed spans of object tracks, keyed `type:id`) and its stored frame.
  */
-export function officialCrops(payload: ReportPayload, evidence: EvidenceEntry[], embeddings: EvidenceEmbedding[]): OfficialCrop[] {
+export function officialCrops(
+  payload: ReportPayload,
+  evidence: EvidenceEntry[],
+  embeddings: EvidenceEmbedding[],
+  durationSeconds: number | null = null,
+  confirmed: ReadonlyMap<string, ConfirmedSpan> = new Map(),
+): OfficialCrop[] {
   const details = payloadDetails(payload);
   const vectors = new Map(embeddings.map((item) => [`${item.itemType}:${item.itemId}`, item.embedding]));
   return evidence.flatMap((entry): OfficialCrop[] => {
@@ -306,15 +390,18 @@ export function officialCrops(payload: ReportPayload, evidence: EvidenceEntry[],
     const embedding = vectors.get(`${entry.item_type}:${entry.item_id}`);
     if (!embedding) return [];
     const fallback = details.get(`${entry.item_type}:${entry.item_id}`);
+    const slice = evidenceSlice(entry, durationSeconds, confirmed.get(`${entry.item_type}:${entry.item_id}`) ?? null);
     return [
       {
         item_type: entry.item_type,
         item_id: entry.item_id,
         image: entry.image,
         bounding_box: entry.bounding_box,
-        timestamp_seconds: integerOrNull(entry.box_seconds) ?? entry.timestamp_seconds ?? 0,
-        item_name:
-          typeof entry.item_name === 'string' && entry.item_name.trim() ? entry.item_name : (fallback?.item_name ?? entry.item_type),
+        timestamp_seconds: boxSecond(entry),
+        slice_start_seconds: slice.start,
+        slice_end_seconds: slice.end,
+        frame: typeof entry.frame === 'string' && entry.frame.trim() ? entry.frame : null,
+        item_name: cropItemName(entry, fallback),
         description: typeof entry.description === 'string' ? entry.description : (fallback?.description ?? ''),
         threat_level: integerOrNull(entry.threat_level) ?? fallback?.threat_level ?? null,
         holder_entity_id:

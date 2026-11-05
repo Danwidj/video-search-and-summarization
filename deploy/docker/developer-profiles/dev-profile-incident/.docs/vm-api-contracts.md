@@ -40,7 +40,7 @@ Request (`extra` fields are rejected with 422):
 |---|---|---|---|
 | `query` | string | required, except with `filters.video_id` | 1-500 chars; may be empty only when `filters.video_id` is set (lists that incident's evidence, no embedding call) |
 | `top_k` | int | 10 | 1-50 |
-| `min_similarity` | float | 0.0 | 0.0-1.0 (no cutoff by default: top_k by score) |
+| `min_similarity` | float | 0.0 | 0.0-1.0 (no cutoff by default: top_k by score; the console sends 0.35 for a text query) |
 | `hide_rejected` | bool | true | only matters when the critic is on: drop hits it marked `rejected` from `hits[]` (`rank` keeps its pre-filter value) |
 | `filters.incident_types` | string[] | none | |
 | `filters.min_severity`, `filters.max_severity` | int | none | 1-5 |
@@ -115,6 +115,12 @@ Called by the console when a revision becomes a video's searchable revision: mad
 
 Request: exactly one of `{"revision_id": <int >= 1>}` (the route reads that revision's `evidence`) or `{"evidence": [{"item_type", "item_id", "item_name"?, "description"?}, ...]}` (nothing is read). Response `200`: a list of `{"item_type", "item_id", "embedding"}` (empty when there are no items). Errors: `404` unknown revision, `422` neither or both sources, `502` embedding service failed, `503` database or embedding key not configured.
 
+## `POST /api/v1/incidents/revision-embedding`
+
+Embeds one version's summary with the model search uses (1024 dimensions, `passage` input of the title, a newline, then the description; the text the agent embeds for an AI version). The agent writes nothing; the console stores the vector (human Save, automatic repair).
+
+Request: `{"title": <str>, "description": <str>}`. Response `200`: `{"embedding": [<1024 numbers>]}`. Errors: `422` both texts empty, `502` embedding service failed, `503` embedding key not configured.
+
 ## `POST /api/v1/incidents/{video_id}/box/describe`
 
 What is the box a reviewer drew? The agent reads the frame at `seconds` from the video's stored file (`videos.filepath`, an R2 key), cuts the box with a margin, enlarges it and outlines the box (`describe_box_close_up`; the whole frame is not sent), and asks the VLM with the `zoom/describe-box` prompt, reasoning off (`chat_template_kwargs.enable_thinking=false`): first the Nano model (`nvidia/cosmos-3-nano-reasoner`, 25 s, one try), then, if that fails or cannot tell, the analysis's own model (150 s, one more try after a timeout). At most 325 s; the console waits 330 s. Measured on the shared VLM: about 30 s with reasoning on (and a 60 s timeout now and then), about 3 s with it off. Nothing is stored. Part of the reviewer box tool (see the add/track evidence contract).
@@ -123,7 +129,7 @@ Request: `{"seconds": <float >= 0>, "box": [ymin, xmin, ymax, xmax]}`, the box n
 
 ## `POST /api/v1/incidents/revisions/search`
 
-Searches saved report revisions by their summary embedding. The route embeds `query` with the search query model (1024 dimensions, `query` input type), then calls `search_report_revisions`. Only revisions with a stored vector are searched: AI revisions saved with an embedding; human revisions and AI revisions saved while the embedding endpoint was unavailable are not. The zero-GPU mocks answer this route from their finals snapshot.
+Searches saved report revisions by their summary embedding. The route embeds `query` with the search query model (1024 dimensions, `query` input type), then calls `search_report_revisions`. Only a video's searchable version (official, else newest) is searched, and only when it has a stored vector, so one video returns at most one hit. A version saved while the embedding endpoint was unavailable has none until the automatic repair fills it in. The zero-GPU mocks answer this route from their finals snapshot.
 
 Request: `{"query": <1-1000 chars>, "top_k": <1-50, default 10>, "min_similarity": <-1.0 to 1.0, default 0.0>}`. Response `200`: a list, best first, of `{revision_id, video_id, revision_no, kind, model_run_id, title, description, incident_type, severity_level, start_seconds, end_seconds, similarity_score}`; empty when nothing matches. Errors: `422` invalid body, `502` embedding service failed, `503` database or query embedding key not configured.
 
