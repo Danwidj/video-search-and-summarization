@@ -175,6 +175,12 @@ PROFILES: dict[str, VssProfile] = {
                                          caption_pass=True, captions="inline",
                                          max_caption_calls=CAPTION_CALLS_WORST_CASE,
                                          expected_flags=PRODUCTION_FLAGS, gate=CAPTION_GATE),
+    # The final VLM-versus-VSS comparison (methodology/v2-final-comparison-plan-v1.md): captions and object tracking
+    # together, as the VM runs them; person tracking stays off because the experimental path cannot run it.
+    "final-v1-captions-object-tracking": VssProfile("final-v1-captions-object-tracking", max_crop_calls=40,
+                                                    max_zoom_calls=80, object_tracking=True, caption_pass=True,
+                                                    captions="inline", max_caption_calls=CAPTION_CALLS_WORST_CASE,
+                                                    expected_flags=OBJECT_TRACKING_FLAGS, gate=CAPTION_GATE),
 }
 
 

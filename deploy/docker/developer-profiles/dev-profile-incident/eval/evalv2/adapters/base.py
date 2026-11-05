@@ -96,7 +96,7 @@ def stored_request(request: Mapping[str, Any]) -> dict[str, Any]:
 
 
 # Flags that report what one run did, not how the agent is configured: recorded per run, never pinned (B3).
-PER_RUN_FLAGS: dict[str, tuple[str, ...]] = {"chunking": ("enabled",)}
+PER_RUN_FLAGS: dict[str, tuple[str, ...]] = {"chunking": ("enabled", "ran", "skipped")}
 
 
 def pinned_flags(flags: Mapping[str, Any]) -> dict[str, Any]:

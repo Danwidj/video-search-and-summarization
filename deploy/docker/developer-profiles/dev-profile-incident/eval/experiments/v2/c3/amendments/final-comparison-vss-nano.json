@@ -1,0 +1,122 @@
+{
+  "config_version": "evalv2-config-v1",
+  "experiment": "v2-final-comparison-vss-nano",
+  "split": {
+    "version": "split-v2",
+    "half": "test"
+  },
+  "freeze_manifest": "2f59d49c77ac24de78dab72bb172a92a0f77090f52ffc27a5d81475966480c24",
+  "purpose": "final",
+  "budget_mode": "hard_stop",
+  "seed": 20261101,
+  "retry_policy": "retry-v2",
+  "notes": "Final VLM-versus-VSS comparison (methodology/v2-final-comparison-plan-v1.md): NOT an original C3 run and not production. Agent at origin/main 9f39b5706, Nano in every model slot, captions and object tracking on, person tracking off, 55 test clips x 2 repeats, against stored Track A nano-direct.",
+  "datasets": {
+    "incident_gt": "ground-truth-v1.0"
+  },
+  "subjects": [
+    {
+      "id": "nano-vss-final",
+      "adapter": "vss",
+      "endpoint": "experiment-agent",
+      "model": "nvidia/cosmos-3-nano-reasoner",
+      "profile": "final-v1-captions-object-tracking"
+    }
+  ],
+  "tasks": {
+    "pipeline": {
+      "subjects": "all",
+      "scorers": [
+        "pipeline.score_stage@1",
+        "pipeline.paired_effect@1",
+        "pipeline.crops@1",
+        "pipeline.caption_effect@1"
+      ],
+      "options": {
+        "judges": {
+          "primary": "openrouter-gpt-oss-20b-c3-v1"
+        }
+      }
+    }
+  },
+  "repeats": 2,
+  "caps": [
+    {
+      "ledger": "caption",
+      "subject": "nano-vss-final",
+      "task": "pipeline",
+      "max_attempts": 1276,
+      "max_tokens": 5162276
+    },
+    {
+      "ledger": "grounding",
+      "subject": "nano-vss-final",
+      "task": "pipeline",
+      "max_attempts": 3764,
+      "max_tokens": 1987304
+    },
+    {
+      "ledger": "inference",
+      "subject": "nano-vss-final",
+      "task": "pipeline",
+      "max_attempts": 390,
+      "max_tokens": 5504500
+    },
+    {
+      "ledger": "zoom",
+      "subject": "nano-vss-final",
+      "task": "pipeline",
+      "max_attempts": 8210,
+      "max_tokens": 3737700
+    },
+    {
+      "ledger": "caption",
+      "subject": "*",
+      "task": "*",
+      "max_attempts": 2780,
+      "max_tokens": 13748024
+    },
+    {
+      "ledger": "grounding",
+      "subject": "*",
+      "task": "*",
+      "max_attempts": 6570,
+      "max_tokens": 6500396
+    },
+    {
+      "ledger": "inference",
+      "subject": "*",
+      "task": "*",
+      "max_attempts": 764,
+      "max_tokens": 9832470
+    },
+    {
+      "ledger": "zoom",
+      "subject": "*",
+      "task": "*",
+      "max_attempts": 15436,
+      "max_tokens": 10711856
+    },
+    {
+      "ledger": "object_tracking",
+      "subject": "nano-vss-final",
+      "task": "pipeline",
+      "max_attempts": 5000,
+      "max_tokens": 8000000
+    },
+    {
+      "ledger": "object_tracking",
+      "subject": "*",
+      "task": "*",
+      "max_attempts": 5000,
+      "max_tokens": 8000000
+    },
+    {
+      "ledger": "judge",
+      "subject": "*",
+      "task": "*",
+      "max_attempts": 0,
+      "max_tokens": 0
+    }
+  ]
+}
