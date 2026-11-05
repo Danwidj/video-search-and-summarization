@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Pure helpers behind the library page's Find evidence tab: what /api/search
-// returns, the client-side filters, the holder / holds relationship and the
-// grouping by incident. No React and no server code, so tests can import it.
+// returns, the card title, the client-side sort and the grouping by incident. No React and no server code, so tests can import it.
 
 import type { EvidenceItemType, EvidenceSearchHit, EvidenceSearchResult } from '@/modules/search/domain/search';
 
@@ -13,6 +12,10 @@ export interface SearchedVersion {
   isOfficial: boolean;
   /** The library title of the video, which a hit's own incident title can lack. */
   title?: string;
+  /** The uploaded video's file name, shown under the incident title and used by the Video filter. */
+  filename?: string;
+  /** When this version was created (ISO); the Date sort orders by it. */
+  generatedAt?: string;
   thumbnailUrl?: string;
 }
 
@@ -22,36 +25,47 @@ export interface LibrarySearchResponse extends EvidenceSearchResult {
   versions: Record<string, SearchedVersion>;
 }
 
-export interface EvidenceFilters {
-  /** Threat 1 to 5; hits below it, or with no threat level, are left out. */
-  minThreat: number;
+export const KIND_NAME: Record<EvidenceItemType, string> = { entity: 'Entity', instrument: 'Instrument', asset: 'Asset' };
+
+const GENERIC_NAMES = new Set(['human', 'animal', 'unknown', 'person']);
+
+/** One name per card: the report label saved as the item name, else the detector label, else the evidence type. Never "human", "animal" or "unknown". */
+export function hitTitle(item: Pick<EvidenceSearchHit['item'], 'name' | 'label' | 'itemType'>): string {
+  const named = [item.name, item.label].map((value) => value?.trim()).find((value) => value && !GENERIC_NAMES.has(value.toLowerCase()));
+  return named || KIND_NAME[item.itemType];
 }
 
-export function filterHits(hits: EvidenceSearchHit[], { minThreat }: EvidenceFilters): EvidenceSearchHit[] {
-  return hits.filter((hit) => minThreat <= 1 || (hit.item.threatLevel ?? 0) >= minThreat);
-}
+export type EvidenceSort = 'match' | 'date' | 'threat' | 'severity';
 
-export interface HitRelationship {
-  /** Set when another item of this incident, at the same moment, holds this one. */
-  heldBy: { itemId: string; name: string } | null;
-  /** Items this entity holds, found among the same incident's hits. */
-  holds: { itemId: string; name: string }[];
-}
+export const SORT_LABEL: Record<EvidenceSort, string> = { match: 'Best match', date: 'Date', threat: 'Threat', severity: 'Severity' };
 
-/** The holder / holds relationship, as far as the other hits of the same incident show it. */
-export function relationshipOf(hit: EvidenceSearchHit, hits: EvidenceSearchHit[]): HitRelationship {
-  const sameIncident = hits.filter((other) => other.incident.videoId === hit.incident.videoId);
-  const holderId = hit.item.holderEntityId;
-  const holder = holderId ? sameIncident.find((other) => other.item.itemType === 'entity' && other.item.itemId === holderId) : undefined;
-  return {
-    heldBy: holderId ? { itemId: holderId, name: holder?.item.name ?? '' } : null,
-    holds:
-      hit.item.itemType === 'entity'
-        ? sameIncident
-            .filter((other) => other.item.holderEntityId === hit.item.itemId)
-            .map((other) => ({ itemId: other.item.itemId, name: other.item.name }))
-        : [],
-  };
+/** The video a hit belongs to, as the Video filter names it: the file name, else the incident title, else the id. */
+export const videoName = (hit: EvidenceSearchHit, versions: Record<string, SearchedVersion>): string =>
+  versions[hit.incident.videoId]?.filename || versions[hit.incident.videoId]?.title || hit.incident.title || hit.incident.videoId;
+
+/**
+ * Hits reordered for display, in the browser. "match" keeps the order the search returned (best match first, or video order for a
+ * listing). Threat sorts by the item's threat, then the incident's severity, then newest; Severity by severity, then threat, then
+ * newest; Date by newest. Every tie falls back to the returned rank, and a missing threat counts as 0.
+ */
+export function sortHits(hits: EvidenceSearchHit[], sort: EvidenceSort, versions: Record<string, SearchedVersion>): EvidenceSearchHit[] {
+  if (sort === 'match') return hits;
+  const created = (hit: EvidenceSearchHit) => versions[hit.incident.videoId]?.generatedAt ?? '';
+  const threat = (hit: EvidenceSearchHit) => hit.item.threatLevel ?? 0;
+  const newest = (a: EvidenceSearchHit, b: EvidenceSearchHit) => created(b).localeCompare(created(a));
+  const severity = (a: EvidenceSearchHit, b: EvidenceSearchHit) => b.incident.severityLevel - a.incident.severityLevel;
+  const byThreat = (a: EvidenceSearchHit, b: EvidenceSearchHit) => threat(b) - threat(a);
+  const order = sort === 'date' ? [newest] : sort === 'threat' ? [byThreat, severity, newest] : [severity, byThreat, newest];
+  return hits
+    .map((hit, index) => ({ hit, index }))
+    .sort((a, b) => {
+      for (const compare of order) {
+        const result = compare(a.hit, b.hit);
+        if (result) return result;
+      }
+      return a.index - b.index;
+    })
+    .map(({ hit }) => hit);
 }
 
 export interface IncidentGroup {
@@ -78,13 +92,6 @@ export function groupByIncident(hits: EvidenceSearchHit[]): IncidentGroup[] {
 }
 
 export const matchPercent = (hit: EvidenceSearchHit): number => Math.round(hit.similarityScore * 100);
-
-/** Hits of the same incident taken at the same video second: the boxes the frame viewer draws together. */
-export function hitsInFrame(hit: EvidenceSearchHit, hits: EvidenceSearchHit[]): EvidenceSearchHit[] {
-  return hits.filter(
-    (other) => other.incident.videoId === hit.incident.videoId && other.item.timestampSeconds === hit.item.timestampSeconds,
-  );
-}
 
 /** The report page for a hit: its version, and the second the box was found at, fraction kept (?t=). */
 export function reportHref(hit: EvidenceSearchHit, version?: SearchedVersion): string {

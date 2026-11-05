@@ -1,69 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { EditIcon, EyeIcon, HistoryIcon, MoreHorizontalIcon } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { EvidenceFrame, KIND_COLOUR, KIND_LABEL } from '@/sections/evidence/components/EvidenceFrame';
-import { IncidentThumbnail, SeverityChip } from '@/sections/library/components/Shared';
-import { type HitRelationship, type SearchedVersion, matchPercent, reportHref } from '@/lib/library/search';
+import { EvidenceFrame, KIND_COLOUR } from '@/sections/evidence/components/EvidenceFrame';
+import { SeverityChip } from '@/sections/library/components/Shared';
+import { KIND_NAME, type SearchedVersion, hitTitle, matchPercent, reportHref } from '@/lib/library/search';
 import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import { formatClock } from '@/modules/reports/domain/normalize';
 import { hitDisplay } from '@/lib/evidence/evidence-view';
 
-export function RelationshipLine({ relationship }: { relationship: HitRelationship }) {
-  const parts: string[] = [];
-  if (relationship.heldBy)
-    parts.push(`held by ${relationship.heldBy.itemId}${relationship.heldBy.name ? ` (${relationship.heldBy.name})` : ''}`);
-  if (relationship.holds.length) parts.push(`holds ${relationship.holds.map((held) => held.itemId).join(', ')}`);
-  return parts.length ? (
-    <p className="truncate text-xs text-ink-caption" data-testid="hit-relationship">
-      {parts.join(' · ')}
-    </p>
-  ) : null;
-}
-
+/** One evidence hit. The whole card opens the incident's report at the evidence: the second the box was found at. */
 export function HitCard({
   hit,
   version,
-  relationship,
-  onView,
   showMatch = true,
-  onShowInIncidents,
 }: {
   hit: EvidenceSearchHit;
   version?: SearchedVersion;
-  relationship: HitRelationship;
-  onView: () => void;
   /** False for a listing with no query, which has no similarity to show. */
   showMatch?: boolean;
-  onShowInIncidents?: (incident: EvidenceSearchHit['incident']) => void;
 }) {
   const router = useRouter();
   const { item, incident } = hit;
   const href = reportHref(hit, version);
   const clock = formatClock(item.timestampSeconds);
-  const label = `${item.itemId} · ${item.name || item.label}`;
+  const title = hitTitle(item);
   const shown = hitDisplay(item, incident.videoId);
+  const videoLine = [version?.filename, version ? `${version.isOfficial ? 'Official' : 'Latest'} v${version.revisionNo}` : '']
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <Card
       data-testid="evidence-hit"
       role="link"
       tabIndex={0}
-      aria-label={`Open report at ${clock}: ${label}`}
+      aria-label={`Open report at ${clock}: ${title}`}
       className="group relative flex cursor-pointer flex-col overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
-      onClick={(event) => {
-        if (!event.currentTarget.contains(event.target as Node)) return;
-        if ((event.target as HTMLElement).closest('[data-no-card-nav]')) return;
-        router.push(href);
-      }}
+      onClick={() => router.push(href)}
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
           event.preventDefault();
@@ -71,27 +48,19 @@ export function HitCard({
         }
       }}
     >
-      <div className="relative aspect-video shrink-0 overflow-hidden bg-[#dfe3dc]">
-        <button
-          aria-label={`View ${item.name || item.itemId} in its frame`}
-          className="relative block h-full w-full text-left"
-          data-no-card-nav
-          onClick={onView}
-          type="button"
-        >
-          <EvidenceFrame
-            aspect={16 / 9}
-            box={shown.box}
-            className="h-full w-full rounded-none"
-            drawBox
-            frameSrc={shown.frameSrc}
-            fullFrame
-            kind={item.itemType}
-            label={item.name || item.itemId}
-            notLocated={shown.notLocated}
-            src={shown.src}
-          />
-        </button>
+      <div className="relative aspect-video shrink-0 overflow-hidden bg-black">
+        <EvidenceFrame
+          aspect={16 / 9}
+          box={shown.box}
+          className="h-full w-full rounded-none !bg-black"
+          drawBox
+          frameSrc={shown.frameSrc}
+          fullFrame
+          kind={item.itemType}
+          label={title}
+          notLocated={shown.notLocated}
+          src={shown.src}
+        />
 
         <Badge
           variant="outline"
@@ -102,88 +71,33 @@ export function HitCard({
         </Badge>
 
         <span className="absolute bottom-2 left-2.5 rounded bg-ink/80 px-1.5 py-0.5 font-mono text-[11px] text-white">{clock}</span>
-
-        <div className="absolute right-2 top-2 z-10" data-no-card-nav>
-          <TooltipProvider>
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="size-8 rounded-md border-ink/10 bg-white text-ink shadow-xs hover:bg-white/90 data-[state=open]:bg-ink data-[state=open]:text-white"
-                      aria-label={`Actions for ${label}`}
-                    >
-                      <MoreHorizontalIcon className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent>More actions</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent
-                align="end"
-                className="w-56 bg-white"
-                onClick={(event) => event.stopPropagation()}
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                <DropdownMenuItem asChild>
-                  <Link className="flex cursor-pointer items-center gap-2" href={href}>
-                    <EditIcon className="size-4" />
-                    <span>Open report at {clock}</span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="flex cursor-pointer items-center gap-2" onClick={onView}>
-                  <EyeIcon className="size-4" />
-                  <span>View full frame</span>
-                </DropdownMenuItem>
-                {onShowInIncidents && (
-                  <DropdownMenuItem className="flex cursor-pointer items-center gap-2" onClick={() => onShowInIncidents(incident)}>
-                    <HistoryIcon className="size-4" />
-                    <span>Show incident in Incidents</span>
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </TooltipProvider>
-        </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden p-3">
-        <div className="flex items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-1.5 font-semibold text-moss">
+      <div className="flex min-h-0 flex-1 flex-col gap-1 p-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-ink/10 bg-[#f7f8f4] px-[7px] py-px text-[11.5px] font-semibold text-moss"
+            data-testid="hit-kind"
+          >
             <i className={`inline-block h-2 w-2 rounded-full ${KIND_COLOUR[item.itemType]}`} />
-            <span className="uppercase tracking-[0.12em] text-[11px]">{KIND_LABEL[item.itemType]}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="font-mono text-[11px] text-ink-caption">{item.itemId}</span>
-            {item.threatLevel != null && (
-              <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-                Threat {item.threatLevel}
-              </Badge>
-            )}
-          </div>
+            {KIND_NAME[item.itemType]}
+          </span>
+          <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-snug tracking-tight text-ink" title={title}>
+            {title}
+          </h3>
+          {item.threatLevel != null && (
+            <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px]">
+              Threat {item.threatLevel}
+            </Badge>
+          )}
         </div>
 
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <h3 className="line-clamp-1 text-[15px] font-semibold leading-snug tracking-tight text-ink">{item.name || item.label}</h3>
-            </TooltipTrigger>
-            <TooltipContent>{item.name || item.label}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <p className="line-clamp-2 text-[13px] leading-5 text-ink/60">{item.description}</p>
 
-        <p className="truncate text-[13px] leading-5 text-ink/60">{item.description}</p>
-        <RelationshipLine relationship={relationship} />
-
-        <div className="mt-auto flex items-center gap-2 border-t border-ink/8 pt-2 text-xs" data-no-card-nav>
-          <IncidentThumbnail className="h-7 w-11 shrink-0 rounded" url={version?.thumbnailUrl} />
-          <span className="min-w-0 flex-1 truncate text-ink/70">
-            <strong className="font-semibold text-ink">{version?.title || incident.title || incident.incidentType}</strong>
-            <span className="text-ink-caption">
-              {version ? ` · ${version.isOfficial ? 'Official' : 'Latest'} v${version.revisionNo}` : ''}
-            </span>
+        <div className="mt-auto flex items-center gap-2 border-t border-ink/8 pt-2 text-xs">
+          <span className="min-w-0 flex-1 text-ink/70">
+            <strong className="block truncate font-semibold text-ink">{version?.title || incident.title || incident.incidentType}</strong>
+            {videoLine && <span className="mt-0.5 block truncate font-mono text-[11px] text-ink-caption">{videoLine}</span>}
           </span>
           <SeverityChip level={incident.severityLevel} />
         </div>

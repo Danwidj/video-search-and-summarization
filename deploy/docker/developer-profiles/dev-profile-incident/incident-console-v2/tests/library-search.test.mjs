@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { register } from 'node:module';
 import { join } from 'node:path';
 import { afterEach, beforeEach, mock, test } from 'node:test';
@@ -26,7 +26,7 @@ mock.module('@aws-sdk/s3-request-presigner', {
 });
 
 const { fromAgentSearchResponse, toAgentSearchBody } = await import('../src/lib/adapters/agent/search.ts');
-const { filterHits, groupByIncident, hitsInFrame, relationshipOf } = await import('../src/lib/library/search.ts');
+const { groupByIncident, hitTitle, reportHref, sortHits, videoName } = await import('../src/lib/library/search.ts');
 const { POST } = await import('../src/app/api/search/route.ts');
 
 const contractDir = join(process.cwd(), '..', 'contracts', 'search-contract-v1', 'fixtures', 'valid');
@@ -68,10 +68,8 @@ test('the contract fixture maps to camelCase hits keyed by video and run', () =>
   assert.throws(() => fromAgentSearchResponse({ nothing: true }), /invalid search response/);
 });
 
-test('hits filter by threat and incident, group by incident and relate holder to item', () => {
+test('hits group by incident, best match first', () => {
   const { hits } = fromAgentSearchResponse(full);
-  assert.equal(filterHits(hits, { minThreat: 1 }).length, hits.length);
-  assert.ok(filterHits(hits, { minThreat: 5 }).every((hit) => (hit.item.threatLevel ?? 0) >= 5));
   const groups = groupByIncident(hits);
   assert.equal(
     groups.reduce((total, group) => total + group.hits.length, 0),
@@ -81,9 +79,51 @@ test('hits filter by threat and incident, group by incident and relate holder to
     groups.map((group) => group.best),
     [...groups.map((group) => group.best)].sort((a, b) => b - a),
   );
-  const instrument = hits.find((hit) => hit.item.holderEntityId);
-  assert.equal(relationshipOf(instrument, hits).heldBy.itemId, instrument.item.holderEntityId);
-  assert.ok(hitsInFrame(instrument, hits).includes(instrument));
+});
+
+test('a card title is the saved name, never human, animal or unknown, and falls back to the evidence type', () => {
+  assert.equal(hitTitle({ name: 'black bear', label: 'animal', itemType: 'entity' }), 'black bear');
+  assert.equal(hitTitle({ name: 'human', label: 'man in white shirt', itemType: 'entity' }), 'man in white shirt');
+  assert.equal(hitTitle({ name: 'Unknown', label: 'animal', itemType: 'entity' }), 'Entity');
+  assert.equal(hitTitle({ name: '', label: '', itemType: 'instrument' }), 'Instrument');
+  assert.equal(hitTitle({ name: '', label: 'unknown', itemType: 'asset' }), 'Asset');
+});
+
+const sortFixture = (id, rank, threatLevel, severityLevel, videoId) => ({
+  resultId: id,
+  rank,
+  similarityScore: 1 - rank / 10,
+  item: { itemType: 'entity', itemId: id, name: id, label: id, description: '', threatLevel, timestampSeconds: 1 },
+  incident: { videoId, incidentType: 'x', severityLevel, title: null },
+});
+
+test('Sort orders returned hits by match, date, threat then severity then newest, or severity then threat then newest', () => {
+  const hits = [
+    sortFixture('a', 1, 2, 3, 'v-old'),
+    sortFixture('b', 2, 5, 2, 'v-old'),
+    sortFixture('c', 3, 5, 4, 'v-new'),
+    sortFixture('d', 4, null, 4, 'v-new'),
+    sortFixture('e', 5, 5, 4, 'v-old'),
+  ];
+  const versions = {
+    'v-old': { generatedAt: '2026-11-01T00:00:00Z', filename: 'old.mp4' },
+    'v-new': { generatedAt: '2026-11-05T00:00:00Z' },
+  };
+  const ids = (sort) => sortHits(hits, sort, versions).map((hit) => hit.resultId);
+  assert.deepEqual(ids('match'), ['a', 'b', 'c', 'd', 'e']);
+  assert.deepEqual(ids('date'), ['c', 'd', 'a', 'b', 'e']);
+  assert.deepEqual(ids('threat'), ['c', 'e', 'b', 'a', 'd']);
+  assert.deepEqual(ids('severity'), ['c', 'e', 'd', 'a', 'b']);
+  assert.equal(hits[0].resultId, 'a', 'the returned list is not reordered in place');
+  assert.equal(videoName(hits[0], versions), 'old.mp4');
+  assert.equal(videoName(hits[2], versions), 'v-new');
+});
+
+test('a hit opens its report at the evidence second, in the searched version', () => {
+  const hit = sortFixture('a', 1, 2, 3, 'vid 1');
+  hit.item.timestampSeconds = 14.3333;
+  assert.equal(reportHref(hit, { revisionId: 7 }), '/reports/vid%201?revision=7&t=14.333');
+  assert.equal(reportHref(hit), '/reports/vid%201?t=14.333');
 });
 
 const env = { ...process.env };
@@ -163,33 +203,40 @@ test('/api/search refuses empty text and a missing agent, and reports an agent f
   assert.match((await failed.json()).error, /HTTP 503/);
 });
 
-test('the viewer cuts its frame through the report frame route and falls back to the crop', () => {
-  const viewer = readFileSync(join(process.cwd(), 'src', 'sections', 'library', 'components', 'HitViewer', 'HitViewer.tsx'), 'utf8');
-  assert.match(viewer, /hitDisplay\(hit\.item, hit\.incident\.videoId\)\.frameSrc/);
-  assert.match(viewer, /<FrameViewer/);
-  assert.match(viewer, /<EvidenceFrame/);
+test('the evidence card and tab follow the agreed design: no viewer, menu, id or footer thumbnail, a welcome and no old filters', () => {
+  const dir = join(process.cwd(), 'src', 'sections', 'library', 'components');
+  const card = readFileSync(join(dir, 'HitCard', 'HitCard.tsx'), 'utf8');
+  const tab = readFileSync(join(dir, 'EvidenceTab', 'EvidenceTab.tsx'), 'utf8');
+  assert.match(card, /router\.push\(href\)/);
+  assert.match(card, /hitTitle\(item\)/);
+  assert.match(card, /line-clamp-2/);
+  assert.doesNotMatch(card, /DropdownMenu|IncidentThumbnail|item\.itemId|HitViewer|onView/);
+  assert.doesNotMatch(tab, /HitViewer|minThreat|Threat level/);
+  assert.match(tab, /Find evidence across every incident/);
+  assert.match(tab, /Try a search:/);
+  for (const example of ['black bear', 'man in white shirt', 'man holding a handgun']) assert.ok(tab.includes(`'${example}'`), example);
+  assert.match(tab, /Only matches of \{Math\.round\(MIN_SIMILARITY \* 100\)\}% or better are shown\./);
+  assert.equal(existsSync(join(dir, 'HitViewer')), false);
 });
 
 test('the evidence UI shows no critic verdict, and the incident card search loads that incident at once', () => {
   const dir = join(process.cwd(), 'src', 'sections', 'library', 'components');
-  for (const file of ['HitCard/HitCard.tsx', 'HitViewer/HitViewer.tsx', 'EvidenceTab/EvidenceTab.tsx']) {
+  for (const file of ['HitCard/HitCard.tsx', 'EvidenceTab/EvidenceTab.tsx']) {
     assert.doesNotMatch(readFileSync(join(dir, file), 'utf8'), /critic|verdict|rejected/i, file);
   }
   const screen = readFileSync(join(dir, 'LibraryScreen', 'LibraryScreen.tsx'), 'utf8');
   assert.match(screen, /void searchEvidence\('', item\.videoId\)/);
-  assert.match(screen, /searchEvidence\(evidenceQuery, scope\?\.videoId \?\? null\)/);
+  assert.match(screen, /searchEvidence\(text \?\? evidenceQuery, scope\?\.videoId \?\? null\)/);
 });
 
-test('a hit carries its fractional second, slice range and stored frame; an older agent gives nulls and the viewer falls back', async () => {
-  const { hitSlice, sliceUrl } = await import('../src/lib/library/slice.ts');
+test('a hit carries its fractional second, slice range and stored frame; an older agent gives nulls and the card falls back to a cut frame', async () => {
   const { hitDisplay } = await import('../src/lib/evidence/evidence-view.ts');
   const [withSlice, plain] = fromAgentSearchResponse(full).hits;
   assert.equal(withSlice.item.timestampSeconds, 14.333);
-  assert.deepEqual(hitSlice(withSlice.item), { start: 11.333, end: 17.333 });
+  assert.equal(withSlice.item.sliceStartSeconds, 11.333);
+  assert.equal(withSlice.item.sliceEndSeconds, 17.333);
   assert.equal(hitDisplay(withSlice.item, 'v').frameSrc, 'https://signed.r2.test/evidence/clip/run-1/E1-frame.jpg');
   assert.equal(plain.item.sliceStartSeconds, null);
   assert.equal(plain.item.frameImageUrl, null);
-  assert.deepEqual(hitSlice({ ...plain.item, timestampSeconds: 2 }), { start: 0, end: 5 });
   assert.match(hitDisplay(plain.item, 'v').frameSrc, /^\/api\/reports\/v\/frame\?t=/);
-  assert.equal(sliceUrl('https://x/v.mp4?sig=1', { start: 11.333, end: 17.333 }), 'https://x/v.mp4?sig=1#t=11.333,17.333');
 });

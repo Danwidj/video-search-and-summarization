@@ -64,6 +64,8 @@ async function searchedVersions(
             revisionNo: item.revisionNo,
             isOfficial: item.isOfficial === true,
             ...(item.title ? { title: item.title } : {}),
+            ...(item.filename ? { filename: item.filename } : {}),
+            ...(item.generatedAt ? { generatedAt: item.generatedAt } : {}),
             ...(thumbnailUrl ? { thumbnailUrl } : {}),
           },
         ] as const;
