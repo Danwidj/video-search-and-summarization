@@ -1,14 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// ChartRenderer: draws figures our code has already fetched as a static image.
-// It chooses nothing about the data: it only draws what it is given.
+// ChartRenderer: the VSS chart_generator builds the chart from figures our code has already fetched.
+// It chooses nothing about the data: it places the figures it is given, in a Chart.js configuration
+// the browser draws, or as a static PNG when no configuration comes back.
 
-import type { GeneratedChart } from '@/modules/dashboard/domain/generated-chart';
+import type { ChartKind, GeneratedChart } from '@/modules/dashboard/domain/generated-chart';
 
-export type ChartDrawing = Pick<GeneratedChart, 'chartType' | 'title' | 'categoryLabel' | 'valueLabel' | 'series' | 'rows'>;
+export type ChartDrawing = Pick<GeneratedChart, 'title' | 'categoryLabel' | 'valueLabel' | 'series' | 'rows'> & {
+  chartKind: ChartKind;
+  /** One colour per donut slice, in row order; null for every other kind. */
+  sliceColors: string[] | null;
+};
 
 export interface ChartRenderer {
-  /** The drawn chart as a data URL. Throws ChartRenderError when it could not be drawn. */
+  /**
+   * The Chart.js configuration with these figures placed in it, as the agent sent it; null when the
+   * service returned none. The caller checks it against the rows. Throws ChartRenderError when the call fails.
+   */
+  configure(drawing: ChartDrawing): Promise<unknown>;
+  /** The static PNG as a data URL (the fallback). Throws ChartRenderError when it could not be drawn. */
   draw(drawing: ChartDrawing): Promise<string>;
 }
 
