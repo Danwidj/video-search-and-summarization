@@ -22,6 +22,8 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import threading
+import time
 from typing import ClassVar
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -31,6 +33,7 @@ import httpx
 import numpy as np
 import pytest
 
+from vss_agents.utils.crop_evidence import TIME_BUDGET_GAP
 from vss_agents.utils.crop_evidence import BudgetedDetector
 from vss_agents.utils.crop_evidence import CropCallBudget
 from vss_agents.utils.crop_evidence import CropCallCapReachedError
@@ -38,8 +41,11 @@ from vss_agents.utils.crop_evidence import CropEvidenceService
 from vss_agents.utils.crop_evidence import CropResult
 from vss_agents.utils.crop_evidence import DefaultDetector
 from vss_agents.utils.crop_evidence import Detection
+from vss_agents.utils.crop_evidence import DetectorBreaker
+from vss_agents.utils.crop_evidence import DetectorStoppedError
 from vss_agents.utils.crop_evidence import FakeDetector
 from vss_agents.utils.crop_evidence import FakeZoomNamer
+from vss_agents.utils.crop_evidence import GuardedDetector
 from vss_agents.utils.crop_evidence import InMemoryEvidenceStore
 from vss_agents.utils.crop_evidence import R2EvidenceStore
 from vss_agents.utils.crop_evidence import ZoomLook
@@ -1441,3 +1447,201 @@ class TestZoomSecondLook:
         reply.json.return_value = {"choices": [{"message": {"content": '{"bbox_2d": [1, 2, 3, 4]}'}}]}
         with patch("vss_agents.utils.crop_evidence.httpx.post", return_value=reply), pytest.raises(ValueError):
             detector.zoom_name(b"jpeg", item_type="asset", name="ball", description="")
+
+
+def _status_error(code: int = 429) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://gateway.test/v1/chat/completions")
+    return httpx.HTTPStatusError(f"{code}", request=request, response=httpx.Response(code, request=request))
+
+
+class _FailingDetector:
+    """A detector that answers every call with an error (a 429 by default)."""
+
+    def __init__(self, error: Exception | None = None, delay: float = 0.0) -> None:
+        self.error = error or _status_error(429)
+        self.delay = delay
+        self.calls = 0
+
+    def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+        self.calls += 1
+        time.sleep(self.delay)
+        raise self.error
+
+
+class _HangingDetector:
+    """A detector that does not answer until ``release`` is set (the tests set it when done)."""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.calls = 0
+
+    def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+        self.calls += 1
+        self.release.wait(10)
+        return []
+
+
+class _HangingNamer:
+    def __init__(self) -> None:
+        self.release = threading.Event()
+
+    def zoom_name(self, *args: object, **kwargs: object) -> ZoomVerdict:
+        self.release.wait(10)
+        raise RuntimeError("released")
+
+
+def _many_assets(count: int) -> dict:
+    return {
+        "incident": {"title": "x", "type": "burglary"},
+        "assets": [
+            {"asset_id": f"A{n}", "name": "box", "description": "d", "timestamp_seconds": 1, "label": "box"}
+            for n in range(1, count + 1)
+        ],
+    }
+
+
+class TestDetectorStopInTheLocateStep:
+    def test_the_breaker_trips_on_the_third_error_in_a_row_and_a_reply_resets_it(self) -> None:
+        breaker = DetectorBreaker("t")
+        breaker.record_error(RuntimeError())
+        breaker.record_error(RuntimeError())
+        breaker.record_success()
+        breaker.record_error(RuntimeError())
+        breaker.record_error(RuntimeError())
+        assert breaker.tripped is False
+        breaker.record_error(RuntimeError())
+        assert breaker.tripped is True
+
+    def test_a_guarded_detector_makes_no_call_once_the_breaker_has_tripped_or_the_deadline_has_passed(self) -> None:
+        detector = _FailingDetector()
+        frame = np.zeros((8, 8, 3), dtype=np.uint8)
+        guarded = GuardedDetector(detector, DetectorBreaker("t", limit=1))
+        with pytest.raises(httpx.HTTPStatusError):
+            guarded.detect(frame, "x")
+        with pytest.raises(DetectorStoppedError):
+            guarded.detect(frame, "x")
+        assert detector.calls == 1 and guarded.breaker.tripped
+        late = GuardedDetector(detector, DetectorBreaker("t"), deadline=time.monotonic() - 1)
+        with pytest.raises(DetectorStoppedError):
+            late.detect(frame, "x")
+        assert detector.calls == 1
+
+    @pytest.mark.asyncio
+    async def test_items_after_three_consecutive_errors_are_not_sent_to_the_detector(
+        self, tiny_video_path: Path
+    ) -> None:
+        detector = _FailingDetector(delay=0.05)
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=_many_assets(8), batch_id="run-1"
+        )
+        # Calls already started when the third error lands still finish; without the stop all eight call.
+        assert 3 <= detector.calls <= 6
+        stopped = [r for r in results if "detector stopped after 3 consecutive errors" in (r["image_gap"] or "")]
+        assert len(stopped) == 8 - detector.calls and all(r["image"] is None for r in results)
+
+
+class TestTimeBudget:
+    @pytest.mark.asyncio
+    async def test_a_hanging_detector_cannot_hold_the_locate_step_past_the_deadline(
+        self, tiny_video_path: Path
+    ) -> None:
+        detector = _HangingDetector()
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
+        started = time.monotonic()
+        try:
+            results = await service.process_incident_report(
+                video_ref=tiny_video_path,
+                video_id="v",
+                report=_many_assets(8),
+                batch_id="run-1",
+                deadline=time.monotonic() + 0.3,
+            )
+        finally:
+            detector.release.set()
+        assert time.monotonic() - started < 3.0
+        assert [r["image_gap"] for r in results] == [TIME_BUDGET_GAP] * 8
+        assert [r["image"] for r in results] == [None] * 8
+
+    @pytest.mark.asyncio
+    async def test_a_spent_budget_skips_the_detector_and_the_second_look_for_every_item(
+        self, tiny_video_path: Path
+    ) -> None:
+        detector = _HangingDetector()
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, deadline=time.monotonic() - 1.0
+        )
+        assert detector.calls == 0 and all(r["image_gap"] == TIME_BUDGET_GAP for r in results)
+
+    @pytest.mark.asyncio
+    async def test_a_second_look_still_waiting_at_the_deadline_gets_a_zoom_gap(self, tiny_video_path: Path) -> None:
+        namer = _HangingNamer()
+        detector = FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="x")])
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore(), namer=namer)
+        started = time.monotonic()
+        try:
+            results = await service.process_incident_report(
+                video_ref=tiny_video_path,
+                video_id="v",
+                report=copy.deepcopy(REPORT),
+                zoom_names=True,
+                deadline=time.monotonic() + 1.0,
+            )
+        finally:
+            namer.release.set()
+        assert time.monotonic() - started < 4.0
+        assert all(r["image"] is not None for r in results)  # the crops were done before the deadline
+        assert [r["zoom_gap"] for r in results] == [TIME_BUDGET_GAP] * 3
+
+    @pytest.mark.asyncio
+    async def test_object_tracking_is_skipped_when_less_than_its_reserve_is_left(self, tiny_video_path: Path) -> None:
+        calls: list = []
+
+        async def runner(
+            video_ref: object, seeds: list, *, detector: object, **options: object
+        ) -> ObjectTrackingOutcome:
+            calls.append(options)
+            return ObjectTrackingOutcome()
+
+        request = ObjectTrackingRequest(budget=CropCallBudget(10), runner=runner)
+        service = CropEvidenceService(
+            detector=FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="x")]),
+            store=InMemoryEvidenceStore(),
+        )
+        await service.process_incident_report(
+            video_ref=tiny_video_path,
+            video_id="v",
+            report=REPORT,
+            object_tracking=request,
+            deadline=time.monotonic() + 20,
+        )
+        assert calls == [] and request.summary.skipped == TIME_BUDGET_GAP
+
+    @pytest.mark.asyncio
+    async def test_object_tracking_gets_the_time_left_minus_its_reserve_as_its_cap(self, tiny_video_path: Path) -> None:
+        caps: list[float] = []
+
+        async def runner(
+            video_ref: object, seeds: list, *, detector: object, settings: object, **_: object
+        ) -> ObjectTrackingOutcome:
+            caps.append(settings.time_cap_seconds)  # type: ignore[attr-defined]
+            return ObjectTrackingOutcome()
+
+        from vss_agents.utils.object_tracking import ObjectTrackingSettings
+
+        request = ObjectTrackingRequest(
+            budget=CropCallBudget(10), runner=runner, options={"settings": ObjectTrackingSettings(time_cap_seconds=120)}
+        )
+        service = CropEvidenceService(
+            detector=FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="x")]),
+            store=InMemoryEvidenceStore(),
+        )
+        await service.process_incident_report(
+            video_ref=tiny_video_path,
+            video_id="v",
+            report=REPORT,
+            object_tracking=request,
+            deadline=time.monotonic() + 70,
+        )
+        assert len(caps) == 1 and 30 < caps[0] <= 40  # 70 s left, 30 s kept for the second look and uploads
