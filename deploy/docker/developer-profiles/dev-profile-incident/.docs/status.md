@@ -56,6 +56,7 @@ Data state (as of 2026-10-28):
 - All 17 finals videos have thumbnails in R2 (0 missing).
 - R2 object names are readable: the old hashed and UUID objects were copied to readable keys, the rows repointed, and the old copies and orphaned objects deleted.
 - 65 `evidence_crops` rows had embeddings before 5 Nov; the repair step then stored 9 more (Assault036: 5, vafbef7916847d4c97c7: 4), so both videos are searchable. Every crop row has a `frame` (6 older rows were backfilled into R2 as `<id>-frame.jpg` by `scripts/backfill_evidence_frames.py`).
+- `evidence_crops.item_name` was rewritten from each revision's evidence label on 5 Nov (54 of 62 rows; the export is in the task data folder). Later saves write the label.
 - Evidence search floor: 0.35, console side. Measured on 5 Nov: top scores 0.356 to 0.591 over six queries; only hits under 0.35 are dropped ("people fighting" returned none).
 - 17 revisions (one per finals video) have embeddings.
 

@@ -248,14 +248,28 @@ export interface OfficialCrop {
   embedding: number[];
 }
 
+interface PayloadDetails {
+  item_name: string;
+  label: string | null;
+  description: string;
+  threat_level: number | null;
+  holder_entity_id: string | null;
+}
+
+/** The text of a label, or null when it is missing or blank. */
+const labelText = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+/**
+ * The name a searchable crop (and so an evidence card) carries: the item's own label as the report wrote it, else the
+ * name or type the entry already had. The second look's rename changes the name, never the label.
+ */
+export function cropItemName(entry: { label?: unknown; item_name?: unknown; item_type: string }, fallback?: PayloadDetails): string {
+  return labelText(entry.label) ?? fallback?.label ?? labelText(entry.item_name) ?? fallback?.item_name ?? entry.item_type;
+}
+
 /** The item details the payload holds, used when an evidence entry (e.g. a gateway-mode placeholder) lacks them. */
-function payloadDetails(
-  payload: ReportPayload,
-): Map<string, { item_name: string; description: string; threat_level: number | null; holder_entity_id: string | null }> {
-  const details = new Map<
-    string,
-    { item_name: string; description: string; threat_level: number | null; holder_entity_id: string | null }
-  >();
+function payloadDetails(payload: ReportPayload): Map<string, PayloadDetails> {
+  const details = new Map<string, PayloadDetails>();
   const add = (
     type: EvidenceItemType,
     id: unknown,
@@ -264,10 +278,12 @@ function payloadDetails(
     threat: unknown,
     holder: unknown,
     fallback: string,
+    label: unknown,
   ) => {
     if (typeof id !== 'string' || !id) return;
     details.set(`${type}:${id}`, {
       item_name: typeof name === 'string' && name.trim() ? name : fallback,
+      label: labelText(label),
       description: typeof description === 'string' ? description : '',
       threat_level: integerOrNull(threat),
       holder_entity_id: typeof holder === 'string' && holder ? holder : null,
@@ -275,7 +291,7 @@ function payloadDetails(
   };
   for (const item of Array.isArray(payload.entities) ? payload.entities : []) {
     const entity = asRecord(item);
-    add('entity', entity.entity_id, entity.type, entity.description, null, null, 'entity');
+    add('entity', entity.entity_id, entity.type, entity.description, null, null, 'entity', entity.label);
   }
   for (const item of Array.isArray(payload.instruments) ? payload.instruments : []) {
     const instrument = asRecord(item);
@@ -287,11 +303,12 @@ function payloadDetails(
       instrument.threat_level,
       instrument.entity_id,
       'instrument',
+      instrument.label,
     );
   }
   for (const item of Array.isArray(payload.assets) ? payload.assets : []) {
     const asset = asRecord(item);
-    add('asset', asset.asset_id, asset.name, asset.description, null, null, 'asset');
+    add('asset', asset.asset_id, asset.name, asset.description, null, null, 'asset', asset.label);
   }
   return details;
 }
@@ -360,8 +377,7 @@ export function officialCrops(
         slice_start_seconds: slice.start,
         slice_end_seconds: slice.end,
         frame: typeof entry.frame === 'string' && entry.frame.trim() ? entry.frame : null,
-        item_name:
-          typeof entry.item_name === 'string' && entry.item_name.trim() ? entry.item_name : (fallback?.item_name ?? entry.item_type),
+        item_name: cropItemName(entry, fallback),
         description: typeof entry.description === 'string' ? entry.description : (fallback?.description ?? ''),
         threat_level: integerOrNull(entry.threat_level) ?? fallback?.threat_level ?? null,
         holder_entity_id:

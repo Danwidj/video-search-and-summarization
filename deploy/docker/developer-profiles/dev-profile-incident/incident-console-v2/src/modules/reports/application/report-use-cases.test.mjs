@@ -510,3 +510,28 @@ test('a crop stores the box second with its fraction and a slice, not the item w
   assert.equal(crop(entry(1, 1, { frame: 'evidence/v/u/E1-frame.jpg' })).frame, 'evidence/v/u/E1-frame.jpg');
   assert.equal(crop(entry(1, 1)).frame, null);
 });
+
+test('a searchable crop is named by the item label, not the type or the second look name', () => {
+  const rows = (entries, payload = { incident: {} }) =>
+    officialCrops(
+      payload,
+      entries,
+      entries.map((e) => ({ itemType: e.item_type, itemId: e.item_id, embedding: [0.5] })),
+    );
+  const base = { image: 'evidence/v/run-1/x.jpg', bounding_box: [1, 2, 3, 4], timestamp_seconds: 1 };
+  // revision 135 E1 and revision 126 A1 on finals
+  const [bear, register, bare, payloadLabel] = rows(
+    [
+      { ...base, item_type: 'entity', item_id: 'E1', item_name: 'animal', label: 'black bear' },
+      { ...base, item_type: 'asset', item_id: 'A1', item_name: 'high heel shoe', label: 'cash register' },
+      { ...base, item_type: 'asset', item_id: 'A2', item_name: 'deck', label: '  ' },
+      { ...base, item_type: 'entity', item_id: 'E2', item_name: 'human' },
+    ],
+    { incident: {}, entities: [{ entity_id: 'E2', type: 'human', label: 'man in a white shirt' }] },
+  );
+  assert.equal(bear.item_name, 'black bear');
+  assert.equal(register.item_name, 'cash register');
+  assert.equal(bare.item_name, 'deck', 'a blank label falls back to the name');
+  assert.equal(payloadLabel.item_name, 'man in a white shirt', 'the payload item label backs up an entry without one');
+  assert.equal(rows([{ ...base, item_type: 'instrument', item_id: 'I1' }])[0].item_name, 'instrument', 'no label or name: the type');
+});

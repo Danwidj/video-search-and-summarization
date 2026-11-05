@@ -132,7 +132,7 @@ What moves the rows (the database cannot embed, so a writer always supplies them
 | `revision_id` | `BIGINT` | PRIMARY KEY (part); FK → `report_revisions.id` ON DELETE CASCADE | The searchable revision (official, else newest) these crops belong to |
 | `item_type` | `VARCHAR(16)` | PRIMARY KEY (part); CHECK `IN ('entity','instrument','asset')` | Evidence category |
 | `item_id` | `VARCHAR(20)` | PRIMARY KEY (part) | Item identifier in the revision (`E1..`, `I1..`, `A1..`) |
-| `item_name` | `VARCHAR(256)` | NOT NULL | Item name or detector label |
+| `item_name` | `VARCHAR(256)` | NOT NULL | The report item's `label` as written ("black bear", "cash register"); the evidence card title. Falls back to the entry's name, then its type, when there is no label (`cropItemName`). The second look renames an item's `name`, never its `label`, so this value does not follow a rename. Not the embedding passage: that is built from the evidence entry's `item_name` and `description` |
 | `description` | `TEXT` | NOT NULL | Item visual description |
 | `threat_level` | `INTEGER` | NULLABLE | Threat rating (1-5; instruments only) |
 | `holder_entity_id` | `VARCHAR(20)` | NULLABLE | Identifier of the holding entity (instruments only) |
