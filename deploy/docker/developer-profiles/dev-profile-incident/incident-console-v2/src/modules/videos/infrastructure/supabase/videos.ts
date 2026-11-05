@@ -207,7 +207,15 @@ export class SupabaseVideoAdapter implements VideoRepository {
       const id = text(found.video_id);
       const revisionId = numberOrNull(found.revision_id);
       return id && revisionId !== null
-        ? [{ videoId: id, revisionId, title: text(found.title) ?? null, description: text(found.description) ?? null }]
+        ? [
+            {
+              videoId: id,
+              revisionId,
+              incidentType: text(found.incident_type) ?? null,
+              title: text(found.title) ?? null,
+              description: text(found.description) ?? null,
+            },
+          ]
         : [];
     });
   }

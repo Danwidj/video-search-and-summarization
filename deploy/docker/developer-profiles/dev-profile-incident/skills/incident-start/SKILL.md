@@ -1,6 +1,6 @@
 ---
 name: incident-start
-description: Use to set up secrets and launch the incident profile from a laptop with start.sh, against the <vm-host> VM over an SSH tunnel (the local mock-backend + vlm-gateway mode is for mock-backend tests only). Not for changing or repairing services on the VM itself - use incident-operate-vm.
+description: Use to set up secrets and launch the incident profile from a laptop with start.sh, against the <vm-host> VM over an SSH tunnel (the local mock-backend + vlm-gateway mode is a backup that mimics the backend). Not for changing or repairing services on the VM itself - use incident-operate-vm.
 license: Apache-2.0
 metadata:
   version: "0.1.2"
@@ -17,7 +17,7 @@ metadata:
 
 | User says | Mode | Why |
 |---|---|---|
-| "run the mock backend", "offline from the VM" (mock-backend tests only; never for UI or backend work, and never as a fallback when the VM is unreachable - stop and report) | `--mode mock` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. `--mode local` still works as a deprecated alias. |
+| "run the mock backend", "offline from the VM" (a mock, a backup that mimics the backend; UI and backend work is verified on the VM, and it is never a fallback when the VM is unreachable - stop and report) | `--mode mock` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. `--mode local` still works as a deprecated alias. |
 | "run it", "run against the VM", "real agent", "full stack", "demo", "frontend work", any UI or backend work, no preference | `--mode vm` (default) | Real native `vss-agent` and Phoenix on `<vm-host>`. `start.sh` self-heals missing services: it starts stopped ones, pulls missing images, clones a missing checkout, and fails with a reason instead of hanging. |
 
 Details of each path: [launch modes and connectivity](../../.docs/architecture.md#launch-modes-and-connectivity) in `.docs/architecture.md`.
@@ -53,7 +53,7 @@ Details of each path: [launch modes and connectivity](../../.docs/architecture.m
 
 ```bash
 ./start.sh --mode vm        # VM backend (default; use for all UI and backend work)
-./start.sh --mode mock      # mock-backend tests only, never for UI or backend work
+./start.sh --mode mock      # a mock that mimics the backend; verify UI and backend work on the VM
 ./start.sh --mode vm --no-console   # VM side only: backend + tunnel, no Next.js console
 ```
 

@@ -510,6 +510,7 @@ test('a human Save stores the summary vector of the new title and description, a
     [[0.25, 0.5]],
   );
   assert.equal(asked[0].description, 'Edited summary.', 'the text is the saved incident description');
+  assert.equal(asked[0].incidentType, 'assault', 'the incident type goes with it');
 
   const down = official([record]);
   await saveHumanEdit(
@@ -569,7 +570,7 @@ test('repair skips a revision that is no longer the searchable one or already ha
 test('summary repair embeds the title and description of a searchable revision with no vector, and only into an empty slot', async () => {
   const ports = official([withImage('evidence/v/u/E1.jpg')]);
   ports.videos.missingEmbeddings = [
-    { videoId: V, revisionId: 1, title: 'Fight', description: 'Two people fight.' },
+    { videoId: V, revisionId: 1, incidentType: 'assault', title: 'Fight', description: 'Two people fight.' },
     { videoId: V, revisionId: 7, title: 'Gone', description: null },
   ];
   const asked = [];
@@ -585,7 +586,11 @@ test('summary repair embeds the title and description of a searchable revision w
   assert.deepEqual(asked, [], 'a dry run does not embed');
   const report = await repairMissingEmbeddings(ports, embed, { dryRun: false, limit: 1 });
   assert.deepEqual(report.revisions, [{ videoId: V, revisionId: 1, stored: true }]);
-  assert.deepEqual(asked, [{ title: 'Fight', description: 'Two people fight.' }]);
+  assert.deepEqual(
+    asked,
+    [{ incidentType: 'assault', title: 'Fight', description: 'Two people fight.' }],
+    'the repair embeds the type too',
+  );
   assert.deepEqual(
     ports.videos.embeddingCalls.map((call) => [call.revisionId, call.embedding]),
     [[1, [0.1]]],

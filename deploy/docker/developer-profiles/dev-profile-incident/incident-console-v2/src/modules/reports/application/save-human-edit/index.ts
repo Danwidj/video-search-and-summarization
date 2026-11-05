@@ -65,18 +65,19 @@ async function searchableCrops(
 }
 
 /**
- * The summary vector the new revision is searched by in Find incidents, from the same title and description text as an AI
+ * The summary vector the new revision is searched by in Find incidents, from the same type, title and description text as an AI
  * version. A failure (agent down, an agent that predates the endpoint) is not a failed save: the revision is stored without
  * a vector and the repair step stores one when the agent is back.
  */
 async function summaryEmbedding(payload: ReportPayload, embedSummary?: EmbedSummary): Promise<number[] | null> {
   if (!embedSummary) return null;
-  const incident = (payload as { incident?: { title?: unknown; description?: unknown } }).incident ?? {};
+  const incident = (payload as { incident?: { type?: unknown; title?: unknown; description?: unknown } }).incident ?? {};
+  const incidentType = typeof incident.type === 'string' && incident.type.trim() ? incident.type : null;
   const title = typeof incident.title === 'string' && incident.title.trim() ? incident.title : null;
   const description = typeof incident.description === 'string' && incident.description.trim() ? incident.description : null;
   if (!title && !description) return null;
   try {
-    return await embedSummary({ title, description });
+    return await embedSummary({ incidentType, title, description });
   } catch (error) {
     console.warn(
       `[save human edit] the summary could not be embedded, saving without a vector: ${error instanceof Error ? error.message : String(error)}`,
