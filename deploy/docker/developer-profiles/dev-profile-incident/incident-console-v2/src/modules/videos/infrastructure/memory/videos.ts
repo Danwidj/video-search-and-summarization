@@ -99,6 +99,13 @@ export class InMemoryVideoRepository implements VideoRepository {
     return { videoId, revisionId, crops: crops.length };
   }
 
+  /** What listRevisionsMissingCrops returns; a test sets it (the revisions' evidence lives in the incident repository). */
+  missingCrops: Array<{ videoId: string; revisionId: number }> = [];
+
+  async listRevisionsMissingCrops(videoId?: string): Promise<Array<{ videoId: string; revisionId: number }>> {
+    return this.missingCrops.filter((item) => !videoId || item.videoId === videoId);
+  }
+
   async deleteVideo(videoId: string): Promise<void> {
     this.videos.delete(videoId);
   }

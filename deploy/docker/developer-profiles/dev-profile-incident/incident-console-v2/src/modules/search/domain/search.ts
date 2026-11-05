@@ -30,7 +30,7 @@ export interface EvidenceSearchRequest {
   query: string;
   /** 1 to 50; default 10. */
   topK?: number;
-  /** 0 to 1; default 0, so no cutoff. */
+  /** 0 to 1; default 0, so no cutoff. The console route sends MIN_SIMILARITY for a query (lib/search/min-similarity.ts). */
   minSimilarity?: number;
   /** Only meaningful when the agent's critic is on: leaves out the hits it rejected. */
   hideRejected?: boolean;
@@ -55,7 +55,13 @@ export interface EvidenceSearchHit {
     holderEntityId: string | null;
     /** Signed by the agent; used as given. */
     cropImageUrl: string;
+    /** The second the box was found at, fraction kept. */
     timestampSeconds: number;
+    /** The play range of the item's slice of the incident video, in seconds; null from an agent that stores none. */
+    sliceStartSeconds: number | null;
+    sliceEndSeconds: number | null;
+    /** Signed URL of the stored whole frame the box was found in; null when none is stored (the crop stands in). */
+    frameImageUrl: string | null;
     /** [ymin, xmin, ymax, xmax] normalised to 0-1000, detector-produced; null when there is none. */
     boundingBox: [number, number, number, number] | null;
   };

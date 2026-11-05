@@ -4,9 +4,12 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
+import { MutedVideo } from '@/components/muted-video';
+
 import { EvidenceFrame, KIND_LABEL } from '@/sections/evidence/components/EvidenceFrame';
 import { FrameViewer } from '@/sections/evidence/components/FrameViewer';
 import { RelationshipLine } from '@/sections/library/components/HitCard';
+import { hitSlice, sliceUrl } from '@/lib/library/slice';
 import { type SearchedVersion, hitKey, hitsInFrame, matchPercent, relationshipOf, reportHref } from '@/lib/library/search';
 import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import { formatClock } from '@/modules/reports/domain/normalize';
@@ -31,7 +34,15 @@ export function HitViewer({
   showMatch?: boolean;
 }) {
   const [selectedKey, setSelectedKey] = useState(hitKey(hit));
-  useEffect(() => setSelectedKey(hitKey(hit)), [hit]);
+  const [playingSlice, setPlayingSlice] = useState(false);
+  const select = (key: string) => {
+    setSelectedKey(key);
+    setPlayingSlice(false);
+  };
+  useEffect(() => {
+    setSelectedKey(hitKey(hit));
+    setPlayingSlice(false);
+  }, [hit]);
 
   // The frame is cut from the video on demand; when it cannot be (no ffmpeg, no video), the enlarged crop stands in.
   const frameSrc = hitDisplay(hit.item, hit.incident.videoId).frameSrc;
@@ -52,6 +63,8 @@ export function HitViewer({
   const shown = hitDisplay(item, selected.incident.videoId);
   const relationship = relationshipOf(selected, hits);
   const version = versions[selected.incident.videoId];
+  const slice = hitSlice(item);
+  const playbackUrl = selected.incident.playbackUrl;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -73,7 +86,25 @@ export function HitViewer({
         <div className="mt-4 grid gap-5 lg:grid-cols-[1.6fr_1fr]">
           <div className="min-w-0 min-h-0">
             <div className="flex min-w-0 min-h-0 items-center justify-center overflow-hidden rounded-xl bg-black">
-              {frameReady && frameSrc ? (
+              {playingSlice && playbackUrl ? (
+                <MutedVideo
+                  aria-label={`Slice ${formatClock(slice.start)} to ${formatClock(slice.end)}`}
+                  autoPlay
+                  className="max-h-[60vh] w-full"
+                  controls
+                  data-testid="hit-slice-video"
+                  onEnded={() => setPlayingSlice(false)}
+                  onTimeUpdate={(event) => {
+                    const video = event.currentTarget;
+                    if (video.currentTime >= slice.end) {
+                      video.pause();
+                      setPlayingSlice(false);
+                    }
+                  }}
+                  playsInline
+                  src={sliceUrl(playbackUrl, slice)}
+                />
+              ) : frameReady && frameSrc ? (
                 <FrameViewer
                   boxes={inFrame.map((other) => ({
                     id: hitKey(other),
@@ -81,7 +112,7 @@ export function HitViewer({
                     kind: other.item.itemType,
                     box: hitDisplay(other.item, other.incident.videoId).box,
                   }))}
-                  onSelect={setSelectedKey}
+                  onSelect={select}
                   selectedId={hitKey(selected)}
                   seconds={item.timestampSeconds}
                   src={frameSrc}
@@ -105,7 +136,7 @@ export function HitViewer({
                   aria-label="Items in this frame"
                   className="flex flex-wrap justify-start gap-2"
                   onValueChange={(val) => {
-                    if (val) setSelectedKey(val);
+                    if (val) select(val);
                   }}
                   type="single"
                   value={hitKey(selected)}
@@ -139,6 +170,16 @@ export function HitViewer({
               <Button asChild className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white">
                 <Link href={reportHref(selected, version)}>Open report</Link>
               </Button>
+              {playbackUrl && (
+                <Button
+                  className="ml-2 rounded-full px-4 py-2 text-xs font-semibold"
+                  data-testid="hit-play-slice"
+                  onClick={() => setPlayingSlice(true)}
+                  variant="outline"
+                >
+                  Play slice {formatClock(slice.start)} to {formatClock(slice.end)}
+                </Button>
+              )}
               <span className="ml-3 text-xs text-ink-caption">evidence seen at {formatClock(item.timestampSeconds)}</span>
             </div>
           </div>

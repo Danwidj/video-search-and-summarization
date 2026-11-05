@@ -40,7 +40,7 @@ Request (`extra` fields are rejected with 422):
 |---|---|---|---|
 | `query` | string | required, except with `filters.video_id` | 1-500 chars; may be empty only when `filters.video_id` is set (lists that incident's evidence, no embedding call) |
 | `top_k` | int | 10 | 1-50 |
-| `min_similarity` | float | 0.0 | 0.0-1.0 (no cutoff by default: top_k by score) |
+| `min_similarity` | float | 0.0 | 0.0-1.0 (no cutoff by default: top_k by score; the console sends 0.35 for a text query) |
 | `hide_rejected` | bool | true | only matters when the critic is on: drop hits it marked `rejected` from `hits[]` (`rank` keeps its pre-filter value) |
 | `filters.incident_types` | string[] | none | |
 | `filters.min_severity`, `filters.max_severity` | int | none | 1-5 |

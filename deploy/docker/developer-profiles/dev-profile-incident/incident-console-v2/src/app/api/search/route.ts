@@ -6,6 +6,7 @@ import { AgentSearchRepository } from '@/lib/adapters/agent/search';
 import { getDbAdapters } from '@/lib/container';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
+import { MIN_SIMILARITY } from '@/lib/search/min-similarity';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
 import type { SearchedVersion } from '@/lib/library/search';
@@ -89,7 +90,8 @@ export async function POST(request: Request) {
     const result = await new AgentSearchRepository(config.agentUrl, AbortSignal.timeout(115_000)).search({
       query,
       topK: videoId ? SCOPED_TOP_K : TOP_K,
-      minSimilarity: 0,
+      // An empty query is a listing, which has no score to cut on.
+      minSimilarity: query ? MIN_SIMILARITY : 0,
       ...(videoId ? { filters: { videoId } } : {}),
     });
     const versions = await searchedVersions(config, new Set(result.hits.map((hit) => hit.incident.videoId)));

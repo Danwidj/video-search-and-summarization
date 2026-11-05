@@ -182,6 +182,17 @@ export class SupabaseVideoAdapter implements VideoRepository {
     };
   }
 
+  async listRevisionsMissingCrops(videoId?: string): Promise<Array<{ videoId: string; revisionId: number }>> {
+    const rows = await this.db.rpc('list_revisions_missing_crops', { p_video_id: videoId ?? null });
+    if (!Array.isArray(rows)) return [];
+    return rows.flatMap((raw) => {
+      const found = asRow(raw);
+      const id = text(found.video_id);
+      const revisionId = numberOrNull(found.revision_id);
+      return id && revisionId !== null ? [{ videoId: id, revisionId }] : [];
+    });
+  }
+
   async deleteVideo(videoId: string): Promise<void> {
     await this.db.deleteWhere('videos', { id: videoId });
     // revisions, evidence crops and query results cascade from the video. Then remove the run

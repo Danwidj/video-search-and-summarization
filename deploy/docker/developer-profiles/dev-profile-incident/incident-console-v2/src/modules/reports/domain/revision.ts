@@ -234,7 +234,13 @@ export interface OfficialCrop {
   item_id: string;
   image: string;
   bounding_box: number[] | null;
+  /** The second the box was found at, to 3 decimals (not the item's own whole second). */
   timestamp_seconds: number | null;
+  /** The play range of the item's slice of the video, in seconds, to 3 decimals. */
+  slice_start_seconds: number;
+  slice_end_seconds: number;
+  /** R2 key of the whole frame the box was found in; null when the entry has none. */
+  frame: string | null;
   item_name: string;
   description: string;
   threat_level: number | null;
@@ -290,15 +296,52 @@ function payloadDetails(
   return details;
 }
 
+const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+const millis = (value: number): number => Math.round(value * 1000) / 1000;
+
+/** How far either side of the box second a slice reaches when the item has no track. */
+export const SLICE_PADDING_SECONDS = 3;
+
+/**
+ * The second the box was found at: box_seconds (a fractional retry second included), else the item's own second, else 0.
+ * Kept to 3 decimals.
+ */
+export function boxSecond(entry: EvidenceEntry): number {
+  return millis(Math.max(0, numberOrNull(entry.box_seconds) ?? numberOrNull(entry.timestamp_seconds) ?? 0));
+}
+
+/**
+ * The play range of an evidence item's slice of the existing video: first to last seen where the entry has a track, else
+ * SLICE_PADDING_SECONDS either side of the box second. Never negative and, when the video's length is known, never past it.
+ * Derived from the evidence entry, never from a stored row's second.
+ */
+export function evidenceSlice(entry: EvidenceEntry, durationSeconds: number | null = null): { start: number; end: number } {
+  const first = numberOrNull(entry.track_first_seen_seconds);
+  const last = numberOrNull(entry.track_last_seen_seconds);
+  const tracked = typeof entry.track === 'string' && entry.track !== '' && first !== null && last !== null && last >= first;
+  const at = boxSecond(entry);
+  const ceiling = durationSeconds !== null && durationSeconds > 0 ? durationSeconds : Number.POSITIVE_INFINITY;
+  const start = tracked ? first : at - SLICE_PADDING_SECONDS;
+  const end = tracked ? last : at + SLICE_PADDING_SECONDS;
+  const clampedStart = Math.min(Math.max(0, start), ceiling);
+  return { start: millis(clampedStart), end: millis(Math.max(clampedStart, Math.min(end, ceiling))) };
+}
+
 /**
  * The p_crops of an official revision: one row per evidence item that has an
  * image and an embedding, with the item details the agent stored on the entry
  * (or, for a gateway-mode placeholder, from the payload). An item with no
  * image or no vector is not searchable and is left out. The row's second is the
  * one the box was found at (box_seconds, a retry second when the item's own
- * second found nothing), so a search hit cuts the frame the box belongs to.
+ * second found nothing), fraction kept, so a search hit shows the frame the box belongs to. The row also carries the
+ * item's slice range and its stored frame.
  */
-export function officialCrops(payload: ReportPayload, evidence: EvidenceEntry[], embeddings: EvidenceEmbedding[]): OfficialCrop[] {
+export function officialCrops(
+  payload: ReportPayload,
+  evidence: EvidenceEntry[],
+  embeddings: EvidenceEmbedding[],
+  durationSeconds: number | null = null,
+): OfficialCrop[] {
   const details = payloadDetails(payload);
   const vectors = new Map(embeddings.map((item) => [`${item.itemType}:${item.itemId}`, item.embedding]));
   return evidence.flatMap((entry): OfficialCrop[] => {
@@ -306,13 +349,17 @@ export function officialCrops(payload: ReportPayload, evidence: EvidenceEntry[],
     const embedding = vectors.get(`${entry.item_type}:${entry.item_id}`);
     if (!embedding) return [];
     const fallback = details.get(`${entry.item_type}:${entry.item_id}`);
+    const slice = evidenceSlice(entry, durationSeconds);
     return [
       {
         item_type: entry.item_type,
         item_id: entry.item_id,
         image: entry.image,
         bounding_box: entry.bounding_box,
-        timestamp_seconds: integerOrNull(entry.box_seconds) ?? entry.timestamp_seconds ?? 0,
+        timestamp_seconds: boxSecond(entry),
+        slice_start_seconds: slice.start,
+        slice_end_seconds: slice.end,
+        frame: typeof entry.frame === 'string' && entry.frame.trim() ? entry.frame : null,
         item_name:
           typeof entry.item_name === 'string' && entry.item_name.trim() ? entry.item_name : (fallback?.item_name ?? entry.item_type),
         description: typeof entry.description === 'string' ? entry.description : (fallback?.description ?? ''),

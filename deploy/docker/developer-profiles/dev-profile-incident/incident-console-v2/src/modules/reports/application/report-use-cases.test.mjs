@@ -17,6 +17,8 @@ const { getReport } = await import('@/modules/reports/application/get-report');
 const { listRevisions } = await import('@/modules/reports/application/list-revisions');
 const { saveHumanEdit, SearchableStepError } = await import('@/modules/reports/application/save-human-edit');
 const { setOfficialRevision } = await import('@/modules/reports/application/set-official-revision');
+const { repairMissingCrops } = await import('@/modules/reports/application/repair-missing-crops');
+const { officialCrops } = await import('@/modules/reports/domain/revision');
 const { storeSearchableCrops } = await import('@/modules/reports/application/store-searchable-crops');
 const { deleteVideoAndReports } = await import('@/modules/reports/application/delete-video-and-reports');
 const { aiRunReport } = await import('../../../../tests/support/report-view.mjs');
@@ -181,6 +183,9 @@ test('marking official embeds the revision evidence through the agent and hands 
             image: 'evidence/v/u/E1.jpg',
             bounding_box: [1, 2, 3, 4],
             timestamp_seconds: 2,
+            slice_start_seconds: 0,
+            slice_end_seconds: 5,
+            frame: null,
             item_name: 'human',
             description: 'A person wearing dark clothing and carrying a bag, walking on the sidewalk.',
             threat_level: null,
@@ -451,4 +456,57 @@ test('a revision with no images is saved without calling the agent, and clears t
     ports.incidents.saved.map((input) => input.crops),
     [[]],
   );
+});
+
+test('repair stores the crops of a searchable revision that has none, official or not, and a dry run stores nothing', async () => {
+  const ports = official([withImage('evidence/v/u/E1.jpg')]);
+  ports.videos.missingCrops = [{ videoId: V, revisionId: 1 }];
+  const embedding = { itemType: 'entity', itemId: 'E1', embedding: [0.5] };
+  const dry = await repairMissingCrops(ports, async () => assert.fail('a dry run does not embed'));
+  assert.deepEqual(dry, { dryRun: true, revisions: [{ videoId: V, revisionId: 1, crops: null }] });
+  assert.deepEqual(ports.videos.cropCalls, []);
+  const report = await repairMissingCrops(ports, async () => [embedding], { dryRun: false });
+  assert.deepEqual(report, { dryRun: false, revisions: [{ videoId: V, revisionId: 1, crops: 1 }] });
+  assert.deepEqual(
+    ports.videos.cropCalls.map((call) => [call.videoId, call.revisionId, call.crops.map((crop) => crop.item_id)]),
+    [[V, 1, ['E1']]],
+  );
+  assert.deepEqual(await repairMissingCrops(ports, async () => [], { videoId: 'other', dryRun: false }), { dryRun: false, revisions: [] });
+});
+
+test('repair reports a failing revision and carries on with the rest', async () => {
+  const ports = official([withImage('evidence/v/u/E1.jpg')]);
+  ports.videos.missingCrops = [
+    { videoId: V, revisionId: 9 },
+    { videoId: V, revisionId: 1 },
+  ];
+  const report = await repairMissingCrops(ports, async () => [{ itemType: 'entity', itemId: 'E1', embedding: [0.5] }], { dryRun: false });
+  assert.deepEqual(report.revisions, [
+    { videoId: V, revisionId: 9, crops: null, error: 'Revision not found' },
+    { videoId: V, revisionId: 1, crops: 1 },
+  ]);
+});
+
+test('a crop stores the box second with its fraction and a slice, not the item whole second (audit cases 15.33 s and 2.27 s)', () => {
+  const entry = (box_seconds, timestamp_seconds, extra = {}) => ({
+    item_type: 'entity',
+    item_id: 'E1',
+    image: 'evidence/v/u/E1.jpg',
+    bounding_box: [1, 2, 3, 4],
+    box_seconds,
+    timestamp_seconds,
+    ...extra,
+  });
+  const embeddings = [{ itemType: 'entity', itemId: 'E1', embedding: [0.5] }];
+  const crop = (e, duration = null) => officialCrops({ incident: {} }, [e], embeddings, duration)[0];
+  const at = (e) => [crop(e).timestamp_seconds, crop(e).slice_start_seconds, crop(e).slice_end_seconds];
+  assert.deepEqual(at(entry(15.33, 18)), [15.33, 12.33, 18.33], 'was stored as 18');
+  assert.deepEqual(at(entry(2.27, 22)), [2.27, 0, 5.27], 'was stored as 22; the slice is clamped at 0');
+  assert.deepEqual(at(entry(null, 7)), [7, 4, 10], 'no box second: the item second');
+  const tracked = { track: 'evidence/v/u/E1-track.json', track_first_seen_seconds: 15.33, track_last_seen_seconds: 18.8 };
+  assert.deepEqual(at(entry(15.33, 18, tracked)), [15.33, 15.33, 18.8], 'a track gives first to last seen');
+  assert.deepEqual(at(entry(15.33, 18, { ...tracked, track: null })), [15.33, 12.33, 18.33], 'a window with no track is not a track');
+  assert.deepEqual([crop(entry(15.33, 18), 16).slice_end_seconds], [16], 'clamped to the video length');
+  assert.equal(crop(entry(1, 1, { frame: 'evidence/v/u/E1-frame.jpg' })).frame, 'evidence/v/u/E1-frame.jpg');
+  assert.equal(crop(entry(1, 1)).frame, null);
 });

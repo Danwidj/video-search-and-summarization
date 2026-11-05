@@ -13,6 +13,7 @@ There is one Supabase project per project phase ([decision](decisions.md)): **fi
 - `20261023000000_report_revisions_schema.sql` — drops the relational report tables and retires `videos.selected_*`; creates `report_revisions`, the revision-keyed `evidence_crops` and `query_results`, and `videos.official_revision_id`.
 - `20261023000100_report_revisions_functions.sql` — `save_human_revision`, `set_official_revision`, and the rewritten `search_evidence_items`, `list_incident_report_summaries` and `get_incident_dashboard`.
 - `20261023000200_searchable_latest_revision.sql` — adds `videos.official_since`; makes a video with no official revision searchable through its newest revision (`set_revision_crops`, `searchable_revision_id`, `replace_video_crops`); and adds `officialSince`, `versionCount`, `evidenceCount` and `thumbnail` to the library cards.
+- `20261105090000_evidence_crop_seconds_slices_frames.sql` — `evidence_crops.timestamp_seconds` becomes `NUMERIC(8,3)` (the box second keeps its fraction); adds `slice_start_seconds`, `slice_end_seconds` and `frame`; `evidence_slice(...)` derives the slice; `replace_video_crops` and `search_evidence_items` carry the new columns; `list_revisions_missing_crops(p_video_id)` lists searchable revisions with no crop rows; the existing rows are backfilled.
 - `20261023120000_report_revision_embeddings.sql` — adds `report_revisions.embedding` with its HNSW index, and `search_report_revisions`.
 - `20261024090000_save_human_revision_with_crops.sql` — adds `save_human_revision_with_crops`.
 - `20261028090000_r2_rename.sql` — adds `apply_r2_rename` (used once by [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py)) and lets it, and nothing else, change a revision's `evidence` column.
@@ -147,8 +148,11 @@ What moves the rows (the database cannot embed, so a writer always supplies them
 | `description` | `TEXT` | NOT NULL | Item visual description |
 | `threat_level` | `INTEGER` | NULLABLE | Threat rating (1-5; instruments only) |
 | `holder_entity_id` | `VARCHAR(20)` | NULLABLE | Identifier of the holding entity (instruments only) |
-| `timestamp_seconds` | `INTEGER` | NOT NULL | Whole-second offset from video start: the second the box was found at (the evidence entry's `box_seconds`, else its `timestamp_seconds`), so a search hit cuts the frame its box belongs to. An entity's first/last seen span (`incident-contract-v4`) is stored only in the revision payload and evidence, not here |
+| `timestamp_seconds` | `NUMERIC(8,3)` | NOT NULL | Offset in seconds from video start, to the millisecond (15.333 stays 15.333; it was an `INTEGER` that rounded it): the second the box was found at (the evidence entry's `box_seconds`, else its `timestamp_seconds`), so a search hit cuts the frame its box belongs to. An entity's first/last seen span (`incident-contract-v4`) is stored only in the revision payload and evidence, not here |
 | `bounding_box` | `INTEGER[4]` | NOT NULL | Normalised `[ymin, xmin, ymax, xmax]` (0-1000) |
+| `slice_start_seconds` | `NUMERIC(8,3)` | NULLABLE | Start of the evidence slice: the entity's first seen second where it has a track, else the box second minus 3 s (not below 0). The player clamps the end to the video length. A slice is a played time range of the existing video, never a clip file |
+| `slice_end_seconds` | `NUMERIC(8,3)` | NULLABLE | End of the slice: last seen second, else the box second plus 3 s. CHECK `slice_end_seconds >= slice_start_seconds` |
+| `frame` | `VARCHAR(1024)` | NULLABLE | R2 key of the whole video frame with the box drawn (`<crop key without .jpg>-frame.jpg`), stored at crop time: the search thumbnail. NULL means the console cuts the frame from the video at `timestamp_seconds` and the agent sends no `frame_image_url`. `scripts/backfill_evidence_frames.py` fills the gaps |
 | `image` | `VARCHAR(1024)` | NOT NULL | R2 object key (`evidence/<video key>/run-<N>/<itemId>.jpg` or `.../edit-<N>/<itemId>.jpg`, where `<video key>` is `videos.filepath`) |
 | `embedding` | `extensions.vector(1024)` | NULLABLE | 1024-dimensional embedding for cosine retrieval |
 | `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC insertion time |
@@ -270,12 +274,13 @@ selections.
 
 ```
 {item_type, item_id, image, bounding_box, timestamp_seconds,
+ slice_start_seconds, slice_end_seconds, frame,
  item_name, description, threat_level, holder_entity_id, embedding}
 ```
 
 Entries without an `item_type` of `entity`/`instrument`/`asset`, without an `item_id` or without an
 `image` are skipped. A missing/`null` `bounding_box` becomes `[0,0,1000,1000]`; a missing
-`timestamp_seconds` becomes 0; `embedding` is a 1024-number array or null. Returns
+`timestamp_seconds` becomes 0; a missing slice or `frame` is stored as NULL; `embedding` is a 1024-number array or null. Returns
 `{videoId, officialRevisionId, crops}` where `crops` is the number of rows now stored.
 
 The console obtains the embeddings (the agent's `POST /api/v1/incidents/evidence-embeddings`) and
@@ -318,7 +323,15 @@ The migration drops the old 7-argument overload first, because two overloads wou
 calls ambiguous. Returns the incident (video) id, the
 revision id, the revision's model run and facets, the crop, and `similarity_score`
 (`1.0 - distance`). `incident_start_timestamp`/`incident_end_timestamp` are the revision's seconds
-as text. Rows whose embedding is NULL are skipped.
+as text. The crop's `timestamp_seconds` (fractional), `slice_start_seconds`, `slice_end_seconds` and `frame` come back with it. Rows whose embedding is NULL are skipped. The console route passes `p_min_similarity` 0.35 for a text query ([decision](decisions.md#2026-11-05-evidence-search-keeps-the-exact-second-adds-a-0-35-score-floor-and-plays-a-slice)).
+
+#### `list_revisions_missing_crops`
+
+```
+list_revisions_missing_crops(p_video_id VARCHAR DEFAULT NULL) RETURNS TABLE(video_id, revision_id)
+```
+
+The videos whose searchable revision has an `evidence` list with images but no `evidence_crops` rows (service role only): the input of the repair step (`POST /api/videos/repair-crops`, dry run by default, which embeds the crops and calls `set_revision_crops`). It found the two videos that were missing from search on 5 Nov.
 
 #### `list_incident_report_summaries`
 

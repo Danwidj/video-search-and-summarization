@@ -129,7 +129,7 @@ Search & Retrieval
 - Detector framing: the remote-VLM `DefaultDetector` against offline candidates (§6.2). Stand-in: `[ymin, xmin, ymax, xmax]` normalised 0-1000.
 - Critic model and prompt (§3.6). Stand-in: `{verdict: confirmed|rejected|unverified, confidence, rationale}`.
 - Embedding model comparison (§6.3). Stand-in: `vector(1024)` on `evidence_crops.embedding`; the agent embeds, the console never does.
-- Search RPC thresholds: the route sends `top_k` 10 and `min_similarity` 0.0 (the RPC's own 0.2 default is unused by the route).
+- Search RPC thresholds: the agent route defaults to `min_similarity` 0.0; the console sends 0.35 for a text query ([decision](../decisions.md#2026-11-05-evidence-search-keeps-the-exact-second-adds-a-0-35-score-floor-and-plays-a-slice)). The RPC's own 0.2 default is unused.
 
 ## 5. Shared Conventions, Environments & Definitions
 
@@ -144,7 +144,7 @@ The PR task docs assume the following conventions and environment setup. This se
 ### Conventions
 
 - **Item ID formats:** Sequential `E1..`, `I1..`, `A1..` (contract-v2). Enforced by `id-normalization-v1` repair.
-- **Timestamp format:** Integer seconds (`timestamp_seconds INT`) for evidence items (entities, instruments, assets); incident temporal boundaries use `start_timestamp` and `end_timestamp`. Storage: [`data.md`](../data.md#report_revisions).
+- **Timestamp format:** Seconds to the millisecond (`timestamp_seconds NUMERIC(8,3)`; an integer until 5 Nov 2026) for evidence items (entities, instruments, assets); incident temporal boundaries use `start_timestamp` and `end_timestamp`. Storage: [`data.md`](../data.md#report_revisions).
 - **Taxonomy:** `incident-contract-v2` taxonomy retained: `road accident`, `burglary`, `explosion`, `assault`, `animal attack`. Entity type: `human`, `animal`, `unknown`. Instrument `threat_level` 1-5.
 - **RLS, RPC lockdown and pgvector:** [`data.md`](../data.md#row-level-security-rls--access-control).
 - **Critic off by default (changed 2026-10-28; it was always on):** with `INCIDENT_SEARCH_CRITIC` set, every search candidate is evaluated by the VLM critic and both ranking and verdict are persisted; otherwise hits are `unverified`. No opt-in `--search` flag; search starts automatically with `start.sh`.

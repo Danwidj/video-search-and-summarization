@@ -91,6 +91,11 @@ export interface VideoRepository {
    * revision that is not the searchable one.
    */
   setRevisionCrops(videoId: string, revisionId: number, crops: OfficialCrop[]): Promise<RevisionCropsChange>;
+  /**
+   * The searchable revisions that have image-bearing evidence but no evidence_crops rows (so the video is missing from
+   * Find evidence), optionally only for one video. A video with no such revision is not listed.
+   */
+  listRevisionsMissingCrops(videoId?: string): Promise<Array<{ videoId: string; revisionId: number }>>;
   /** Deletes the video row (its revisions, evidence crops and query results cascade), then the run records that name only this video. */
   deleteVideo(videoId: string): Promise<void>;
 }

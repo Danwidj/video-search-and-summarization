@@ -17,6 +17,7 @@ import json
 import re
 import sys
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 
 import pgserver
@@ -96,6 +97,8 @@ EVIDENCE = [
 def crop(item_type: str, item_id: str, image: str, embedding: list[float] | None, **fields) -> dict:
     return {"item_type": item_type, "item_id": item_id, "image": image, "bounding_box": fields.get("bounding_box"),
             "timestamp_seconds": fields.get("timestamp_seconds"), "item_name": fields.get("item_name"),
+            "slice_start_seconds": fields.get("slice_start_seconds"), "slice_end_seconds": fields.get("slice_end_seconds"),
+            "frame": fields.get("frame"),
             "description": fields.get("description"), "threat_level": fields.get("threat_level"),
             "holder_entity_id": fields.get("holder_entity_id"), "embedding": embedding}
 
@@ -129,7 +132,8 @@ with tempfile.TemporaryDirectory() as tmp:
             assert gone not in names, gone
         for present in ("save_human_revision", "set_official_revision", "search_evidence_items",
                         "list_incident_report_summaries", "get_incident_dashboard", "report_revisions_append_only",
-                        "set_revision_crops", "searchable_revision_id", "claim_analysis_job", "touch_analysis_job",
+                        "set_revision_crops", "searchable_revision_id", "evidence_slice", "list_revisions_missing_crops",
+                        "claim_analysis_job", "touch_analysis_job",
                         "finish_analysis_job", "retry_analysis_job", "cancel_analysis_job"):
             assert present in names, present
         assert one(conn, "SELECT extnamespace::regnamespace::TEXT FROM pg_extension WHERE extname = 'vector'")[0] == "extensions"
@@ -579,6 +583,95 @@ with tempfile.TemporaryDirectory() as tmp:
     @test("the revisions of other videos are never touched by a crop write")
     def _():
         assert crop_count("v1") == 2 and crop_count("v3") == 0 and crop_count("v4") == 0
+    @test("evidence_crops keep the second the box was found at, with its fraction, and a slice and a frame")
+    def _():
+        conn.execute("INSERT INTO public.videos (id, filepath, source) VALUES ('v11', 'uploads/v11.mp4', 'cam')")
+        rev = ai_revision("v11", 1, "m1", report(), [])
+        result = set_crops("v11", rev, [
+            crop("entity", "E1", "evidence/v11/E1.jpg", vector(7), timestamp_seconds=15.333, slice_start_seconds=15.333,
+                 slice_end_seconds=18.8, frame="evidence/v11/E1-frame.jpg", item_name="human", description="Man"),
+            crop("asset", "A1", "evidence/v11/A1.jpg", vector(8), timestamp_seconds=2.27, slice_start_seconds=-1,
+                 slice_end_seconds=5.27, item_name="shelf", description="Shelf"),
+            crop("instrument", "I1", "evidence/v11/I1.jpg", vector(9), timestamp_seconds=4, item_name="bottle", description="Old crop list"),
+        ])
+        assert result["crops"] == 3, result
+        rows = conn.execute("""SELECT item_id, timestamp_seconds, slice_start_seconds, slice_end_seconds, frame
+            FROM public.evidence_crops WHERE revision_id = %s ORDER BY item_id""", (rev,)).fetchall()
+        assert rows == [
+            ("A1", Decimal("2.270"), Decimal("0.000"), Decimal("5.270"), None),
+            ("E1", Decimal("15.333"), Decimal("15.333"), Decimal("18.800"), "evidence/v11/E1-frame.jpg"),
+            ("I1", Decimal("4.000"), None, None, None),
+        ], rows
+        hits = conn.execute("""SELECT item_id, timestamp_seconds, slice_start_seconds, slice_end_seconds, frame
+            FROM public.search_evidence_items(%s::extensions.vector, 5, 0.5, p_video_id => 'v11')""", (vector_literal(7),)).fetchall()
+        assert hits == [("E1", Decimal("15.333"), Decimal("15.333"), Decimal("18.800"), "evidence/v11/E1-frame.jpg")], hits
+        conn.execute("DELETE FROM public.videos WHERE id = 'v11'")
+
+    @test("evidence_slice: box second wins over the item's second; a track gives first to last seen, else 3 s either side")
+    def _():
+        slice_of = lambda entry: one(conn, "SELECT box_second, slice_start, slice_end FROM public.evidence_slice(%s::jsonb)",
+                                     (json.dumps(entry),))
+        D = Decimal
+        # the audit's cases: a fractional box second beside a different whole-second item time
+        assert slice_of({"box_seconds": 15.33, "timestamp_seconds": 18}) == (D("15.33"), D("12.33"), D("18.33"))
+        assert slice_of({"box_seconds": 2.27, "timestamp_seconds": 22}) == (D("2.27"), D("0"), D("5.27"))
+        assert slice_of({"box_seconds": 10.67, "timestamp_seconds": 0}) == (D("10.67"), D("7.67"), D("13.67"))
+        track = {"box_seconds": 15.33, "track": "evidence/x/E1-track.json",
+                 "track_first_seen_seconds": 15.33, "track_last_seen_seconds": 18.8}
+        assert slice_of(track) == (D("15.33"), D("15.33"), D("18.8"))
+        # a track key without a usable window, or a window without a key, is not a track
+        assert slice_of({**track, "track_last_seen_seconds": 10}) == (D("15.33"), D("12.33"), D("18.33"))
+        assert slice_of({**track, "track": None}) == (D("15.33"), D("12.33"), D("18.33"))
+        assert slice_of({"timestamp_seconds": 5}) == (D("5"), D("2"), D("8"))
+        assert slice_of({}) == (D("0"), D("0"), D("3"))
+
+    @test("backfill: a row with a wrong second and no slice is rewritten from its revision's evidence, embedding kept")
+    def _():
+        conn.execute("INSERT INTO public.videos (id, filepath, source) VALUES ('v12', 'uploads/v12.mp4', 'cam')")
+        evidence = [
+            {"item_type": "entity", "item_id": "E1", "image": "evidence/v12/E1.jpg", "box_seconds": 15.33, "timestamp_seconds": 18,
+             "frame": "evidence/v12/E1-frame.jpg", "track": "evidence/v12/E1-track.json",
+             "track_first_seen_seconds": 15.33, "track_last_seen_seconds": 18.8},
+            {"item_type": "asset", "item_id": "A1", "image": "evidence/v12/A1.jpg", "box_seconds": 2.27, "timestamp_seconds": 22},
+        ]
+        rev = ai_revision("v12", 1, "m1", report(), evidence)
+        for item_type, item_id, wrong in (("entity", "E1", 18), ("asset", "A1", 22)):
+            conn.execute("""INSERT INTO public.evidence_crops (revision_id, item_type, item_id, item_name, description,
+                                timestamp_seconds, bounding_box, image, embedding)
+                            VALUES (%s, %s, %s, 'n', 'd', %s, '{1,2,3,4}', %s, %s::extensions.vector)""",
+                         (rev, item_type, item_id, wrong, f"evidence/v12/{item_id}.jpg", vector_literal(11)))
+        before = one(conn, "SELECT embedding::TEXT FROM public.evidence_crops WHERE revision_id = %s AND item_id = 'E1'", (rev,))[0]
+        conn.execute("RESET ROLE")
+        with conn.transaction():
+            conn.execute(next(m for m in MIGRATIONS if m.name.startswith("20261105090000")).read_text())
+        conn.execute("SET ROLE service_role")
+        rows = conn.execute("""SELECT item_id, timestamp_seconds, slice_start_seconds, slice_end_seconds, frame, embedding::TEXT
+            FROM public.evidence_crops WHERE revision_id = %s ORDER BY item_id""", (rev,)).fetchall()
+        assert [r[:5] for r in rows] == [
+            ("A1", Decimal("2.270"), Decimal("0.000"), Decimal("5.270"), None),
+            ("E1", Decimal("15.330"), Decimal("15.330"), Decimal("18.800"), "evidence/v12/E1-frame.jpg"),
+        ], rows
+        assert rows[1][5] == before, "the embedding is not re-written"
+        conn.execute("DELETE FROM public.videos WHERE id = 'v12'")
+
+    @test("list_revisions_missing_crops: a searchable revision with images and no crop rows, nothing else")
+    def _():
+        missing = lambda video=None: conn.execute("SELECT video_id, revision_id FROM public.list_revisions_missing_crops(%s)",
+                                                  (video,)).fetchall()
+        image = {"item_type": "entity", "item_id": "E1", "image": "evidence/v13/E1.jpg"}
+        conn.execute("INSERT INTO public.videos (id, filepath, source) VALUES ('v13', 'uploads/v13.mp4', 'cam'), ('v14', 'uploads/v14.mp4', 'cam')")
+        old = ai_revision("v13", 1, "m1", report(), [image])
+        assert missing("v13") == [("v13", old)], "newest revision has images and no rows"
+        set_crops("v13", old, [crop("entity", "E1", "evidence/v13/E1.jpg", vector(12), item_name="n", description="d")])
+        assert missing("v13") == []
+        newer = ai_revision("v13", 2, "m1", report(), [image])
+        assert missing("v13") == [("v13", newer)], "a newer revision takes over search with no rows"
+        ai_revision("v14", 1, "m1", report(), [{"item_type": "asset", "item_id": "A1", "image": None}])
+        assert missing("v14") == [], "no image-bearing evidence, nothing to store"
+        assert ("v13", newer) in missing()
+        refused(conn, "UPDATE public.report_revisions SET note = 'x' WHERE id = %s", (newer,), contains="append-only")
+        conn.execute("DELETE FROM public.videos WHERE id IN ('v13', 'v14')")
+
     @test("apply_r2_rename points a video, its evidence and its crops at renamed keys and nothing else")
     def _():
         conn.execute("INSERT INTO public.videos (id, filepath, source) VALUES ('v10', 'uploads/cam/0123.mp4', 'cam')")
