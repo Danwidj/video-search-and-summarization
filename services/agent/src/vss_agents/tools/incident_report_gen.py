@@ -75,6 +75,7 @@ from collections.abc import AsyncGenerator
 import copy
 import hashlib
 import logging
+import math
 import os
 import re
 import time
@@ -266,6 +267,8 @@ class ExperimentRefusedError(RuntimeError):
     """An experimental request would write to shared storage (HTTP 409 on ``/analyze``)."""
 
 
+ANALYSIS_BUDGET_ENV = "INCIDENT_ANALYSIS_BUDGET_SECONDS"
+DEFAULT_ANALYSIS_BUDGET_SECONDS = 240.0  # the console gives up at 300 s (contracts/inference.json)
 EXPERIMENT_EVIDENCE_STORE = "temporary in-memory store, discarded after the request (no disk, no R2)"
 # The owner-approved R2 root of experimental caption windows (blocker X16): the one shared-storage write an
 # experiment may make, and only when this is set. Never production's scratch/analyze.
@@ -603,11 +606,13 @@ async def collect_evidence(
     namer: Any | None = None,
     tracking: track_evidence.TrackingRequest | None = None,
     object_tracking: track_evidence.ObjectTrackingRequest | None = None,
+    deadline: float | None = None,
 ) -> list[dict[str, Any]]:
     """Crop and upload every evidence item. Never raises: a failure becomes an ``image_gap`` reason.
 
     ``store`` and ``detector`` override the service's own (R2 and the shared detector in production) for this
-    call only. ``object_tracking`` receives the summary of the instrument and asset tracks.
+    call only. ``object_tracking`` receives the summary of the instrument and asset tracks. ``deadline`` is the
+    request's ``time.monotonic()`` budget end: past it, items are left with an ``image_gap`` or ``zoom_gap``.
     """
     try:
         return await crop_evidence.get_crop_evidence_service().process_incident_report(
@@ -620,6 +625,7 @@ async def collect_evidence(
             namer=namer,
             tracking=tracking,
             object_tracking=object_tracking,
+            deadline=deadline,
         )
     except Exception as exc:
         logger.warning("incident_report_gen: evidence cropping failed for %s: %s", incident_id, exc)
@@ -637,6 +643,15 @@ def tracking_request(tool_input: IncidentReportGenInput) -> track_evidence.Track
     return track_evidence.TrackingRequest(
         sensor_id=track_evidence.sensor_id_for(tool_input.video_key or tool_input.incident_id, run_id)
     )
+
+
+def analysis_budget_seconds() -> float:
+    """Seconds a production analysis may spend before the crop stages skip or shorten (under the console's limit)."""
+    try:
+        value = float((os.environ.get(ANALYSIS_BUDGET_ENV) or "").strip())
+    except ValueError:
+        return DEFAULT_ANALYSIS_BUDGET_SECONDS
+    return value if math.isfinite(value) and value > 0 else DEFAULT_ANALYSIS_BUDGET_SECONDS
 
 
 def object_tracking_request() -> track_evidence.ObjectTrackingRequest:
@@ -1016,6 +1031,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
     async def _analyze(
         tool_input: IncidentReportGenInput, provenance: run_provenance.RunProvenance
     ) -> IncidentReportGenOutput:
+        deadline = time.monotonic() + analysis_budget_seconds()
         model_name = tool_input.model or config.vlm_model_name
         if tool_input.model is not None and tool_input.model not in incident_contract.allowed_models():
             raise ValueError(f"Model {tool_input.model!r} is not in the incident contract allowlist")
@@ -1044,6 +1060,8 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             )
         api_key = os.environ.get(config.api_key_env, "")
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        if experiment is not None:  # a batch evaluation is not held to the console's limit
+            deadline = None
         # Only production requests track; experiments (skip_crops included) never do.
         tracking = tracking_request(tool_input) if experiment is None and track_evidence.tracking_enabled() else None
         # Object tracks (instruments and assets) are a production request's too, and need the crops.
@@ -1170,6 +1188,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 video_key=tool_input.video_key,
                 tracking=tracking,
                 object_tracking=objects,
+                deadline=deadline,
             )
         if objects is not None:
             logger.info(
