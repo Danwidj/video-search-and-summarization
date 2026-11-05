@@ -188,11 +188,13 @@ Status codes: `501` when `chart_generator.llm_name` is unset or names no LLM; `5
 
 ## `POST /api/v1/incidents/charts`
 
-Draws the figures it is given with the `chart_generator` tool. The dashboard's chart requests call it from the console server; the route chooses and computes nothing. It needs `chart_generator` in the agent's config (`dev-profile-base/vss-agent/configs/config.yml`). The mock has neither chart route, so chart requests show an error there.
+Builds the charts the dashboard's chart requests ask for with the `chart_generator` tool. The console computes every figure and sends it here; the route chooses and computes nothing, and the console checks each returned figure against its own rows before it shows the chart. It needs `chart_generator` in the agent's config (`dev-profile-base/vss-agent/configs/config.yml`). The mock has neither chart route, so chart requests show an error there.
 
-Request: `{"charts_data": [<bar or pie>], "output_dir": "<dir>", "file_prefix": "<prefix>"}`. A bar is `{"title", "chart_file_format": "png", "x_categories": [...], "series": {"<name>": [...]}, "x_label", "y_label"}`; a pie is `{"title", "chart_file_format": "png", "sizes": [...], "labels": [...]}`.
+Request: `{"charts_data": [<item>], "output_dir": "<dir>", "file_prefix": "<prefix>"}`. Each item is one of two kinds:
+- **Chart.js** (`"output": "chartjs"`): `{"output", "kind", "title", "x_label", "y_label", "labels": [...], "series": [{"label", "values": [...], "color": "#rrggbb"}], "slice_colors": [...]}`. `kind` is `bar`, `stacked_bar`, `horizontal_bar`, `donut`, `line` or `area`. Up to 200 labels and 2 series; a donut has one series; every series has one value per label; figures must be finite; `slice_colors` is for a donut only. Unknown keys are refused (`422`). No image is drawn.
+- **PNG** (the fallback): a bar is `{"title", "chart_file_format": "png", "x_categories": [...], "series": {"<name>": [...]}, "x_label", "y_label"}`; a pie is `{"title", "chart_file_format": "png", "sizes": [...], "labels": [...]}`.
 
-Response `200`: one entry per chart, `{"success", "error_message", "object_store_key"}`. `GET /static/<object_store_key>` returns the image and `DELETE` the same path removes it. The store is in memory, so images do not survive an agent restart. `422` for a body that does not validate, `501` when the profile does not configure the tool, `500` when it fails.
+Response `200`: one entry per item, `{"success", "error_message", "object_store_key", "chart_config"}`. A Chart.js item returns `object_store_key: null` and `chart_config`, a plain Chart.js configuration `{"type": "bar" | "line" | "doughnut", "data": {"labels", "datasets"}, "options"}` with the figures exactly as sent and no functions. A PNG item returns `chart_config: null` and a key; `GET /static/<object_store_key>` returns the image and `DELETE` the same path removes it. The store is in memory, so images do not survive an agent restart. `422` for a body that does not validate (including an old agent that does not know the Chart.js item), `501` when the profile does not configure the tool, `500` when it fails.
 
 ## `POST /api/v1/incidents/{video_id}/box/track`
 
