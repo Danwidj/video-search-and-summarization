@@ -63,6 +63,7 @@ from typing import Any
 from typing import Protocol
 from typing import TypeVar
 from typing import runtime_checkable
+import unicodedata
 
 try:
     import cv2
@@ -111,6 +112,9 @@ class CropResult:
     zoom_frame_bytes: bytes | None = None  # the whole frame with the box drawn, the second look's context; never stored
     # The detector's own box (before the 5 % crop padding), for the object tracker's seed. Never stored.
     detected_box: tuple[int, int, int, int] | None = field(default=None, compare=False, repr=False)
+    # Why a frame-only result has no crop, when it is more specific than "not located" (a failing detector, a box that
+    # cannot be the object). It becomes the entry's ``image_gap``.
+    gap: str | None = None
 
 
 # Seconds tried, in order, around the requested one when the detector finds nothing there.
@@ -1060,14 +1064,17 @@ class DefaultDetector:
 class FakeDetector:
     """In-memory detector fixture for unit testing."""
 
-    def __init__(self, detections: Sequence[Detection] | None = None) -> None:
+    def __init__(
+        self, detections: Sequence[Detection] | None = None, by_query: dict[str, Sequence[Detection]] | None = None
+    ) -> None:
         self.detections = list(detections) if detections is not None else []
+        self.by_query = {query: list(found) for query, found in (by_query or {}).items()}
 
     def is_available(self) -> bool:
         return True
 
     def detect(self, frame: np.ndarray, query: str) -> list[Detection]:  # noqa: ARG002
-        return self.detections
+        return self.by_query.get(query, self.detections)
 
 
 class FakeZoomNamer:
@@ -1103,7 +1110,7 @@ class FakeZoomNamer:
         return parse_zoom_reply(parse_json_object(reply) if isinstance(reply, str) else reply)
 
 
-def _not_located_result(frame: np.ndarray, seconds: int | float) -> CropResult | None:
+def _not_located_result(frame: np.ndarray, seconds: int | float, gap: str | None = None) -> CropResult | None:
     """The frame alone: no crop and no box, so nothing downstream mistakes it for a located object."""
     frame_h, frame_w = frame.shape[:2]
     frame_bytes = encode_jpeg(frame, quality=FRAME_JPEG_QUALITY)
@@ -1117,7 +1124,30 @@ def _not_located_result(frame: np.ndarray, seconds: int | float) -> CropResult |
         frame_bytes=frame_bytes,
         box_seconds=seconds,
         located=False,
+        gap=gap,
     )
+
+
+# An instrument or asset box over this share of the frame, or under the small one, is not taken for the object.
+MAX_OBJECT_BOX_AREA = 0.5
+MIN_OBJECT_BOX_AREA = 0.003
+
+
+def box_problem(box: Sequence[int | float], item_type: str | None) -> str | None:
+    """Why a detector box (0-1000) cannot be an instrument or asset, or None when it may be (people are never checked).
+
+    A box over half the frame is the scene, not the object (the audit's "elevator interior" boxed at 100%); one under
+    0.3% of the frame is too small to judge, so the next second is tried and the frame is shown without a crop.
+    """
+    if item_type not in OBJECT_TRACKING_TYPES or len(box) != 4:
+        return None
+    ymin, xmin, ymax, xmax = box
+    area = max(0.0, ymax - ymin) * max(0.0, xmax - xmin) / 1_000_000
+    if area > MAX_OBJECT_BOX_AREA:
+        return f"the box covers {area:.0%} of the frame, too large to be this {item_type}"
+    if area < MIN_OBJECT_BOX_AREA:
+        return f"the box covers only {area:.2%} of the frame, too small to judge"
+    return None
 
 
 def parse_detections(raw_detections: Any, label: str) -> list[Detection]:
@@ -1142,8 +1172,12 @@ def _locate_in_frame(
     raw_detections: Any,
     label: str,
     min_score: float,
+    item_type: str | None = None,
 ) -> CropResult | None:
-    """The crop of the best usable detection of one frame, or None when the detector found no usable box."""
+    """The crop of the best usable detection of one frame, or None when the detector found no usable box.
+
+    An instrument or asset box that is too large or too small to be the object (:func:`box_problem`) is not usable.
+    """
     parsed_detections = parse_detections(raw_detections, label)
     if not parsed_detections:
         return None
@@ -1153,6 +1187,8 @@ def _locate_in_frame(
         return None
     ymin, xmin, ymax, xmax = best.box
     if ymin >= ymax or xmin >= xmax:
+        return None
+    if box_problem(best.box, item_type):
         return None
 
     frame_h, frame_w = frame.shape[:2]
@@ -1184,6 +1220,7 @@ def crop_evidence_item(
     min_score: float = 0.0,
     not_located_fallback: bool = False,
     retry_offsets: Sequence[int] = (),
+    item_type: str | None = None,
 ) -> CropResult | None:
     """Locate an evidence object in a video at the specified timestamp using a detector.
 
@@ -1198,6 +1235,12 @@ def crop_evidence_item(
         retry_offsets: Seconds added to ``timestamp_seconds`` and tried in order when the detector finds
             nothing there; the first hit wins and ``box_seconds`` records the second it was found at. Every
             second tried is one detector call against the request's crop-call budget.
+        item_type: ``entity``, ``instrument`` or ``asset``. An instrument or asset box over 50% or under 0.3% of the
+            frame is not accepted (:func:`box_problem`), so the next second is tried; people are never checked.
+
+    A detector error at one second does not lose the frame: the next seconds are still tried, and when none gives a
+    box the frame already read is returned alone (with ``not_located_fallback``), its ``gap`` naming the failure. A
+    stopped detector (the run's breaker or time budget, ``DetectorStoppedError``) ends the attempts at once.
 
     Returns:
         CropResult or None when nothing is found or detector is unavailable.
@@ -1213,6 +1256,8 @@ def crop_evidence_item(
 
     attempts = [0, *([] if isinstance(video_ref, np.ndarray) else retry_offsets)]
     first_frame: np.ndarray | None = None
+    failure: str | None = None
+    problem: str | None = None
     for offset in attempts:
         seconds = timestamp_seconds + offset
         if seconds < 0:
@@ -1231,16 +1276,66 @@ def crop_evidence_item(
                 return None
         except CropCallCapReachedError:
             raise
+        except DetectorStoppedError as exc:
+            logger.warning("Detector stopped for query '%s': %s", label, exc)
+            failure = failure or f"detector stopped at {seconds}s: {exc}"
+            break
         except Exception as exc:
             logger.warning("Detector execution failed for query '%s': %s", label, exc)
-            return None
-        found = _locate_in_frame(frame, seconds, raw_detections, label, min_score)
+            failure = failure or f"detector failed at {seconds}s ({type(exc).__name__})"
+            continue
+        found = _locate_in_frame(frame, seconds, raw_detections, label, min_score, item_type)
         if found is not None:
             return found
+        problem = problem or _best_box_problem(raw_detections, label, item_type)
 
     if not_located_fallback and first_frame is not None:
-        return _not_located_result(first_frame, timestamp_seconds)
+        gap = failure or (
+            f"no usable box within {max(retry_offsets, default=0)}s either side: {problem}" if problem else None
+        )
+        return _not_located_result(first_frame, timestamp_seconds, gap)
     return None
+
+
+DUPLICATE_BOX_IOU = 0.8
+
+
+def duplicate_images(entries: Sequence[dict[str, Any]], crops: dict[str, CropResult]) -> dict[str, str]:
+    """``{item_id: first item_id}`` for items whose box overlaps an earlier located item's (IoU above 0.8, same second).
+
+    Such items are one object seen under several names (the audit's three identical crops in rev 131), so they share one
+    stored image; every item keeps its own id and report entry. An instrument is never merged with its holder.
+    """
+    kept: list[tuple[str, dict[str, Any], CropResult]] = []
+    shared: dict[str, str] = {}
+    for entry in entries:
+        crop = crops.get(entry["item_id"])
+        if crop is None or not crop.located or not crop.normalized_box or crop.image_bytes is None:
+            continue
+        for first_id, first, first_crop in kept:
+            if (
+                first_crop.box_seconds == crop.box_seconds
+                and first_crop.normalized_box is not None
+                and entry.get("holder_entity_id") != first_id
+                and first.get("holder_entity_id") != entry["item_id"]
+                and track_evidence.box_iou(first_crop.normalized_box, crop.normalized_box) > DUPLICATE_BOX_IOU
+            ):
+                shared[entry["item_id"]] = first_id
+                break
+        else:
+            kept.append((entry["item_id"], entry, crop))
+    return shared
+
+
+def _best_box_problem(raw_detections: Any, label: str, item_type: str | None) -> str | None:
+    """:func:`box_problem` of the best detection of a frame, for the gap text of an item whose boxes were all refused."""
+    parsed = parse_detections(raw_detections, label)
+    if not parsed:
+        return None
+    best = max(parsed, key=lambda d: d.score)
+    if len(best.box) != 4 or best.box[0] >= best.box[2] or best.box[1] >= best.box[3]:
+        return None
+    return box_problem(best.box, item_type)
 
 
 class EvidenceStore(ABC):
@@ -1419,12 +1514,67 @@ _REPORT_ITEM_ID_FIELDS = {
 }
 
 
+DIFFERENT_OBJECT_GAP = "looks like a different object"
+
+# Names that count as the same kind of thing for the second look, beyond one name containing the other. Small and
+# deliberate: a wrong rename ("cash register" to "high heel shoe", "club" to "handgun") is worse than a missed good one.
+_NAME_GROUPS: tuple[frozenset[str], ...] = tuple(
+    frozenset(group.split())
+    for group in (
+        "display rack shelf shelves shelving stand",
+        "bag backpack handbag purse satchel luggage suitcase",
+        "car vehicle van truck suv sedan",
+        "stick club bat baton pipe rod pole",
+        "gun handgun pistol firearm rifle revolver",
+        "crowbar tyre iron lever jimmy",
+        "knife blade dagger machete",
+        "table desk",
+        "chair stool seat bench",
+        "sofa couch",
+        "door doorway gate",
+        "phone smartphone mobile",
+        "paper document",
+    )
+)
+
+
+def _name_words(name: str) -> frozenset[str]:
+    """Content words of a name, lower case, each with its plural s removed too ("papers" gives "papers" and "paper")."""
+    words: set[str] = set()
+    for word in _look_words(name):
+        words.add(word)
+        if len(word) > 3 and word.endswith("s"):
+            words.add(word[:-1])
+    return frozenset(words)
+
+
+def is_english_name(name: str) -> bool:
+    """Whether every letter of ``name`` is Latin: the report is in English, so a CJK or Cyrillic name is not."""
+    return all(char.isascii() or not char.isalpha() or unicodedata.name(char, "").startswith("LATIN") for char in name)
+
+
+def refines_name(old: str, new: str) -> bool:
+    """Whether ``new`` names the same kind of thing as ``old``: one name's words inside the other's, or a shared group.
+
+    "aisle display rack" and "toy display" share the display group; "plastic bag" is inside "crumpled plastic bag";
+    "cash register" and "high heel shoe", "club" and "handgun", "elevator interior" and "cabinet" share nothing.
+    """
+    a, b = _name_words(old), _name_words(new)
+    if not a or not b:
+        return False
+    if a <= b or b <= a:
+        return True
+    return any(group & a and group & b for group in _NAME_GROUPS)
+
+
 def apply_zoom_verdict(entry: dict[str, Any], report: dict[str, Any], verdict: ZoomVerdict) -> bool:
     """Record the second look on ``entry`` and apply its correction to the entry and the report payload item.
 
     A correction is applied only when the model says ``changed`` with confidence at least
-    ``ZOOM_CONFIDENCE_THRESHOLD``: the entry's ``item_name`` and ``description`` and the matching report item's
-    name and description (an entity keeps its ``type``; only its description changes) are replaced, and the entry
+    ``ZOOM_CONFIDENCE_THRESHOLD`` and, for an instrument or asset, only when the new name refines the old one
+    (:func:`refines_name`) and is in English; a name that names a different object leaves the report untouched and sets
+    ``zoom_gap`` to :data:`DIFFERENT_OBJECT_GAP`, which makes the service show the frame without a crop. Otherwise the entry's ``item_name`` and
+    ``description`` and the matching report item's name and description (an entity keeps its ``type``; only its description changes) are replaced, and the entry
     keeps the previous name as ``name_before`` (and ``description_before``). ``zoom_seen`` records what the blind
     looks found. The item id, label and timestamps are never touched. Returns whether a correction was applied.
     """
@@ -1444,6 +1594,20 @@ def apply_zoom_verdict(entry: dict[str, Any], report: dict[str, Any], verdict: Z
         )
         return False
     is_entity = entry["item_type"] == "entity"
+    if not is_entity:
+        # The close-up is only as good as the detector's box: a different name for an instrument or asset is more likely
+        # a wrong box than a wrong report, so the report's name and description stay.
+        if not is_english_name(verdict.name):
+            entry["zoom_gap"] = f"correction to {verdict.name!r} ignored: the name is not in English"
+            return False
+        if not is_english_name(entry["item_name"]):
+            entry["zoom_gap"] = (
+                f"correction to {verdict.name!r} ignored: the report's name is not in English, so it cannot be compared"
+            )
+            return False
+        if not refines_name(entry["item_name"], verdict.name):
+            entry["zoom_gap"] = DIFFERENT_OBJECT_GAP
+            return False
     new_name = entry["item_name"] if is_entity else verdict.name
     new_description = verdict.description or entry["description"]
     if new_name == entry["item_name"] and new_description == entry["description"]:
@@ -1497,6 +1661,7 @@ class CropEvidenceService:
         timestamp_seconds: int | float,
         label: str,
         detector: Any | None = None,
+        item_type: str | None = None,
     ) -> CropResult | None:
         """Locate an evidence item with the configured detector, retrying nearby seconds (the frame alone when not found)."""
         active_detector = detector if detector is not None else self.detector
@@ -1507,6 +1672,7 @@ class CropEvidenceService:
             active_detector,
             not_located_fallback=True,
             retry_offsets=LOCATE_RETRY_OFFSETS,
+            item_type=item_type,
         )
 
     async def process_incident_report(
@@ -1616,6 +1782,7 @@ class CropEvidenceService:
                             entry["timestamp_seconds"],
                             entry["label"],
                             crop_detector,
+                            entry["item_type"],
                         ),
                         timeout=left,
                     )
@@ -1636,16 +1803,38 @@ class CropEvidenceService:
                 return
             crops[entry["item_id"]] = crop
 
-        async def _upload(entry: dict[str, Any], track: track_evidence.Track | None) -> None:
+        async def _upload(
+            entry: dict[str, Any], track: track_evidence.Track | None, same_as: dict[str, Any] | None = None
+        ) -> None:
             crop = crops.get(entry["item_id"])
             if crop is None or crop.frame_bytes is None or active_store is None:
                 return
-            frame_key = evidence_frame_key(folder, batch, entry["item_id"])
-            key = evidence_key(folder, batch, entry["item_id"])
+            if crop.located and crop.image_bytes is not None:
+                # The second look runs before anything is stored: a crop it calls a different object is never kept.
+                async with semaphore:
+                    await _zoom_second_look(entry, crop)
+                if entry["zoom_gap"] == DIFFERENT_OBJECT_GAP:
+                    crop = replace(
+                        crop,
+                        image_bytes=None,
+                        normalized_box=None,
+                        located=False,
+                        detected_box=None,
+                        gap=f"{DIFFERENT_OBJECT_GAP}: the box is probably on something else, so the frame is shown without a crop",
+                    )
+                    crops[entry["item_id"]] = crop
+                    track = None
+            if same_as is not None and not (crop.located and crop.image_bytes is not None):
+                same_as = None  # this item's own crop was refused by the second look: it keeps its own frame
+            frame_bytes = crop.frame_bytes
+            assert frame_bytes is not None
+            frame_key = same_as["frame"] if same_as is not None else evidence_frame_key(folder, batch, entry["item_id"])
+            key = same_as["image"] if same_as is not None else evidence_key(folder, batch, entry["item_id"])
             track_key = evidence_track_key(folder, batch, entry["item_id"])
             try:
-                await active_store.put_image(frame_key, crop.frame_bytes)
-                if crop.image_bytes is not None:
+                if same_as is None:
+                    await active_store.put_image(frame_key, frame_bytes)
+                if crop.image_bytes is not None and same_as is None:
                     await active_store.put_image(key, crop.image_bytes)
                 if track is not None:
                     await active_store.put_image(track_key, track_evidence.track_json(track), "application/json")
@@ -1673,13 +1862,12 @@ class CropEvidenceService:
                         if tracking.summary.marks is not None:
                             path = "parsed" if entry["item_id"] in tracking.marked else "fallback"
                             tracking.summary.marks[path] += 1
-                async with semaphore:
-                    await _zoom_second_look(entry, crop)
             else:
-                entry["image_gap"] = (
+                entry["image_gap"] = crop.gap or (
                     f"object not located at {entry['timestamp_seconds']}s or within {max(LOCATE_RETRY_OFFSETS)}s either side"
                 )
-                entry["zoom_gap"] = "object not located"
+                if entry["zoom_gap"] != DIFFERENT_OBJECT_GAP:
+                    entry["zoom_gap"] = "object not located"
 
         async def _recut(entry: dict[str, Any], track: track_evidence.Track) -> track_evidence.Track | None:
             """Re-cut a matched entity's frame and crop at the track's first-seen sample; None keeps today's result."""
@@ -2024,7 +2212,28 @@ class CropEvidenceService:
                         else "this person was not located, so no track could be matched"
                     )
 
-        await asyncio.gather(*(_upload(entry, matched_tracks.get(entry["item_id"])) for entry in entries))
+        # Items on one box share one stored image: the first is uploaded, the rest point at it (each keeps its own
+        # entry, so every item id and report reference stays valid). A twin whose first item did not store an image
+        # uploads its own.
+        twins = duplicate_images(entries, crops)
+        await asyncio.gather(
+            *(
+                _upload(entry, matched_tracks.get(entry["item_id"]))
+                for entry in entries
+                if entry["item_id"] not in twins
+            )
+        )
+        await asyncio.gather(
+            *(
+                _upload(
+                    entry,
+                    matched_tracks.get(entry["item_id"]),
+                    by_id[twins[entry["item_id"]]] if by_id[twins[entry["item_id"]]].get("image") else None,
+                )
+                for entry in entries
+                if entry["item_id"] in twins
+            )
+        )
 
         return entries
 

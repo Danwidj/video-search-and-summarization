@@ -352,14 +352,18 @@ class TestTemporaryEvidenceStore:
 
         class Crop:
             image_bytes = b"jpeg"
-            normalized_box = (0, 0, 500, 500)
             frame_bytes = b"frame"
             box_seconds = 0
             located = True
 
+            def __init__(self, shift):
+                self.normalized_box = (shift, shift, shift + 200, shift + 200)  # no two items share a box
+
         class Service(crop_evidence.CropEvidenceService):
+            shifts = iter(range(0, 900, 300))
+
             def crop_item(self, *args, **kwargs):
-                return Crop()
+                return Crop(next(self.shifts))
 
         r2 = AsyncMock()
         service = Service(store=r2)
@@ -394,9 +398,9 @@ class TestCropCallCap:
                 return [crop_evidence.Detection(box=[0, 0, 500, 500], score=0.9, label=query)]
 
         class Service(crop_evidence.CropEvidenceService):
-            def crop_item(self, video_ref, timestamp_seconds, label, detector=None):
+            def crop_item(self, video_ref, timestamp_seconds, label, detector=None, item_type=None):
                 frame = np.zeros((40, 40, 3), dtype=np.uint8)  # no video read: the frame is synthetic
-                return crop_evidence.crop_evidence_item(frame, timestamp_seconds, label, detector)
+                return crop_evidence.crop_evidence_item(frame, timestamp_seconds, label, detector, item_type=item_type)
 
         service = Service(detector=Detector())
         result, persist = await _run_with_service(
