@@ -1,6 +1,6 @@
 # Search profile mock
 
-A zero-GPU mock of NVIDIA's stock search-profile backend on port 7778: agent search, VST sensor list, video-analytics frames, and Kibana and Elasticsearch stubs, plus incident search and revision search from the [base profile mock](../base_profile_mock/README.md#refresh-the-finals-snapshot) finals snapshot. It runs on its own, beside the base mock; `start.sh` does not start it. State is in memory and resets on restart. Use it only to test the mock backend itself.
+A zero-GPU mock of NVIDIA's stock search-profile backend on port 7778: agent search, VST sensor list, video-analytics frames, and Kibana and Elasticsearch stubs, plus incident search and revision search from the [base profile mock](../base_profile_mock/README.md#refresh-the-finals-snapshot) finals snapshot. It runs on its own, beside the base mock; `start.sh` does not start it. State is in memory and resets on restart. It is a mock that mimics the backend, not the real one.
 
 ## Run it
 

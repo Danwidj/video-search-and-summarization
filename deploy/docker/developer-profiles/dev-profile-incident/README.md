@@ -26,7 +26,7 @@ Incident search and reporting on NVIDIA's VSS blueprint. A reviewer uploads a cl
 
 3. Start everything from your laptop: `./start.sh --mode vm` (kwanz-ws over an SSH tunnel, GPU 0 only).
 
-`./start.sh --mode mock` runs a zero-GPU mock instead. Use it only to test the mock backend, never for UI or backend work. Modes, checks and troubleshooting: [incident-start skill](skills/incident-start/SKILL.md).
+`./start.sh --mode mock` runs a zero-GPU mock instead. It is a mock of the backend, a backup that mimics it; verify UI and backend work on the VM, not against the mock. Modes, checks and troubleshooting: [incident-start skill](skills/incident-start/SKILL.md).
 
 ## What is inside
 

@@ -1,6 +1,6 @@
 # Mock backends
 
-Two independent zero-GPU mock backends for testing the incident profile without a VM. Each is its own `uv` project. Use them only for the mock backend's own unit tests, never for UI or backend work.
+Two independent zero-GPU mock backends that mimic the backend, so the incident profile can run without a VM. Each is its own `uv` project. They are a backup, not the real backend: verify UI and backend work on the VM, not against them.
 
 ## What is inside
 

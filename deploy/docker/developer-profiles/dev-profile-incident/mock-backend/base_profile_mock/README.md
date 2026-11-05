@@ -2,13 +2,13 @@
 agents:
   read-when: Changing or testing the mock backend, or refreshing its finals snapshot.
   owns: how to run the base mock, and the finals snapshot refresh steps.
-  rules: Use the mock only for its own unit tests. Verify UI and backend work on the VM with ./start.sh --mode vm, never against this mock.
+  rules: The mock mimics the backend; it is a mock, not the real thing. Verify UI and backend work on the VM with ./start.sh --mode vm, never against this mock.
   check: uv sync && uv run ruff check . && uv run pytest
 -->
 
 # Base profile mock
 
-A zero-GPU mock of the agent API, VIOS/VST and inference in one process on port 7777, used to test the mock backend itself. It is not a real agent: answers are canned or come from a fixed snapshot of finals, and most state resets on restart. Uploads and analyses do write to the real R2 bucket and finals database.
+A zero-GPU mock of the agent API, VIOS/VST and inference in one process on port 7777, that mimics the backend. It is a mock, not a real agent: answers are canned or come from a fixed snapshot of finals, and most state resets on restart. Uploads and analyses do write to the real R2 bucket and finals database.
 
 ## Run it
 
