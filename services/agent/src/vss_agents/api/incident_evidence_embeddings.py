@@ -24,6 +24,10 @@ as ``"{item_name}: {description}"`` passage text with the same embedding model s
 with (``RemoteTextEmbedder``, ``vector(1024)``). It returns the vectors only: the console writes
 the ``evidence_crops`` rows itself.
 
+``POST /api/v1/incidents/revision-embedding`` embeds one report summary (``incident.title`` then
+``incident.description``, the text ``incident_report_gen`` embeds for an AI revision) and returns the
+vector, so the console can store one with a human revision and repair a searchable revision that has none.
+
 Status codes: 404 for an unknown revision, 422 when the body names neither or both sources, 503 when
 the incident database or the embedding endpoint is not available, 502 when the embedding endpoint
 fails.
@@ -81,6 +85,19 @@ class EvidenceEmbedding(BaseModel):
     embedding: list[float]
 
 
+class RevisionEmbeddingRequest(BaseModel):
+    """Body for ``POST /api/v1/incidents/revision-embedding``: the report's incident title and description."""
+
+    title: str | None = Field(default=None, max_length=2000)
+    description: str | None = Field(default=None, max_length=20000)
+
+
+class RevisionEmbedding(BaseModel):
+    """The summary vector of one report revision."""
+
+    embedding: list[float]
+
+
 def passage_text(entry: dict[str, Any]) -> str:
     """The text embedded for an evidence entry, matching how ``evidence_crops`` rows are described."""
     return f"{entry.get('item_name') or ''}: {entry.get('description') or ''}"
@@ -125,10 +142,29 @@ def create_incident_evidence_embeddings_router(embedder: RemoteTextEmbedder | No
             for entry, vector in zip(items, vectors, strict=True)
         ]
 
+    @router.post(
+        "/api/v1/incidents/revision-embedding",
+        summary="Embed a report summary (incident title and description) for the revision search",
+        tags=["Incident Evidence"],
+    )
+    async def revision_embedding(body: RevisionEmbeddingRequest) -> RevisionEmbedding:
+        text = incident_db.revision_summary_text({"incident": {"title": body.title, "description": body.description}})
+        if not text:
+            raise HTTPException(status_code=422, detail="Nothing to embed: send a title or a description")
+        active_embedder = embedder or RemoteTextEmbedder()
+        if not active_embedder.is_configured():
+            raise HTTPException(status_code=503, detail="No embedding API key is configured")
+        try:
+            vector = await active_embedder.embed_passage(text)
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
+            logger.error("Revision summary embedding failed: %s", exc, exc_info=True)
+            raise HTTPException(status_code=502, detail=f"Embedding endpoint failed: {exc}") from exc
+        return RevisionEmbedding(embedding=vector)
+
     return router
 
 
 def register_incident_evidence_embeddings_routes(app: FastAPI) -> None:
     """Register ``POST /api/v1/incidents/evidence-embeddings``."""
     app.include_router(create_incident_evidence_embeddings_router())
-    logger.info("Registered POST /api/v1/incidents/evidence-embeddings")
+    logger.info("Registered POST /api/v1/incidents/evidence-embeddings and /revision-embedding")

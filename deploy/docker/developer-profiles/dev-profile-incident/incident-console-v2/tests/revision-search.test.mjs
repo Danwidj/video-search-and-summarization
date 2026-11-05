@@ -143,7 +143,7 @@ test('text search keeps the incidents the agent matched, under the other filters
   const payload = await response.json();
 
   assert.equal(response.status, 200);
-  assert.deepEqual(calls.agent, [{ query: 'knife', top_k: 50 }]);
+  assert.deepEqual(calls.agent, [{ query: 'knife', top_k: 50, min_similarity: 0.35 }]);
   assert.equal(calls.rpc.length, 1);
   assert.equal(calls.rpc[0].p_search, null, 'the store is not asked for the ILIKE match');
   assert.equal(calls.rpc[0].p_page_size, 1000);
@@ -190,5 +190,45 @@ test('without an agent URL, text search uses the store ILIKE filter', async () =
 
   assert.equal(calls.agent.length, 0);
   assert.equal(calls.rpc[0].p_search, 'knife');
+  assert.equal(payload.searchMode, 'text');
+});
+
+test('the revision search sends the named minimum score, so weak matches are dropped by the agent', async () => {
+  const { REVISION_MIN_SIMILARITY } = await import('../src/lib/search/min-similarity.ts');
+  const calls = stubUpstream({ status: 200, body: [AGENT_HIT] });
+  await GET(new Request('http://localhost/api/reports?search=knife'));
+  assert.equal(REVISION_MIN_SIMILARITY, 0.35);
+  assert.equal(calls.agent[0].min_similarity, REVISION_MIN_SIMILARITY);
+});
+
+test('with text, cards follow the agent match order across pages, whatever the sort', async () => {
+  const rows = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8'].map((videoId) => ({ ...RPC_ROWS[0], videoId, reportId: `r-${videoId}` }));
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith('/rpc/list_incident_report_summaries')) {
+      return new Response(JSON.stringify({ reports: rows, totalItems: rows.length, incidentTypes: [] }), { status: 200 });
+    }
+    // The agent ranks v8 best down to v1; v8 has two revisions and only its best counts.
+    const hit = (videoId, similarity_score) => ({ ...AGENT_HIT, video_id: videoId, similarity_score });
+    const ranked = rows.map((row, index) => hit(row.videoId, 0.4 + index / 100)).reverse();
+    return new Response(JSON.stringify([ranked[0], hit('v8', 0.5), ...ranked.slice(1)]), { status: 200 });
+  };
+  const load = async (query) => (await GET(new Request(`http://localhost/api/reports?search=knife&sort=oldest${query}`))).json();
+  const first = await load('');
+  assert.deepEqual(
+    first.reports.map((r) => r.videoId),
+    ['v8', 'v7', 'v6', 'v5', 'v4', 'v3'],
+  );
+  assert.equal(first.pagination.totalItems, 8);
+  const second = await load('&page=2');
+  assert.deepEqual(
+    second.reports.map((r) => r.videoId),
+    ['v2', 'v1'],
+  );
+});
+
+test('with text, a nonsense search the agent drops entirely uses the ILIKE fallback and may be empty', async () => {
+  const calls = stubUpstream({ status: 200, body: [] });
+  const payload = await (await GET(new Request('http://localhost/api/reports?search=helicopter'))).json();
+  assert.equal(calls.rpc[0].p_search, 'helicopter');
   assert.equal(payload.searchMode, 'text');
 });

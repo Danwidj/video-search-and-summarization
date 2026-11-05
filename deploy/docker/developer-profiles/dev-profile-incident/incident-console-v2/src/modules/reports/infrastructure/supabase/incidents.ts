@@ -128,6 +128,7 @@ export class SupabaseIncidentAdapter implements IncidentRepository {
         p_start_seconds: facets.start_seconds,
         p_end_seconds: facets.end_seconds,
         p_crops: input.crops,
+        p_embedding: input.embedding ? `[${input.embedding.join(',')}]` : null,
       })
       .catch(reviewerRefusal);
     return savedRevisionFromRpc(result);

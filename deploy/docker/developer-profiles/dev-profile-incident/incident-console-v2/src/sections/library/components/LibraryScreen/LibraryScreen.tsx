@@ -399,6 +399,11 @@ export function Library() {
             <div className="sr-only">
               {totalItems} {totalItems === 1 ? 'incident' : 'incidents'}
             </div>
+            {searchMode === 'semantic' && (
+              <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">
+                Best match first. The sort applies again when the search text is cleared.
+              </p>
+            )}
             {searchMode === 'text' && (
               <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">
                 Matched on incident text: meaning search is unavailable or found nothing.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
+import { MIN_SIMILARITY } from '@/lib/search/min-similarity';
 import { useMemo, useState } from 'react';
 
 import { HitCard } from '@/sections/library/components/HitCard';
@@ -191,7 +192,10 @@ export function EvidenceTab({
       ) : shown.length === 0 ? (
         <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
           <h2 className="text-xl font-semibold text-ink">No evidence found.</h2>
-          <p className="mt-2 text-sm text-ink/50">Try fewer words or a different kind filter.</p>
+          <p className="mt-2 text-sm text-ink/50">
+            {showMatch ? `Only matches of ${Math.round(MIN_SIMILARITY * 100)}% or better are shown. ` : ''}Try fewer words or a different
+            kind filter.
+          </p>
         </div>
       ) : (
         <>

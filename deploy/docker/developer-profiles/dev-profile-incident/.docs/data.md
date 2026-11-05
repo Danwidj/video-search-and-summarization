@@ -24,7 +24,7 @@ tables (`incidents`, `reports`, `entities`, `instruments`, `assets`, `human_repo
 - **A human edit appends a human revision.** `save_human_revision` writes `kind='human'`,
   `parent_id` = the revision the reviewer opened, the full edited report as `payload`, and the
   evidence list that revision uses. It inherits the parent's `model_run_id`. Earlier revisions are
-  never changed.
+  never changed. Its summary vector is requested on a Save only when the video has no official revision (the new version is then searchable); a failed embedding saves with NULL and the repair step fills it in.
 - **Re-generation is a new AI branch.** A new AI revision has `parent_id` NULL and copies no earlier
   edits.
 - **One revision per video is official.** `videos.official_revision_id` (composite FK to
@@ -32,7 +32,7 @@ tables (`incidents`, `reports`, `entities`, `instruments`, `assets`, `human_repo
   `evidence_crops` rows belong to the video's **searchable revision**: the official revision when
   there is one, otherwise the newest (`searchable_revision_id(video_id)`). See `evidence_crops`.
 - **Revisions are append-only.** A trigger rejects `UPDATE` and `DELETE` (the exceptions are the
-  `ON DELETE CASCADE` of the video, see below, and `apply_r2_rename`, which may change only `evidence`).
+  `ON DELETE CASCADE` of the video, see below, `apply_r2_rename`, which may change only `evidence`, and `set_revision_embedding`, which may only set `embedding` while it is NULL).
 
 ---
 
@@ -96,7 +96,7 @@ Append-only report snapshots. This is the source of truth for every AI and human
 | `created_by` | `VARCHAR(256)` | NULLABLE; CHECK required when `kind='human'` | Reviewer name for a human revision; NULL for AI |
 | `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC creation time |
 | `note` | `TEXT` | NULLABLE | Free-text note attached to a human revision (empty/blank stored as NULL) |
-| `embedding` | `extensions.vector(1024)` | NULLABLE | Summary vector of `incident.title` and `incident.description`, written by the agent in the same insert as an AI revision. NULL for human revisions (`save_human_revision` computes none) and when the embedding endpoint was unavailable. Never updated. |
+| `embedding` | `extensions.vector(1024)` | NULLABLE | Summary vector of `incident.title` and `incident.description`, written by the agent in the same insert as an AI revision. The console writes it for a human revision at Save (same text and model as the agent's), when that version is searchable. NULL when the embedding endpoint was unavailable; `set_revision_embedding` then sets it once, only while it is NULL and only for the video's searchable version (the repair step calls it). Never overwritten. |
 
 Constraints and indexes:
 
@@ -112,6 +112,8 @@ Searchable evidence of each video's **searchable revision**: its official revisi
 video has none, its newest revision. A video has rows for at most that one revision. The primary
 key and FK are revision-scoped; there is no `incident_id`/`model_run_id` here — both come through
 `report_revisions`.
+
+The fractional `timestamp_seconds`, the slice columns and `frame` come from migration `20261105090000_evidence_crop_seconds_slices_frames.sql` (it also adds `evidence_slice` and `list_revisions_missing_crops`).
 
 What moves the rows (the database cannot embed, so a writer always supplies them):
 
@@ -130,12 +132,15 @@ What moves the rows (the database cannot embed, so a writer always supplies them
 | `revision_id` | `BIGINT` | PRIMARY KEY (part); FK → `report_revisions.id` ON DELETE CASCADE | The searchable revision (official, else newest) these crops belong to |
 | `item_type` | `VARCHAR(16)` | PRIMARY KEY (part); CHECK `IN ('entity','instrument','asset')` | Evidence category |
 | `item_id` | `VARCHAR(20)` | PRIMARY KEY (part) | Item identifier in the revision (`E1..`, `I1..`, `A1..`) |
-| `item_name` | `VARCHAR(256)` | NOT NULL | Item name or detector label |
+| `item_name` | `VARCHAR(256)` | NOT NULL | The report item's `label` as written ("black bear", "cash register"); the evidence card title. Falls back to the entry's name, then its type, when there is no label (`cropItemName`). The second look renames an item's `name`, never its `label`, so this value does not follow a rename. Not the embedding passage: that is built from the evidence entry's `item_name` and `description` |
 | `description` | `TEXT` | NOT NULL | Item visual description |
 | `threat_level` | `INTEGER` | NULLABLE | Threat rating (1-5; instruments only) |
 | `holder_entity_id` | `VARCHAR(20)` | NULLABLE | Identifier of the holding entity (instruments only) |
-| `timestamp_seconds` | `INTEGER` | NOT NULL | Whole-second offset from video start: the second the box was found at (the evidence entry's `box_seconds`, else its `timestamp_seconds`), so a search hit cuts the frame its box belongs to. An entity's first/last seen span (`incident-contract-v4`) is stored only in the revision payload and evidence, not here |
+| `timestamp_seconds` | `NUMERIC(8,3)` | NOT NULL | Offset in seconds from video start, to the millisecond (15.333 stays 15.333; it was an `INTEGER` that rounded it): the second the box was found at (the evidence entry's `box_seconds`, else its `timestamp_seconds`), so a search hit cuts the frame its box belongs to. An entity's first/last seen span (`incident-contract-v4`) is stored only in the revision payload and evidence, not here |
 | `bounding_box` | `INTEGER[4]` | NOT NULL | Normalised `[ymin, xmin, ymax, xmax]` (0-1000) |
+| `slice_start_seconds` | `NUMERIC(8,3)` | NULLABLE | Start of the evidence slice: an entity's first seen second; an instrument or asset's first detector-confirmed track sample (widened to 2 s around its middle when shorter, then extended to include the box second, so the stored evidence moment is always inside the slice); else the box second minus 3 s (not below 0). The player clamps the end to the video length. A slice is a played time range of the existing video, never a clip file |
+| `slice_end_seconds` | `NUMERIC(8,3)` | NULLABLE | End of the slice: last seen second (last confirmed sample for an object), else the box second plus 3 s. CHECK `slice_end_seconds >= slice_start_seconds` |
+| `frame` | `VARCHAR(1024)` | NULLABLE | R2 key of the whole video frame with the box drawn (`<crop key without .jpg>-frame.jpg`), stored at crop time: the search thumbnail. NULL means the console cuts the frame from the video at `timestamp_seconds` and the agent sends no `frame_image_url`. `scripts/backfill_evidence_frames.py` fills the gaps |
 | `image` | `VARCHAR(1024)` | NOT NULL | R2 object key (`evidence/<video key>/run-<N>/<itemId>.jpg` or `.../edit-<N>/<itemId>.jpg`, where `<video key>` is `videos.filepath`) |
 | `embedding` | `extensions.vector(1024)` | NULLABLE | 1024-dimensional embedding for cosine retrieval |
 | `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC insertion time |
@@ -221,7 +226,8 @@ are executable by `service_role` only. Helpers still available: `canonical_incid
 save_human_revision(
   p_video_id VARCHAR, p_parent_id BIGINT, p_created_by TEXT, p_note TEXT,
   p_payload JSONB, p_evidence JSONB,
-  p_incident_type TEXT, p_severity_level INTEGER, p_start_seconds INTEGER, p_end_seconds INTEGER
+  p_incident_type TEXT, p_severity_level INTEGER, p_start_seconds INTEGER, p_end_seconds INTEGER,
+  p_embedding extensions.vector(1024) DEFAULT NULL
 ) RETURNS JSONB
 ```
 
@@ -229,13 +235,13 @@ Appends a `kind='human'` revision with `revision_no = max + 1` for the video. Lo
 row so concurrent saves cannot take the same number. `p_parent_id` must be a revision of the same
 video; the new revision inherits its `model_run_id`. The four facet arguments are written as given
 (the caller derives them from the payload). `p_payload` must be an object with an `incident`; `p_evidence`
-must be an array; `p_created_by` must be 1-256 characters after trimming. Returns
+must be an array; `p_created_by` must be 1-256 characters after trimming. `p_embedding` is the summary vector of the new version (NULL when none). Returns
 `{revisionId, revisionNo, videoId, kind, parentId, modelRunId, createdBy, createdAt, note}`.
 
 #### `save_human_revision_with_crops`
 
 ```
-save_human_revision_with_crops(<the ten save_human_revision arguments>, p_crops JSONB DEFAULT '[]') RETURNS JSONB
+save_human_revision_with_crops(<the eleven save_human_revision arguments>, p_crops JSONB DEFAULT '[]') RETURNS JSONB
 ```
 
 The console's Save. In one transaction it calls `save_human_revision`, then, when the video has no official revision, replaces the video's `evidence_crops` with `p_crops` for the new revision (same row format as `set_official_revision`). With an official revision `p_crops` is ignored and the official rows stay. `p_crops` must be a list. Returns the `save_human_revision` result plus `crops`, the rows now stored (0 when the video has an official revision). The console embeds the crops before the call, so a failed embedding writes nothing.
@@ -257,12 +263,13 @@ selections.
 
 ```
 {item_type, item_id, image, bounding_box, timestamp_seconds,
+ slice_start_seconds, slice_end_seconds, frame,
  item_name, description, threat_level, holder_entity_id, embedding}
 ```
 
 Entries without an `item_type` of `entity`/`instrument`/`asset`, without an `item_id` or without an
 `image` are skipped. A missing/`null` `bounding_box` becomes `[0,0,1000,1000]`; a missing
-`timestamp_seconds` becomes 0; `embedding` is a 1024-number array or null. Returns
+`timestamp_seconds` becomes 0; a missing slice or `frame` is stored as NULL; `embedding` is a 1024-number array or null. Returns
 `{videoId, officialRevisionId, crops}` where `crops` is the number of rows now stored.
 
 The console obtains the embeddings (the agent's `POST /api/v1/incidents/evidence-embeddings`) and
@@ -305,7 +312,25 @@ The migration drops the old 7-argument overload first, because two overloads wou
 calls ambiguous. Returns the incident (video) id, the
 revision id, the revision's model run and facets, the crop, and `similarity_score`
 (`1.0 - distance`). `incident_start_timestamp`/`incident_end_timestamp` are the revision's seconds
-as text. Rows whose embedding is NULL are skipped.
+as text. The crop's `timestamp_seconds` (fractional), `slice_start_seconds`, `slice_end_seconds` and `frame` come back with it. Rows whose embedding is NULL are skipped. The console route passes `p_min_similarity` 0.35 for a text query ([decision](decisions.md#2026-11-05-evidence-search-keeps-the-exact-second-adds-a-0-35-score-floor-and-plays-a-slice)).
+
+#### `list_revisions_missing_crops`
+
+```
+list_revisions_missing_crops(p_video_id VARCHAR DEFAULT NULL) RETURNS TABLE(video_id, revision_id)
+```
+
+The videos whose searchable revision has an `evidence` list with images but no `evidence_crops` rows (service role only): the input of the repair step. It found the two videos that were missing from search on 5 Nov.
+
+```
+list_revisions_missing_embeddings(p_video_id VARCHAR DEFAULT NULL) RETURNS TABLE(video_id, revision_id, title, description)
+set_revision_embedding(p_video_id, p_revision_id, p_embedding) RETURNS BOOLEAN
+repair_revision_crops(p_video_id, p_revision_id, p_crops JSONB) RETURNS INTEGER
+```
+
+The same for summary vectors: searchable revisions with a NULL `embedding`. `set_revision_embedding` fills one only while it is NULL and only for the video's searchable revision (false otherwise), through a transaction-local flag the append-only trigger accepts for the `embedding` column alone. `repair_revision_crops` inserts crop rows for a revision that is still the searchable one and has none; it never overwrites rows (NULL when the revision is not searchable, 0 when rows already exist), so several consoles can run it at once.
+
+**Automatic repair.** The console's analysis job loop runs the repair at start, every 2 minutes and after each job (see [`console-reference.md`](console-reference.md)): it heals a searchable version with no crop rows (for example an agent that saved its revision after the console gave up on the job) and one with a NULL summary vector. It only runs while a console with the job loop is up (`ANALYSIS_JOB_LOOP` not `off`); with none running, use `POST /api/videos/repair-crops`.
 
 #### `list_incident_report_summaries`
 
@@ -360,7 +385,7 @@ All `VOLATILE`, `SECURITY INVOKER`, `search_path = ''`, `service_role` only, and
 
 ### Revision search (`search_report_revisions`)
 
-Cosine search over `report_revisions.embedding`, across every revision that has a vector (AI revisions; human revisions have none today). It returns one row per revision, best first, with the title and description from the payload and the facet columns. It is `SECURITY INVOKER`, pins `search_path`, and is executable by `service_role` only. The agent calls it through `IncidentDB.search_revisions` for `POST /api/v1/incidents/revisions/search`. It is separate from `search_evidence_items`, which searches the crops of each video's searchable revision.
+Cosine search over `report_revisions.embedding`, restricted to each video's **searchable revision** (`r.id = searchable_revision_id(r.video_id)`: official, else newest; derived on every read, nothing stored), so one video returns at most one hit. Human versions have a vector when they were saved with one (see `save_human_revision`). It returns one row per video, best first, with the title and description from the payload and the facet columns. It is `SECURITY INVOKER`, pins `search_path`, and is executable by `service_role` only. The agent calls it through `IncidentDB.search_revisions` for `POST /api/v1/incidents/revisions/search`. It is separate from `search_evidence_items`, which searches the crops of each video's searchable revision.
 
 ### Agent report writes (`report_revisions`)
 

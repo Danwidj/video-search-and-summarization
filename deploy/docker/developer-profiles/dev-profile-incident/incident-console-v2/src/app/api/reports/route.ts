@@ -9,6 +9,7 @@ import { errorResponse } from '@/lib/http';
 import type { IncidentRepository, ReportList, ReportListQuery, ReportSort } from '@/modules/reports/domain/IncidentRepository';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
+import { REVISION_MIN_SIMILARITY } from '@/lib/search/min-similarity';
 import { isValidTimeZone } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
@@ -53,33 +54,37 @@ function evidenceFilters(params: URLSearchParams, key: string): string[] | null 
 }
 
 /**
- * The videos whose saved revisions the agent ranks for the text. Null when the
- * agent is not configured, fails or finds nothing, so the caller keeps the
- * ILIKE text filter (the store's own search).
+ * The videos whose saved revisions the agent ranks for the text, best match first (a video's rank is its best revision).
+ * Null when the agent is not configured, fails or finds nothing above the minimum score, so the caller keeps the ILIKE
+ * text filter (the store's own search).
  */
-async function videosMatchingText(config: ServiceConfiguration, text: string): Promise<Set<string> | null> {
+async function videosMatchingText(config: ServiceConfiguration, text: string): Promise<string[] | null> {
   if (!config.agentUrl) return null;
   try {
     const hits = await new AgentRevisionSearchRepository(config.agentUrl, AbortSignal.timeout(REVISION_SEARCH_TIMEOUT_MS)).search({
       query: text,
       topK: REVISION_TOP_K,
+      minSimilarity: REVISION_MIN_SIMILARITY,
     });
-    return hits.length ? new Set(hits.map((hit) => hit.videoId)) : null;
+    return hits.length ? [...new Set(hits.map((hit) => hit.videoId))] : null;
   } catch {
     return null;
   }
 }
 
-/** The incidents the other filters allow, narrowed to the ones the agent matched; the sort is kept. */
+/** The incidents the other filters allow, narrowed to the ones the agent matched and ordered by its match order (the sort is not used). */
 async function listMatchingIncidents(
   incidents: IncidentRepository,
   query: Omit<ReportListQuery, 'page' | 'pageSize' | 'search'>,
-  videoIds: Set<string>,
+  videoIds: string[],
   page: number,
   pageSize: number,
 ): Promise<ReportList> {
   const all = await incidents.listReports({ ...query, search: null, page: 1, pageSize: MAX_LIST_SIZE });
-  const matched = all.items.filter((item) => videoIds.has(item.videoId));
+  const rank = new Map(videoIds.map((videoId, index) => [videoId, index]));
+  const matched = all.items
+    .filter((item) => rank.has(item.videoId))
+    .sort((a, b) => (rank.get(a.videoId) ?? 0) - (rank.get(b.videoId) ?? 0));
   return { items: matched.slice((page - 1) * pageSize, page * pageSize), totalItems: matched.length, incidentTypes: all.incidentTypes };
 }
 

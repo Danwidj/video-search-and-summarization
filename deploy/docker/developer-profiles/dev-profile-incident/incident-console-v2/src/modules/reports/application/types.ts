@@ -21,6 +21,9 @@ export type EmbedRevisionEvidence = (revisionId: number) => Promise<EvidenceEmbe
 /** The agent's embeddings for evidence entries that are not stored yet (a revision being saved). */
 export type EmbedEvidence = (evidence: EvidenceEntry[]) => Promise<EvidenceEmbedding[]>;
 
+/** The agent's summary vector for a report's incident title and description (the text an AI version is embedded from). */
+export type EmbedSummary = (summary: { title: string | null; description: string | null }) => Promise<number[]>;
+
 /** One object in the evidence area of R2. */
 export interface StoredObject {
   key: string;

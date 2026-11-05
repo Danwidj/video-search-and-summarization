@@ -68,6 +68,44 @@ async function postEvidenceEmbeddings(
   return embeddingsFromResponse(await response.json());
 }
 
+/**
+ * Asks the agent for the summary vector of a report: its incident title and description, embedded as a passage with the model
+ * the AI versions use. The vector is what the Find incidents text search matches, so a human version needs one too.
+ */
+export async function fetchSummaryEmbedding(
+  config: ServiceConfiguration,
+  summary: { title: string | null; description: string | null },
+  signal?: AbortSignal,
+): Promise<number[]> {
+  if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured; the agent embeds the summary of a report');
+  let response: Response;
+  try {
+    response = await fetch(`${config.agentUrl.replace(/\/$/, '')}/api/v1/incidents/revision-embedding`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(summary),
+      signal: signal ?? AbortSignal.timeout(60_000),
+    });
+  } catch (error) {
+    throw new AgentUnreachableError(
+      `Could not reach the agent to embed the summary: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!response.ok)
+    throw new Error(
+      `The agent returned HTTP ${response.status} embedding the summary: ${(await response.text().catch(() => '')).slice(0, 300)}`,
+    );
+  const body = (await response.json()) as { embedding?: unknown };
+  const { embedding } = body ?? {};
+  if (
+    !Array.isArray(embedding) ||
+    embedding.length !== EMBEDDING_DIMENSIONS ||
+    !embedding.every((n) => typeof n === 'number' && Number.isFinite(n))
+  )
+    throw new Error(`The agent returned a malformed summary embedding (expected ${EMBEDDING_DIMENSIONS} numbers)`);
+  return embedding as number[];
+}
+
 /** Asks the agent to embed the evidence of one stored revision. */
 export function fetchEvidenceEmbeddings(
   config: ServiceConfiguration,
