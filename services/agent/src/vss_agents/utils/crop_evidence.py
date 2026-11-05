@@ -49,6 +49,7 @@ from collections.abc import Sequence
 import copy
 from dataclasses import dataclass
 from dataclasses import field
+from dataclasses import replace
 import io
 import json
 import logging
@@ -122,6 +123,9 @@ ZOOM_CROP_PADDING = 0.25
 ZOOM_MIN_SHORT_SIDE = 256
 ZOOM_CONFIDENCE_THRESHOLD = 0.7
 ZOOM_TIMEOUT_SECONDS = 60.0
+# Seconds of an analysis time budget that object tracking leaves for the zoomed second look and the uploads.
+TRACKING_BUDGET_RESERVE_SECONDS = 30.0
+TIME_BUDGET_GAP = "analysis time budget exhausted"
 # Describing a reviewer-drawn box waits on a person, so it runs with reasoning off (about 2.5 s instead of 30 s on
 # the shared VLM) and tries a timed-out request once more; each try may take up to 150 s so a slow model can still
 # give its final answer, and two tries (300 s) stay under the console's 330 s wait.
@@ -610,6 +614,83 @@ class CropCallBudget:
                 "tokens": self.tokens,
                 "calls_without_usage": self.calls_without_usage,
             }
+
+
+DETECTOR_STOP_AFTER_ERRORS = 3
+
+
+class DetectorBreaker:
+    """Stops a run's detector calls after ``limit`` errors in a row (an HTTP error or a timeout; a success resets).
+
+    One breaker is shared by the concurrent items of a run (worker threads), so it is locked. Once tripped it stays
+    tripped for the rest of the run: callers check :attr:`tripped` before a call and carry on without the detector.
+    """
+
+    def __init__(self, stage: str, limit: int = DETECTOR_STOP_AFTER_ERRORS) -> None:
+        self.stage = stage
+        self.limit = limit
+        self._streak = 0
+        self._tripped = False
+        self._lock = threading.Lock()
+
+    @property
+    def tripped(self) -> bool:
+        return self._tripped
+
+    def record_success(self) -> None:
+        with self._lock:
+            self._streak = 0
+
+    def record_error(self, exc: BaseException) -> None:
+        with self._lock:
+            self._streak += 1
+            if self._tripped or self._streak < self.limit:
+                return
+            self._tripped = True
+        logger.warning(
+            "%s stopped calling the detector after %d consecutive errors (last: %s)",
+            self.stage,
+            self.limit,
+            type(exc).__name__,
+        )
+
+
+class DetectorStoppedError(RuntimeError):
+    """The run's detector breaker has tripped, or its time budget is spent: no call was made."""
+
+
+class GuardedDetector:
+    """Any detector under a run's :class:`DetectorBreaker` and time budget (``deadline``, a ``time.monotonic()`` value).
+
+    A call after the breaker tripped or the deadline passed raises ``DetectorStoppedError`` without reaching the
+    detector (``crop_evidence_item`` treats it like any detector failure); a failed call counts towards tripping the
+    breaker and a reply resets it. A cap error is neither.
+    """
+
+    def __init__(self, detector: Any, breaker: DetectorBreaker, deadline: float | None = None) -> None:
+        self.detector = detector
+        self.breaker = breaker
+        self.deadline = deadline
+
+    def is_available(self) -> bool:
+        return bool(self.detector.is_available()) if hasattr(self.detector, "is_available") else True
+
+    def detect(self, frame: np.ndarray, query: str) -> Sequence[Detection | dict[str, Any]]:
+        if self.breaker.tripped:
+            raise DetectorStoppedError("detector stopped after consecutive errors")
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            raise DetectorStoppedError(TIME_BUDGET_GAP)
+        try:
+            detections: Sequence[Detection | dict[str, Any]] = (
+                self.detector.detect(frame, query) if hasattr(self.detector, "detect") else self.detector(frame, query)
+            )
+        except CropCallCapReachedError:
+            raise
+        except Exception as exc:
+            self.breaker.record_error(exc)
+            raise
+        self.breaker.record_success()
+        return detections
 
 
 class BudgetedDetector:
@@ -1442,6 +1523,7 @@ class CropEvidenceService:
         zoom_names: bool | None = None,
         object_tracking: track_evidence.ObjectTrackingRequest | None = None,
         namer: Any | None = None,
+        deadline: float | None = None,
     ) -> list[dict[str, Any]]:
         """Locate every entity, instrument and asset of a report and upload its frame and crop.
 
@@ -1469,6 +1551,14 @@ class CropEvidenceService:
 
         When person tracking was requested, a person left without a track keeps ``track_gap``, the reason (the run's
         skip reason, else that no track overlapped the box or that the person was not located).
+
+        Failing detector (grounding and object tracking): after :data:`DETECTOR_STOP_AFTER_ERRORS` errors in a row
+        the locate step stops calling the detector (the rest of its items get an ``image_gap``) and object tracking
+        carries on with tracker-only samples.
+
+        Time budget (``deadline``, a ``time.monotonic()`` value; None means unlimited): an item not yet located when it
+        passes is left with an ``image_gap``, object tracking is shortened to leave
+        :data:`TRACKING_BUDGET_RESERVE_SECONDS` (or skipped), and an unchecked second look gets a ``zoom_gap``.
         """
         active_detector = detector if detector is not None else self.detector
         zoom_on = zoom_names_enabled() if zoom_names is None else zoom_names
@@ -1484,6 +1574,11 @@ class CropEvidenceService:
             detector_ready = self.is_detector_available()
         semaphore = asyncio.Semaphore(EVIDENCE_CROP_CONCURRENCY)
         crops: dict[str, CropResult] = {}
+        crop_breaker = DetectorBreaker("Evidence crop")
+        crop_detector = GuardedDetector(active_detector, crop_breaker, deadline)
+
+        def time_left() -> float | None:
+            return None if deadline is None else deadline - time.monotonic()
 
         tracking_task: asyncio.Task[track_evidence.TrackingOutcome] | None = None
         if tracking is not None:
@@ -1506,14 +1601,27 @@ class CropEvidenceService:
                 entry["image_gap"] = "no evidence detector is configured (VLM grounding key missing)"
                 return
             async with semaphore:
+                left = time_left()
+                if crop_breaker.tripped:
+                    entry["image_gap"] = f"detector stopped after {crop_breaker.limit} consecutive errors"
+                    return
+                if left is not None and left <= 0:
+                    entry["image_gap"] = TIME_BUDGET_GAP
+                    return
                 try:
-                    crop = await asyncio.to_thread(
-                        self.crop_item,
-                        video_ref,
-                        entry["timestamp_seconds"],
-                        entry["label"],
-                        active_detector,
+                    crop = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            self.crop_item,
+                            video_ref,
+                            entry["timestamp_seconds"],
+                            entry["label"],
+                            crop_detector,
+                        ),
+                        timeout=left,
                     )
+                except TimeoutError:  # the worker thread ends on its own request timeout
+                    entry["image_gap"] = TIME_BUDGET_GAP
+                    return
                 except CropCallCapReachedError as exc:
                     entry["image_gap"] = f"crop-call cap reached: {exc}"
                     return
@@ -1609,18 +1717,28 @@ class CropEvidenceService:
             if namer is None or (hasattr(namer, "is_available") and not namer.is_available()):
                 entry["zoom_gap"] = "no second-look VLM client is configured (VLM grounding key missing)"
                 return
+            left = time_left()
+            if left is not None and left <= 0:
+                entry["zoom_gap"] = TIME_BUDGET_GAP
+                return
             try:
                 if crop.zoom_bytes is None:
                     entry["zoom_gap"] = "no close-up could be cut from the frame"
                     return
-                verdict = await asyncio.to_thread(
-                    namer.zoom_name,
-                    crop.zoom_bytes,
-                    item_type=entry["item_type"],
-                    name=entry["item_name"],
-                    description=entry["description"],
-                    context_jpeg=crop.zoom_frame_bytes,
+                verdict = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        namer.zoom_name,
+                        crop.zoom_bytes,
+                        item_type=entry["item_type"],
+                        name=entry["item_name"],
+                        description=entry["description"],
+                        context_jpeg=crop.zoom_frame_bytes,
+                    ),
+                    timeout=left,
                 )
+            except TimeoutError:  # the worker thread ends on its own request timeout
+                entry["zoom_gap"] = TIME_BUDGET_GAP
+                return
             except CropCallCapReachedError as exc:
                 entry["zoom_gap"] = f"zoom-call cap reached: {exc}"
                 return
@@ -1665,13 +1783,23 @@ class CropEvidenceService:
             if not seeds:
                 summary.skipped = "no instrument or asset was located"
                 return {}
+            options = dict(object_tracking.options)
+            left = time_left()
+            if left is not None:
+                usable = left - TRACKING_BUDGET_RESERVE_SECONDS
+                if usable <= 0:
+                    summary.skipped = TIME_BUDGET_GAP
+                    return {}
+                settings = options.get("settings")
+                if settings is not None:
+                    options["settings"] = replace(settings, time_cap_seconds=min(settings.time_cap_seconds, usable))
             try:
                 with run_provenance.stage_scope("object_tracking"):
                     outcome = await object_tracking.runner(
                         video_ref,
                         seeds,
                         detector=with_call_budget(active_detector, object_tracking.budget),
-                        **object_tracking.options,
+                        **options,
                     )
             except Exception as exc:  # run_object_tracking never raises; a custom runner might
                 logger.warning("Object tracking failed for %s: %s", video_id, type(exc).__name__)
@@ -1738,7 +1866,7 @@ class CropEvidenceService:
                                 video_ref,
                                 base + offset,
                                 entry["label"],
-                                active_detector,
+                                crop_detector,
                             )
                     except CropCallCapReachedError:
                         return None
