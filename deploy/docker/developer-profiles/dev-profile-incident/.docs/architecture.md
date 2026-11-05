@@ -44,7 +44,7 @@ The five qualities that shaped the design most, in priority order. Scenarios for
 
 | Constraint | Background |
 |---|---|
-| Built on the stock VSS blueprint: the agent is NVIDIA's VSS Agent, run with the base developer profile's configuration plus the incident tool; the perception stack is the stock search profile's Compose services, started as shipped | Keeps the fork mergeable with upstream and the sponsor's blueprint recognisable; see [Stock VSS and What the Team Added](#stock-vss-and-what-the-team-added) |
+| Built on the stock VSS blueprint: the agent is NVIDIA's VSS Agent, run with the base developer profile's configuration plus the incident tool; the perception stack is the stock search profile's Compose services, started through the profile's tracking Compose file | Keeps the fork mergeable with upstream and the sponsor's blueprint recognisable; see [Stock VSS and What the Team Added](#stock-vss-and-what-the-team-added) |
 | Model inference is remote: VLM, LLM and embedding calls go to hosted OpenAI-compatible endpoints; no NVIDIA Inference Microservice (NIM) container runs locally | The profile is allotted one GPU on a shared host, and that GPU is reserved for the perception stack ([decision](decisions.md#2026-09-25-remote-brev-inference-no-local-gpu-nims)) |
 | One GPU on a shared host, other users on the same machine | Every container and native process that needs a GPU is pinned to that one device; shared services are started and restarted with care and on request ([decision](decisions.md#2026-10-19-pin-all-vss-docker-appliances-and-native-services-to-gpu-0-only), [decision](decisions.md#2026-10-22-concurrency-safe-native-service-startup-across-shared-vm-users)) |
 | The GPU host cannot open the Postgres wire protocol to the managed database | Services on it use PostgREST over HTTPS; PostgREST holds no client transaction, so operations that must be atomic are database functions, and revision inserts retry on a unique-key clash ([decision](decisions.md#2026-09-17-agent-database-access-through-postgrest)) |
@@ -74,7 +74,7 @@ The five qualities that shaped the design most, in priority order. Scenarios for
 
 | Channel | Between | Protocol and role |
 |---|---|---|
-| Browser to console | Reviewer's browser and `incident-console-v2` | HTTP: pages and JSON routes. Media never streams through the console: the browser plays video and loads images from object storage through signed URLs the console issues |
+| Browser to console | Reviewer's browser and `incident-console-v2` | HTTP: pages and JSON routes. The browser plays video and loads stored images from object storage through signed URLs the console issues; track files and older frames are read or cut by console routes |
 | Console to agent | `incident-console-v2` and the VSS Agent | JSON over HTTP. In vm mode through the SSH tunnel to the agent's loopback endpoint; in mock mode the mock backend, a backup that mimics the agent, answers the same routes |
 | Console to gateway | `incident-console-v2` and `vlm-gateway` | OpenAI chat completions over HTTP, Mock flow only |
 | Services to database | Console, agent, mock-backend and Supabase | PostgREST REST and RPC over HTTPS with the service role. Laptop tooling and the SQL harness use direct Postgres |
@@ -110,7 +110,7 @@ The five qualities that shaped the design most, in priority order. Scenarios for
 | `incident-console-v2` | Next.js App Router, React, TypeScript, Node runtime | The reviewer console and its server routes: upload with H.264 conversion, analysis orchestration in both modes, the background job worker, report versions (view, edit, history, official), the library's incident and evidence search, the dashboard and chart requests, the chat panels; signs object-storage URLs; validates model output under the shared policy | Team-built |
 | `vlm-gateway` | FastAPI | Holds the remote inference credential server-side and forwards chat-completion requests unchanged to the configured endpoint, with a timeout longer than the slowest model's; a health probe. Used in the Mock flow only | Team-built |
 | VSS Agent | NeMo Agent Toolkit (NAT) `nat serve` with the stock custom FastAPI worker, LangChain, Pydantic | The stock agent (tools, agents, the video-analytics MCP server) plus the incident extension: analyse, evidence search, incident search, chat, evidence embeddings, chart requests and drawing, and the reviewer box tools. Runs natively | Stock VSS, extended |
-| Perception stack | Docker: NvStreamer, DeepStream perception (an RT-DETR detector with the NvDCF tracker), Kafka, Logstash, Elasticsearch, the video-analytics API | Turns an uploaded clip into per-frame person boxes with track ids, read back as frame pages. Started by the launcher when tracking is enabled and used per clip by the agent's tracking stage | Stock VSS (search profile), unchanged; pinned to the one GPU by the profile's Compose override |
+| Perception stack | Docker: NvStreamer, DeepStream perception (an RT-DETR detector with the NvDCF tracker), Kafka, Logstash, Elasticsearch, the video-analytics API | Turns an uploaded clip into per-frame person boxes with track ids, read back as frame pages. Started by the launcher when tracking is enabled and used per clip by the agent's tracking stage | Stock VSS (search profile); pinned to the one GPU by the profile's Compose override |
 | Phoenix | Docker | Trace viewer for the agent's model calls. Always started in vm mode | Stock VSS infrastructure |
 | `mock-backend` | FastAPI, two projects | A backup that mimics the backend. The base mock stands in for the agent, the stock video storage and inference in one process: its embeddings are deterministic, its search and chat answer from a snapshot, and its own analysis route writes a real AI revision marked as mock, although a Mock flow analysis does not call it. The search mock serves the stock search profile's routes plus incident search from the same snapshot | Team-built |
 | `contracts/` | JSON Schema, prompt files, JSON settings, fixtures, goldens | The incident contract: extraction prompt, report schema, the model allowlist and request settings, the registry of every other prompt, request goldens and validator fixtures; vendored into the agent by a sync script | Team-built |
@@ -136,7 +136,7 @@ Optional, outside the incident flow: the stock `video-analytics-api` and `behavi
 | `jobs` and the job loop | The background analysis queue: queue, claim, heartbeat, finish, retry and cancel; one worker started once per process | `AnalysisJobRepository` |
 | `reports` | Read one revision and its run into a report view; validate and save human edits; cut reviewer items (crop, frame, track) on the server; mark or clear the official revision; store searchable crops; delete a video and its reports; sweep orphan evidence | `IncidentRepository`, `EvidenceObjectStore`, `ReviewerEvidenceStore` |
 | `videos` | Run history. Re-generation is a route that calls the analysis use case; delete belongs to `reports` | `VideoRepository` |
-| `search` | Evidence search and incident (revision) search; domain and adapters only, the routes call the agent adapters directly | `EvidenceSearchRepository`, `RevisionSearchRepository` (agent adapters) |
+| `search` | Evidence search and incident (revision) search; domain only, the agent adapters live in `lib/adapters/agent` and the routes call them directly | `EvidenceSearchRepository`, `RevisionSearchRepository` (agent adapters) |
 | `chat` | The report and library chat; domain and adapters only, the route calls the agent chat adapter directly | The agent chat adapter |
 | `dashboard` | The dashboard query, the chart specification allowlist, the chart interpreter and renderer | `DashboardRepository`, `ChartInterpreter`, `ChartRenderer` |
 | `contract` | A strict validator of the shared policy, and the catalogue that loads prompts, schema and allowlist from `contracts/` | `ContractCatalog` |
@@ -221,11 +221,7 @@ The Mock flow (`ANALYSIS_MODE=gateway`) keeps the same console code path and swa
 
 ### Background Analysis Jobs
 
-1. A queued job is a row with the stored object, the file name and the model ([`data.md`](data.md#analysis_jobs)).
-2. One loop per console process claims the oldest queued job through a database function that locks the row and skips locked ones, so several consoles never claim the same job; it heartbeats while the job runs and finishes it as done or failed through functions that check the claim.
-3. A running job whose heartbeat stops is treated as lost: the next claim by any console sends it back to the queue once and fails it after a second loss, so nothing hangs.
-4. Every attempt of a job analyses into the same video id, so a retry adds revisions to one video instead of a second video row on the same object.
-5. One job at a time per console keeps within the hosted endpoint's rate limits; the loop is not an HTTP request, so each model's own timeout from the contract settings bounds an analysis. Every console pointed at the same database shares the queue ([status](status.md#4-known-issues), [console reference](console-reference.md#background-analysis-jobs)).
+A queued upload is a row in `analysis_jobs` ([Data layer](data.md#analysis_jobs)). One loop per console process claims the oldest job through a database function that locks the row and skips locked ones, heartbeats while it runs, and recovers a job whose heartbeat stops. The loop runs one job at a time and is not an HTTP request, so each model's own timeout bounds an analysis. The loop, the routes and the retry rules are in the [Console reference](console-reference.md#background-analysis-jobs). Every console pointed at the same database shares the queue ([Status](status.md#4-known-issues)).
 
 ### Evidence Search and Incident Search
 
@@ -267,7 +263,7 @@ The policy is to run a service natively whenever that is feasible, and in a cont
 
 - **Native:** the VSS Agent, and the optional analytics services. A native process restarts in seconds after a code change, against a multi-minute image build, and the agent's virtual environment is installed editable from the checkout.
 - **Containers:** the media and perception appliances (NvStreamer, DeepStream perception) depend on CUDA and GStreamer toolchains that are not installable on the host, and the infrastructure appliances (Kafka, Logstash, Elasticsearch, Phoenix) gain nothing from running natively. The profile's Compose override pins every GPU-bound container to the one allotted device. The stock Compose files use fixed container names, so one perception stack runs per host.
-- **Not started:** the stock video storage and ingress services, Redis and the SDR controller were removed from the deployment when uploads moved straight to object storage; the stock web UI and the NIM containers are never started.
+- **Not started:** the stock video storage and ingress services (VIOS/VST and HAProxy), Redis and the SDR controller are not part of the deployment, because uploads go straight to object storage; the stock web UI and the NIM containers are never started.
 
 ### Launch Modes and Connectivity
 
@@ -387,17 +383,14 @@ Scenarios in the arc42 short form: a source and stimulus, the response, and how 
 
 ## Risks and Technical Debt
 
-Open items are tracked in [`status.md`](status.md#4-known-issues) with stable numbers; the architectural ones:
+Open items are tracked in [Status](status.md#4-known-issues) with stable numbers; the architectural ones:
 
 - **The analysis queue is shared** by every console pointed at the same database, so a job may run on another person's console and code version; the opt-out is a per-console switch and jobs carry no owner yet.
 - **The contract still carries the timeline** the console no longer shows; removing it means a contract version bump across the agent and the console.
 - **Migration history is out of step with the folder:** two files share a version prefix and one was applied by hand, so a push could re-run them.
-- **A pending contract revision** on another branch adds an optional field that is not strict-mode compatible; merging it needs a schema decision.
-- **Frame sampling by the hosted VLMs is described two ways** in the docs; it is model behaviour the code cannot settle.
-- **Several agent fixes await their live check** on the host (the tracking time base, the screen-person rule, set-of-marks prompting, the reviewer box tool against the shared agent).
 - **The agent has no authentication;** its safety rests on the loopback bind and the tunnel, and on the host staying inside a trusted network, as NVIDIA assumes for the blueprint.
 - **One GPU on a shared host** bounds throughput: a clip of several minutes can exceed a model's timeout, and the perception stack holds GPU memory while it is up.
-- **Hosted endpoints are outside the team's control:** rate limits, sparse sampling and endpoint changes reach the product directly.
+- **Hosted endpoints are outside the team's control:** rate limits, sparse frame sampling and endpoint changes reach the product directly.
 
 ## Glossary
 
