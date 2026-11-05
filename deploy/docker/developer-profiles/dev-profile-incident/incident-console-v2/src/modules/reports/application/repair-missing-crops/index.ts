@@ -6,7 +6,8 @@
 
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import { officialCrops } from '@/modules/reports/domain/revision';
-import type { EmbedRevisionEvidence } from '@/modules/reports/application/types';
+import { confirmedSpans } from '@/modules/reports/application/confirmed-spans';
+import type { EmbedRevisionEvidence, ReadStoredJson } from '@/modules/reports/application/types';
 
 export interface RepairedRevision {
   videoId: string;
@@ -30,6 +31,7 @@ export async function repairMissingCrops(
   { incidents, videos }: Pick<DbAdapters, 'incidents' | 'videos'>,
   embed: EmbedRevisionEvidence,
   { videoId, dryRun = true }: { videoId?: string; dryRun?: boolean } = {},
+  readTrack?: ReadStoredJson,
 ): Promise<RepairReport> {
   const missing = await videos.listRevisionsMissingCrops(videoId);
   if (dryRun) return { dryRun, revisions: missing.map((item) => ({ ...item, crops: null })) };
@@ -42,7 +44,7 @@ export async function repairMissingCrops(
       const change = await videos.setRevisionCrops(
         item.videoId,
         item.revisionId,
-        officialCrops(record.payload, record.evidence, embeddings),
+        officialCrops(record.payload, record.evidence, embeddings, null, await confirmedSpans(record.evidence, readTrack)),
       );
       revisions.push({ ...item, crops: change.crops });
     } catch (error) {

@@ -6,7 +6,8 @@ import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import type { OfficialChange } from '@/modules/videos/domain/VideoRepository';
 import { StoreRejection } from '@/modules/shared/domain/common';
 import { officialCrops } from '@/modules/reports/domain/revision';
-import type { EmbedRevisionEvidence } from '@/modules/reports/application/types';
+import { confirmedSpans } from '@/modules/reports/application/confirmed-spans';
+import type { EmbedRevisionEvidence, ReadStoredJson } from '@/modules/reports/application/types';
 
 /**
  * Marks a revision official (revisionId null clears it). Marking asks the
@@ -19,10 +20,15 @@ export async function setOfficialRevision(
   videoId: string,
   revisionId: number | null,
   embed: EmbedRevisionEvidence,
+  readTrack?: ReadStoredJson,
 ): Promise<OfficialChange> {
   if (revisionId === null) return videos.setOfficialRevision(videoId, null, []);
   const record = await incidents.getRevision(videoId, revisionId);
   if (!record) throw new StoreRejection('not-found', `Revision not found for this video: ${revisionId}`);
   const embeddings = record.evidence.some((entry) => entry.image) ? await embed(revisionId) : [];
-  return videos.setOfficialRevision(videoId, revisionId, officialCrops(record.payload, record.evidence, embeddings));
+  return videos.setOfficialRevision(
+    videoId,
+    revisionId,
+    officialCrops(record.payload, record.evidence, embeddings, null, await confirmedSpans(record.evidence, readTrack)),
+  );
 }

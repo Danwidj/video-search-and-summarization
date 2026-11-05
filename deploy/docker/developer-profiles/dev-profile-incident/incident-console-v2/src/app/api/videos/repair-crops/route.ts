@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { readStoredJson } from '@/lib/r2/stored-json';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
@@ -34,7 +35,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'The body must be empty or contain videoId (string) and dryRun (boolean) only' }, { status: 400 });
     }
     const config = getServiceConfiguration();
-    const report = await repairMissingCrops(getDbAdapters(config), (id) => fetchEvidenceEmbeddings(config, id), parsed.data);
+    const report = await repairMissingCrops(
+      getDbAdapters(config),
+      (id) => fetchEvidenceEmbeddings(config, id),
+      parsed.data,
+      readStoredJson(config),
+    );
     return NextResponse.json(report);
   } catch (error) {
     return rejectionResponse(error) ?? errorResponse(error, 'Could not repair the evidence crops');

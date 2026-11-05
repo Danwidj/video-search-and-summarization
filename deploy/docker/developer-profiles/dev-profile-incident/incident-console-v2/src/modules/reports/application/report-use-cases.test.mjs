@@ -19,6 +19,7 @@ const { saveHumanEdit, SearchableStepError } = await import('@/modules/reports/a
 const { setOfficialRevision } = await import('@/modules/reports/application/set-official-revision');
 const { repairMissingCrops } = await import('@/modules/reports/application/repair-missing-crops');
 const { officialCrops } = await import('@/modules/reports/domain/revision');
+const { confirmedSpans } = await import('@/modules/reports/application/confirmed-spans');
 const { storeSearchableCrops } = await import('@/modules/reports/application/store-searchable-crops');
 const { deleteVideoAndReports } = await import('@/modules/reports/application/delete-video-and-reports');
 const { aiRunReport } = await import('../../../../tests/support/report-view.mjs');
@@ -534,4 +535,84 @@ test('a searchable crop is named by the item label, not the type or the second l
   assert.equal(bare.item_name, 'deck', 'a blank label falls back to the name');
   assert.equal(payloadLabel.item_name, 'man in a white shirt', 'the payload item label backs up an entry without one');
   assert.equal(rows([{ ...base, item_type: 'instrument', item_id: 'I1' }])[0].item_name, 'instrument', 'no label or name: the type');
+});
+
+test('an object slice runs first to last detector-confirmed sample; a person keeps first to last seen (audit finding 3)', async () => {
+  const track = 'evidence/v/u/A1-track.json';
+  const entry = (item_type, extra = {}) => ({
+    item_type,
+    item_id: item_type === 'entity' ? 'E1' : 'A1',
+    image: `evidence/v/u/${item_type}.jpg`,
+    bounding_box: [1, 2, 3, 4],
+    timestamp_seconds: 5,
+    box_seconds: 5,
+    track,
+    track_first_seen_seconds: 0,
+    track_last_seen_seconds: 12,
+    ...extra,
+  });
+  // 117 A1: the tracker ran 0 to 12 s but the detector confirmed samples only up to 10.667 s (-0.1 is tracker-only).
+  const samples = (...rows) => rows.map(([t, score]) => ({ t, box: [1, 2, 3, 4], score }));
+  const files = {
+    [track]: samples([0, 0.9], [4, -0.1], [10.667, 0.8], [12, -0.1]),
+  };
+  const read = async (key) => files[key];
+  const crops = async (entries, reader = read) => {
+    const spans = await confirmedSpans(entries, reader);
+    return officialCrops(
+      { incident: {} },
+      entries,
+      entries.map((e) => ({ itemType: e.item_type, itemId: e.item_id, embedding: [0.5] })),
+      null,
+      spans,
+    );
+  };
+  const range = (crop) => [crop.slice_start_seconds, crop.slice_end_seconds];
+
+  assert.deepEqual(range((await crops([entry('asset')]))[0]), [0, 10.667], '117 A1: 0 to 10.7 s, not 0 to 12 s');
+  assert.deepEqual(range((await crops([entry('entity', { track: 'evidence/v/u/E1-track.json' })]))[0]), [0, 12], 'a person is unchanged');
+
+  files[track] = samples([1, -0.1], [9, -0.1]);
+  assert.deepEqual(range((await crops([entry('instrument')]))[0]), [2, 8], 'no confirmed sample: 3 s either side of the box second');
+  assert.deepEqual(range((await crops([entry('asset', { box_seconds: 1 })]))[0]), [0, 4], 'clamped at 0');
+  assert.deepEqual(range((await crops([entry('asset')], undefined))[0]), [2, 8], 'no reader: the box second');
+  assert.deepEqual(
+    range((await crops([entry('asset')], async () => Promise.reject(new Error('r2 down'))))[0]),
+    [2, 8],
+    'an unreadable track: the box second',
+  );
+
+  files[track] = samples([6, 0.9], [6.5, 0.9]);
+  assert.deepEqual(range((await crops([entry('asset')]))[0]), [5.25, 7.25], 'a span under 2 s is widened to 2 s around its middle');
+  files[track] = samples([0, 0.9]);
+  assert.deepEqual(range((await crops([entry('asset')]))[0]), [0, 1], 'a widened span is clamped at 0');
+  files[track] = samples([6, 0.9]);
+  assert.deepEqual(range((await crops([entry('asset', { track: undefined })]))[0]), [2, 8], 'an object with no track: the box second');
+});
+
+test('marking official reads an object track from storage, so its slice is the confirmed span', async () => {
+  const record = withImage('evidence/v/u/A1.jpg');
+  record.evidence = [
+    {
+      item_type: 'asset',
+      item_id: 'A1',
+      image: 'evidence/v/u/A1.jpg',
+      bounding_box: [1, 2, 3, 4],
+      timestamp_seconds: 5,
+      track: 'evidence/v/u/A1-track.json',
+      track_first_seen_seconds: 0,
+      track_last_seen_seconds: 12,
+    },
+  ];
+  const ports = official([record]);
+  const read = async (key) =>
+    key === 'evidence/v/u/A1-track.json'
+      ? [
+          { t: 3, box: [1, 2, 3, 4], score: 0.9 },
+          { t: 9, box: [1, 2, 3, 4], score: -0.1 },
+        ]
+      : assert.fail(key);
+  await setOfficialRevision(ports, V, 1, async () => [{ itemType: 'asset', itemId: 'A1', embedding: [0.5] }], read);
+  const [crop] = ports.videos.officialCalls[0].crops;
+  assert.deepEqual([crop.slice_start_seconds, crop.slice_end_seconds], [2, 4]);
 });

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { readStoredJson } from '@/lib/r2/stored-json';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
@@ -53,6 +54,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
       { videoId, parentId: parsed.data.parentId, edit, createdBy: parsed.data.editedBy, note: parsed.data.note },
       (evidence) => fetchEvidenceItemEmbeddings(config, evidence),
       isR2Configured(config) ? new R2ReviewerEvidenceStore(config) : undefined,
+      isR2Configured(config) ? readStoredJson(config) : undefined,
     );
     return NextResponse.json({ saved: true, revision });
   } catch (error) {

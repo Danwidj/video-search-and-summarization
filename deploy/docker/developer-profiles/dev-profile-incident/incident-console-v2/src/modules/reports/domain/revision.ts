@@ -9,6 +9,7 @@
 // the revision the reviewer opened; nothing is ever updated.
 
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
+import type { ConfirmedSpan } from '@/modules/reports/domain/track';
 
 export type RevisionKind = 'ai' | 'human';
 export type EvidenceItemType = 'entity' | 'instrument' | 'asset';
@@ -327,19 +328,37 @@ export function boxSecond(entry: EvidenceEntry): number {
   return millis(Math.max(0, numberOrNull(entry.box_seconds) ?? numberOrNull(entry.timestamp_seconds) ?? 0));
 }
 
+/** A confirmed span shorter than this is widened to MIN_SLICE_SECONDS so the slice is watchable. */
+export const MIN_SLICE_SECONDS = 2;
+
 /**
- * The play range of an evidence item's slice of the existing video: first to last seen where the entry has a track, else
- * SLICE_PADDING_SECONDS either side of the box second. Never negative and, when the video's length is known, never past it.
- * Derived from the evidence entry, never from a stored row's second.
+ * The play range of an evidence item's slice of the existing video. People and other entities with a track: first to last
+ * seen. Instruments and assets: first to last detector-confirmed sample of their track (`confirmed`), widened to
+ * MIN_SLICE_SECONDS around its middle when shorter; with no confirmed sample, or no track, SLICE_PADDING_SECONDS either side
+ * of the box second. Never negative and, when the video's length is known, never past it. Derived from the evidence entry
+ * and its track, never from a stored row's second.
  */
-export function evidenceSlice(entry: EvidenceEntry, durationSeconds: number | null = null): { start: number; end: number } {
+export function evidenceSlice(
+  entry: EvidenceEntry,
+  durationSeconds: number | null = null,
+  confirmed: ConfirmedSpan | null = null,
+): { start: number; end: number } {
   const first = numberOrNull(entry.track_first_seen_seconds);
   const last = numberOrNull(entry.track_last_seen_seconds);
   const tracked = typeof entry.track === 'string' && entry.track !== '' && first !== null && last !== null && last >= first;
   const at = boxSecond(entry);
   const ceiling = durationSeconds !== null && durationSeconds > 0 ? durationSeconds : Number.POSITIVE_INFINITY;
-  const start = tracked ? first : at - SLICE_PADDING_SECONDS;
-  const end = tracked ? last : at + SLICE_PADDING_SECONDS;
+  let start = at - SLICE_PADDING_SECONDS;
+  let end = at + SLICE_PADDING_SECONDS;
+  if (entry.item_type === 'entity') {
+    if (tracked) [start, end] = [first, last];
+  } else if (tracked && confirmed) {
+    [start, end] = [confirmed.first, confirmed.last];
+    if (end - start < MIN_SLICE_SECONDS) {
+      const middle = (start + end) / 2;
+      [start, end] = [middle - MIN_SLICE_SECONDS / 2, middle + MIN_SLICE_SECONDS / 2];
+    }
+  }
   const clampedStart = Math.min(Math.max(0, start), ceiling);
   return { start: millis(clampedStart), end: millis(Math.max(clampedStart, Math.min(end, ceiling))) };
 }
@@ -351,13 +370,14 @@ export function evidenceSlice(entry: EvidenceEntry, durationSeconds: number | nu
  * image or no vector is not searchable and is left out. The row's second is the
  * one the box was found at (box_seconds, a retry second when the item's own
  * second found nothing), fraction kept, so a search hit shows the frame the box belongs to. The row also carries the
- * item's slice range and its stored frame.
+ * item's slice range (`confirmed` holds the confirmed spans of object tracks, keyed `type:id`) and its stored frame.
  */
 export function officialCrops(
   payload: ReportPayload,
   evidence: EvidenceEntry[],
   embeddings: EvidenceEmbedding[],
   durationSeconds: number | null = null,
+  confirmed: ReadonlyMap<string, ConfirmedSpan> = new Map(),
 ): OfficialCrop[] {
   const details = payloadDetails(payload);
   const vectors = new Map(embeddings.map((item) => [`${item.itemType}:${item.itemId}`, item.embedding]));
@@ -366,7 +386,7 @@ export function officialCrops(
     const embedding = vectors.get(`${entry.item_type}:${entry.item_id}`);
     if (!embedding) return [];
     const fallback = details.get(`${entry.item_type}:${entry.item_id}`);
-    const slice = evidenceSlice(entry, durationSeconds);
+    const slice = evidenceSlice(entry, durationSeconds, confirmed.get(`${entry.item_type}:${entry.item_id}`) ?? null);
     return [
       {
         item_type: entry.item_type,
