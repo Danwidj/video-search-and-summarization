@@ -8,6 +8,7 @@
 
 import { StoreRejection, type Page } from '@/modules/shared/domain/common';
 import type {
+  MissingEmbedding,
   OfficialChange,
   RevisionCropsChange,
   RunHistoryRecords,
@@ -104,6 +105,37 @@ export class InMemoryVideoRepository implements VideoRepository {
 
   async listRevisionsMissingCrops(videoId?: string): Promise<Array<{ videoId: string; revisionId: number }>> {
     return this.missingCrops.filter((item) => !videoId || item.videoId === videoId);
+  }
+
+  async repairRevisionCrops(videoId: string, revisionId: number, crops: OfficialCrop[]): Promise<number | null> {
+    const video = this.videos.get(videoId);
+    const searchable = video ? (video.officialRevisionId ?? video.revisionIds.at(-1) ?? null) : null;
+    const index = this.missingCrops.findIndex((item) => item.videoId === videoId && item.revisionId === revisionId);
+    if (searchable !== revisionId || index < 0) return null;
+    this.missingCrops.splice(index, 1);
+    this.cropCalls.push({ videoId, revisionId, crops });
+    return crops.length;
+  }
+
+  /** What listRevisionsMissingEmbeddings returns; setRevisionEmbedding removes the entry it fills. */
+  missingEmbeddings: MissingEmbedding[] = [];
+  readonly embeddingCalls: Array<{ videoId: string; revisionId: number; embedding: number[] }> = [];
+
+  async listRevisionsMissingEmbeddings(videoId?: string): Promise<MissingEmbedding[]> {
+    return this.missingEmbeddings.filter((item) => !videoId || item.videoId === videoId);
+  }
+
+  async setRevisionEmbedding(videoId: string, revisionId: number, embedding: number[]): Promise<boolean> {
+    const video = this.videos.get(videoId);
+    if (!video) throw new StoreRejection('not-found', `Video not found: ${videoId}`);
+    const searchable = video.officialRevisionId ?? video.revisionIds.at(-1) ?? null;
+    if (revisionId !== searchable)
+      throw new StoreRejection('invalid', `Revision ${revisionId} is not the searchable revision of video ${videoId}`);
+    const index = this.missingEmbeddings.findIndex((item) => item.videoId === videoId && item.revisionId === revisionId);
+    if (index < 0) return false;
+    this.missingEmbeddings.splice(index, 1);
+    this.embeddingCalls.push({ videoId, revisionId, embedding });
+    return true;
   }
 
   async deleteVideo(videoId: string): Promise<void> {

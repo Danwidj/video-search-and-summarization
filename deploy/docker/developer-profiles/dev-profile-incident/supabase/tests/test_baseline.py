@@ -133,6 +133,7 @@ with tempfile.TemporaryDirectory() as tmp:
         for present in ("save_human_revision", "set_official_revision", "search_evidence_items",
                         "list_incident_report_summaries", "get_incident_dashboard", "report_revisions_append_only",
                         "set_revision_crops", "searchable_revision_id", "evidence_slice", "list_revisions_missing_crops",
+                        "set_revision_embedding", "list_revisions_missing_embeddings", "repair_revision_crops",
                         "claim_analysis_job", "touch_analysis_job",
                         "finish_analysis_job", "retry_analysis_job", "cancel_analysis_job"):
             assert present in names, present
@@ -739,6 +740,128 @@ with tempfile.TemporaryDirectory() as tmp:
                             (vector_literal(7),)).fetchone()[0] == 0
         refused(conn, "UPDATE public.report_revisions SET embedding = NULL WHERE id = %s", (embedded,), contains="append-only")
         assert one(conn, "SELECT count(*) FROM pg_indexes WHERE indexname = 'report_revisions_embedding_hnsw_idx'")[0] == 1
+
+    # One searchable version per incident (20261106090000_one_searchable_version.sql).
+    summary_hits = lambda index, floor=0.5: conn.execute(
+        "SELECT video_id, revision_id, similarity_score FROM public.search_report_revisions(%s::extensions.vector, 20, %s) ORDER BY video_id",
+        (vector_literal(index), floor)).fetchall()
+    embed_rev = lambda video, revision, index: one(
+        conn, "SELECT public.set_revision_embedding(%s, %s, %s::extensions.vector)", (video, revision, vector_literal(index)))[0]
+
+    @test("search_report_revisions returns only the searchable version, so a video never has two hits")
+    def _():
+        conn.execute("INSERT INTO public.videos (id) VALUES ('vs')")
+        old = one(conn, """INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, payload, evidence,
+                incident_type, severity_level, start_seconds, end_seconds, embedding)
+            VALUES ('vs', 1, 'ai', 'm1', %s, '[]', 'assault', 4, 2, 9, %s::extensions.vector) RETURNING id""",
+            (json.dumps(report(title="Old")), vector_literal(20)))[0]
+        newest = one(conn, """INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, parent_id, payload, evidence,
+                incident_type, severity_level, start_seconds, end_seconds, embedding, created_by)
+            VALUES ('vs', 2, 'human', 'm1', %s, %s, '[]', 'assault', 4, 2, 9, %s::extensions.vector, 'Dana') RETURNING id""",
+            (old, json.dumps(report(title="Newest")), vector_literal(20)))[0]
+        assert summary_hits(20) == [("vs", newest, 1.0)], summary_hits(20)  # the older twin vector is not a second hit
+        assert searchable("vs") == newest
+        # Marking the older one official moves the single hit to it; clearing moves it back to the newest.
+        conn.execute("SELECT public.set_official_revision('vs', %s, '[]')", (old,))
+        assert summary_hits(20) == [("vs", old, 1.0)], summary_hits(20)
+        conn.execute("SELECT public.set_official_revision('vs', NULL)")
+        assert summary_hits(20) == [("vs", newest, 1.0)], summary_hits(20)
+        assert summary_hits(20, 1.1) == [], "the minimum similarity still applies"
+
+    @test("marking official, clearing it and saving a new version each leave one searchable version for both searches")
+    def _():
+        conn.execute("INSERT INTO public.videos (id) VALUES ('vt')")
+        first = ai_revision("vt", 1, "m1", report(title="First"), [])
+        embed_rev("vt", first, 21)
+        set_crops("vt", first, [crop("entity", "E1", "evidence/vt/u1/E1.jpg", vector(21), item_name="human", description="One")])
+        second = save("vt", first, report(title="Second"), [])["revisionId"]
+        assert searchable("vt") == second
+        assert summary_hits(21) == [] and searched(21) == [], "nothing of the older version is found once a newer one exists"
+        assert embed_rev("vt", second, 22) is True
+        set_crops("vt", second, [crop("entity", "E1", "evidence/vt/u2/E1.jpg", vector(22), item_name="human", description="Two")])
+        assert [h[:2] for h in summary_hits(22)] == [("vt", second)] and searched(22) == [("vt", second, "E1")]
+        conn.execute("SELECT public.set_official_revision('vt', %s, %s)", (first, json.dumps([crop("entity", "E1", "evidence/vt/u1/E1.jpg", vector(21), item_name="human", description="One")])))
+        assert [h[:2] for h in summary_hits(21)] == [("vt", first)] and searched(21) == [("vt", first, "E1")]
+        assert summary_hits(22) == [] and searched(22) == []
+        conn.execute("SELECT public.set_official_revision('vt', NULL)")
+        assert searchable("vt") == second and [h[:2] for h in summary_hits(22)] == [("vt", second)]
+        assert summary_hits(21) == [], "clearing official hides the older version again"
+
+    @test("save_human_revision stores the summary vector it is given, and still saves without one")
+    def _():
+        conn.execute("INSERT INTO public.videos (id) VALUES ('vu')")
+        parent = ai_revision("vu", 1, "m1", report(), [])
+        args = ("vu", parent, "Dana", None, json.dumps(report(title="Edited")), "[]", "assault", 4, 2, 9)
+        saved = one(conn, "SELECT public.save_human_revision(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::extensions.vector)",
+                    args + (vector_literal(23),))[0]
+        assert [h[:2] for h in summary_hits(23)] == [("vu", saved["revisionId"])]
+        bare = one(conn, "SELECT public.save_human_revision(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", args)[0]
+        assert one(conn, "SELECT embedding IS NULL FROM public.report_revisions WHERE id = %s", (bare["revisionId"],))[0]
+        withcrops = one(conn, """SELECT public.save_human_revision_with_crops(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::extensions.vector)""",
+                        args + ("[]", vector_literal(24)))[0]
+        assert [h[:2] for h in summary_hits(24)] == [("vu", withcrops["revisionId"])]
+        refused(conn, "SELECT public.save_human_revision(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, '[1,2]'::extensions.vector)", args, contains="dimensions")
+
+    @test("set_revision_embedding fills only a missing vector on the searchable version, and the guard allows nothing else")
+    def _():
+        parent = searchable("vu")
+        searchable_id = save("vu", parent, report(title="Edited"), [])["revisionId"]  # saved without a vector
+        assert searchable("vu") == searchable_id
+        assert one(conn, "SELECT embedding IS NULL FROM public.report_revisions WHERE id = %s", (searchable_id,))[0]
+        listed = conn.execute("SELECT video_id, revision_id, title FROM public.list_revisions_missing_embeddings('vu')").fetchall()
+        assert listed == [("vu", searchable_id, "Edited")], listed
+        refused(conn, "SELECT public.set_revision_embedding('vu', %s, %s::extensions.vector)",
+                (one(conn, "SELECT min(id) FROM public.report_revisions WHERE video_id = 'vu'")[0], vector_literal(25)),
+                contains="not the searchable revision")
+        refused(conn, "SELECT public.set_revision_embedding('vu', %s, NULL)", (searchable_id,), contains="embedding is required")
+        assert one(conn, "SELECT public.set_revision_embedding('vu', %s, %s::extensions.vector)", (searchable_id, vector_literal(25)))[0] is True
+        assert [h[:2] for h in summary_hits(25)] == [("vu", searchable_id)]
+        assert conn.execute("SELECT * FROM public.list_revisions_missing_embeddings('vu')").fetchall() == []
+        assert one(conn, "SELECT public.set_revision_embedding('vu', %s, %s::extensions.vector)", (searchable_id, vector_literal(26)))[0] is False
+        assert summary_hits(26) == [], "a stored vector is never replaced"
+        assert one(conn, "SELECT current_setting('app.revision_embedding', true)")[0] in (None, "", "off")
+        for sql in ("UPDATE public.report_revisions SET embedding = NULL WHERE id = %s",
+                    "UPDATE public.report_revisions SET embedding = embedding WHERE id = %s",
+                    "UPDATE public.report_revisions SET note = 'x' WHERE id = %s"):
+            refused(conn, sql, (searchable_id,), contains="append-only")
+        # Even with the flag on, a change to another column, or a replacement of a stored vector, is refused.
+        with conn.transaction(force_rollback=True):
+            conn.execute("SELECT set_config('app.revision_embedding', 'on', true)")
+            for sql in ("UPDATE public.report_revisions SET note = 'x' WHERE id = %s",
+                        "UPDATE public.report_revisions SET embedding = NULL WHERE id = %s"):
+                try:
+                    with conn.transaction():
+                        conn.execute(sql, (searchable_id,))
+                except errors.Error as exc:
+                    assert "append-only" in str(exc)
+                else:
+                    raise AssertionError(sql)
+
+    @test("repair_revision_crops stores crops once, never over existing rows, and not for a version that is no longer searchable")
+    def _():
+        conn.execute("INSERT INTO public.videos (id) VALUES ('vw')")
+        base = ai_revision("vw", 1, "m1", report(), EVIDENCE)
+        rows = [crop("entity", "E1", "evidence/vw/u1/E1.jpg", vector(27), item_name="human", description="One")]
+        newer = ai_revision("vw", 2, "m1", report(), EVIDENCE)
+        assert one(conn, "SELECT public.repair_revision_crops('vw', %s, %s)", (base, json.dumps(rows)))[0] is None, "not searchable"
+        assert crop_count("vw") == 0
+        assert one(conn, "SELECT public.repair_revision_crops('vw', %s, %s)", (newer, json.dumps(rows)))[0] == 1
+        other = [crop("entity", "E1", "evidence/vw/u9/E1.jpg", vector(28), item_name="human", description="Other")]
+        assert one(conn, "SELECT public.repair_revision_crops('vw', %s, %s)", (newer, json.dumps(other)))[0] is None
+        assert one(conn, "SELECT image FROM public.evidence_crops WHERE revision_id = %s", (newer,))[0] == "evidence/vw/u1/E1.jpg"
+        assert one(conn, "SELECT public.repair_revision_crops('nope', 1, '[]')")[0] is None
+
+    @test("security: the 20261106 functions are for the service role only")
+    def _():
+        conn.execute("RESET ROLE")
+        for sig in ("public.set_revision_embedding(character varying, bigint, extensions.vector)",
+                    "public.list_revisions_missing_embeddings(character varying)",
+                    "public.repair_revision_crops(character varying, bigint, jsonb)"):
+            for role in ("anon", "authenticated"):
+                assert not one(conn, "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, sig))[0], (role, sig)
+            assert one(conn, "SELECT has_function_privilege('service_role', %s, 'EXECUTE')", (sig,))[0], sig
+        conn.execute("SET ROLE service_role")
+        conn.execute("DELETE FROM public.videos WHERE id IN ('vs', 'vt', 'vu', 'vw')")
 
     # Background analysis jobs (20261031120000_analysis_jobs.sql).
     def enqueue(name: str) -> int:

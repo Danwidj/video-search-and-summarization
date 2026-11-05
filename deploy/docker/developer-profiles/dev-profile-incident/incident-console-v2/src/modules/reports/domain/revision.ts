@@ -334,7 +334,7 @@ export const MIN_SLICE_SECONDS = 2;
 /**
  * The play range of an evidence item's slice of the existing video. People and other entities with a track: first to last
  * seen. Instruments and assets: first to last detector-confirmed sample of their track (`confirmed`), widened to
- * MIN_SLICE_SECONDS around its middle when shorter; with no confirmed sample, or no track, SLICE_PADDING_SECONDS either side
+ * MIN_SLICE_SECONDS around its middle when shorter, then extended to include the box second; with no confirmed sample, or no track, SLICE_PADDING_SECONDS either side
  * of the box second. Never negative and, when the video's length is known, never past it. Derived from the evidence entry
  * and its track, never from a stored row's second.
  */
@@ -358,6 +358,10 @@ export function evidenceSlice(
       const middle = (start + end) / 2;
       [start, end] = [middle - MIN_SLICE_SECONDS / 2, middle + MIN_SLICE_SECONDS / 2];
     }
+    // The stored evidence moment (the box second) is always inside the slice, even when the detector only confirmed the
+    // object later (137 A1: box at 0.07 s, confirmed from 2.4 s).
+    start = Math.min(start, at);
+    end = Math.max(end, at);
   }
   const clampedStart = Math.min(Math.max(0, start), ceiling);
   return { start: millis(clampedStart), end: millis(Math.max(clampedStart, Math.min(end, ceiling))) };

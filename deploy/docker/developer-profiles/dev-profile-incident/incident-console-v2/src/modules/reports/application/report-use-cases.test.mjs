@@ -18,7 +18,8 @@ const { listRevisions } = await import('@/modules/reports/application/list-revis
 const { saveHumanEdit, SearchableStepError } = await import('@/modules/reports/application/save-human-edit');
 const { setOfficialRevision } = await import('@/modules/reports/application/set-official-revision');
 const { repairMissingCrops } = await import('@/modules/reports/application/repair-missing-crops');
-const { officialCrops } = await import('@/modules/reports/domain/revision');
+const { repairMissingEmbeddings } = await import('@/modules/reports/application/repair-missing-embeddings');
+const { officialCrops, evidenceSlice } = await import('@/modules/reports/domain/revision');
 const { confirmedSpans } = await import('@/modules/reports/application/confirmed-spans');
 const { storeSearchableCrops } = await import('@/modules/reports/application/store-searchable-crops');
 const { deleteVideoAndReports } = await import('@/modules/reports/application/delete-video-and-reports');
@@ -488,6 +489,112 @@ test('repair reports a failing revision and carries on with the rest', async () 
   ]);
 });
 
+test('a human Save stores the summary vector of the new title and description, and saves without one when embedding fails', async () => {
+  const record = aiRunReport(smoke);
+  const asked = [];
+  const embedSummary = async (summary) => {
+    asked.push(summary);
+    return [0.25, 0.5];
+  };
+  const ports = official([record]);
+  await saveHumanEdit(
+    ports,
+    { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor' },
+    noEmbed,
+    undefined,
+    undefined,
+    embedSummary,
+  );
+  assert.deepEqual(
+    ports.incidents.saved.map((input) => input.embedding),
+    [[0.25, 0.5]],
+  );
+  assert.equal(asked[0].description, 'Edited summary.', 'the text is the saved incident description');
+
+  const down = official([record]);
+  await saveHumanEdit(
+    down,
+    { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor' },
+    noEmbed,
+    undefined,
+    undefined,
+    async () => {
+      throw new Error('agent down');
+    },
+  );
+  assert.deepEqual(
+    down.incidents.saved.map((input) => input.embedding),
+    [null],
+    'the Save still succeeds, with no vector',
+  );
+
+  const plain = official([record]);
+  await saveHumanEdit(plain, { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor' }, noEmbed);
+  assert.deepEqual(
+    plain.incidents.saved.map((input) => input.embedding),
+    [null],
+    'no embedding seam, no vector',
+  );
+});
+
+test('a Save on a video with an official revision does not embed the summary of a version that is not searchable', async () => {
+  const record = aiRunReport(smoke);
+  const ports = official([record]);
+  await ports.videos.setOfficialRevision(V, 1, []);
+  await saveHumanEdit(
+    ports,
+    { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor' },
+    noEmbed,
+    undefined,
+    undefined,
+    async () => assert.fail('not searchable, nothing to embed'),
+  );
+  assert.deepEqual(
+    ports.incidents.saved.map((input) => input.embedding),
+    [null],
+  );
+});
+
+test('repair skips a revision that is no longer the searchable one or already has crops, and writes nothing', async () => {
+  const ports = official([withImage('evidence/v/u/E1.jpg')]);
+  ports.videos.missingCrops = [{ videoId: V, revisionId: 1 }];
+  await ports.videos.setOfficialRevision(V, null, []);
+  ports.videos.missingCrops = [{ videoId: V, revisionId: 1 }];
+  ports.videos.videos.get(V).revisionIds.push(2); // a newer version was saved meanwhile: revision 1 is not searchable
+  const report = await repairMissingCrops(ports, async () => [{ itemType: 'entity', itemId: 'E1', embedding: [0.5] }], { dryRun: false });
+  assert.deepEqual(report.revisions, [{ videoId: V, revisionId: 1, crops: null, skipped: true }]);
+  assert.deepEqual(ports.videos.cropCalls, []);
+});
+
+test('summary repair embeds the title and description of a searchable revision with no vector, and only into an empty slot', async () => {
+  const ports = official([withImage('evidence/v/u/E1.jpg')]);
+  ports.videos.missingEmbeddings = [
+    { videoId: V, revisionId: 1, title: 'Fight', description: 'Two people fight.' },
+    { videoId: V, revisionId: 7, title: 'Gone', description: null },
+  ];
+  const asked = [];
+  const embed = async (summary) => {
+    asked.push(summary);
+    return [0.1];
+  };
+  const dry = await repairMissingEmbeddings(ports, embed);
+  assert.deepEqual(
+    dry.revisions.map((item) => item.stored),
+    [false, false],
+  );
+  assert.deepEqual(asked, [], 'a dry run does not embed');
+  const report = await repairMissingEmbeddings(ports, embed, { dryRun: false, limit: 1 });
+  assert.deepEqual(report.revisions, [{ videoId: V, revisionId: 1, stored: true }]);
+  assert.deepEqual(asked, [{ title: 'Fight', description: 'Two people fight.' }]);
+  assert.deepEqual(
+    ports.videos.embeddingCalls.map((call) => [call.revisionId, call.embedding]),
+    [[1, [0.1]]],
+  );
+  const second = await repairMissingEmbeddings(ports, embed, { dryRun: false });
+  assert.equal(second.revisions[0].revisionId, 7);
+  assert.match(second.revisions[0].error, /not the searchable revision/);
+});
+
 test('a crop stores the box second with its fraction and a slice, not the item whole second (audit cases 15.33 s and 2.27 s)', () => {
   const entry = (box_seconds, timestamp_seconds, extra = {}) => ({
     item_type: 'entity',
@@ -583,9 +690,32 @@ test('an object slice runs first to last detector-confirmed sample; a person kee
   );
 
   files[track] = samples([6, 0.9], [6.5, 0.9]);
-  assert.deepEqual(range((await crops([entry('asset')]))[0]), [5.25, 7.25], 'a span under 2 s is widened to 2 s around its middle');
+  assert.deepEqual(
+    range((await crops([entry('asset', { box_seconds: 6 })]))[0]),
+    [5.25, 7.25],
+    'a span under 2 s is widened to 2 s around its middle',
+  );
+  assert.deepEqual(range((await crops([entry('asset')]))[0]), [5, 7.25], 'the box second (5) is inside the slice');
+  // 137 A1: the box was found at 0.07 s but the detector confirmed the object only from 2.4 s.
+  files[track] = samples([2.4, 0.9], [2.9, 0.9]);
+  assert.deepEqual(
+    range((await crops([entry('asset', { box_seconds: 0.07 })]))[0]),
+    [0.07, 3.65],
+    '137 A1: the slice includes the box second',
+  );
+  files[track] = samples([2, 0.9], [4, 0.9]);
+  assert.deepEqual(
+    range((await crops([entry('instrument', { box_seconds: 9 })]))[0]),
+    [2, 9],
+    'a box second after the confirmed span extends the end',
+  );
+  assert.deepEqual(
+    evidenceSlice(entry('asset', { box_seconds: 9 }), 8, { first: 2, last: 4 }),
+    { start: 2, end: 8 },
+    'clamped to the video length when it is known',
+  );
   files[track] = samples([0, 0.9]);
-  assert.deepEqual(range((await crops([entry('asset')]))[0]), [0, 1], 'a widened span is clamped at 0');
+  assert.deepEqual(range((await crops([entry('asset', { box_seconds: 0.5 })]))[0]), [0, 1], 'a widened span is clamped at 0');
   files[track] = samples([6, 0.9]);
   assert.deepEqual(range((await crops([entry('asset', { track: undefined })]))[0]), [2, 8], 'an object with no track: the box second');
 });
@@ -614,5 +744,5 @@ test('marking official reads an object track from storage, so its slice is the c
       : assert.fail(key);
   await setOfficialRevision(ports, V, 1, async () => [{ itemType: 'asset', itemId: 'A1', embedding: [0.5] }], read);
   const [crop] = ports.videos.officialCalls[0].crops;
-  assert.deepEqual([crop.slice_start_seconds, crop.slice_end_seconds], [2, 4]);
+  assert.deepEqual([crop.slice_start_seconds, crop.slice_end_seconds], [2, 5], 'the widened span, extended to the box second (5)');
 });

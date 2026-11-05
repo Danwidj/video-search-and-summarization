@@ -171,3 +171,32 @@ def test_body_must_name_exactly_one_source():
 
 def test_passage_text_matches_the_evidence_description_convention():
     assert passage_text({"item_name": "door", "description": "Forced open."}) == "door: Forced open."
+
+
+def _summary_client(embedder) -> TestClient:
+    app = FastAPI()
+    app.include_router(create_incident_evidence_embeddings_router(embedder))
+    return TestClient(app)
+
+
+def test_revision_embedding_embeds_title_then_description_as_a_passage() -> None:
+    embedder = MagicMock()
+    embedder.is_configured.return_value = True
+    embedder.embed_passage = AsyncMock(return_value=[0.25, 0.5])
+    response = _summary_client(embedder).post(
+        "/api/v1/incidents/revision-embedding", json={"title": " Bear in kitchen ", "description": "A bear enters."}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"embedding": [0.25, 0.5]}
+    embedder.embed_passage.assert_awaited_once_with("Bear in kitchen\nA bear enters.")
+
+
+def test_revision_embedding_refuses_empty_text_unconfigured_and_a_failing_endpoint() -> None:
+    embedder = MagicMock()
+    embedder.is_configured.return_value = True
+    embedder.embed_passage = AsyncMock(side_effect=httpx.ConnectError("down"))
+    client = _summary_client(embedder)
+    assert client.post("/api/v1/incidents/revision-embedding", json={"title": "  "}).status_code == 422
+    assert client.post("/api/v1/incidents/revision-embedding", json={"title": "x"}).status_code == 502
+    embedder.is_configured.return_value = False
+    assert client.post("/api/v1/incidents/revision-embedding", json={"title": "x"}).status_code == 503

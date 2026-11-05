@@ -3,7 +3,7 @@
 """Rewrites slice_start_seconds and slice_end_seconds of instrument and asset evidence_crops rows from their stored tracks.
 
 The rule is evidenceSlice in incident-console-v2/src/modules/reports/domain/revision.ts: first to last detector-confirmed
-track sample (score above 0; tracker-only samples are -0.1), widened to 2 s around its middle when shorter; with no
+track sample (score above 0; tracker-only samples are -0.1), widened to 2 s around its middle when shorter, then extended to include the box second; with no
 confirmed sample or no track, 3 s either side of the box second (the row's timestamp_seconds). Clamped at 0. People (entity
 rows) are not touched. R2 is only read. report_revisions is not touched.
 
@@ -75,6 +75,9 @@ def object_slice(
     if span is not None and end - start < MIN_SLICE_SECONDS:
         middle = (start + end) / 2
         start, end = middle - MIN_SLICE_SECONDS / 2, middle + MIN_SLICE_SECONDS / 2
+    if span is not None:
+        # the stored evidence moment is always inside the slice (137 A1: box at 0.07 s, confirmed from 2.4 s)
+        start, end = min(start, box_second), max(end, box_second)
     start = max(0.0, start)
     return round(start, 3), round(max(start, end), 3)
 

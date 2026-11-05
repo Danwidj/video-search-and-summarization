@@ -25,7 +25,7 @@ Canonical facts:
    - `./start.sh --mode mock` uses the mock backend on `127.0.0.1:7777` and needs no GPU or SSH.
    - `./start.sh --mode vm` uses the native `vss-agent` through the tunnel on `127.0.0.1:8000`.
 2. For live search or embeddings, the environment must point at the finals Supabase project. Never write to the frozen midterm project.
-3. A search needs populated `evidence_crops`. An empty result set can be a healthy response, but it does not prove the crop corpus is loaded: check `list_revisions_missing_crops()` and repair with `POST /api/videos/repair-crops` ([`incident-manage-database`](../incident-manage-database/SKILL.md)).
+3. A search needs populated `evidence_crops`. An empty result set can be a healthy response, but it does not prove the crop corpus is loaded: check `list_revisions_missing_crops()` and repair with `POST /api/videos/repair-crops` (a running console with the job loop also repairs by itself every 2 minutes). Revision search returns at most one version per video: the searchable one ([`incident-manage-database`](../incident-manage-database/SKILL.md)).
 
 ## Search saved report revisions
 

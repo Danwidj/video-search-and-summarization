@@ -9,7 +9,7 @@ import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import type { RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
 import { confirmedSpans } from '@/modules/reports/application/confirmed-spans';
-import type { EmbedEvidence, ReadStoredJson, ReviewerEvidenceStore } from '@/modules/reports/application/types';
+import type { EmbedEvidence, EmbedSummary, ReadStoredJson, ReviewerEvidenceStore } from '@/modules/reports/application/types';
 import { storeReviewerItems } from '@/modules/reports/application/store-reviewer-items';
 import { StoreRejection } from '@/modules/shared/domain/common';
 import { missingItemFields } from '@/modules/contract/domain/validate';
@@ -65,6 +65,27 @@ async function searchableCrops(
 }
 
 /**
+ * The summary vector the new revision is searched by in Find incidents, from the same title and description text as an AI
+ * version. A failure (agent down, an agent that predates the endpoint) is not a failed save: the revision is stored without
+ * a vector and the repair step stores one when the agent is back.
+ */
+async function summaryEmbedding(payload: ReportPayload, embedSummary?: EmbedSummary): Promise<number[] | null> {
+  if (!embedSummary) return null;
+  const incident = (payload as { incident?: { title?: unknown; description?: unknown } }).incident ?? {};
+  const title = typeof incident.title === 'string' && incident.title.trim() ? incident.title : null;
+  const description = typeof incident.description === 'string' && incident.description.trim() ? incident.description : null;
+  if (!title && !description) return null;
+  try {
+    return await embedSummary({ title, description });
+  } catch (error) {
+    console.warn(
+      `[save human edit] the summary could not be embedded, saving without a vector: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  }
+}
+
+/**
  * Save: a new human revision from the form's edit, with the revision the
  * reviewer opened as its parent. Earlier revisions are never changed.
  */
@@ -74,6 +95,7 @@ export async function saveHumanEdit(
   embed: EmbedEvidence,
   reviewerStore?: ReviewerEvidenceStore,
   readTrack?: ReadStoredJson,
+  embedSummary?: EmbedSummary,
 ): Promise<RevisionSummary> {
   const parent = await incidents.getRevision(input.videoId, input.parentId);
   if (!parent) throw new StoreRejection('not-found', `Revision not found for this video: ${input.parentId}`);
@@ -105,6 +127,7 @@ export async function saveHumanEdit(
     payload,
     evidence,
     crops,
+    embedding: video.officialRevisionId === null ? await summaryEmbedding(payload, embedSummary) : null,
     createdBy: input.createdBy,
     note: input.note?.trim() || null,
   });
