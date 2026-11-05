@@ -143,9 +143,10 @@ test('text search keeps the incidents the agent matched, under the other filters
   const payload = await response.json();
 
   assert.equal(response.status, 200);
-  assert.deepEqual(calls.agent, [{ query: 'knife', top_k: 50, min_similarity: 0.35 }]);
-  assert.equal(calls.rpc.length, 1);
-  assert.equal(calls.rpc[0].p_search, null, 'the store is not asked for the ILIKE match');
+  assert.deepEqual(calls.agent, [{ query: 'knife', top_k: 50, min_similarity: 0.25 }]);
+  assert.equal(calls.rpc.length, 2, 'the store is asked for the whole list and for the word match');
+  assert.equal(calls.rpc[0].p_search, null);
+  assert.equal(calls.rpc[1].p_search, 'knife', 'the word match runs even when the agent found hits');
   assert.equal(calls.rpc[0].p_page_size, 1000);
   assert.equal(calls.rpc[0].p_type, 'assault');
   assert.equal(calls.rpc[0].p_sort, 'oldest');
@@ -197,7 +198,7 @@ test('the revision search sends the named minimum score, so weak matches are dro
   const { REVISION_MIN_SIMILARITY } = await import('../src/lib/search/min-similarity.ts');
   const calls = stubUpstream({ status: 200, body: [AGENT_HIT] });
   await GET(new Request('http://localhost/api/reports?search=knife'));
-  assert.equal(REVISION_MIN_SIMILARITY, 0.35);
+  assert.equal(REVISION_MIN_SIMILARITY, 0.25);
   assert.equal(calls.agent[0].min_similarity, REVISION_MIN_SIMILARITY);
 });
 
@@ -231,4 +232,27 @@ test('with text, a nonsense search the agent drops entirely uses the ILIKE fallb
   const payload = await (await GET(new Request('http://localhost/api/reports?search=helicopter'))).json();
   assert.equal(calls.rpc[0].p_search, 'helicopter');
   assert.equal(payload.searchMode, 'text');
+});
+
+test('with text, word matches merge with meaning matches: both first, then words only, then meaning only', async () => {
+  const row = (videoId) => ({ ...RPC_ROWS[0], videoId, reportId: `r-${videoId}` });
+  const everything = ['v1', 'v2', 'v3', 'v4'].map(row);
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith('/rpc/list_incident_report_summaries')) {
+      const { p_search: search } = JSON.parse(String(init?.body));
+      // The words match v4 and v2 (in the sort's order); the store lists all four when it is not given the text.
+      const reports = search === null ? everything : [row('v4'), row('v2')];
+      return new Response(JSON.stringify({ reports, totalItems: reports.length, incidentTypes: [] }), { status: 200 });
+    }
+    // The meaning matches v1 (best), v2 and v3 (weakest); v4 is under the minimum score.
+    const hit = (video_id, similarity_score) => ({ ...AGENT_HIT, video_id, similarity_score });
+    return new Response(JSON.stringify([hit('v1', 0.9), hit('v2', 0.6), hit('v3', 0.4)]), { status: 200 });
+  };
+  const payload = await (await GET(new Request('http://localhost/api/reports?search=burglary'))).json();
+  assert.deepEqual(
+    payload.reports.map((r) => r.videoId),
+    ['v2', 'v4', 'v1', 'v3'],
+  );
+  assert.equal(payload.pagination.totalItems, 4);
+  assert.equal(payload.searchMode, 'semantic');
 });

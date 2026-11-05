@@ -323,7 +323,7 @@ list_revisions_missing_crops(p_video_id VARCHAR DEFAULT NULL) RETURNS TABLE(vide
 The videos whose searchable revision has an `evidence` list with images but no `evidence_crops` rows (service role only): the input of the repair step. It found the two videos that were missing from search on 5 Nov.
 
 ```
-list_revisions_missing_embeddings(p_video_id VARCHAR DEFAULT NULL) RETURNS TABLE(video_id, revision_id, title, description)
+list_revisions_missing_embeddings(p_video_id VARCHAR DEFAULT NULL) RETURNS TABLE(video_id, revision_id, incident_type, title, description)
 set_revision_embedding(p_video_id, p_revision_id, p_embedding) RETURNS BOOLEAN
 repair_revision_crops(p_video_id, p_revision_id, p_crops JSONB) RETURNS INTEGER
 ```
@@ -385,7 +385,7 @@ All `VOLATILE`, `SECURITY INVOKER`, `search_path = ''`, `service_role` only, and
 
 ### Revision search (`search_report_revisions`)
 
-Cosine search over `report_revisions.embedding`, restricted to each video's **searchable revision** (`r.id = searchable_revision_id(r.video_id)`: official, else newest; derived on every read, nothing stored), so one video returns at most one hit. Human versions have a vector when they were saved with one (see `save_human_revision`). It returns one row per video, best first, with the title and description from the payload and the facet columns. It is `SECURITY INVOKER`, pins `search_path`, and is executable by `service_role` only. The agent calls it through `IncidentDB.search_revisions` for `POST /api/v1/incidents/revisions/search`. It is separate from `search_evidence_items`, which searches the crops of each video's searchable revision.
+Cosine search over `report_revisions.embedding`, restricted to each video's **searchable revision** (`r.id = searchable_revision_id(r.video_id)`: official, else newest; derived on every read, nothing stored), so one video returns at most one hit. Human versions have a vector when they were saved with one (see `save_human_revision`). The summary vector embeds "type: title", a newline, then the description (since 6 Nov; `refresh_revision_embedding(video_id, revision_id, vector)` replaces a stored vector on the searchable version only, behind the `app.revision_embedding_refresh` guard flag, and changes nothing else; migration `20261106120000_refresh_revision_embedding.sql`). It returns one row per video, best first, with the title and description from the payload and the facet columns. It is `SECURITY INVOKER`, pins `search_path`, and is executable by `service_role` only. The agent calls it through `IncidentDB.search_revisions` for `POST /api/v1/incidents/revisions/search`. It is separate from `search_evidence_items`, which searches the crops of each video's searchable revision.
 
 ### Agent report writes (`report_revisions`)
 

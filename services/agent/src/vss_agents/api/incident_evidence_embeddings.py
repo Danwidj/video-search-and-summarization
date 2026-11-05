@@ -24,7 +24,7 @@ as ``"{item_name}: {description}"`` passage text with the same embedding model s
 with (``RemoteTextEmbedder``, ``vector(1024)``). It returns the vectors only: the console writes
 the ``evidence_crops`` rows itself.
 
-``POST /api/v1/incidents/revision-embedding`` embeds one report summary (``incident.title`` then
+``POST /api/v1/incidents/revision-embedding`` embeds one report summary (``incident.type: incident.title`` then
 ``incident.description``, the text ``incident_report_gen`` embeds for an AI revision) and returns the
 vector, so the console can store one with a human revision and repair a searchable revision that has none.
 
@@ -86,8 +86,9 @@ class EvidenceEmbedding(BaseModel):
 
 
 class RevisionEmbeddingRequest(BaseModel):
-    """Body for ``POST /api/v1/incidents/revision-embedding``: the report's incident title and description."""
+    """Body for ``POST /api/v1/incidents/revision-embedding``: the report's incident type, title and description."""
 
+    incident_type: str | None = Field(default=None, max_length=200)
     title: str | None = Field(default=None, max_length=2000)
     description: str | None = Field(default=None, max_length=20000)
 
@@ -144,11 +145,13 @@ def create_incident_evidence_embeddings_router(embedder: RemoteTextEmbedder | No
 
     @router.post(
         "/api/v1/incidents/revision-embedding",
-        summary="Embed a report summary (incident title and description) for the revision search",
+        summary="Embed a report summary (incident type, title and description) for the revision search",
         tags=["Incident Evidence"],
     )
     async def revision_embedding(body: RevisionEmbeddingRequest) -> RevisionEmbedding:
-        text = incident_db.revision_summary_text({"incident": {"title": body.title, "description": body.description}})
+        text = incident_db.revision_summary_text(
+            {"incident": {"type": body.incident_type, "title": body.title, "description": body.description}}
+        )
         if not text:
             raise HTTPException(status_code=422, detail="Nothing to embed: send a title or a description")
         active_embedder = embedder or RemoteTextEmbedder()

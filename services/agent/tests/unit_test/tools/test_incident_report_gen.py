@@ -338,7 +338,7 @@ class TestPersistRevision:
 class TestRevisionEmbedding:
     """The summary vector saved with an AI revision; a failure leaves the row with NULL."""
 
-    REPORT: ClassVar[dict] = {"incident": {"title": "Fight", "description": "Two people fight."}}
+    REPORT: ClassVar[dict] = {"incident": {"type": "assault", "title": "Fight", "description": "Two people fight."}}
 
     @pytest.mark.asyncio
     async def test_embeds_the_title_and_description_as_a_passage(self):
@@ -347,7 +347,7 @@ class TestRevisionEmbedding:
         embedder.embed_passage = AsyncMock(return_value=[0.1] * 1024)
         with patch("vss_agents.tools.incident_report_gen.RemoteTextEmbedder", return_value=embedder):
             assert await revision_embedding(self.REPORT) == [0.1] * 1024
-        embedder.embed_passage.assert_awaited_once_with("Fight\nTwo people fight.")
+        embedder.embed_passage.assert_awaited_once_with("assault: Fight\nTwo people fight.")
 
     @pytest.mark.asyncio
     async def test_none_when_no_embedding_key_is_configured(self):

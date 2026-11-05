@@ -134,7 +134,7 @@ with tempfile.TemporaryDirectory() as tmp:
                         "list_incident_report_summaries", "get_incident_dashboard", "report_revisions_append_only",
                         "set_revision_crops", "searchable_revision_id", "evidence_slice", "list_revisions_missing_crops",
                         "set_revision_embedding", "list_revisions_missing_embeddings", "repair_revision_crops",
-                        "claim_analysis_job", "touch_analysis_job",
+                        "refresh_revision_embedding", "claim_analysis_job", "touch_analysis_job",
                         "finish_analysis_job", "retry_analysis_job", "cancel_analysis_job"):
             assert present in names, present
         assert one(conn, "SELECT extnamespace::regnamespace::TEXT FROM pg_extension WHERE extname = 'vector'")[0] == "extensions"
@@ -809,6 +809,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert searchable("vu") == searchable_id
         assert one(conn, "SELECT embedding IS NULL FROM public.report_revisions WHERE id = %s", (searchable_id,))[0]
         listed = conn.execute("SELECT video_id, revision_id, title FROM public.list_revisions_missing_embeddings('vu')").fetchall()
+        assert conn.execute("SELECT incident_type FROM public.list_revisions_missing_embeddings('vu')").fetchall() is not None
         assert listed == [("vu", searchable_id, "Edited")], listed
         refused(conn, "SELECT public.set_revision_embedding('vu', %s, %s::extensions.vector)",
                 (one(conn, "SELECT min(id) FROM public.report_revisions WHERE video_id = 'vu'")[0], vector_literal(25)),
@@ -851,11 +852,40 @@ with tempfile.TemporaryDirectory() as tmp:
         assert one(conn, "SELECT image FROM public.evidence_crops WHERE revision_id = %s", (newer,))[0] == "evidence/vw/u1/E1.jpg"
         assert one(conn, "SELECT public.repair_revision_crops('nope', 1, '[]')")[0] is None
 
+    @test("refresh_revision_embedding replaces a stored vector on the searchable version only, and the guard allows nothing else")
+    def _():
+        searchable_id = searchable("vu")
+        old_id = one(conn, "SELECT min(id) FROM public.report_revisions WHERE video_id = 'vu'")[0]
+        assert summary_hits(25) and summary_hits(25)[0][1] == searchable_id  # holds the vector set by the test above
+        refused(conn, "SELECT public.refresh_revision_embedding('vu', %s, %s::extensions.vector)", (old_id, vector_literal(30)),
+                contains="not the searchable revision")
+        refused(conn, "SELECT public.refresh_revision_embedding('vu', %s, NULL)", (searchable_id,), contains="embedding is required")
+        refused(conn, "SELECT public.refresh_revision_embedding('nope', 1, %s::extensions.vector)", (vector_literal(30),),
+                contains="Video not found")
+        assert one(conn, "SELECT public.refresh_revision_embedding('vu', %s, %s::extensions.vector)", (searchable_id, vector_literal(30)))[0] is True
+        assert [h[:2] for h in summary_hits(30)] == [("vu", searchable_id)], "the new vector is the one searched"
+        assert summary_hits(25) == [], "the old vector is gone"
+        assert one(conn, "SELECT current_setting('app.revision_embedding_refresh', true)")[0] in (None, "", "off")
+        for sql in ("UPDATE public.report_revisions SET embedding = %s::extensions.vector WHERE id = %s",):
+            refused(conn, sql, (vector_literal(31), searchable_id), contains="append-only")
+        with conn.transaction(force_rollback=True):
+            conn.execute("SELECT set_config('app.revision_embedding_refresh', 'on', true)")
+            for sql in ("UPDATE public.report_revisions SET note = 'x' WHERE id = %s",
+                        "UPDATE public.report_revisions SET embedding = NULL WHERE id = %s"):
+                try:
+                    with conn.transaction():
+                        conn.execute(sql, (searchable_id,))
+                except errors.Error as exc:
+                    assert "append-only" in str(exc), exc
+                else:
+                    raise AssertionError(f"allowed with the refresh flag on: {sql}")
+
     @test("security: the 20261106 functions are for the service role only")
     def _():
         conn.execute("RESET ROLE")
         for sig in ("public.set_revision_embedding(character varying, bigint, extensions.vector)",
                     "public.list_revisions_missing_embeddings(character varying)",
+                    "public.refresh_revision_embedding(character varying, bigint, extensions.vector)",
                     "public.repair_revision_crops(character varying, bigint, jsonb)"):
             for role in ("anon", "authenticated"):
                 assert not one(conn, "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, sig))[0], (role, sig)

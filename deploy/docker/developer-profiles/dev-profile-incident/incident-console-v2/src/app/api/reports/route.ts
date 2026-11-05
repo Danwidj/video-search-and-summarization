@@ -7,6 +7,7 @@ import { getDbAdapters } from '@/lib/container';
 import { getServiceConfiguration, type ServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import type { IncidentRepository, ReportList, ReportListQuery, ReportSort } from '@/modules/reports/domain/IncidentRepository';
+import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
 import { REVISION_MIN_SIMILARITY } from '@/lib/search/min-similarity';
@@ -55,8 +56,8 @@ function evidenceFilters(params: URLSearchParams, key: string): string[] | null 
 
 /**
  * The videos whose saved revisions the agent ranks for the text, best match first (a video's rank is its best revision).
- * Null when the agent is not configured, fails or finds nothing above the minimum score, so the caller keeps the ILIKE
- * text filter (the store's own search).
+ * Null when the agent is not configured, fails or finds nothing above the minimum score, so the caller uses the ILIKE
+ * text filter (the store's own search) alone. When it finds some, the caller still runs the ILIKE filter and merges both.
  */
 async function videosMatchingText(config: ServiceConfiguration, text: string): Promise<string[] | null> {
   if (!config.agentUrl) return null;
@@ -72,19 +73,33 @@ async function videosMatchingText(config: ServiceConfiguration, text: string): P
   }
 }
 
-/** The incidents the other filters allow, narrowed to the ones the agent matched and ordered by its match order (the sort is not used). */
+/**
+ * The incidents the other filters allow that the text matched, in this order (the sort is not used):
+ * 1. matched by both the words and the meaning, best meaning score first;
+ * 2. matched by the words only (an exact word in the title, description, type, file name or evidence, but under the minimum
+ *    score or without a vector), in the order the sort gives;
+ * 3. matched by the meaning only, best score first.
+ * Words come before meaning-only because a word match is exact and a meaning match is a score above a floor.
+ */
 async function listMatchingIncidents(
   incidents: IncidentRepository,
   query: Omit<ReportListQuery, 'page' | 'pageSize' | 'search'>,
+  search: string,
   videoIds: string[],
   page: number,
   pageSize: number,
 ): Promise<ReportList> {
-  const all = await incidents.listReports({ ...query, search: null, page: 1, pageSize: MAX_LIST_SIZE });
+  const [all, words] = await Promise.all([
+    incidents.listReports({ ...query, search: null, page: 1, pageSize: MAX_LIST_SIZE }),
+    incidents.listReports({ ...query, search, page: 1, pageSize: MAX_LIST_SIZE }),
+  ]);
   const rank = new Map(videoIds.map((videoId, index) => [videoId, index]));
-  const matched = all.items
-    .filter((item) => rank.has(item.videoId))
-    .sort((a, b) => (rank.get(a.videoId) ?? 0) - (rank.get(b.videoId) ?? 0));
+  const byMeaning = (a: ReportLibraryItem, b: ReportLibraryItem) => (rank.get(a.videoId) ?? 0) - (rank.get(b.videoId) ?? 0);
+  const wordIds = new Set(words.items.map((item) => item.videoId));
+  const both = all.items.filter((item) => rank.has(item.videoId) && wordIds.has(item.videoId)).sort(byMeaning);
+  const wordsOnly = words.items.filter((item) => !rank.has(item.videoId));
+  const meaningOnly = all.items.filter((item) => rank.has(item.videoId) && !wordIds.has(item.videoId)).sort(byMeaning);
+  const matched = [...both, ...wordsOnly, ...meaningOnly];
   return { items: matched.slice((page - 1) * pageSize, page * pageSize), totalItems: matched.length, incidentTypes: all.incidentTypes };
 }
 
@@ -149,7 +164,7 @@ export async function GET(request: Request) {
       totalItems,
       incidentTypes,
     } = videoIds
-      ? await listMatchingIncidents(incidents, filters, videoIds, page, pageSize)
+      ? await listMatchingIncidents(incidents, filters, search as string, videoIds, page, pageSize)
       : await incidents.listReports({ ...filters, search, page, pageSize });
     const sign = async (key: string) => {
       try {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Repair missing summary vectors: embeds the title and description of every searchable revision that has none (a human
+// Repair missing summary vectors: embeds the type, title and description of every searchable revision that has none (a human
 // version saved while the agent was down, or an AI version saved without one), so the Find incidents text search can find it.
 // The vector is the only thing written, and only into an empty slot.
 
@@ -35,7 +35,7 @@ export async function repairMissingEmbeddings(
   const revisions: RepairedEmbedding[] = [];
   for (const item of missing) {
     try {
-      const embedding = await embedSummary({ title: item.title, description: item.description });
+      const embedding = await embedSummary({ incidentType: item.incidentType, title: item.title, description: item.description });
       revisions.push({
         videoId: item.videoId,
         revisionId: item.revisionId,
