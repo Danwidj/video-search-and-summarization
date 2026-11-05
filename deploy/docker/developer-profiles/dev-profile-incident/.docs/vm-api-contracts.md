@@ -40,7 +40,7 @@ Request (`extra` fields are rejected with 422):
 |---|---|---|---|
 | `query` | string | required, except with `filters.video_id` | 1-500 chars; may be empty only when `filters.video_id` is set (lists that incident's evidence, no embedding call) |
 | `top_k` | int | 10 | 1-50 |
-| `min_similarity` | float | 0.0 | 0.0-1.0 (no cutoff by default: top_k by score; the console sends 0.35 for a text query) |
+| `min_similarity` | float | 0.0 | 0.0-1.0 (no cutoff by default: top_k by score; the console sends 0.35 for an evidence query and 0.25 for the Find incidents text search) |
 | `hide_rejected` | bool | true | only matters when the critic is on: drop hits it marked `rejected` from `hits[]` (`rank` keeps its pre-filter value) |
 | `filters.incident_types` | string[] | none | |
 | `filters.min_severity`, `filters.max_severity` | int | none | 1-5 |
@@ -117,9 +117,9 @@ Request: exactly one of `{"revision_id": <int >= 1>}` (the route reads that revi
 
 ## `POST /api/v1/incidents/revision-embedding`
 
-Embeds one version's summary with the model search uses (1024 dimensions, `passage` input of the title, a newline, then the description; the text the agent embeds for an AI version). The agent writes nothing; the console stores the vector (human Save, automatic repair).
+Embeds one version's summary with the model search uses (1024 dimensions, `passage` input of `incident_type: title`, a newline, then the description; the text the agent embeds for an AI version). The agent writes nothing; the console stores the vector (human Save, automatic repair).
 
-Request: `{"title": <str>, "description": <str>}`. Response `200`: `{"embedding": [<1024 numbers>]}`. Errors: `422` both texts empty, `502` embedding service failed, `503` embedding key not configured.
+Request: `{"incident_type": <str|null>, "title": <str>, "description": <str>}` (`incident_type` is optional; an older agent ignores it). Response `200`: `{"embedding": [<1024 numbers>]}`. Errors: `422` both texts empty, `502` embedding service failed, `503` embedding key not configured.
 
 ## `POST /api/v1/incidents/{video_id}/box/describe`
 

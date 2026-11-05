@@ -214,6 +214,8 @@ async def _analyze(gateway: Gateway, **fields: Any) -> tuple[Any, AsyncMock]:
 def _golden_problem(body: dict[str, Any]) -> str | None:
     """Why the P1 body differs from the golden p1/captions (with the per-call values as its placeholders)."""
     body = json.loads(json.dumps(body))
+    assert body.pop("stream_options") == {"include_usage": True}
+    assert body.pop("stream") is True  # the P1 call streams on the wire; the golden's transport key is the builder's
     assert body["model"] == MODEL and body["messages"][0]["content"][0]["video_url"]["url"] == VIDEO_URL
     body["model"] = "<model>"
     body["messages"][0]["content"][0]["video_url"]["url"] = "<video-url>"
@@ -397,7 +399,9 @@ class TestInlineCaptions:
         gateway = Gateway()
         result, _ = await _analyze(gateway, **INLINE)
         assert gateway.captions == [], "no window is sent once one is over the limit"
-        assert gateway.p1 == [p1_request_body(MODEL, VIDEO_URL)], "P1 ran without context"
+        assert gateway.p1 == [
+            p1_request_body(MODEL, VIDEO_URL) | {"stream": True, "stream_options": {"include_usage": True}}
+        ], "P1 ran without context"
         caption = result.experiment["caption"]
         assert caption["skipped"] is not None and caption["skipped"].endswith(
             f"is {chunk_captions.INLINE_MAX_BYTES + 1} bytes, over the inline limit of {chunk_captions.INLINE_MAX_BYTES}"

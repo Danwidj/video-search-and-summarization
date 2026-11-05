@@ -2,12 +2,20 @@
 'use client';
 
 import { MIN_SIMILARITY } from '@/lib/search/min-similarity';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { HitCard } from '@/sections/library/components/HitCard';
-import { HitViewer } from '@/sections/library/components/HitViewer';
 import { CardSkeleton, ErrorPanel, FilterChip, Select } from '@/sections/library/components/Shared';
-import { ITEM_KINDS, type LibrarySearchResponse, filterHits, groupByIncident, hitKey, relationshipOf } from '@/lib/library/search';
+import {
+  ITEM_KINDS,
+  type EvidenceSort,
+  type LibrarySearchResponse,
+  SORT_LABEL,
+  groupByIncident,
+  hitKey,
+  sortHits,
+  videoName,
+} from '@/lib/library/search';
 import type { EvidenceItemType, EvidenceSearchHit } from '@/modules/search/domain/search';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -25,6 +33,7 @@ export interface EvidenceScope {
 type Kind = 'all' | EvidenceItemType;
 const KIND_CHIP: Record<Kind, string> = { all: 'All', entity: 'Entities', instrument: 'Instruments', asset: 'Assets' };
 const PAGE_SIZE = 12;
+const EXAMPLE_SEARCHES = ['black bear', 'man in white shirt', 'man holding a handgun'];
 
 export function EvidenceTab({
   query,
@@ -36,7 +45,6 @@ export function EvidenceTab({
   result,
   loading,
   error,
-  onShowInIncidents,
 }: {
   query: string;
   onQuery: (value: string) => void;
@@ -44,27 +52,49 @@ export function EvidenceTab({
   onScope: (scope: EvidenceScope | null) => void;
   /** The text the shown result was searched for. */
   submitted: string;
-  onSubmit: () => void;
+  /** Runs the search; with text, that text is searched (an example), otherwise the query box. */
+  onSubmit: (text?: string) => void;
   result: LibrarySearchResponse | null;
   loading: boolean;
   error: string;
-  onShowInIncidents?: (incident: EvidenceSearchHit['incident']) => void;
 }) {
   const [kind, setKind] = useState<Kind>('all');
-  const [minThreat, setMinThreat] = useState(1);
   const [incidentType, setIncidentType] = useState('');
+  const [videoId, setVideoId] = useState('');
+  const [sort, setSort] = useState<EvidenceSort>('match');
   const [grouped, setGrouped] = useState(false);
   const [page, setPage] = useState(1);
-  const [viewing, setViewing] = useState<EvidenceSearchHit | null>(null);
 
   const hits = result?.hits ?? [];
+  const versions = result?.versions ?? {};
+  // A new result starts with every filter off and the default order; they work on the returned hits only.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: result is the trigger
+  useEffect(() => {
+    setKind('all');
+    setIncidentType('');
+    setVideoId('');
+    setSort('match');
+    setPage(1);
+  }, [result]);
   const incidentTypes = useMemo(() => [...new Set(hits.map((hit) => hit.incident.incidentType).filter(Boolean))].sort(), [hits]);
+  const videos = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const hit of hits) if (!byId.has(hit.incident.videoId)) byId.set(hit.incident.videoId, videoName(hit, versions));
+    return [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [hits, versions]);
   const shown = useMemo(
     () =>
-      filterHits(hits, { minThreat }).filter(
-        (hit) => (kind === 'all' || hit.item.itemType === kind) && (!incidentType || hit.incident.incidentType === incidentType),
+      sortHits(
+        hits.filter(
+          (hit) =>
+            (kind === 'all' || hit.item.itemType === kind) &&
+            (!incidentType || hit.incident.incidentType === incidentType) &&
+            (!videoId || hit.incident.videoId === videoId),
+        ),
+        sort,
+        versions,
       ),
-    [hits, minThreat, kind, incidentType],
+    [hits, kind, incidentType, videoId, sort, versions],
   );
 
   const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
@@ -73,19 +103,14 @@ export function EvidenceTab({
     return shown.slice(start, start + PAGE_SIZE);
   }, [shown, page]);
 
-  // A listing of one incident's evidence (no query) has no similarity to show.
+  // A listing of one incident's evidence (no query) has no similarity to show, and its default order is video time.
   const showMatch = submitted !== '';
-  const versions = result?.versions ?? {};
+  const sortOptions = (['match', 'date', 'threat', 'severity'] as EvidenceSort[]).map((value): [string, string] => [
+    value,
+    value === 'match' && !showMatch ? 'Video order' : SORT_LABEL[value],
+  ]);
   const card = (hit: EvidenceSearchHit) => (
-    <HitCard
-      hit={hit}
-      key={hitKey(hit)}
-      onShowInIncidents={onShowInIncidents}
-      onView={() => setViewing(hit)}
-      relationship={relationshipOf(hit, hits)}
-      showMatch={showMatch}
-      version={versions[hit.incident.videoId]}
-    />
+    <HitCard hit={hit} key={hitKey(hit)} showMatch={showMatch} version={versions[hit.incident.videoId]} />
   );
 
   return (
@@ -115,63 +140,72 @@ export function EvidenceTab({
         </Button>
       </form>
       <p className="mt-2 text-xs text-ink/50">
-        Searches the official version of each incident, or the latest version when none is official.
+        One version per incident: the official version, otherwise the latest. Evidence matches of {Math.round(MIN_SIMILARITY * 100)}% or
+        better are shown.
       </p>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Tabs
-          onValueChange={(val) => {
-            setKind(val as Kind);
-            setPage(1);
-          }}
-          value={kind}
-        >
-          <TabsList className="border border-ink/10 bg-white">
-            {ITEM_KINDS.map((value) => (
-              <TabsTrigger className="text-xs" key={value} value={value}>
-                {KIND_CHIP[value]}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-
-        <div className="w-40">
-          <Select
-            label="Threat level"
-            onChange={(value) => {
-              setMinThreat(Number(value));
+      {result && (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Tabs
+            onValueChange={(val) => {
+              setKind(val as Kind);
               setPage(1);
             }}
-            options={[
-              ['1', 'Any threat'],
-              ['2', 'Threat 2+'],
-              ['3', 'Threat 3+'],
-              ['4', 'Threat 4+'],
-              ['5', 'Threat 5'],
-            ]}
-            value={String(minThreat)}
-          />
-        </div>
+            value={kind}
+          >
+            <TabsList className="border border-ink/10 bg-white">
+              {ITEM_KINDS.map((value) => (
+                <TabsTrigger className="text-xs" key={value} value={value}>
+                  {KIND_CHIP[value]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
 
-        <div className="w-44">
-          <Select
-            label="Incident type"
-            onChange={(val) => {
-              setIncidentType(val);
-              setPage(1);
-            }}
-            options={[['', 'All incident types'], ...incidentTypes.map((value): [string, string] => [value, value])]}
-            value={incidentType}
-          />
-        </div>
+          <div className="w-44">
+            <Select
+              label="Incident type"
+              onChange={(val) => {
+                setIncidentType(val);
+                setPage(1);
+              }}
+              options={[['', 'All incident types'], ...incidentTypes.map((value): [string, string] => [value, value])]}
+              value={incidentType}
+            />
+          </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <Checkbox checked={grouped} id="group-by-incident" onCheckedChange={(checked) => setGrouped(checked === true)} />
-          <Label className="cursor-pointer text-sm font-normal text-ink/80" htmlFor="group-by-incident">
-            Group by incident
-          </Label>
+          <div className="w-52">
+            <Select
+              label="Video"
+              onChange={(val) => {
+                setVideoId(val);
+                setPage(1);
+              }}
+              options={[['', 'All videos'], ...videos]}
+              value={videoId}
+            />
+          </div>
+
+          <div className="w-48">
+            <Select
+              label="Sort"
+              onChange={(val) => {
+                setSort(val as EvidenceSort);
+                setPage(1);
+              }}
+              options={sortOptions.map(([value, label]): [string, string] => [value, `Sort: ${label}`])}
+              value={sort}
+            />
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <Checkbox checked={grouped} id="group-by-incident" onCheckedChange={(checked) => setGrouped(checked === true)} />
+            <Label className="cursor-pointer text-sm font-normal text-ink/80" htmlFor="group-by-incident">
+              Group by incident
+            </Label>
+          </div>
         </div>
-      </div>
+      )}
 
       {scope && (
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink/55">
@@ -183,11 +217,34 @@ export function EvidenceTab({
       {loading ? (
         <CardSkeleton count={6} label="Searching evidence" />
       ) : error ? (
-        <ErrorPanel message={error} onRetry={onSubmit} />
+        <ErrorPanel message={error} onRetry={() => onSubmit()} />
       ) : !result ? (
-        <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
-          <h2 className="text-xl font-semibold text-ink">Search the evidence in every incident</h2>
-          <p className="mt-2 text-sm text-ink/50">Describe a person, object or place. Every ranked match is shown with its video time.</p>
+        <div className="mt-8 rounded-2xl border border-dashed border-ink/20 px-14 pb-10 pt-12 text-center" data-testid="evidence-welcome">
+          <h2 className="text-2xl font-semibold text-ink">Find evidence across every incident</h2>
+          <p className="mx-auto mt-2.5 max-w-[560px] text-[15px] text-ink/50">
+            Describe a person, object or place, and see the moments in your videos that match it, ranked best first.
+          </p>
+          <p className="mt-5 text-xs font-bold uppercase tracking-[0.06em] text-moss">Try a search:</p>
+          <div className="mt-2.5 flex flex-wrap justify-center gap-2.5">
+            {EXAMPLE_SEARCHES.map((example) => (
+              <button
+                className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm text-ink hover:border-moss hover:bg-[#f7f8f4]"
+                data-testid="evidence-example"
+                key={example}
+                onClick={() => {
+                  onQuery(example);
+                  setPage(1);
+                  onSubmit(example);
+                }}
+                type="button"
+              >
+                {example}
+              </button>
+            ))}
+          </div>
+          <p className="mt-5 text-[12.5px] text-ink/50">
+            Type your own words above and press Search. Only matches of {Math.round(MIN_SIMILARITY * 100)}% or better are shown.
+          </p>
         </div>
       ) : shown.length === 0 ? (
         <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
@@ -269,8 +326,6 @@ export function EvidenceTab({
           )}
         </>
       )}
-
-      {viewing && <HitViewer hit={viewing} hits={hits} onClose={() => setViewing(null)} showMatch={showMatch} versions={versions} />}
     </div>
   );
 }

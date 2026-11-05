@@ -72,10 +72,11 @@ export interface RunHistoryRecords {
   sharedRunIds: Set<string>;
 }
 
-/** A searchable revision whose summary has no vector yet: the text to embed is its title and description. */
+/** A searchable revision whose summary has no vector yet: the text to embed is its type, title and description. */
 export interface MissingEmbedding {
   videoId: string;
   revisionId: number;
+  incidentType: string | null;
   title: string | null;
   description: string | null;
 }
@@ -112,7 +113,7 @@ export interface VideoRepository {
   repairRevisionCrops(videoId: string, revisionId: number, crops: OfficialCrop[]): Promise<number | null>;
   /**
    * The searchable revisions that have a title or description and no summary vector, so the summary search cannot find them,
-   * optionally only for one video. The title and description are the text to embed.
+   * optionally only for one video. The type, title and description are the text to embed.
    */
   listRevisionsMissingEmbeddings(videoId?: string): Promise<MissingEmbedding[]>;
   /**

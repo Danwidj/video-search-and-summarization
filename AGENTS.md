@@ -7,7 +7,7 @@ This repository is a fork of [NVIDIA's VSS Blueprint](https://docs.nvidia.com/vs
 - **Compose profile architecture:** [`deploy/docker/README.md`](deploy/docker/README.md) is authoritative. Developer stacks run via `deploy/docker/scripts/dev-profile.sh up --profile <base|lvs|alerts|search> --hardware-profile <...>`, not hand-edited Compose.
 - **Deployment topology:**
   - **Full GPU-backed stack** (NIM containers, real inference): VM-only, brought up via `dev-profile.sh` (stock profiles) or direct `docker compose` (this fork's `incident` profile). Requires `NGC_CLI_API_KEY` and a GPU-equipped host.
-  - **Zero-GPU local mock (tests only):** [`mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) mocks the whole `bp_developer_base` backend (vss-agent API + VIOS/VST + inference) behind one FastAPI process on port 7777. Use it only for unit tests of the mock backend itself; run and verify frontend work (`services/ui/apps/nv-metropolis-bp-vss-ui`, `incident-console-v2`) on the VM, not here. Sibling `mock-backend/search_profile_mock/` (port 7778) covers `bp_developer_search`.
+  - **Zero-GPU local mock (a backup that mimics the backend):** [`mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) mocks the whole `bp_developer_base` backend (vss-agent API + VIOS/VST + inference) behind one FastAPI process on port 7777. It is a mock, not the real backend: run and verify frontend work (`services/ui/apps/nv-metropolis-bp-vss-ui`, `incident-console-v2`) on the VM, not here. Sibling `mock-backend/search_profile_mock/` (port 7778) covers `bp_developer_search`.
 
 Other services have their own `AGENTS.md` (e.g. [`services/agent/AGENTS.md`](services/agent/AGENTS.md)) — consult those when touching that service directly.
 
@@ -24,8 +24,8 @@ This fork adds a video-driven incident search and reporting system (sponsored by
 
 ## Environment Pointers
 
-- **Run and verify on the VM:** run all UI and backend work with `./start.sh --mode vm` against the `kwanz-ws` vss-agent, never `--mode mock`. If the VM is unreachable, stop and report it; do not fall back to mock. The mock backend is only for unit tests of its own code.
-- **Mock server (tests only):** see [`mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) for the mock server. There is no mock of the Postgres schema (do not conflate the two); the SQL harness in [`supabase/tests/`](deploy/docker/developer-profiles/dev-profile-incident/supabase/README.md) tests the real schema on a throwaway local Postgres.
+- **Run and verify on the VM:** run all UI and backend work with `./start.sh --mode vm` against the `kwanz-ws` vss-agent, never `--mode mock`. If the VM is unreachable, stop and report it; do not fall back to mock. The mock backend is a mock that mimics the backend, not the real one.
+- **Mock server (a backup that mimics the backend):** see [`mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) for the mock server. There is no mock of the Postgres schema (do not conflate the two); the SQL harness in [`supabase/tests/`](deploy/docker/developer-profiles/dev-profile-incident/supabase/README.md) tests the real schema on a throwaway local Postgres.
 - **Automatic environment setup:** [`.githooks/`](.githooks/README.md) keeps untracked `.env` files, `.env.local` copies and the incident profile's `.env.local` symlinks in sync across worktrees. Run `.githooks/activate.sh` once per clone.
 
 ## Maintaining this file

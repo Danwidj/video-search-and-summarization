@@ -69,12 +69,12 @@ async function postEvidenceEmbeddings(
 }
 
 /**
- * Asks the agent for the summary vector of a report: its incident title and description, embedded as a passage with the model
+ * Asks the agent for the summary vector of a report: its incident type, title and description, embedded as a passage with the model
  * the AI versions use. The vector is what the Find incidents text search matches, so a human version needs one too.
  */
 export async function fetchSummaryEmbedding(
   config: ServiceConfiguration,
-  summary: { title: string | null; description: string | null },
+  summary: { incidentType: string | null; title: string | null; description: string | null },
   signal?: AbortSignal,
 ): Promise<number[]> {
   if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured; the agent embeds the summary of a report');
@@ -83,7 +83,7 @@ export async function fetchSummaryEmbedding(
     response = await fetch(`${config.agentUrl.replace(/\/$/, '')}/api/v1/incidents/revision-embedding`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(summary),
+      body: JSON.stringify({ incident_type: summary.incidentType, title: summary.title, description: summary.description }),
       signal: signal ?? AbortSignal.timeout(60_000),
     });
   } catch (error) {

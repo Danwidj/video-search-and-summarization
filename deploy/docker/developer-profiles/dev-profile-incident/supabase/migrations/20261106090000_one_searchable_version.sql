@@ -259,6 +259,8 @@ BEGIN
 END;
 $$;
 
+-- Dropped first so this file can run again after 20261106120000 changed the return type.
+DROP FUNCTION IF EXISTS public.list_revisions_missing_embeddings(VARCHAR);
 CREATE OR REPLACE FUNCTION public.list_revisions_missing_embeddings(p_video_id VARCHAR DEFAULT NULL)
 RETURNS TABLE (video_id VARCHAR(20), revision_id BIGINT, title TEXT, description TEXT)
 LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''

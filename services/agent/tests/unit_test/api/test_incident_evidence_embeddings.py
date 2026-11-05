@@ -191,6 +191,18 @@ def test_revision_embedding_embeds_title_then_description_as_a_passage() -> None
     embedder.embed_passage.assert_awaited_once_with("Bear in kitchen\nA bear enters.")
 
 
+def test_revision_embedding_puts_the_incident_type_in_front() -> None:
+    embedder = MagicMock()
+    embedder.is_configured.return_value = True
+    embedder.embed_passage = AsyncMock(return_value=[0.25, 0.5])
+    response = _summary_client(embedder).post(
+        "/api/v1/incidents/revision-embedding",
+        json={"incident_type": "burglary", "title": "Person at counter", "description": "Items."},
+    )
+    assert response.status_code == 200
+    embedder.embed_passage.assert_awaited_once_with("burglary: Person at counter\nItems.")
+
+
 def test_revision_embedding_refuses_empty_text_unconfigured_and_a_failing_endpoint() -> None:
     embedder = MagicMock()
     embedder.is_configured.return_value = True
