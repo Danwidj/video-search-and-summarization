@@ -252,7 +252,10 @@ class TestToolRuns:
         result, persist = await self._run(
             _handler(requests), tool_input=_input(skip_rp1=True, video_duration_seconds=30.0)
         )
-        assert requests[0] == p1_request_body("nvidia/cosmos-3-nano-reasoner", VIDEO_URL) | {"stream": False}
+        assert requests[0] == p1_request_body("nvidia/cosmos-3-nano-reasoner", VIDEO_URL) | {
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
         assert result.experiment is None and result.p1_elapsed_ms is None and result.usage is None
         assert result.revision_id == 7
         persist.assert_awaited_once()
