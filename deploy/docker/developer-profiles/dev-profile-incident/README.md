@@ -34,7 +34,7 @@ Incident search and reporting on NVIDIA's VSS blueprint. A reviewer uploads a cl
 |---|---|
 | [incident-console-v2](incident-console-v2/README.md) | The Next.js console |
 | [vlm-gateway](vlm-gateway/README.md) | Key-holding proxy for the mock flow |
-| [mock-backend](mock-backend/README.md) | Two zero-GPU mock backends, for tests |
+| [mock-backend](mock-backend/README.md) | Two zero-GPU mocks that mimic the backend |
 | [contracts](contracts/README.md) | The incident contract: prompt, schema, goldens |
 | [supabase](supabase/README.md) | Database schema and SQL harness; the [midterm record](supabase/midterm/README.md) is frozen |
 | [eval](eval/README.md) | The P1/RP1 benchmark |
