@@ -19,6 +19,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Annotated
+from typing import Any
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
 
@@ -40,6 +41,9 @@ from pydantic import Field
 from pydantic import HttpUrl
 from pydantic import UrlConstraints
 from pydantic import field_validator
+
+from vss_agents.tools.chartjs_config import ChartJsChartData
+from vss_agents.tools.chartjs_config import chartjs_config
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +120,7 @@ class ChartGeneratorConfig(FunctionBaseConfig, name="chart_generator"):
 class ChartGeneratorInput(BaseModel):
     """Input for the chart generation tool"""
 
-    charts_data: list[BarChartData | PieChartData]
+    charts_data: list[BarChartData | PieChartData | ChartJsChartData]
     output_dir: str | None = None
     file_prefix: str = "chart_"
 
@@ -136,6 +140,10 @@ class ChartGenExecOutput(BaseModel):
     object_store_key: str | None = Field(
         default=None,
         description="Object store key for the generated chart.",
+    )
+    chart_config: dict[str, Any] | None = Field(
+        default=None,
+        description="The Chart.js configuration (type, data, options) for a chartjs chart; plain JSON, no callbacks.",
     )
 
 
@@ -256,6 +264,12 @@ async def chart_generator(config: ChartGeneratorConfig, builder: Builder) -> Asy
     async def generate_chart(chart_generator_input: ChartGeneratorInput) -> list[ChartGenExecOutput]:
         exec_outputs = []
         for i, chart_data in enumerate(chart_generator_input.charts_data):
+            if isinstance(chart_data, ChartJsChartData):
+                # No image and no object store: the figures are placed into a configuration the browser draws.
+                exec_outputs.append(
+                    ChartGenExecOutput(success=True, error_message=None, chart_config=chartjs_config(chart_data))
+                )
+                continue
             success = False
             error_message = None
             try:
