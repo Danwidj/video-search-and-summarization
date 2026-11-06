@@ -535,7 +535,7 @@ def test_a_chronological_question_gets_the_timeline_in_order_not_an_item_list():
     assert "relevant item(s) were identified" not in content, "the old item-list template is gone"
     assert content.index("2:14") < content.index("2:21") < content.index("2:50"), content
     assert "walks up to the counter" in content and "leaves through the door" in content
-    assert "the man in black hoodie" in content and "the cashier in red apron" in content
+    assert "The man in black hoodie" in content and "the cashier in red apron" in content
     assert [c["item_id"] for c in message["citations"]] == ["E1", "E2", "I1", "E3"]
     assert message["citations"][0]["crop_image_url"].endswith(f"evidence/{VIDEO}/run1/E1.jpg")
 
@@ -830,6 +830,6 @@ def test_a_console_draft_keeps_the_base_timeline_and_title():
         },
     )
     content = resp.json()["message"]["content"]
-    assert content.startswith("The report describes a robbery from 2:10 to 3:00. In order:"), content
+    assert content.startswith("The report describes a robbery from 2:10 to 3:00.\n\n\u2022 2:14"), content
     assert "confronts a person" in content, "E2 was removed in the draft, so the base timeline names a person"
     assert not ID_TOKEN.search(content) and "new-E" not in content
