@@ -177,11 +177,14 @@ def _executor(tmp_path, config, *, upstream, datasets=None, marker_changes=None)
 def test_the_messages_are_the_consoles_golden_and_the_pilot_shape_is_kept():
     """Since #459 the golden is the console's two messages to the agent; both request shapes carry exactly them."""
     case = golden.case("chart", "request")
-    for shape in chart.REQUEST_SHAPES:
-        built = chart.build_chart_request(ULTRA, case["inputs"]["request"], shape)
-        assert built["messages"] == case["body"]["messages"], shape
+    inputs = case["inputs"]
+    context = {"today": inputs["today"], "timezone": inputs["timezone"]}
+    built = chart.build_chart_request(ULTRA, inputs["request"], chart.GOLDEN_SHAPE, context)
+    assert built["messages"] == case["body"]["messages"], chart.GOLDEN_SHAPE
     assert built["messages"][0]["content"] == (GOLDEN_DIR.parent / "prompts" / "chart" / "system.txt").read_text()
-    v1 = chart.build_chart_request(ULTRA, case["inputs"]["request"])
+    # The sealed pilot shapes carry no date line: their bodies are byte-identical to the ones the pilots sent.
+    assert chart.build_chart_request(ULTRA, inputs["request"], "agent-route-v3")["messages"][1]["content"] == inputs["request"]
+    v1 = chart.build_chart_request(ULTRA, inputs["request"])
     assert list(v1) == ["model", "messages", "stream", "temperature", "max_tokens", "chat_template_kwargs"]
     assert v1["max_tokens"] == 200 and v1["temperature"] == 0, "the 2026-11-02 pilot's console-gateway body"
 

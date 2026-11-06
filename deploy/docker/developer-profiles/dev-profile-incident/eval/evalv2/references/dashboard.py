@@ -17,11 +17,13 @@
 
 The allowlist's source is the console's TypeScript; ``npm run export:prompts`` exports it to
 ``contracts/prompts/chart/allowlist.json``, which :func:`load_allowlist` reads. :func:`parse_spec` is an independent
-re-implementation of the console's ``parseChartSpec`` (exact keys, allowlisted values, the dimension's metric, and
-no type or severity filter on a dimension that takes none), and :func:`all_specs` enumerates every valid spec (1,690
-today). A reference is a chart request with its expected spec, or ``{"unsupported": true}``: a generator writes the
-request for a code-chosen spec, a blind validator re-derives the spec from the request alone, and the record is
-``ai_validated`` only when they agree exactly. Generating requests is an approval-gated run (RB2).
+re-implementation of the console's ``parseChartSpec`` (exact keys, allowlisted values, the dimension's metric, no type
+or severity filter on a dimension that takes none, and a calendar period that the reference day accepts; see
+:mod:`evalv2.references.dashboard_calendar`). :func:`all_specs` enumerates every valid spec with a preset period
+(1,690 today); calendar periods are referenced by hand-written development records only. A reference is a chart request
+with its expected spec, or ``{"unsupported": true}``: a generator writes the request for a code-chosen spec, a blind
+validator re-derives the spec from the request alone, and the record is ``ai_validated`` only when they agree exactly.
+Generating requests is an approval-gated run (RB2).
 """
 
 from __future__ import annotations
@@ -34,6 +36,8 @@ from typing import Any
 
 from evalv2.core.hashing import sha256_json
 from evalv2.datasets.records import new_record, opaque_item_id, promote_validated
+from evalv2.references import dashboard_calendar as cal
+from evalv2.references.dashboard_calendar import REFERENCE_TODAY, calendar_days
 
 ALLOWLIST_PATH = Path(__file__).resolve().parents[3] / "contracts" / "prompts" / "chart" / "allowlist.json"
 SPEC_KEYS = ("metric", "dimension", "period", "incidentType", "severity")
@@ -51,21 +55,31 @@ def load_allowlist(path: Path = ALLOWLIST_PATH) -> dict[str, Any]:
     return allowlist
 
 
-def parse_spec(reply: Any, allowlist: Mapping[str, Any]) -> dict[str, Any] | None:
+def period_fits(period: Any, allowlist: Mapping[str, Any], *, today: str) -> bool:
+    """A preset in the allowlist, or a calendar period that ``today`` accepts (see :func:`calendar_days`)."""
+    if isinstance(period, str):
+        return period in allowlist["periods"]
+    return calendar_days(period, today, allowlist["calendarPeriods"]["maxRangeDays"]) is not None
+
+
+def parse_spec(reply: Any, allowlist: Mapping[str, Any], *, today: str = REFERENCE_TODAY) -> dict[str, Any] | None:
     """The spec a reply describes, or ``None`` (a refusal, an unknown key or value, or an inconsistent spec).
 
     Like the console's Zod schema (every field a ``z.enum`` of strings, the two filters nullable), a value that is not
     a string is refused before any lookup: a list or object would otherwise raise ``TypeError`` in a dict lookup, and
-    ``True`` would compare equal to an allowlisted ``1``.
+    ``True`` would compare equal to an allowlisted ``1``. The period is a string or an object (a calendar period);
+    ``today`` is the day it is read against, pinned to the reference day by default so that records do not drift.
     """
     if not isinstance(reply, dict) or set(reply) != set(SPEC_KEYS):
         return None
-    if not all(isinstance(reply[key], str) for key in ("metric", "dimension", "period")):
+    if not all(isinstance(reply[key], str) for key in ("metric", "dimension")):
+        return None
+    if not isinstance(reply["period"], (str, dict)) or not period_fits(reply["period"], allowlist, today=today):
         return None
     if not all(reply[key] is None or isinstance(reply[key], str) for key in ("incidentType", "severity")):
         return None
     dimension = allowlist["dimensions"].get(reply["dimension"])
-    if (dimension is None or reply["metric"] not in allowlist["metrics"] or reply["period"] not in allowlist["periods"]
+    if (dimension is None or reply["metric"] not in allowlist["metrics"]
             or reply["incidentType"] not in (None, *allowlist["incidentTypes"])
             or reply["severity"] not in (None, *allowlist["severities"])):
         return None
@@ -73,7 +87,7 @@ def parse_spec(reply: Any, allowlist: Mapping[str, Any]) -> dict[str, Any] | Non
         return None
     if not dimension["filterable"] and (reply["incidentType"] is not None or reply["severity"] is not None):
         return None
-    return {key: reply[key] for key in SPEC_KEYS}
+    return {key: reply[key] if not isinstance(reply[key], dict) else dict(reply[key]) for key in SPEC_KEYS}
 
 
 def is_refusal(reply: Any) -> bool:
@@ -82,7 +96,7 @@ def is_refusal(reply: Any) -> bool:
 
 
 def all_specs(allowlist: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Every valid spec, in a fixed order."""
+    """Every valid spec with a preset period, in a fixed order (calendar periods are not enumerated)."""
     out = []
     for name, dimension in allowlist["dimensions"].items():
         types = (None, *allowlist["incidentTypes"]) if dimension["filterable"] else (None,)
@@ -135,3 +149,16 @@ def build_record(request: str, expected: Mapping[str, Any], allowlist: Mapping[s
     checks = [{"name": "expected_on_allowlist", "passed": True},
               {"name": "paraphrases_distinct", "passed": len({request, *paraphrases}) == 1 + len(paraphrases)}]
     return promote_validated(record, checks=checks, validator={**dict(validator), "agrees": agrees})
+
+
+def development_records(allowlist: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The development-only calendar records (:mod:`evalv2.references.dashboard_calendar`): hand-written, never validated,
+    so ``ai_proposed``, in dataset ``DATASET`` and marked ``split = development``. Each expected spec must be on the
+    allowlist for the reference day, or be the refusal; :func:`build_record` raises otherwise."""
+    records = []
+    for item in cal.development_requests():
+        expected = dict(UNSUPPORTED) if item["expected"] is None else item["expected"]
+        record = build_record(item["request"], expected, allowlist, paraphrases=[], dataset=cal.DATASET,
+                              generator={"method": "hand-written", "reviewed": False})
+        records.append({**record, "strata": {**record["strata"], "split": "development"}})
+    return records

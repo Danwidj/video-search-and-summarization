@@ -50,6 +50,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from evalv2.references.dashboard_calendar import add_days, calendar_days, start_of_day, today_in
+
 FAILED = ("contract_failed", "request_failed")
 TOP_RANKED = 8
 TOP_PER_TYPE = 3
@@ -384,8 +386,21 @@ def _iso_ms(moment: datetime) -> str:
 
 def chart_query(spec: Mapping[str, Any], *, timezone: str, now: datetime, allowlist: Mapping[str, Any]
                 ) -> dict[str, Any]:
-    """The dashboard arguments ``generateChart`` sends for a spec (``dashboardQuery`` then ``dashboardRpcArgs``)."""
-    days = allowlist["periods"][spec["period"]]
+    """The dashboard arguments ``generateChart`` sends for a spec (``dashboardQuery`` then ``dashboardRpcArgs``).
+
+    A preset counts back from the clock. A calendar period is its days in ``timezone``: local midnight of the first day
+    to local midnight after the last, read as naive UTC, as the console's ``periodBounds`` does.
+    """
+    period = spec["period"]
+    if isinstance(period, dict):
+        days = calendar_days(period, today_in(timezone, now), allowlist["calendarPeriods"]["maxRangeDays"])
+        if days is None:
+            raise ValueError(f"{period} is not a calendar period on the reference day")
+        start, end = start_of_day(days[0], timezone), start_of_day(add_days(days[1], 1), timezone)
+        return {"p_period_start": _iso_ms(start), "p_period_end": _iso_ms(end), "p_type": spec["incidentType"],
+                "p_severity": spec["severity"], "p_day_of_week": None, "p_hour": None, "p_timezone": timezone,
+                "p_scope": "all"}
+    days = allowlist["periods"][period]
     return {"p_period_start": None if days is None else _iso_ms(now - timedelta(days=days)),
             "p_period_end": None if days is None else _iso_ms(now), "p_type": spec["incidentType"],
             "p_severity": spec["severity"], "p_day_of_week": None, "p_hour": None, "p_timezone": timezone,

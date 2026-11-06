@@ -260,6 +260,36 @@ describe('the chart summary a screen reader gets', () => {
     });
     assert.equal(summary, 'Reports by incident type, All time. Official 3; Not official 3.');
   });
+
+  test('a calendar title names its range once, not again as the scope', () => {
+    const summary = chartSummary({
+      title: 'Reports per day, 1 to 15 October 2026',
+      scope: ['1 to 15 October 2026'],
+      series: [OFFICIAL_SERIES, NOT_OFFICIAL_SERIES],
+      rows: [{ category: '2026-10-01', values: { official: 0, not_official: 2 } }],
+    });
+    assert.equal(summary, 'Reports per day, 1 to 15 October 2026. Official 0; Not official 2.');
+  });
+
+  test('keeps a filter whose words happen to appear in the title', () => {
+    const summary = chartSummary({
+      title: 'Assault reports by severity, October 2026',
+      scope: ['October 2026', 'Assault'],
+      series: [OFFICIAL_SERIES],
+      rows: [{ category: 'High', values: { official: 1 } }],
+    });
+    assert.equal(summary, 'Assault reports by severity, October 2026, Assault. Official 1.');
+  });
+
+  test('reads a preset period, since the title does not name it', () => {
+    const summary = chartSummary({
+      title: 'Reports per day',
+      scope: ['Last 30 days', 'High severity'],
+      series: [OFFICIAL_SERIES],
+      rows: [{ category: '2026-10-01', values: { official: 2 } }],
+    });
+    assert.equal(summary, 'Reports per day, Last 30 days, High severity. Official 2.');
+  });
 });
 
 describe('the agent renderer', () => {

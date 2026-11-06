@@ -100,12 +100,13 @@ def test_rp1_sent_body_equals_the_golden(sent):
 def test_chart_messages_equal_the_consoles_golden():
     """Since #459 the chart golden is the console's two messages to the agent (``console`` is its only producer); the
     C1c chart request carries exactly those messages in both request shapes (``evalv2.requests.chart``)."""
-    from evalv2.requests.chart import REQUEST_SHAPES, build_chart_request
+    from evalv2.requests.chart import GOLDEN_SHAPE, build_chart_request
 
     case = golden.case("chart", "request")
+    inputs = case["inputs"]
     assert case["producers"] == ["console"]
-    for shape in REQUEST_SHAPES:
-        assert build_chart_request("m", case["inputs"]["request"], shape)["messages"] == case["body"]["messages"]
+    context = {"today": inputs["today"], "timezone": inputs["timezone"]}
+    assert build_chart_request("m", inputs["request"], GOLDEN_SHAPE, context)["messages"] == case["body"]["messages"]
 
 
 @pytest.mark.parametrize(("name", "case"), _cases())

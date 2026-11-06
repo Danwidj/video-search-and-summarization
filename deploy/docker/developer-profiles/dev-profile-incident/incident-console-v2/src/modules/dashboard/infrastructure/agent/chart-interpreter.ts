@@ -4,8 +4,8 @@
 // the agent's own configured LLMs with this prompt and the one request. Its reply is the JSON object the
 // model wrote, or null, and is returned unvalidated: parseChartSpec in generateChart decides whether it counts.
 
-import { ChartInterpreterError, type ChartInterpreter } from '@/modules/dashboard/domain/ChartInterpreter';
-import { CHART_SYSTEM_PROMPT } from '@/modules/dashboard/domain/chart-prompt';
+import { type ChartInterpreter, ChartInterpreterError, type ChartRequestContext } from '@/modules/dashboard/domain/ChartInterpreter';
+import { CHART_SYSTEM_PROMPT, chartUserMessage } from '@/modules/dashboard/domain/chart-prompt';
 
 const TIMEOUT_MS = 45_000;
 
@@ -16,7 +16,7 @@ export class AgentChartInterpreter implements ChartInterpreter {
     this.baseUrl = baseUrl.replace(/\/$/, '');
   }
 
-  async interpret(request: string): Promise<unknown> {
+  async interpret(request: string, context: ChartRequestContext): Promise<unknown> {
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}/api/v1/incidents/chart-requests`, {
@@ -25,7 +25,7 @@ export class AgentChartInterpreter implements ChartInterpreter {
         body: JSON.stringify({
           messages: [
             { role: 'system', content: CHART_SYSTEM_PROMPT },
-            { role: 'user', content: request },
+            { role: 'user', content: chartUserMessage(request, context) },
           ],
         }),
         cache: 'no-store',
