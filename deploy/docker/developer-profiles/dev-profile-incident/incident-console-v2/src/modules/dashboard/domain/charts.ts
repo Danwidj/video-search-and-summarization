@@ -46,6 +46,12 @@ export function unratedReports(data: DashboardAnalytics): number {
   return Math.max(0, data.total - data.severity.high - data.severity.medium - data.severity.low);
 }
 
+/** The Total reports chip's count: null when the RPC did not return it (not loaded) or when no counted report has several versions. */
+export function revisedReports(data: DashboardAnalytics): number | null {
+  const count = data.multipleVersions;
+  return count === null || count <= 0 ? null : count;
+}
+
 export function typeRows(data: DashboardAnalytics): SplitRow[] {
   return data.types.map(({ type, count, official, notOfficial }) => ({ key: type, label: type, total: count, official, notOfficial }));
 }

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Area, AreaChart, Bar, BarChart, Cell, CartesianGrid, LabelList, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import type { DateRange } from 'react-day-picker';
-import { CalendarIcon, ChartColumnIcon, LayersIcon } from 'lucide-react';
+import { CalendarIcon, ChartColumnIcon, HistoryIcon } from 'lucide-react';
 import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
 import { href, type Filters, type LinkFilters, type Range } from '@/modules/dashboard/domain/links';
 import {
@@ -19,6 +19,7 @@ import {
   formatCalendarDay,
   formatDay,
   instrumentRows,
+  revisedReports,
   SEVERITY_LABELS,
   severityRows,
   type SplitRow,
@@ -424,12 +425,14 @@ function Total({ data, link }: { data: DashboardAnalytics; link: (extra?: LinkFi
     { key: 'official', label: 'Official', value: data.official, swatch: 'bg-chart-1' },
     { key: 'not_official', label: 'Not yet official', value: data.notOfficial, swatch: 'bg-chart-3' },
   ] as const;
+  const revised = revisedReports(data);
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      <div className="flex flex-wrap items-center gap-3">
         <Link className="text-5xl font-semibold text-ink hover:underline" href={link()}>
           {data.total}
         </Link>
+        {revised !== null && <RevisedChip count={revised} />}
       </div>
       <div aria-hidden="true" className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-ink/8">
         {parts.map(({ key, value, swatch }) => (
@@ -451,21 +454,32 @@ function Total({ data, link }: { data: DashboardAnalytics; link: (extra?: LinkFi
           </div>
         ))}
       </dl>
-      {data.multipleVersions !== null && (
-        <dl className="flex items-center justify-between gap-3 rounded-xl border border-ink/10 bg-ink/5 px-3 py-2">
-          <dt className="flex min-w-0 items-center gap-1.5 text-xs text-ink/60">
-            <LayersIcon aria-hidden="true" className="size-3.5 shrink-0" />
-            Multiple versions
-          </dt>
-          <dd className="text-sm font-semibold text-ink tabular-nums" title="Counted reports whose video has more than one report version">
-            {data.multipleVersions}
-          </dd>
-        </dl>
-      )}
       <p className="text-xs text-ink-caption">
         All time: {data.videos.uploaded} videos uploaded, {data.videos.withoutReport} without a report.
       </p>
     </div>
+  );
+}
+
+/** Neutral chip beside the total: how many counted reports have several versions. Its tooltip is also its accessible label. */
+function RevisedChip({ count }: { count: number }) {
+  const explanation = `${count} of these reports have 2+ versions (edited or re-analysed)`;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            aria-label={`${count} revised: ${explanation}`}
+            className="inline-flex items-center gap-1.5 rounded-full border border-ink/10 bg-ink/5 px-2.5 py-1 text-xs font-semibold text-ink tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
+            type="button"
+          >
+            <HistoryIcon aria-hidden="true" className="size-3.5 shrink-0" />
+            {count} revised
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{explanation}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
