@@ -45,9 +45,9 @@ export interface ChatCitation {
   cropImageUrl: string;
 }
 
-/** chat-contract-v2 (agent INCIDENT_CHAT_MODE=grounded): which report the answer is grounded in. */
+/** chat-contract-v2 and v3 (agent INCIDENT_CHAT_MODE=grounded or routed): which report the answer is grounded in. */
 export interface ChatGrounding {
-  mode: 'grounded';
+  mode: 'grounded' | 'routed';
   scope: 'incident' | 'library';
   model: string;
   /** The report version answered from; null for a library question. */
@@ -70,6 +70,23 @@ export interface ChatGrounding {
   answeredBy: 'model' | 'code' | null;
   /** Library answers: whether the filters captured the whole question, so the count is exact. */
   countExact: boolean | null;
+  /** Routed answers: which route answered; null otherwise. */
+  route: 'deterministic' | 'report_llm' | 'insufficient' | null;
+  /** Routed answers: times written in the answer that the report does not hold. They must not be linked. */
+  unknownTimes: string[];
+}
+
+/** chat-contract-v3: a check of the original video may be offered. It never runs without the reviewer's click. */
+export interface VideoOffer {
+  reason: string;
+  /** The check needs footage after this second; absent when any footage will do. */
+  fromSeconds?: number;
+}
+
+/** What POST /api/v1/incidents/{id}/video-check returns: a fresh look, apart from the stored report. */
+export interface VideoCheckResult {
+  content: string;
+  source: 'video';
 }
 
 export interface ChatResponse {
@@ -80,6 +97,9 @@ export interface ChatResponse {
     citations: ChatCitation[];
     /** chat-contract-v2: the report cannot answer (or contradicts the question); citations are then empty. */
     insufficientEvidence?: boolean;
+    /** chat-contract-v3: composed by code, or read from the report by the chat model. */
+    source?: 'report' | 'report_llm';
+    videoOffer?: VideoOffer;
   };
   grounding?: ChatGrounding;
 }

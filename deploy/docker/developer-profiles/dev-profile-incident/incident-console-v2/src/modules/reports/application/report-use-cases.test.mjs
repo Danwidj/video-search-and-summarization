@@ -17,6 +17,10 @@ const { getReport } = await import('@/modules/reports/application/get-report');
 const { listRevisions } = await import('@/modules/reports/application/list-revisions');
 const { saveHumanEdit, SearchableStepError } = await import('@/modules/reports/application/save-human-edit');
 const { setOfficialRevision } = await import('@/modules/reports/application/set-official-revision');
+const { repairMissingCrops } = await import('@/modules/reports/application/repair-missing-crops');
+const { repairMissingEmbeddings } = await import('@/modules/reports/application/repair-missing-embeddings');
+const { officialCrops, evidenceSlice } = await import('@/modules/reports/domain/revision');
+const { confirmedSpans } = await import('@/modules/reports/application/confirmed-spans');
 const { storeSearchableCrops } = await import('@/modules/reports/application/store-searchable-crops');
 const { deleteVideoAndReports } = await import('@/modules/reports/application/delete-video-and-reports');
 const { aiRunReport } = await import('../../../../tests/support/report-view.mjs');
@@ -181,6 +185,9 @@ test('marking official embeds the revision evidence through the agent and hands 
             image: 'evidence/v/u/E1.jpg',
             bounding_box: [1, 2, 3, 4],
             timestamp_seconds: 2,
+            slice_start_seconds: 0,
+            slice_end_seconds: 5,
+            frame: null,
             item_name: 'human',
             description: 'A person wearing dark clothing and carrying a bag, walking on the sidewalk.',
             threat_level: null,
@@ -451,4 +458,296 @@ test('a revision with no images is saved without calling the agent, and clears t
     ports.incidents.saved.map((input) => input.crops),
     [[]],
   );
+});
+
+test('repair stores the crops of a searchable revision that has none, official or not, and a dry run stores nothing', async () => {
+  const ports = official([withImage('evidence/v/u/E1.jpg')]);
+  ports.videos.missingCrops = [{ videoId: V, revisionId: 1 }];
+  const embedding = { itemType: 'entity', itemId: 'E1', embedding: [0.5] };
+  const dry = await repairMissingCrops(ports, async () => assert.fail('a dry run does not embed'));
+  assert.deepEqual(dry, { dryRun: true, revisions: [{ videoId: V, revisionId: 1, crops: null }] });
+  assert.deepEqual(ports.videos.cropCalls, []);
+  const report = await repairMissingCrops(ports, async () => [embedding], { dryRun: false });
+  assert.deepEqual(report, { dryRun: false, revisions: [{ videoId: V, revisionId: 1, crops: 1 }] });
+  assert.deepEqual(
+    ports.videos.cropCalls.map((call) => [call.videoId, call.revisionId, call.crops.map((crop) => crop.item_id)]),
+    [[V, 1, ['E1']]],
+  );
+  assert.deepEqual(await repairMissingCrops(ports, async () => [], { videoId: 'other', dryRun: false }), { dryRun: false, revisions: [] });
+});
+
+test('repair reports a failing revision and carries on with the rest', async () => {
+  const ports = official([withImage('evidence/v/u/E1.jpg')]);
+  ports.videos.missingCrops = [
+    { videoId: V, revisionId: 9 },
+    { videoId: V, revisionId: 1 },
+  ];
+  const report = await repairMissingCrops(ports, async () => [{ itemType: 'entity', itemId: 'E1', embedding: [0.5] }], { dryRun: false });
+  assert.deepEqual(report.revisions, [
+    { videoId: V, revisionId: 9, crops: null, error: 'Revision not found' },
+    { videoId: V, revisionId: 1, crops: 1 },
+  ]);
+});
+
+test('a human Save stores the summary vector of the new title and description, and saves without one when embedding fails', async () => {
+  const record = aiRunReport(smoke);
+  const asked = [];
+  const embedSummary = async (summary) => {
+    asked.push(summary);
+    return [0.25, 0.5];
+  };
+  const ports = official([record]);
+  await saveHumanEdit(
+    ports,
+    { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor' },
+    noEmbed,
+    undefined,
+    undefined,
+    embedSummary,
+  );
+  assert.deepEqual(
+    ports.incidents.saved.map((input) => input.embedding),
+    [[0.25, 0.5]],
+  );
+  assert.equal(asked[0].description, 'Edited summary.', 'the text is the saved incident description');
+  assert.equal(asked[0].incidentType, 'assault', 'the incident type goes with it');
+
+  const down = official([record]);
+  await saveHumanEdit(
+    down,
+    { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor' },
+    noEmbed,
+    undefined,
+    undefined,
+    async () => {
+      throw new Error('agent down');
+    },
+  );
+  assert.deepEqual(
+    down.incidents.saved.map((input) => input.embedding),
+    [null],
+    'the Save still succeeds, with no vector',
+  );
+
+  const plain = official([record]);
+  await saveHumanEdit(plain, { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor' }, noEmbed);
+  assert.deepEqual(
+    plain.incidents.saved.map((input) => input.embedding),
+    [null],
+    'no embedding seam, no vector',
+  );
+});
+
+test('a Save on a video with an official revision does not embed the summary of a version that is not searchable', async () => {
+  const record = aiRunReport(smoke);
+  const ports = official([record]);
+  await ports.videos.setOfficialRevision(V, 1, []);
+  await saveHumanEdit(
+    ports,
+    { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor' },
+    noEmbed,
+    undefined,
+    undefined,
+    async () => assert.fail('not searchable, nothing to embed'),
+  );
+  assert.deepEqual(
+    ports.incidents.saved.map((input) => input.embedding),
+    [null],
+  );
+});
+
+test('repair skips a revision that is no longer the searchable one or already has crops, and writes nothing', async () => {
+  const ports = official([withImage('evidence/v/u/E1.jpg')]);
+  ports.videos.missingCrops = [{ videoId: V, revisionId: 1 }];
+  await ports.videos.setOfficialRevision(V, null, []);
+  ports.videos.missingCrops = [{ videoId: V, revisionId: 1 }];
+  ports.videos.videos.get(V).revisionIds.push(2); // a newer version was saved meanwhile: revision 1 is not searchable
+  const report = await repairMissingCrops(ports, async () => [{ itemType: 'entity', itemId: 'E1', embedding: [0.5] }], { dryRun: false });
+  assert.deepEqual(report.revisions, [{ videoId: V, revisionId: 1, crops: null, skipped: true }]);
+  assert.deepEqual(ports.videos.cropCalls, []);
+});
+
+test('summary repair embeds the title and description of a searchable revision with no vector, and only into an empty slot', async () => {
+  const ports = official([withImage('evidence/v/u/E1.jpg')]);
+  ports.videos.missingEmbeddings = [
+    { videoId: V, revisionId: 1, incidentType: 'assault', title: 'Fight', description: 'Two people fight.' },
+    { videoId: V, revisionId: 7, title: 'Gone', description: null },
+  ];
+  const asked = [];
+  const embed = async (summary) => {
+    asked.push(summary);
+    return [0.1];
+  };
+  const dry = await repairMissingEmbeddings(ports, embed);
+  assert.deepEqual(
+    dry.revisions.map((item) => item.stored),
+    [false, false],
+  );
+  assert.deepEqual(asked, [], 'a dry run does not embed');
+  const report = await repairMissingEmbeddings(ports, embed, { dryRun: false, limit: 1 });
+  assert.deepEqual(report.revisions, [{ videoId: V, revisionId: 1, stored: true }]);
+  assert.deepEqual(
+    asked,
+    [{ incidentType: 'assault', title: 'Fight', description: 'Two people fight.' }],
+    'the repair embeds the type too',
+  );
+  assert.deepEqual(
+    ports.videos.embeddingCalls.map((call) => [call.revisionId, call.embedding]),
+    [[1, [0.1]]],
+  );
+  const second = await repairMissingEmbeddings(ports, embed, { dryRun: false });
+  assert.equal(second.revisions[0].revisionId, 7);
+  assert.match(second.revisions[0].error, /not the searchable revision/);
+});
+
+test('a crop stores the box second with its fraction and a slice, not the item whole second (audit cases 15.33 s and 2.27 s)', () => {
+  const entry = (box_seconds, timestamp_seconds, extra = {}) => ({
+    item_type: 'entity',
+    item_id: 'E1',
+    image: 'evidence/v/u/E1.jpg',
+    bounding_box: [1, 2, 3, 4],
+    box_seconds,
+    timestamp_seconds,
+    ...extra,
+  });
+  const embeddings = [{ itemType: 'entity', itemId: 'E1', embedding: [0.5] }];
+  const crop = (e, duration = null) => officialCrops({ incident: {} }, [e], embeddings, duration)[0];
+  const at = (e) => [crop(e).timestamp_seconds, crop(e).slice_start_seconds, crop(e).slice_end_seconds];
+  assert.deepEqual(at(entry(15.33, 18)), [15.33, 12.33, 18.33], 'was stored as 18');
+  assert.deepEqual(at(entry(2.27, 22)), [2.27, 0, 5.27], 'was stored as 22; the slice is clamped at 0');
+  assert.deepEqual(at(entry(null, 7)), [7, 4, 10], 'no box second: the item second');
+  const tracked = { track: 'evidence/v/u/E1-track.json', track_first_seen_seconds: 15.33, track_last_seen_seconds: 18.8 };
+  assert.deepEqual(at(entry(15.33, 18, tracked)), [15.33, 15.33, 18.8], 'a track gives first to last seen');
+  assert.deepEqual(at(entry(15.33, 18, { ...tracked, track: null })), [15.33, 12.33, 18.33], 'a window with no track is not a track');
+  assert.deepEqual([crop(entry(15.33, 18), 16).slice_end_seconds], [16], 'clamped to the video length');
+  assert.equal(crop(entry(1, 1, { frame: 'evidence/v/u/E1-frame.jpg' })).frame, 'evidence/v/u/E1-frame.jpg');
+  assert.equal(crop(entry(1, 1)).frame, null);
+});
+
+test('a searchable crop is named by the item label, not the type or the second look name', () => {
+  const rows = (entries, payload = { incident: {} }) =>
+    officialCrops(
+      payload,
+      entries,
+      entries.map((e) => ({ itemType: e.item_type, itemId: e.item_id, embedding: [0.5] })),
+    );
+  const base = { image: 'evidence/v/run-1/x.jpg', bounding_box: [1, 2, 3, 4], timestamp_seconds: 1 };
+  // revision 135 E1 and revision 126 A1 on finals
+  const [bear, register, bare, payloadLabel] = rows(
+    [
+      { ...base, item_type: 'entity', item_id: 'E1', item_name: 'animal', label: 'black bear' },
+      { ...base, item_type: 'asset', item_id: 'A1', item_name: 'high heel shoe', label: 'cash register' },
+      { ...base, item_type: 'asset', item_id: 'A2', item_name: 'deck', label: '  ' },
+      { ...base, item_type: 'entity', item_id: 'E2', item_name: 'human' },
+    ],
+    { incident: {}, entities: [{ entity_id: 'E2', type: 'human', label: 'man in a white shirt' }] },
+  );
+  assert.equal(bear.item_name, 'black bear');
+  assert.equal(register.item_name, 'cash register');
+  assert.equal(bare.item_name, 'deck', 'a blank label falls back to the name');
+  assert.equal(payloadLabel.item_name, 'man in a white shirt', 'the payload item label backs up an entry without one');
+  assert.equal(rows([{ ...base, item_type: 'instrument', item_id: 'I1' }])[0].item_name, 'instrument', 'no label or name: the type');
+});
+
+test('an object slice runs first to last detector-confirmed sample; a person keeps first to last seen (audit finding 3)', async () => {
+  const track = 'evidence/v/u/A1-track.json';
+  const entry = (item_type, extra = {}) => ({
+    item_type,
+    item_id: item_type === 'entity' ? 'E1' : 'A1',
+    image: `evidence/v/u/${item_type}.jpg`,
+    bounding_box: [1, 2, 3, 4],
+    timestamp_seconds: 5,
+    box_seconds: 5,
+    track,
+    track_first_seen_seconds: 0,
+    track_last_seen_seconds: 12,
+    ...extra,
+  });
+  // 117 A1: the tracker ran 0 to 12 s but the detector confirmed samples only up to 10.667 s (-0.1 is tracker-only).
+  const samples = (...rows) => rows.map(([t, score]) => ({ t, box: [1, 2, 3, 4], score }));
+  const files = {
+    [track]: samples([0, 0.9], [4, -0.1], [10.667, 0.8], [12, -0.1]),
+  };
+  const read = async (key) => files[key];
+  const crops = async (entries, reader = read) => {
+    const spans = await confirmedSpans(entries, reader);
+    return officialCrops(
+      { incident: {} },
+      entries,
+      entries.map((e) => ({ itemType: e.item_type, itemId: e.item_id, embedding: [0.5] })),
+      null,
+      spans,
+    );
+  };
+  const range = (crop) => [crop.slice_start_seconds, crop.slice_end_seconds];
+
+  assert.deepEqual(range((await crops([entry('asset')]))[0]), [0, 10.667], '117 A1: 0 to 10.7 s, not 0 to 12 s');
+  assert.deepEqual(range((await crops([entry('entity', { track: 'evidence/v/u/E1-track.json' })]))[0]), [0, 12], 'a person is unchanged');
+
+  files[track] = samples([1, -0.1], [9, -0.1]);
+  assert.deepEqual(range((await crops([entry('instrument')]))[0]), [2, 8], 'no confirmed sample: 3 s either side of the box second');
+  assert.deepEqual(range((await crops([entry('asset', { box_seconds: 1 })]))[0]), [0, 4], 'clamped at 0');
+  assert.deepEqual(range((await crops([entry('asset')], undefined))[0]), [2, 8], 'no reader: the box second');
+  assert.deepEqual(
+    range((await crops([entry('asset')], async () => Promise.reject(new Error('r2 down'))))[0]),
+    [2, 8],
+    'an unreadable track: the box second',
+  );
+
+  files[track] = samples([6, 0.9], [6.5, 0.9]);
+  assert.deepEqual(
+    range((await crops([entry('asset', { box_seconds: 6 })]))[0]),
+    [5.25, 7.25],
+    'a span under 2 s is widened to 2 s around its middle',
+  );
+  assert.deepEqual(range((await crops([entry('asset')]))[0]), [5, 7.25], 'the box second (5) is inside the slice');
+  // 137 A1: the box was found at 0.07 s but the detector confirmed the object only from 2.4 s.
+  files[track] = samples([2.4, 0.9], [2.9, 0.9]);
+  assert.deepEqual(
+    range((await crops([entry('asset', { box_seconds: 0.07 })]))[0]),
+    [0.07, 3.65],
+    '137 A1: the slice includes the box second',
+  );
+  files[track] = samples([2, 0.9], [4, 0.9]);
+  assert.deepEqual(
+    range((await crops([entry('instrument', { box_seconds: 9 })]))[0]),
+    [2, 9],
+    'a box second after the confirmed span extends the end',
+  );
+  assert.deepEqual(
+    evidenceSlice(entry('asset', { box_seconds: 9 }), 8, { first: 2, last: 4 }),
+    { start: 2, end: 8 },
+    'clamped to the video length when it is known',
+  );
+  files[track] = samples([0, 0.9]);
+  assert.deepEqual(range((await crops([entry('asset', { box_seconds: 0.5 })]))[0]), [0, 1], 'a widened span is clamped at 0');
+  files[track] = samples([6, 0.9]);
+  assert.deepEqual(range((await crops([entry('asset', { track: undefined })]))[0]), [2, 8], 'an object with no track: the box second');
+});
+
+test('marking official reads an object track from storage, so its slice is the confirmed span', async () => {
+  const record = withImage('evidence/v/u/A1.jpg');
+  record.evidence = [
+    {
+      item_type: 'asset',
+      item_id: 'A1',
+      image: 'evidence/v/u/A1.jpg',
+      bounding_box: [1, 2, 3, 4],
+      timestamp_seconds: 5,
+      track: 'evidence/v/u/A1-track.json',
+      track_first_seen_seconds: 0,
+      track_last_seen_seconds: 12,
+    },
+  ];
+  const ports = official([record]);
+  const read = async (key) =>
+    key === 'evidence/v/u/A1-track.json'
+      ? [
+          { t: 3, box: [1, 2, 3, 4], score: 0.9 },
+          { t: 9, box: [1, 2, 3, 4], score: -0.1 },
+        ]
+      : assert.fail(key);
+  await setOfficialRevision(ports, V, 1, async () => [{ itemType: 'asset', itemId: 'A1', embedding: [0.5] }], read);
+  const [crop] = ports.videos.officialCalls[0].crops;
+  assert.deepEqual([crop.slice_start_seconds, crop.slice_end_seconds], [2, 5], 'the widened span, extended to the box second (5)');
 });

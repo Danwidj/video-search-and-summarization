@@ -20,9 +20,9 @@ import {
   parseFilters,
   presetAfter,
 } from '@/lib/library/filters';
-import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import type { LibrarySearchResponse } from '@/lib/library/search';
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
+import { LIBRARY_STATE_KEY } from '@/lib/library/remembered-state';
 import { getViewerTimeZone } from '@/lib/time';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,7 +31,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination';
 
 type Tab = 'incidents' | 'evidence';
-const STATE_KEY = 'report-library-state';
+const STATE_KEY = LIBRARY_STATE_KEY;
 const PAGE_SIZE = 6;
 
 export function Library() {
@@ -216,14 +216,6 @@ export function Library() {
     void searchEvidence('', item.videoId);
   }
 
-  function showIncidentInIncidents(incident: EvidenceSearchHit['incident']) {
-    setTab('incidents');
-    clearScope();
-    const queryText = incident.title || incident.incidentType;
-    apply({ search: queryText });
-    setSearchText(queryText);
-  }
-
   const chips = activeFilters(filters);
   const datePreset: DatePreset | 'custom' =
     !filters.after && !filters.before
@@ -232,7 +224,7 @@ export function Library() {
   const first = (filters.page - 1) * PAGE_SIZE + 1;
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] px-6 pb-6 pt-5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:px-12">
+    <div className="mx-auto w-full max-w-[1500px] px-6 pb-6 pt-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:px-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-moss">Incident console</p>
@@ -283,8 +275,7 @@ export function Library() {
             loading={searching}
             onQuery={setEvidenceQuery}
             onScope={(next) => (next ? setScope(next) : clearScope())}
-            onShowInIncidents={showIncidentInIncidents}
-            onSubmit={() => void searchEvidence(evidenceQuery, scope?.videoId ?? null)}
+            onSubmit={(text) => void searchEvidence(text ?? evidenceQuery, scope?.videoId ?? null)}
             query={evidenceQuery}
             result={result}
             scope={scope}
@@ -398,6 +389,11 @@ export function Library() {
             <div className="sr-only">
               {totalItems} {totalItems === 1 ? 'incident' : 'incidents'}
             </div>
+            {searchMode === 'semantic' && (
+              <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">
+                Best match first. The sort applies again when the search text is cleared.
+              </p>
+            )}
             {searchMode === 'text' && (
               <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">
                 Matched on incident text: meaning search is unavailable or found nothing.

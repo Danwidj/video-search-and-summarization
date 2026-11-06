@@ -125,3 +125,96 @@ test('a citation under an answer is named like its evidence card, never by its i
   assert.doesNotMatch(chat, />\s*\{citation\.itemId\}/, 'the chip never renders the id');
   assert.match(chat, /citationTitle\(titles, citation\)/);
 });
+
+test('every video time in an answer is a button, and the answer text goes through the time finder', () => {
+  const chat = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportChat', 'ReportChat.tsx'), 'utf8');
+  assert.match(chat, /segmentChatText\(content, \{ durationSeconds, unsupported \}\)/);
+  assert.match(chat, /<AnswerText\s+content=\{message\.content\}/);
+  assert.doesNotMatch(chat, /<p className="whitespace-pre-wrap">\{message\.content\}<\/p>/, 'an answer is never rendered as bare text');
+  assert.match(chat, /onClick=\{\(\) => onSeek\(segment\.seconds\)\}/);
+  assert.match(chat, /\{segment\.text\}/, 'the button shows the time as written');
+});
+
+test('a citation with no crop draws no empty image', () => {
+  const chat = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportChat', 'ReportChat.tsx'), 'utf8');
+  assert.match(chat, /citation\.cropImageUrl \? \(/);
+});
+
+test('the page bounds every seek and gives the chat the video length', () => {
+  const page = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportPage', 'ReportPage.tsx'), 'utf8');
+  assert.match(page, /seekTarget\(seconds, video\.duration\)/);
+  assert.match(page, /durationSeconds=\{playerDuration\}/);
+});
+
+test('the conversation lives on the page, so closing the panel keeps it, and each version has its own', () => {
+  const read = (name) => readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', name, `${name}.tsx`), 'utf8');
+  const chat = read('ReportChat');
+  const page = read('ReportPage');
+  assert.doesNotMatch(chat, /useState<ChatMessage\[\]>/, 'the panel holds no conversation of its own');
+  assert.match(page, /useState<Record<string, ChatThread>>/);
+  assert.match(page, /thread=\{chatThreads\[threadKey\] \?\? EMPTY_CHAT_THREAD\}/);
+  assert.match(page, /chatThreadKey\(target\.versionId, /, 'a thread is keyed by the version asked about');
+  assert.match(page, /_earlierDraft/, 'a new draft does not inherit answers about an earlier draft');
+});
+
+test('the player stays usable beside the chat, and a jump reaches the player on screen', () => {
+  const page = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportPage', 'ReportPage.tsx'), 'utf8');
+  assert.match(page, /<Sheet modal=\{false\}/);
+  assert.match(page, /onInteractOutside=\{\(event\) => event\.preventDefault\(\)\}/, 'using the player does not close the chat');
+  assert.match(page, /ref=\{compactVideoRef\}/);
+  assert.match(page, /\[videoRef\.current, compactVideoRef\.current\]\.find/);
+});
+
+test('an answer sits on the muted bubble, so its times, citation titles and version line can be read', () => {
+  const chat = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportChat', 'ReportChat.tsx'), 'utf8');
+  assert.match(chat, /<Message align="start"[^>]*>\s*<Bubble variant="muted">/);
+});
+
+test('the panel leads with the timeline question and says answers come from the stored report', () => {
+  const chat = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportChat', 'ReportChat.tsx'), 'utf8');
+  assert.match(chat, /SUGGESTIONS = \['Show the timeline of events'\];/, 'one suggestion: the panel stays short (PR 491)');
+  assert.match(chat, /stored report for the version you have\s+open, not from a new look at the video/);
+  assert.match(chat, /answerSourceLine\(message\.source, message\.answeredFrom \?\? ''\)/);
+  assert.doesNotMatch(chat, /Searching evidence/, 'nothing is searched, so the panel does not say so');
+});
+
+test('every answer says where it came from, and with no stated source it is the stored report', async () => {
+  const { answerSourceLine } = await import('../src/lib/chat/report-chat.ts');
+  assert.equal(answerSourceLine(undefined, 'v2 · AI'), 'Answered from the stored report: v2 · AI');
+  assert.equal(answerSourceLine('report', 'v2 · AI'), 'Answered from the stored report: v2 · AI');
+  assert.equal(answerSourceLine('report_llm', 'v2 · AI'), 'AI reading of the stored report: v2 · AI');
+  assert.match(answerSourceLine('video', 'v2 · AI'), /not part of the report/);
+});
+
+test('a fresh video check never reaches the report model as conversation', async () => {
+  const { chatHistory } = await import('../src/lib/chat/report-chat.ts');
+  const turns = [
+    { role: 'user', content: 'a' },
+    { role: 'assistant', content: 'b', source: 'report' },
+    { role: 'assistant', content: 'c', source: 'video' },
+    { role: 'user', content: 'd' },
+  ];
+  assert.deepEqual(
+    chatHistory(turns).map((turn) => turn.content),
+    ['a', 'b', 'd'],
+  );
+});
+
+test('a check needing footage after a moment is hidden when the video ends there', async () => {
+  const { offersVideoCheck } = await import('../src/lib/chat/report-chat.ts');
+  assert.equal(offersVideoCheck(undefined, 30), false);
+  assert.equal(offersVideoCheck({}, 30), true);
+  assert.equal(offersVideoCheck({ fromSeconds: 10 }, 30), true);
+  assert.equal(offersVideoCheck({ fromSeconds: 29.5 }, 30), false, 'the incident runs to the end of the clip');
+  assert.equal(offersVideoCheck({ fromSeconds: 10 }, null), true, 'with no known length the agent decides');
+});
+
+test('a video check runs only from its button, and its result is shown apart with no links or cards', () => {
+  const chat = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportChat', 'ReportChat.tsx'), 'utf8');
+  assert.equal(chat.match(/video-check/g).length, 1, 'one call site');
+  assert.match(chat, /onClick=\{\(\) => void checkVideo\(message\)\}/);
+  assert.match(chat, /does not\s+change the report/);
+  assert.match(chat, /message\.source === 'video' \?/);
+  assert.match(chat, /videoOffer: undefined/, 'an offer is spent once it runs');
+  assert.match(chat, /SUGGESTIONS = \['Show the timeline of events'\];/, 'still one chip');
+});

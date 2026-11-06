@@ -17,8 +17,18 @@ import {
 import { StoreRejection } from '@/modules/shared/domain/common';
 import type { ReviewerEvidenceStore } from '@/modules/reports/application/types';
 
+// What a reviewer's new image, frame and track replace. The agent's `detected_box` and zoomed second look (`zoom_*`, and the
+// `name_before`/`description_before` it left when it corrected a name) describe the old crop, so they go with it.
 const REPLACED_FIELDS = [
   'image_gap',
+  'track_gap',
+  'detected_box',
+  'zoom_checked',
+  'zoom_confidence',
+  'zoom_seen',
+  'zoom_gap',
+  'name_before',
+  'description_before',
   'missing',
   'track',
   'track_first_seen_seconds',
@@ -84,7 +94,10 @@ export async function storeReviewerItems(
     const region = boxRegion(box);
     if (seconds === null || seconds === undefined || !region)
       throw new StoreRejection('invalid', `${itemId}: a reviewer item needs a track, or a still second and box`);
-    const [crop, frame] = await Promise.all([store.frame(videoKey, seconds, region), store.frame(videoKey, seconds, null)]);
+    // ffmpeg-static is memory-heavy. Running the crop and full-frame decode together can make the host kill one process
+    // (Node then reports a null exit code), so keep the two short extractions sequential.
+    const crop = await store.frame(videoKey, seconds, region);
+    const frame = await store.frame(videoKey, seconds, null);
     const keys = {
       image: uploadedEvidenceKey(videoKey, editNumber, itemId),
       frame: reviewerFrameKey(videoKey, editNumber, itemId),

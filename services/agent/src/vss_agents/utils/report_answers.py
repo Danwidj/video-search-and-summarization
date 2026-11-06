@@ -20,13 +20,18 @@ The template mode used to answer every question with the evidence items whose wo
 shares no words with any item, so it got the report's first five items. This module answers from the report itself
 (its incident fields, items and timeline), by the kind of question:
 
-- **what happened, or the order of events:** the timeline in time order, one sentence per event with its time; the
-  incident description when there is no timeline;
+- **what happened, or the order of events:** the timeline in time order, one line per event with its time, then what
+  the report could not establish about those events; the incident description when there is no timeline. An event
+  wholly outside the incident window is shown as context before or after the incident, not dropped: it may be real
+  lead-up or aftermath;
 - **who:** the people, with how they look and when they are seen;
 - **objects** (weapons, tools, what was used or taken, or a named object): the instruments, with who held them, and
   the assets. A named object the report does not record is said to be absent;
 - **when, or how long:** the incident window, or when a named item is seen;
 - **severity** and **type**;
+- **what came after or before a moment:** the events on that side of the event the question points at, never the whole
+  timeline; a moment the report does not record is said to be missing. What followed the incident is the timeline's
+  events after its window;
 - **anything else:** the timeline events that share the question's words; otherwise a plain statement that the report
   does not say, with no citations.
 
@@ -56,6 +61,8 @@ ITEM_KINDS = (
     ("assets", "asset_id", "asset"),
 )
 MAX_EVENTS = 8
+MAX_TIMELINE_EVENTS = 12
+MAX_UNCERTAINTIES = 3
 HUMAN_TYPES = frozenset({"human", "person", "people", "man", "woman", "child", "pedestrian"})
 NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
 
@@ -289,6 +296,64 @@ _STOP = frozenset(
         "really",
     ]
 )
+# Words every uncertainty uses whatever it is about: sharing one does not relate it to an event.
+_UNCERTAINTY_FILLER_TEXT = (
+    "unclear clear clearly exact exactly visible identifiable identified identify identity identities unknown certain "
+    "cannot determine determined whether nature reason established confirm confirmed individual individuals"
+)
+_UNCERTAINTY_FILLER = frozenset(_UNCERTAINTY_FILLER_TEXT.split())
+# Where a person's or animal's label stops naming what it is ("man in blue shirt", "dog with a collar").
+_LABEL_HEAD_END = re.compile(r"\s(?:in|with|wearing|near|on|at|inside|lying|walking|standing|carrying|holding)\s")
+# An outfit in a label ("man in white shirt and dark pants"): an event may name either part of it.
+_LABEL_OUTFIT = re.compile(r"^(.+?\s(?:in|wearing)\s)(.+\sand\s.+)$")
+# Words too general to identify one object on their own.
+_VAGUE_NAMES = frozenset({"object", "objects", "item", "items", "thing", "things"})
+# A question about one moment in the order of events, not about the whole of it.
+_SEQUENCE = re.compile(r"\b(?:after|afterwards?|before|next|then|following|prior to|until|later|earlier|leading up)\b")
+_EARLIER = re.compile(r"\b(?:before|prior to|earlier|leading up)\b")
+_IMMEDIATE = re.compile(r"\b(?:immediately|right after|straight after|just after|directly after)\b")
+_AFTER_INCIDENT = re.compile(
+    r"\bafter (?:the |this )?(?:incident|attack|assault|altercation|fight|event)\b(?: (?:ended|was over|finished|stopped))?"
+    r"|\bafter (?:it|that) (?:ended|was over|finished|stopped)\b"
+)
+# Past forms the plural rules cannot reach, so "fell" meets an event that says "falls".
+_PAST_FORMS = {
+    "fell": "fall",
+    "fallen": "fall",
+    "ran": "run",
+    "struck": "strike",
+    "threw": "throw",
+    "thrown": "throw",
+    "stole": "steal",
+    "stolen": "steal",
+    "left": "leave",
+    "went": "go",
+    "came": "come",
+    "broke": "break",
+    "broken": "break",
+    "shot": "shoot",
+    "held": "hold",
+    "knelt": "kneel",
+    "stood": "stand",
+}
+_PEOPLE_NOUNS = frozenset(
+    {"man", "men", "woman", "women", "guy", "boy", "girl", "child", "attacker", "victim", "suspect"}
+)
+# Words that ask nothing beyond the kind of answer: "who appears", "what was identified".
+_PLAIN_TEXT = (
+    "appear appears anything anyone identified identify recorded record listed list mentioned present there affected "
+    "rated rating level given part during between finish finishes timestamp timestamps point place individual individuals"
+)
+_PLAIN_WORDS = frozenset(_PLAIN_TEXT.split())
+# A question that leans on the conversation, or that asks for reasoning a template cannot give.
+_CONTEXT = re.compile(
+    r"\b(?:he|she|they|him|her|them|his|hers|their|next|else|afterwards?|that one|this one|the other|"
+    r"did that|was that|that happen\w*)\b"
+)
+# A judgement about one thing ("was the object a weapon?"), which a list of items cannot settle.
+_JUDGEMENT = re.compile(r"^\s*(?:was|is|were|are)\s+(?:the|that|this|those|these)\b")
+_REASONING = re.compile(r"^\s*(?:why|how come)\b|\bhow did\b|\bexplain\b|\bbecause\b|\breason\b")
+_THIS_INCIDENT = re.compile(r"\b(?:in|of|for|during) (?:this|the) (?:event|incident)\b")
 _TIME_FIRST = re.compile(r"^\s*(?:when|what time|how long|at what (?:second|point|time|moment))\b")
 
 
@@ -455,6 +520,7 @@ class ReportView:
     items: tuple[Item, ...]
     timeline: tuple[Mapping[str, Any], ...]
     retired: frozenset[str] = frozenset()
+    uncertainties: tuple[str, ...] = ()
 
     def item(self, item_id: str | None) -> Item | None:
         return next((i for i in self.items if i.item_id == item_id), None) if item_id else None
@@ -567,6 +633,7 @@ def report_view(
         items=tuple(items),
         timeline=tuple(events),
         retired=frozenset(str(i) for i in retired if str(i) not in held),
+        uncertainties=tuple(u.strip() for u in report.get("uncertainties") or [] if isinstance(u, str) and u.strip()),
     )
 
 
@@ -619,6 +686,11 @@ def asks_for_ids(question: str) -> bool:
     return bool(_ASKS_IDS.search(question.lower()))
 
 
+def names_an_id(question: str) -> bool:
+    """Whether a question itself writes an item id ("who is holding stick I2?")."""
+    return bool(_ID.search(question))
+
+
 def referenced_ids(text: str, known: Iterable[str]) -> list[str]:
     """The known item ids a piece of report text refers to, in order of first reference."""
     known = set(known)
@@ -641,6 +713,84 @@ def replaced_ids(text: str, mentions: Mapping[str, str]) -> list[str]:
     return out
 
 
+def _item_phrases(item: Item) -> list[list[frozenset[str]]]:
+    """The ways report text can name one item, each as a phrase: an object's name or label (or the last two words of
+    what the label names, "wooden coffee table" as "coffee table", but never "on ground" from "backpack on ground"), a
+    person's or animal's label or each part of its outfit. Descriptions are left out: they mention other things."""
+    label = " ".join(item.label.lower().split())
+    texts = [label]
+    if item.kind == "entity":
+        if outfit := _LABEL_OUTFIT.match(label):
+            texts += [outfit[1] + part for part in outfit[2].split(" and ")]
+    else:
+        named = _LABEL_HEAD_END.split(f"{label} ", maxsplit=1)[0].split()
+        texts += [item.name.lower(), " ".join(named[-2:]) if len(named) > 2 and "and" not in named[-2:] else ""]
+    phrases = [term_sets(text) for text in dict.fromkeys(texts) if text and text not in _VAGUE_NAMES]
+    return [phrase for phrase in phrases if phrase]
+
+
+def _entity_head(item: Item) -> str:
+    """What a person or animal is, from its label: "dog" for "black and tan dog", "man" for "man in blue shirt"."""
+    words = _LABEL_HEAD_END.split(f"{item.label.lower().strip()} ", maxsplit=1)[0].split()
+    return words[-1] if words else ""
+
+
+def _spans(phrase: Sequence[frozenset[str]], terms: Sequence[frozenset[str]]) -> Iterable[tuple[int, int]]:
+    """Each place ``phrase`` stands word for word in ``terms``, as (start, length)."""
+    for start in range(len(terms) - len(phrase) + 1):
+        if all(word & terms[start + n] for n, word in enumerate(phrase)):
+            yield start, len(phrase)
+
+
+def _named_items(text: str, view: ReportView) -> list[str]:
+    """The items a piece of report text names without using their ids, in the order it names them.
+
+    An item counts only when one of its phrases stands whole in the text; a person or animal also by its head word
+    ("the dog"), when no other entity of the report has that head. The longest phrase wins a stretch of text, so
+    "the white van" is not also the blue van. Items tied on one stretch are the same object if they share a name and
+    label, and the first is taken; otherwise the text does not say which it means, and none is taken.
+    """
+    terms = term_sets(re.sub(r"\bwearing\b", "in", text.lower()))
+    entities = [i for i in view.items if i.kind == "entity"]
+    heads = [_entity_head(i) for i in entities]
+    found: dict[tuple[int, int], list[Item]] = {}
+    for item in view.items:
+        phrases = _item_phrases(item)
+        head = _entity_head(item) if item.kind == "entity" else ""
+        if head and heads.count(head) == 1:
+            phrases.append(term_sets(head))
+        for span in {span for phrase in phrases for span in _spans(phrase, terms)}:
+            found.setdefault(span, []).append(item)
+    taken: set[int] = set()
+    named: list[tuple[int, str]] = []
+    for (start, length), items in sorted(found.items(), key=lambda entry: (-entry[0][1], entry[0][0])):
+        stretch = set(range(start, start + length))
+        if stretch & taken:
+            continue
+        taken |= stretch
+        same_object = all(i.kind != "entity" and (i.name, i.label) == (items[0].name, items[0].label) for i in items)
+        if len(items) == 1 or same_object:
+            named.append((start, items[0].item_id))
+    return [item_id for _, item_id in sorted(named)]
+
+
+def text_items(texts: Iterable[str], view: ReportView) -> list[str]:
+    """The items report texts refer to, each once, in the order they first appear: by id where a text uses ids, else
+    by name (:func:`_named_items`). An item a text does not name is left out, however close it was to the action."""
+    known = [i.item_id for i in view.items]
+    out: list[str] = []
+    seen: set[Any] = set()
+    for text in texts:
+        for item_id in [*referenced_ids(text, known), *_named_items(text, view)]:
+            item = view.item(item_id)
+            # One object can be filed twice, as an instrument and an asset; two people never count as one.
+            key = item_id if item is None or item.kind == "entity" else (item.name, item.label)
+            if key not in seen:
+                seen.add(key)
+                out.append(item_id)
+    return out
+
+
 @dataclass(frozen=True)
 class ComposedAnswer:
     """A composed answer: the prose, the item ids it relies on (for citations), and whether the report could answer."""
@@ -651,13 +801,70 @@ class ComposedAnswer:
     kind: str
 
 
-def _event_sentence(event: Mapping[str, Any], mentions: Mapping[str, str], *, last: bool) -> str:
+def _event_sentence(event: Mapping[str, Any], mentions: Mapping[str, str]) -> str:
     body = resolve_references(str(event.get("description") or "").strip().rstrip("."), mentions)
     start, end = clock(event.get("start_seconds")), clock(event.get("end_seconds"))
     if not start:
         return f"{_capitalize(body)}."
     when = f"from {start} to {end}" if end and end != start else f"at {start}"
-    return f"{'Finally, ' + when if last else _capitalize(when)}, {_lower_first(body)}."
+    return f"{_capitalize(when)}, {_lower_first(body)}."
+
+
+def _event_line(event: Mapping[str, Any], mentions: Mapping[str, str]) -> str:
+    """One timeline event as a list line: its time as the report gives it, then what happens."""
+    body = _capitalize(resolve_references(str(event.get("description") or "").strip().rstrip("."), mentions))
+    start, end = clock(event.get("start_seconds")), clock(event.get("end_seconds"))
+    when = f"{start}\u2013{end}" if start and end and end != start else start
+    return f"\u2022 {when} {body}." if when else f"\u2022 {body}."
+
+
+def _phase(event: Mapping[str, Any], incident: Mapping[str, Any]) -> str:
+    """Where an event falls around the incident window. Only an event wholly outside it is context: one that runs into
+    the window is part of the incident, and an event or window with no time cannot be placed outside."""
+    start = _num(event.get("start_seconds"))
+    first, final = _num(incident.get("start_timestamp")), _num(incident.get("end_timestamp"))
+    if start is None:
+        return "during"
+    end = _num(event.get("end_seconds"))
+    if first is not None and (start if end is None else end) < first:
+        return "before"
+    return "after" if final is not None and start > final else "during"
+
+
+def _timeline_lines(events: Sequence[Mapping[str, Any]], view: ReportView, mentions: Mapping[str, str]) -> list[str]:
+    """The events as list lines, under before, during and after headings only when some fall outside the window."""
+    phases: dict[str, list[str]] = {"before": [], "during": [], "after": []}
+    for event in events:
+        phases[_phase(event, view.incident)].append(_event_line(event, mentions))
+    if not phases["before"] and not phases["after"]:
+        return ["\n".join(phases["during"])]
+    return [
+        f"{heading}\n" + "\n".join(phases[phase])
+        for phase, heading in (
+            ("before", "Before the incident:"),
+            ("during", "During the incident:"),
+            ("after", "After the incident:"),
+        )
+        if phases[phase]
+    ]
+
+
+def _unknowns(view: ReportView, about: str, mentions: Mapping[str, str]) -> list[str]:
+    """What the report could not establish about ``about`` (the incident as an answer tells it), as a block, or nothing.
+
+    An uncertainty counts when it shares a word with that text beyond the words every uncertainty uses, so one about
+    something the answer does not tell stays out. Each is shown once, as the report words it.
+    """
+    told = _words(resolve_references(about, mentions)) - _UNCERTAINTY_FILLER
+    relevant: dict[str, str] = {}
+    for raw in view.uncertainties:
+        text = resolve_references(raw.rstrip("."), mentions)
+        if _words(text) & told:
+            relevant.setdefault(text.lower(), text)
+    if not relevant:
+        return []
+    lines = [f"\u2022 {text}." for text in list(relevant.values())[:MAX_UNCERTAINTIES]]
+    return ["What the report could not establish:\n" + "\n".join(lines)]
 
 
 def _window(view: ReportView) -> str:
@@ -686,25 +893,25 @@ def _chronology(view: ReportView, targets: Sequence[Item]) -> ComposedAnswer:
             lead_subject = _join(list(dict.fromkeys(mentions[t.item_id] for t in targets)))
     kind = str(view.incident.get("type") or "").strip()
     if events:
-        shown = events[:MAX_EVENTS]
-        sentences = [
-            _event_sentence(e, mentions, last=(n == len(shown) - 1 and len(shown) > 1 and len(events) <= MAX_EVENTS))
-            for n, e in enumerate(shown)
-        ]
-        if len(events) > MAX_EVENTS:
-            sentences.append(f"The timeline records {_count(len(events) - MAX_EVENTS, 'more event', 'more events')}.")
+        shown = events[:MAX_TIMELINE_EVENTS]
         if lead_subject:
             lead = f"Here is what the report records about {lead_subject}, in order:"
-        elif kind:
-            window = _window(view)
-            lead = f"The report describes {_article(kind, definite=False)}{' ' + window if window else ''}. In order:"
+            blocks = [lead + "\n" + "\n".join(_event_line(e, mentions) for e in shown)]
         else:
-            lead = "Here is what the report records, in order:"
-        cited = []
-        for event in shown:
-            cited += [i for i in referenced_ids(str(event.get("description") or ""), known) if i not in cited]
-        cited = cited or [i.item_id for i in view.items if i.is_person]
-        return ComposedAnswer(" ".join([lead, *sentences]), tuple(cited), False, "chronology")
+            window = _window(view)
+            lead = (
+                f"The report describes {_article(kind, definite=False)}{' ' + window if window else ''}."
+                if kind
+                else "Here is what the report records, in order:"
+            )
+            told = " ".join(str(e.get("description") or "") for e in shown)
+            told += f" {view.incident.get('title') or ''} {view.incident.get('description') or ''}"
+            blocks = [lead, *_timeline_lines(shown, view, mentions), *_unknowns(view, told, mentions)]
+        if len(events) > MAX_TIMELINE_EVENTS:
+            more = _count(len(events) - MAX_TIMELINE_EVENTS, "more event", "more events")
+            blocks.append(f"The timeline records {more}.")
+        cited = text_items((str(e.get("description") or "") for e in shown), view)
+        return ComposedAnswer("\n\n".join(blocks), tuple(cited or [t.item_id for t in targets]), False, "chronology")
     description = str(view.incident.get("description") or "").strip()
     if description:
         window = _window(view)
@@ -713,8 +920,10 @@ def _chronology(view: ReportView, targets: Sequence[Item]) -> ComposedAnswer:
             f"{resolve_references(description, mentions).rstrip('.')}."
             + (f" It runs {window} in the video." if window else "")
         )
-        cited = referenced_ids(description, known) or [i.item_id for i in view.items if i.is_person]
-        return ComposedAnswer(text, tuple(cited), False, "chronology")
+        cited = text_items([description], view)
+        return ComposedAnswer(
+            "\n\n".join([text, *_unknowns(view, description, mentions)]), tuple(cited), False, "chronology"
+        )
     return ComposedAnswer("This report doesn't describe what happened.", (), True, "chronology")
 
 
@@ -850,14 +1059,13 @@ def _taken(view: ReportView, targets: Sequence[Item]) -> ComposedAnswer:
     something ("did the hooded man steal anything?").
     """
     mentions = view.mentions()
-    known = [i.item_id for i in view.items]
     objects = [t for t in targets if t.kind != "entity"]
     focus = objects or list(targets)
     takings = _events_about(view, focus, _TAKING)
     if takings:
         shown = takings[:MAX_EVENTS]
-        sentences = [_event_sentence(e, mentions, last=False) for e in shown]
-        cited = list(dict.fromkeys(i for e in shown for i in referenced_ids(str(e.get("description") or ""), known)))
+        sentences = [_event_sentence(e, mentions) for e in shown]
+        cited = text_items((str(e.get("description") or "") for e in shown), view)
         lead = "The report records this taking:" if len(shown) == 1 else "The report records these takings, in order:"
         return ComposedAnswer(" ".join([lead, *sentences]), tuple(cited or [t.item_id for t in focus]), False, "taken")
     if focus:
@@ -869,7 +1077,7 @@ def _taken(view: ReportView, targets: Sequence[Item]) -> ComposedAnswer:
         about = _events_about(view, focus)[:MAX_EVENTS]
         if about:
             text += f" What it records about {named}, in order: " + " ".join(
-                _event_sentence(e, mentions, last=False) for e in about
+                _event_sentence(e, mentions) for e in about
             )
         return ComposedAnswer(text, tuple(t.item_id for t in focus), True, "taken")
     text = "The report doesn't say anything was taken."
@@ -939,6 +1147,118 @@ def _incident_type(view: ReportView) -> ComposedAnswer:
     return ComposedAnswer(text, (), False, "type")
 
 
+def _chronology_asked(q: str) -> bool:
+    """Whether a lower-case question asks for the course of events. "This event" only names the incident: "what
+    property was involved in this event?" asks about the property."""
+    return bool(_CHRONOLOGY.search(_THIS_INCIDENT.sub(" ", q)))
+
+
+def _intent_words(q: str) -> set[str]:
+    """The words of a lower-case question that say what kind of answer it wants, rather than what it is about."""
+    return {
+        w
+        for pattern in (_CHRONOLOGY, _PEOPLE, _OBJECTS, _WHEN, _SEVERITY, _TYPE, _TAKEN, _HARM)
+        for match in pattern.finditer(q)
+        for w in _words(match.group(0))
+    }
+
+
+def action_words(text: str) -> set[str]:
+    # A verb's -s form is not a plural: "leaves" is "leave", which the plural rules read as "leaf".
+    bases = [_PAST_FORMS.get(word, word) for word in _tokens(text)]
+    return {
+        variant for base in bases for variant in (*_variants(base), base.removesuffix("s"), base.removesuffix("ed"))
+    }
+
+
+def _block(lead: str, events: Sequence[Mapping[str, Any]], mentions: Mapping[str, str]) -> str:
+    return lead + "\n" + "\n".join(_event_line(e, mentions) for e in events)
+
+
+def incident_end(view: ReportView) -> float | None:
+    """The second the report says the incident ends, if it says."""
+    return _num(view.incident.get("end_timestamp"))
+
+
+def _after_incident(view: ReportView) -> ComposedAnswer:
+    """What followed the incident: the timeline's events after its window, or that the report records none."""
+    mentions = view.mentions()
+    after = [e for e in view.timeline if _phase(e, view.incident) == "after"]
+    if not after:
+        return ComposedAnswer("The report records nothing after the incident ends.", (), True, "after_incident")
+    cited = text_items((str(e.get("description") or "") for e in after), view)
+    return ComposedAnswer(
+        _block("After the incident, the report records:", after, mentions), tuple(cited), False, "sequence"
+    )
+
+
+def _around(view: ReportView, q: str) -> ComposedAnswer:
+    """What came after or before the moment a question points at, found by the action it names ("the man fell").
+
+    The words that only say who ("man", or an item's name) would match most events, so they do not pick the moment.
+    The first event with the action is that moment. With no such event the report does not say.
+    """
+    names = set().union(*(i.name_words for i in view.items)) if view.items else set()
+    wanted = action_words(_SEQUENCE.sub(" ", q)) - _intent_words(q) - names - _PEOPLE_NOUNS
+    events = list(view.timeline)
+    moment = next((n for n, e in enumerate(events) if wanted & action_words(str(e.get("description") or ""))), None)
+    if moment is None:
+        return ComposedAnswer(
+            "The report's timeline doesn't record that moment, so it can't say what came around it. "
+            "Ask for the timeline of events to see everything it records.",
+            (),
+            True,
+            "sequence",
+        )
+    when = clock(events[moment].get("start_seconds"))
+    at = f"The report puts that moment at {when}." if when else "The report records that moment."
+    side = events[:moment] if _EARLIER.search(q) else events[moment + 1 :]
+    word = "Before" if _EARLIER.search(q) else "After"
+    if not side:
+        return ComposedAnswer(f"{at} It records nothing {word.lower()} that.", (), True, "sequence")
+    if _IMMEDIATE.search(q):
+        side = side[-1:] if _EARLIER.search(q) else side[:1]
+    mentions = view.mentions()
+    cited = text_items((str(e.get("description") or "") for e in side), view)
+    return ComposedAnswer(_block(f"{at} {word} it:", side, mentions), tuple(cited), False, "sequence")
+
+
+def is_plain(question: str, view: ReportView) -> bool:
+    """Whether a question asks only for a kind of report field ("who appears?", "what happened?"), which a composed
+    answer gives in full. One that names something, reasons, leans on the conversation or points at one moment does not.
+    """
+    q = _ASKS_IDS.sub(" ", question.lower())
+    if _REASONING.search(q) or _CONTEXT.search(q) or _SEQUENCE.search(q) or _JUDGEMENT.search(q):
+        return _AFTER_INCIDENT.search(q) is not None
+    left = set(_tokens(q)) - _intent_words(q) - _PLAIN_WORDS
+    return not {w for w in left if not _variants(w) & (_intent_words(q) | _PLAIN_WORDS)} and compose(
+        question, view
+    ).kind in (
+        "chronology",
+        "people",
+        "objects",
+        "taken",
+        "harm",
+        "taken-harm",
+        "time",
+        "severity",
+        "type",
+    )
+
+
+def needs_context(question: str, view: ReportView) -> bool:
+    """Whether a question means something only through the turns before it: "what did he do next?" names no item."""
+    q = question.lower()
+    return bool(_CONTEXT.search(q)) and not _named_items(question, view)
+
+
+def has_no_subject(question: str, view: ReportView) -> bool:
+    """Whether a question is only a pointer ("what about that one?", "what did he do?"): with no conversation before it,
+    nothing says what it means."""
+    q = question.lower()
+    return needs_context(question, view) and not set(_tokens(_CONTEXT.sub(" ", q))) - _intent_words(q)
+
+
 def compose(question: str, view: ReportView) -> ComposedAnswer:
     """The answer to one question about one report version, or a statement that the report does not say."""
     asks_ids = bool(_ASKS_IDS.search(question.lower()))
@@ -950,12 +1270,7 @@ def compose(question: str, view: ReportView) -> ComposedAnswer:
     known_words |= _words(
         " ".join(str(view.incident.get(k) or "") for k in ("type", "title", "description", "location"))
     )
-    intent_words = {
-        w
-        for pattern in (_CHRONOLOGY, _PEOPLE, _OBJECTS, _WHEN, _SEVERITY, _TYPE, _TAKEN, _HARM)
-        for match in pattern.finditer(q)
-        for w in _words(match.group(0))
-    }
+    intent_words = _intent_words(q)
     # Category words ("tools", "weapons") ask for every item of a kind; only other words name a particular item, and
     # an item whose name or label matches beats one whose description merely mentions the word.
     naming = words - intent_words
@@ -970,9 +1285,15 @@ def compose(question: str, view: ReportView) -> ComposedAnswer:
     ]
     how_many = bool(_HOW_MANY.search(q))
     people_q = bool(_PEOPLE.search(q)) and (bool(_PEOPLE_NAMED.search(q)) or not _OBJECT_KINDS.search(q))
-    if _TIME_FIRST.search(q):
+    if _AFTER_INCIDENT.search(q):
+        answer = _after_incident(view)
+    elif _TIME_FIRST.search(q):
         answer = _when(view, targets)
-    elif _CHRONOLOGY.search(q):
+    elif _TYPE.search(q):
+        answer = _incident_type(view)
+    elif _chronology_asked(q) and _SEQUENCE.search(q):
+        answer = _around(view, q)
+    elif _chronology_asked(q):
         answer = _chronology(view, targets)
     elif _TAKEN.search(q) or _HARM.search(q):
         # A question may ask both ("what was taken, or what could cause harm?"): each part is answered.
@@ -985,8 +1306,6 @@ def compose(question: str, view: ReportView) -> ComposedAnswer:
                 all(part.insufficient_evidence for part in parts),
                 "taken-harm",
             )
-    elif _TYPE.search(q):
-        answer = _incident_type(view)
     elif _SEVERITY.search(q) and not targets:
         answer = _severity(view)
     elif _WHEN.search(q):

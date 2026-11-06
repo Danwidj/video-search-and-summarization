@@ -51,6 +51,45 @@
       "verification": "ai_validated: a generator and a blind validator (opaque item ids) agree exactly on every record; not human-verified (X6 pending)",
       "committed": false,
       "created": "2026-11-02"
+    },
+    {
+      "id": "dashboard-severity-supplement-v1",
+      "kind": "dashboard_references",
+      "description": "24 rule-written development requests for the severity-word change (chart-severity-words-v1): 12 valid requests with a canonical severity word (critical, minimal, very low, moderate, severe) and 12 that must still be refused (location, named month/year, camera, person or free-text filter, changing figures, occurrence time, not a chart, an exact level). No ground truth, no clip, no corpus snapshot (scored on spec/refusal only).",
+      "location": {"root": "data", "path": "v2/references/dashboard-severity-supplement-v1"},
+      "files": {"records.jsonl": "61ff990760affa1f8068edace665a5fa0d28a9ce416d72416fd40e7b8015c666"},
+      "counts": {"records": 24, "spec": 12, "unsupported": 12, "ai_proposed": 24, "human_verified": 0},
+      "records_sha256": "61ff990760affa1f8068edace665a5fa0d28a9ce416d72416fd40e7b8015c666",
+      "verification": "ai_proposed: written by rule in a Claude Code session; references follow from the severity-word table and the chart prompt rules; not AI-validated, not human-verified",
+      "committed": false,
+      "created": "2026-11-03"
+    },
+    {
+      "id": "dashboard-severity-supplement-v2",
+      "kind": "dashboard_references",
+      "description": "dashboard-severity-supplement-v1 with two requests swapped to use minor (one valid -> low, one location request that must still be refused), for chart-severity-words-v2. 24 rule-written development requests: 12 valid (minor, critical, minimal, very low, moderate, severe) and 12 that must still be refused. No ground truth, no clip, no corpus snapshot (scored on spec/refusal only).",
+      "location": {"root": "data", "path": "v2/references/dashboard-severity-supplement-v2"},
+      "files": {"records.jsonl": "5e6e3082a5147803c20ac9b51cfd21fa9fd66d7dbfea1476174209a64ad9477f"},
+      "counts": {"records": 24, "spec": 12, "unsupported": 12, "ai_proposed": 24, "human_verified": 0},
+      "records_sha256": "5e6e3082a5147803c20ac9b51cfd21fa9fd66d7dbfea1476174209a64ad9477f",
+      "verification": "ai_proposed: written by rule in a Claude Code session; references follow from the severity-word table (v2) and the chart prompt rules; not AI-validated, not human-verified",
+      "committed": false,
+      "created": "2026-11-03"
+    },
+    {
+      "id": "dashboard-references-test-v1",
+      "kind": "dashboard_references",
+      "description": "The held-out dashboard reference set for C3: 75 requests (60 specs over all 16 dimensions, 15 must-refuse, one per unsupported kind). Specs from rb2.spec_plan (seed 20261104) minus every dev spec; requests rendered from fixed templates (dashboard-test-templates-v1), so expected specs, refusal decisions and figures are deterministic. No model wrote or reviewed it; never sent to a model before C3. Same corpus snapshot and clock as RB2.",
+      "location": {"root": "data", "path": "v2/references/dashboard-references-test-v1"},
+      "files": {
+        "records.jsonl": "5378284418c727108bd0943eb1d539a40939afba6d3aecba5c3ba4cfc027a263",
+        "corpus-snapshot.json": "1c5b2927a21b8a0ee0a9e51f1116707bb8b40bc9dbdcf7eca81fe03c7ed0d5ef"
+      },
+      "counts": {"records": 75, "spec": 60, "unsupported": 15, "ai_proposed": 75, "human_verified": 0},
+      "records_sha256": "5378284418c727108bd0943eb1d539a40939afba6d3aecba5c3ba4cfc027a263",
+      "verification": "deterministic by construction (code-planned specs, template wording, recount figures); tier ai_proposed because no person verified it; not AI-reviewed (held-out answers are never sent to external models)",
+      "committed": false,
+      "created": "2026-11-03"
     }
   ]
 }

@@ -4,7 +4,7 @@
 // camelCase ChatRequest in, camelCase ChatResponse out.
 
 import { readUpstream } from '@/lib/http';
-import type { ChatCitation, ChatRequest, ChatResponse } from '@/modules/chat/domain/chat';
+import type { ChatCitation, ChatRequest, ChatResponse, VideoCheckResult } from '@/modules/chat/domain/chat';
 
 export function toAgentChatBody(request: ChatRequest): Record<string, unknown> {
   const { sessionId, messages, context, versionId, draftReport } = request;
@@ -47,20 +47,30 @@ type AgentGrounding = {
   candidates?: unknown[];
   answered_by?: string;
   count_exact?: boolean;
+  route?: string;
+  unknown_times?: string[];
 };
 
 const stringEntries = (value: Record<string, unknown> | undefined): Record<string, string> =>
   Object.fromEntries(Object.entries(value ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
 type AgentChatResponse = {
   session_id?: string;
-  message?: { role?: string; content?: string; citations?: AgentCitation[]; insufficient_evidence?: boolean };
+  message?: {
+    role?: string;
+    content?: string;
+    citations?: AgentCitation[];
+    insufficient_evidence?: boolean;
+    source?: string;
+    video_offer?: { reason?: string; from_seconds?: number };
+  };
   grounding?: AgentGrounding;
 };
 
 function groundingFrom(grounding: AgentGrounding | undefined): ChatResponse['grounding'] {
-  if (grounding?.mode !== 'grounded' || (grounding.scope !== 'incident' && grounding.scope !== 'library')) return undefined;
+  if ((grounding?.mode !== 'grounded' && grounding?.mode !== 'routed') || (grounding.scope !== 'incident' && grounding.scope !== 'library'))
+    return undefined;
   return {
-    mode: 'grounded',
+    mode: grounding.mode,
     scope: grounding.scope,
     model: String(grounding.model ?? ''),
     versionId: typeof grounding.version_id === 'number' ? grounding.version_id : null,
@@ -78,6 +88,11 @@ function groundingFrom(grounding: AgentGrounding | undefined): ChatResponse['gro
     candidates: Array.isArray(grounding.candidates) ? grounding.candidates.map(String) : [],
     answeredBy: grounding.answered_by === 'model' || grounding.answered_by === 'code' ? grounding.answered_by : null,
     countExact: typeof grounding.count_exact === 'boolean' ? grounding.count_exact : null,
+    route:
+      grounding.route === 'deterministic' || grounding.route === 'report_llm' || grounding.route === 'insufficient'
+        ? grounding.route
+        : null,
+    unknownTimes: Array.isArray(grounding.unknown_times) ? grounding.unknown_times.map(String) : [],
   };
 }
 
@@ -99,6 +114,15 @@ export function fromAgentChatResponse(payload: unknown): ChatResponse {
         cropImageUrl: c.crop_image_url,
       })),
       ...(typeof message.insufficient_evidence === 'boolean' ? { insufficientEvidence: message.insufficient_evidence } : {}),
+      ...(message.source === 'report' || message.source === 'report_llm' ? { source: message.source } : {}),
+      ...(message.video_offer?.reason
+        ? {
+            videoOffer: {
+              reason: message.video_offer.reason,
+              ...(typeof message.video_offer.from_seconds === 'number' ? { fromSeconds: message.video_offer.from_seconds } : {}),
+            },
+          }
+        : {}),
     },
     ...(groundingFrom(grounding) ? { grounding: groundingFrom(grounding) } : {}),
   };
@@ -112,4 +136,21 @@ export async function sendAgentChat(agentUrl: string, request: ChatRequest, sign
     signal,
   });
   return fromAgentChatResponse(await readUpstream(response, 'Agent /api/v1/incidents/chat'));
+}
+
+export async function sendVideoCheck(
+  agentUrl: string,
+  videoId: string,
+  check: { question: string; storedAnswer: string },
+  signal?: AbortSignal,
+): Promise<VideoCheckResult> {
+  const response = await fetch(`${agentUrl.replace(/\/$/, '')}/api/v1/incidents/${encodeURIComponent(videoId)}/video-check`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question: check.question, stored_answer: check.storedAnswer }),
+    signal,
+  });
+  const body = (await readUpstream(response, 'Agent video check')) as { content?: unknown; source?: unknown };
+  if (typeof body.content !== 'string' || body.source !== 'video') throw new Error('Agent returned an invalid video check');
+  return { content: body.content, source: 'video' };
 }

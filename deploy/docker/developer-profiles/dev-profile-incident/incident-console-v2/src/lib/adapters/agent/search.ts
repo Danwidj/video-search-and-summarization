@@ -61,6 +61,9 @@ function fromAgentHit(raw: unknown): EvidenceSearchHit {
       holderEntityId: typeof item.holder_entity_id === 'string' ? item.holder_entity_id : null,
       cropImageUrl: text(item.crop_image_url),
       timestampSeconds: num(item.timestamp_seconds),
+      sliceStartSeconds: numOrNull(item.slice_start_seconds),
+      sliceEndSeconds: numOrNull(item.slice_end_seconds),
+      frameImageUrl: typeof item.frame_image_url === 'string' && item.frame_image_url ? item.frame_image_url : null,
       boundingBox: box,
     },
     incident: {

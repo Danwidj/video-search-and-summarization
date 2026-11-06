@@ -1,0 +1,24 @@
+{
+ "amendment_configs_sha256": {
+  "c3-chat-a4.json": "72e66c7d03de2b6fb9badc1b5923d1e5292f2b28bf8b468e27d9b6ba4a15d6ce",
+  "c3-track-a-switchyard-recovery.json": "883ae4152411cce8d104719b4033aec128e79ba0ba29d14152018783b551ef3d",
+  "c3-track-b-historical-recovery.json": "c2e479d45acd70ff134873a5fa3c9fbd30b6c484cdccc624edddb8c5166d5a11"
+ },
+ "amendments_version": "evalv2-c3-amendments-v1",
+ "approved": "owner, 2026-11-03 (chose \"Approve amendments\" for the paused C3)",
+ "attestation": "No C3 result had been scored or inspected when these amendments were made; only operational counts (attempt outcomes, ledger usage, item counts) were read.",
+ "changed_code_sha256": {
+  "evalv2/tasks/chat/cli.py": "8fc2d2e68b7312768f74fa4829ce11a3489f4bc67d93fcb21fe87d3cb1e5ebcc",
+  "evalv2/tasks/chat/corpus.py": "c0fbacb23335859f15c0c4e78ef992b7e3b7938af3e259a56309a57240b45df6",
+  "evalv2/tasks/incident_objects/v1.py": "94c4fb2f3132a1970140f96e87df1e6f83bfb54a39a614fa87bb72397322d5a8"
+ },
+ "crashed_item": {
+  "item_id": "Explosion004",
+  "outcome": "parse_failure",
+  "record_sha256": "b50e075d6d36f0387061931e21a3f71c7155a5c733ababc4182e6fb2b1816e6b",
+  "repeat": 1,
+  "response": "response:1376788368687e2d031d066777e8c03337f44a1b0634f93e2176567aec03fdc8",
+  "subject": "omni-direct"
+ },
+ "freeze_manifest_sha256": "eb316f37c53a2405120eb06fe3c0ce886d286eca42e89e7bf8b9f894b1f62252"
+}

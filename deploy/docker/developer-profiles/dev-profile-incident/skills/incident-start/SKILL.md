@@ -1,6 +1,6 @@
 ---
 name: incident-start
-description: Use to set up secrets and launch the incident profile from a laptop with start.sh, against the kwanz-ws VM over an SSH tunnel (the local mock-backend + vlm-gateway mode is for mock-backend tests only). Not for changing or repairing services on the VM itself - use incident-operate-vm.
+description: Use to set up secrets and launch the incident profile from a laptop with start.sh, against the kwanz-ws VM over an SSH tunnel (the local mock-backend + vlm-gateway mode is a backup that mimics the backend). Not for changing or repairing services on the VM itself - use incident-operate-vm.
 license: Apache-2.0
 metadata:
   version: "0.1.2"
@@ -17,10 +17,10 @@ metadata:
 
 | User says | Mode | Why |
 |---|---|---|
-| "run the mock backend", "offline from the VM" (mock-backend tests only; never for UI or backend work, and never as a fallback when the VM is unreachable - stop and report) | `--mode mock` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. `--mode local` still works as a deprecated alias. |
+| "run the mock backend", "offline from the VM" (a mock, a backup that mimics the backend; UI and backend work is verified on the VM, and it is never a fallback when the VM is unreachable - stop and report) | `--mode mock` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. `--mode local` still works as a deprecated alias. |
 | "run it", "run against the VM", "real agent", "full stack", "demo", "frontend work", any UI or backend work, no preference | `--mode vm` (default) | Real native `vss-agent` and Phoenix on `kwanz-ws`. `start.sh` self-heals missing services: it starts stopped ones, pulls missing images, clones a missing checkout, and fails with a reason instead of hanging. |
 
-Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#2-deployment--connectivity).
+Details of each path: [launch modes and connectivity](../../.docs/architecture.md#launch-modes-and-connectivity) in `.docs/architecture.md`.
 
 ## Prerequisites
 
@@ -40,7 +40,7 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
      grep -q "^${v}=." .env.local && echo "ok      $v" || echo "MISSING $v"
    done
    ```
-3. **Symlinks:** every service reads its own `.env.local`; local mode passes `mock-backend/.env.local` to the mock backend and `vlm-gateway/.env.local` to the gateway, and stops with the fix command if either is missing. All three links are required:
+3. **Symlinks:** every service reads its own `.env.local`; mock mode passes `mock-backend/.env.local` to the mock backend and `vlm-gateway/.env.local` to the gateway, and stops with the fix command if either is missing. All three links are required:
    ```bash
    for d in incident-console-v2 vlm-gateway mock-backend; do ln -sfn ../.env.local "$d/.env.local"; done
    ```
@@ -53,7 +53,7 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
 
 ```bash
 ./start.sh --mode vm        # VM backend (default; use for all UI and backend work)
-./start.sh --mode mock      # mock-backend tests only, never for UI or backend work
+./start.sh --mode mock      # a mock that mimics the backend; verify UI and backend work on the VM
 ./start.sh --mode vm --no-console   # VM side only: backend + tunnel, no Next.js console
 ```
 
@@ -65,7 +65,7 @@ Environment overrides such as `ENABLE_ANALYTICS`, `VSS_REPO_ROOT`, `INCIDENT_DOC
 
 ## Verify
 
-| Check | local | vm |
+| Check | mock | vm |
 |---|---|---|
 | Console readiness: `curl -s localhost:3200/api/health` returns only booleans | yes | yes |
 | Mock backend: `curl -s 127.0.0.1:7777/health` | yes | - |
@@ -83,7 +83,6 @@ Then run one upload to report with [`incident-analyze-video`](../incident-analyz
 | Symptom | Fix |
 |---|---|
 | `start.sh` aborts at the SSH preflight | Read the `Cause:` / `Fix:` lines it prints (Tailscale logged out or stopped, VM offline in the tailnet, DNS, SSH timeout or refused, login rejected, host key changed). Table: [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting). |
-| `start.sh` aborts with "could not register active run lock" | The backend may currently be stopping from another session's exit. Retry once the stop completes. |
 | `start.sh` stops with `[vm] ERROR` or "timed out" | The Docker step on the VM failed: exit 10 repo, 11 `generated.env.remote` missing, 12 docker unusable, 13 image pull (NGC login), 14/124 `compose up` failed or stuck (its output shows container states and logs). Tunables: `VSS_PULL_TIMEOUT`, `VSS_COMPOSE_UP_TIMEOUT`, `VSS_NATIVE_START_TIMEOUT`. |
 | Tunnel step fails | `start.sh` says whether a laptop port is taken, the SSH forward is blocked (or `VSS_AGENT_HOST` on the VM is bound to a LAN address instead of `127.0.0.1`), the VM address is wrong (set `VSS_VM_IP`), or the agent is down on the VM. |
 | Logged in as the wrong VM user | Set `User` under `Host kwanz-ws`, or `export VSS_SSH_USER=<name>`. |

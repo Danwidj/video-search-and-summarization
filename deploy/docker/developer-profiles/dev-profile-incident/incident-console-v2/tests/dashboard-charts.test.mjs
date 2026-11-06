@@ -5,15 +5,22 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
+  allSplit,
   assetRows,
+  customWindow,
   dashboardView,
-  delta,
+  entityTypeRows,
+  evidenceRows,
+  formatCalendarDay,
   formatDay,
+  instrumentRows,
   severityRows,
+  TOP_INSTRUMENT_ROWS,
   typeRows,
   unratedReports,
 } from '../src/modules/dashboard/domain/charts.ts';
 import { severityChartColor } from '../src/lib/ui/severity.ts';
+import { CHART_REQUEST_ID, CHART_REQUEST_INPUT_ID, jumpToChartRequest } from '../src/sections/dashboard/chart-request-jump.ts';
 
 const analytics = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'dashboard-rpc.json'), 'utf8'));
 
@@ -43,11 +50,7 @@ test('reports with no severity are counted apart from the severity bands', () =>
   assert.equal(unratedReports(withBands(0, 0, 0, 0)), 0);
 });
 
-test('a period comparison and a trend day read as written', () => {
-  assert.equal(delta(5, undefined), null);
-  assert.equal(delta(5, 0), 100);
-  assert.equal(delta(0, 0), 0);
-  assert.equal(delta(3, 2), 50);
+test('a trend day reads as written', () => {
   assert.equal(formatDay('2026-10-28'), 'Oct 28');
   assert.equal(formatDay('2026-01-01'), 'Jan 1', 'never shifted by a time zone');
 });
@@ -68,3 +71,79 @@ function contrastWithWhite(hex) {
   const luminance = 0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2);
   return 1.05 / (luminance + 0.05);
 }
+
+test('evidence, entity and instrument rows keep the RPC order and add up to their totals', () => {
+  const evidence = evidenceRows(analytics);
+  assert.deepEqual(
+    evidence.map((row) => row.label),
+    ['Entities', 'Instruments', 'Assets'],
+  );
+  for (const row of [...evidence, ...entityTypeRows(analytics), ...instrumentRows(analytics)]) {
+    assert.equal(row.official + row.notOfficial, row.total, row.label);
+  }
+  assert.deepEqual(entityTypeRows(analytics)[0], { key: 'human', label: 'human', total: 3, official: 1, notOfficial: 2 });
+  const many = {
+    ...analytics,
+    topInstruments: Array.from({ length: 8 }, (_, i) => ({ label: `i${i}`, count: 1, official: 0, notOfficial: 1 })),
+  };
+  assert.equal(instrumentRows(many).length, TOP_INSTRUMENT_ROWS, 'the panel shows the top rows only');
+});
+
+test('a calendar range is a zoneless UTC window from the first day to the day after the last', () => {
+  const day = customWindow({ from: new Date(2026, 9, 1), to: new Date(2026, 9, 8) });
+  assert.match(day.after, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/, 'zoneless, like every stored timestamp');
+  assert.equal(day.after, new Date(2026, 9, 1).toISOString().replace('Z', ''));
+  assert.equal(day.before, new Date(2026, 9, 9).toISOString().replace('Z', ''), 'the last day is included');
+  const single = customWindow({ from: new Date(2026, 9, 5) });
+  assert.equal(single.before, new Date(2026, 9, 6).toISOString().replace('Z', ''), 'one picked day is a one-day range');
+  assert.equal(formatCalendarDay(new Date(2026, 9, 28)), 'Oct 28, 2026');
+});
+
+test('rows without a loaded split draw from their totals alone, and missing evidence has no rows', async () => {
+  const { dashboardFromRpc } = await import('../src/modules/dashboard/infrastructure/supabase/mappers/dashboard.ts');
+  const { multipleVersions, evidence, ...older } = analytics;
+  const mapped = dashboardFromRpc({
+    ...older,
+    entityTypes: analytics.entityTypes.map(({ label, count }) => ({ label, count })),
+    topInstruments: analytics.topInstruments.map(({ label, count }) => ({ label, count })),
+  });
+  assert.equal(evidenceRows(mapped), null);
+  assert.deepEqual(entityTypeRows(mapped), [
+    { key: 'human', label: 'human', total: 3 },
+    { key: 'unknown', label: 'unknown', total: 1 },
+  ]);
+  assert.deepEqual(instrumentRows(mapped), [{ key: 'machete', label: 'machete', total: 1 }]);
+  assert.equal(allSplit(entityTypeRows(mapped)), false);
+  assert.equal(allSplit(instrumentRows(mapped)), false);
+  assert.equal(allSplit(entityTypeRows(dashboardFromRpc(analytics))), true);
+  assert.equal(allSplit(evidenceRows(dashboardFromRpc(analytics))), true);
+});
+
+test('the Ask for a chart jump scrolls to the request, gently unless motion is reduced, and focuses its box', () => {
+  const page = (reduce, present = true) => {
+    const calls = [];
+    const elements = {
+      [CHART_REQUEST_ID]: { scrollIntoView: (options) => calls.push(['scroll', options]) },
+      [CHART_REQUEST_INPUT_ID]: { focus: (options) => calls.push(['focus', options]) },
+      'some-other-input': { focus: () => calls.push(['wrong focus']) },
+    };
+    const doc = { getElementById: (id) => (present || id !== CHART_REQUEST_ID ? (elements[id] ?? null) : null) };
+    const win = { matchMedia: (query) => ({ matches: reduce && query === '(prefers-reduced-motion: reduce)' }) };
+    return { calls, jump: () => jumpToChartRequest(doc, win) };
+  };
+  const smooth = page(false);
+  assert.equal(smooth.jump(), true);
+  assert.deepEqual(smooth.calls, [
+    ['scroll', { behavior: 'smooth', block: 'start' }],
+    ['focus', { preventScroll: true }],
+  ]);
+  const reduced = page(true);
+  assert.equal(reduced.jump(), true);
+  assert.deepEqual(reduced.calls, [
+    ['scroll', { behavior: 'auto', block: 'start' }],
+    ['focus', { preventScroll: true }],
+  ]);
+  const missing = page(false, false);
+  assert.equal(missing.jump(), false);
+  assert.deepEqual(missing.calls, [], 'nothing scrolls or takes focus when the section is not on the page');
+});

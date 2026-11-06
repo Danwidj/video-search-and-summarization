@@ -372,6 +372,19 @@ async def test_search_revisions_calls_the_rpc_and_returns_rows():
     assert rows == [{"revision_id": 4, "similarity_score": 0.9}]
 
 
+def test_revision_summary_text_leads_with_the_incident_type():
+    assert (
+        revision_summary_text(
+            {"incident": {"type": " burglary ", "title": "Person at counter", "description": "Items."}}
+        )
+        == "burglary: Person at counter\nItems."
+    )
+    assert (
+        revision_summary_text({"incident": {"type": "burglary", "description": "Only this."}}) == "burglary\nOnly this."
+    )
+    assert revision_summary_text({"incident": {"type": "burglary"}}) == ""
+
+
 def test_revision_summary_text_joins_title_and_description_and_tolerates_gaps():
     assert (
         revision_summary_text({"incident": {"title": " Fight ", "description": "Two people."}}) == "Fight\nTwo people."

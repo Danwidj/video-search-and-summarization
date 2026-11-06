@@ -72,6 +72,15 @@ export interface RunHistoryRecords {
   sharedRunIds: Set<string>;
 }
 
+/** A searchable revision whose summary has no vector yet: the text to embed is its type, title and description. */
+export interface MissingEmbedding {
+  videoId: string;
+  revisionId: number;
+  incidentType: string | null;
+  title: string | null;
+  description: string | null;
+}
+
 export interface VideoRepository {
   listVideos(filter: VideoListFilter, page: number, pageSize: number): Promise<Page<VideoListItem>>;
   getVideo(videoId: string): Promise<VideoRecord | null>;
@@ -91,6 +100,27 @@ export interface VideoRepository {
    * revision that is not the searchable one.
    */
   setRevisionCrops(videoId: string, revisionId: number, crops: OfficialCrop[]): Promise<RevisionCropsChange>;
+  /**
+   * The searchable revisions that have image-bearing evidence but no evidence_crops rows (so the video is missing from
+   * Find evidence), optionally only for one video. A video with no such revision is not listed.
+   */
+  listRevisionsMissingCrops(videoId?: string): Promise<Array<{ videoId: string; revisionId: number }>>;
+  /**
+   * Stores a repair's crops only when revisionId is still the video's searchable revision and has no crop rows, so a repair
+   * never overwrites rows stored meanwhile (by another console, or by the save that raced it). Returns the rows stored, or null
+   * when nothing was written.
+   */
+  repairRevisionCrops(videoId: string, revisionId: number, crops: OfficialCrop[]): Promise<number | null>;
+  /**
+   * The searchable revisions that have a title or description and no summary vector, so the summary search cannot find them,
+   * optionally only for one video. The type, title and description are the text to embed.
+   */
+  listRevisionsMissingEmbeddings(videoId?: string): Promise<MissingEmbedding[]>;
+  /**
+   * Stores the summary vector of the video's searchable revision when it has none. Returns false when it already has one.
+   * Throws StoreRejection 'invalid' for a revision that is not the searchable one.
+   */
+  setRevisionEmbedding(videoId: string, revisionId: number, embedding: number[]): Promise<boolean>;
   /** Deletes the video row (its revisions, evidence crops and query results cascade), then the run records that name only this video. */
   deleteVideo(videoId: string): Promise<void>;
 }

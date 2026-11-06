@@ -36,7 +36,7 @@ npm install && npm run lint && npm run typecheck && npm test
 uv sync && uv run ruff check .
 
 # Run and verify the app with `./start.sh --mode vm` (VM agent), never `--mode mock`.
-# mock-backend/base_profile_mock: unit tests only (same pattern for search_profile_mock)
+# mock-backend/base_profile_mock: a mock that mimics the backend, so run its own unit tests here (same pattern for search_profile_mock)
 uv sync && uv run ruff check . && uv run pytest
 
 # eval (hermetic: no live DB, agent or GPU)
@@ -63,7 +63,7 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 - **PostgREST only from `kwanz-ws`** (port 5432 is DPI-blocked). PostgREST has no client transactions, so `report_revisions` inserts retry on a `revision_no` clash (SQLSTATE 23505).
 - **Storage:** R2 holds videos (`videos.filepath` is an **R2 key**, never a VST URL); Supabase holds rows; VIOS disk is only a cache.
 - **Secrets are server-side only:** never `NEXT_PUBLIC_` for a credential or URL; `/api/health` returns booleans only; the gateway owns `VLM_GATEWAY_API_KEY`.
-- **Remote models use `_type: openai`,** never `_type: nim`, with bare base URLs (no `/v1`); why: [`.docs/architecture.md`](.docs/architecture.md#inference-rules--requirements).
+- **Remote models use `_type: openai`,** never `_type: nim`, with bare base URLs (no `/v1`); why: [`.docs/architecture.md`](.docs/architecture.md#model-inference).
 
 ## Boundaries
 
@@ -85,7 +85,7 @@ Stale docs are a defect. Update in the same PR:
 |---|---|
 | A command, port, script or API contract | The matching `skills/incident-*/SKILL.md` and [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) |
 | Schema, R2 layout or report fields | A new `supabase/migrations/` file after the baseline, `supabase/tests/test_baseline.py`, [`.docs/data.md`](.docs/data.md), [`.docs/analysis-schema.md`](.docs/analysis-schema.md) |
-| Topology, components, sequences | [`.docs/architecture.md`](.docs/architecture.md) |
+| Topology, components, sequences | [`.docs/architecture.md`](.docs/architecture.md); what a console page or route does: [`.docs/console-reference.md`](.docs/console-reference.md) |
 | Implementation state, known issues, live VM config | [`.docs/status.md`](.docs/status.md) (rewrite, don't append) |
 | An architectural or tooling decision | New entry at the top of [`.docs/decisions.md`](.docs/decisions.md): Decision / Why / Alternatives rejected / Links, and remove or amend any entry it supersedes |
 | A doc or skill added, moved or renamed | [`README.md`](README.md) doc index and [`skills/README.md`](skills/README.md) |
@@ -97,11 +97,13 @@ Stale docs are a defect. Update in the same PR:
 | [`.docs/status.md`](.docs/status.md) | Starting any task: what is done, known issues, live VM config |
 | [`.docs/action-plan.md`](.docs/action-plan.md) | Checking scope or goals |
 | [`.docs/architecture.md`](.docs/architecture.md) | Touching more than one component, or tracing a request |
+| [`.docs/console-reference.md`](.docs/console-reference.md) | Changing what a console page shows or does, a console route, or the console's configuration |
 | [`.docs/data.md`](.docs/data.md) | Touching tables, the RPCs, cascades, security or R2 keys |
 | [`.docs/analysis-schema.md`](.docs/analysis-schema.md) | Touching report fields, prompts, VLM calls or output parsing |
 | [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) | Anything on `kwanz-ws` |
 | [`.docs/vm-api-contracts.md`](.docs/vm-api-contracts.md) | Calling or changing a `vss-agent` HTTP endpoint or the tunnel ports |
 | [`.docs/decisions.md`](.docs/decisions.md) | Before reversing an existing choice |
 | [`.docs/mvp2/README.md`](.docs/mvp2/README.md) | Natural-language search work |
+| [`.docs/mvp2/chat-routing.md`](.docs/mvp2/chat-routing.md) | Changing how the report chat routes a question, its model prompt or video checks |
 | [`.docs/mvp2/eval.md`](.docs/mvp2/eval.md) | Planning or changing retrieval, critic, detector or embedding evaluation |
 | [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md) | Changing an `incident-console-v2` API route or its database access |
