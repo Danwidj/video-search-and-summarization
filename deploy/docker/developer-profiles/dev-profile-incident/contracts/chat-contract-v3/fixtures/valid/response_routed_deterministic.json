@@ -1,0 +1,29 @@
+{
+  "session_id": "s1",
+  "message": {
+    "role": "assistant",
+    "content": "The report describes an assault.\n\n• 0:22 He pushes the other man.",
+    "citations": [
+      {
+        "incident_id": "V1",
+        "item_id": "E1",
+        "item_type": "entity",
+        "timestamp_seconds": 3.5,
+        "crop_image_url": "https://example.com/E1.jpg"
+      }
+    ],
+    "insufficient_evidence": false,
+    "source": "report"
+  },
+  "grounding": {
+    "mode": "routed",
+    "scope": "incident",
+    "model": null,
+    "version_id": 7,
+    "official": false,
+    "draft": false,
+    "dropped_citations": [],
+    "route": "deterministic",
+    "route_reason": "report_field"
+  }
+}

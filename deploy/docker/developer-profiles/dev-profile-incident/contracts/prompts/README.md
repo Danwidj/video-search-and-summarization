@@ -24,6 +24,9 @@ Every model prompt the profile sends besides the contract's P1 and RP1 prompts (
 | [chart/allowlist](chart/allowlist.json) | chart | console | - | The chart allowlist: metrics, dimensions, periods, severities, incident types (source: `chart-spec.ts`) |
 | [chart/severity-words](chart/severity-words.json) | chart | console | - | Not a prompt: the severity-word table the console applies to a chart request before the model reads it (source: `severity-words.ts`). Eval's `agent-route-v3` reads it |
 | [chat/incident-answer](chat/incident-answer.txt) | chat | agent | - | The grounded chat's system prompt: answer one report version from its JSON, cite item ids, flag insufficient evidence |
+| [chat/incident-routed](chat/incident-routed.txt) | chat | agent | - | The routed chat's system prompt: what the report records, what it supports and what it does not establish, kept apart |
+| [chat/video-look](chat/video-look.txt) | chat | agent | `question` | A reviewer-confirmed blind look at a clip: the question only, never the report's claim (flag, off by default) |
+| [chat/video-compare](chat/video-compare.txt) | chat | agent | - | Text-only comparison of a stored report with a blind video look; it flags a conflict for a person and decides nothing |
 | [chat/library-plan](chat/library-plan.txt) | chat | agent | - | The library chat's planner: filters, a breakdown, a count flag and the search phrase the filters leave |
 | [chat/library-answer](chat/library-answer.txt) | chat | agent | - | The library chat's answer to a question that is not a count, from the matching reports and the code counts |
 
