@@ -299,6 +299,12 @@ _UNCERTAINTY_FILLER_TEXT = (
     "cannot determine determined whether nature reason established confirm confirmed individual individuals"
 )
 _UNCERTAINTY_FILLER = frozenset(_UNCERTAINTY_FILLER_TEXT.split())
+# Where a person's or animal's label stops naming what it is ("man in blue shirt", "dog with a collar").
+_LABEL_HEAD_END = re.compile(r"\s(?:in|with|wearing|near|on|at|inside|lying|walking|standing|carrying|holding)\s")
+# An outfit in a label ("man in white shirt and dark pants"): an event may name either part of it.
+_LABEL_OUTFIT = re.compile(r"^(.+?\s(?:in|wearing)\s)(.+\sand\s.+)$")
+# Words too general to identify one object on their own.
+_VAGUE_NAMES = frozenset({"object", "objects", "item", "items", "thing", "things"})
 _TIME_FIRST = re.compile(r"^\s*(?:when|what time|how long|at what (?:second|point|time|moment))\b")
 
 
@@ -653,6 +659,84 @@ def replaced_ids(text: str, mentions: Mapping[str, str]) -> list[str]:
     return out
 
 
+def _item_phrases(item: Item) -> list[list[frozenset[str]]]:
+    """The ways report text can name one item, each as a phrase: an object's name or label (or the last two words of
+    what the label names, "wooden coffee table" as "coffee table", but never "on ground" from "backpack on ground"), a
+    person's or animal's label or each part of its outfit. Descriptions are left out: they mention other things."""
+    label = " ".join(item.label.lower().split())
+    texts = [label]
+    if item.kind == "entity":
+        if outfit := _LABEL_OUTFIT.match(label):
+            texts += [outfit[1] + part for part in outfit[2].split(" and ")]
+    else:
+        named = _LABEL_HEAD_END.split(f"{label} ", maxsplit=1)[0].split()
+        texts += [item.name.lower(), " ".join(named[-2:]) if len(named) > 2 and "and" not in named[-2:] else ""]
+    phrases = [term_sets(text) for text in dict.fromkeys(texts) if text and text not in _VAGUE_NAMES]
+    return [phrase for phrase in phrases if phrase]
+
+
+def _entity_head(item: Item) -> str:
+    """What a person or animal is, from its label: "dog" for "black and tan dog", "man" for "man in blue shirt"."""
+    words = _LABEL_HEAD_END.split(f"{item.label.lower().strip()} ", maxsplit=1)[0].split()
+    return words[-1] if words else ""
+
+
+def _spans(phrase: Sequence[frozenset[str]], terms: Sequence[frozenset[str]]) -> Iterable[tuple[int, int]]:
+    """Each place ``phrase`` stands word for word in ``terms``, as (start, length)."""
+    for start in range(len(terms) - len(phrase) + 1):
+        if all(word & terms[start + n] for n, word in enumerate(phrase)):
+            yield start, len(phrase)
+
+
+def _named_items(text: str, view: ReportView) -> list[str]:
+    """The items a piece of report text names without using their ids, in the order it names them.
+
+    An item counts only when one of its phrases stands whole in the text; a person or animal also by its head word
+    ("the dog"), when no other entity of the report has that head. The longest phrase wins a stretch of text, so
+    "the white van" is not also the blue van. Items tied on one stretch are the same object if they share a name and
+    label, and the first is taken; otherwise the text does not say which it means, and none is taken.
+    """
+    terms = term_sets(re.sub(r"\bwearing\b", "in", text.lower()))
+    entities = [i for i in view.items if i.kind == "entity"]
+    heads = [_entity_head(i) for i in entities]
+    found: dict[tuple[int, int], list[Item]] = {}
+    for item in view.items:
+        phrases = _item_phrases(item)
+        head = _entity_head(item) if item.kind == "entity" else ""
+        if head and heads.count(head) == 1:
+            phrases.append(term_sets(head))
+        for span in {span for phrase in phrases for span in _spans(phrase, terms)}:
+            found.setdefault(span, []).append(item)
+    taken: set[int] = set()
+    named: list[tuple[int, str]] = []
+    for (start, length), items in sorted(found.items(), key=lambda entry: (-entry[0][1], entry[0][0])):
+        stretch = set(range(start, start + length))
+        if stretch & taken:
+            continue
+        taken |= stretch
+        same_object = all(i.kind != "entity" and (i.name, i.label) == (items[0].name, items[0].label) for i in items)
+        if len(items) == 1 or same_object:
+            named.append((start, items[0].item_id))
+    return [item_id for _, item_id in sorted(named)]
+
+
+def text_items(texts: Iterable[str], view: ReportView) -> list[str]:
+    """The items report texts refer to, each once, in the order they first appear: by id where a text uses ids, else
+    by name (:func:`_named_items`). An item a text does not name is left out, however close it was to the action."""
+    known = [i.item_id for i in view.items]
+    out: list[str] = []
+    seen: set[Any] = set()
+    for text in texts:
+        for item_id in [*referenced_ids(text, known), *_named_items(text, view)]:
+            item = view.item(item_id)
+            # One object can be filed twice, as an instrument and an asset; two people never count as one.
+            key = item_id if item is None or item.kind == "entity" else (item.name, item.label)
+            if key not in seen:
+                seen.add(key)
+                out.append(item_id)
+    return out
+
+
 @dataclass(frozen=True)
 class ComposedAnswer:
     """A composed answer: the prose, the item ids it relies on (for citations), and whether the report could answer."""
@@ -772,11 +856,8 @@ def _chronology(view: ReportView, targets: Sequence[Item]) -> ComposedAnswer:
         if len(events) > MAX_TIMELINE_EVENTS:
             more = _count(len(events) - MAX_TIMELINE_EVENTS, "more event", "more events")
             blocks.append(f"The timeline records {more}.")
-        cited = []
-        for event in shown:
-            cited += [i for i in referenced_ids(str(event.get("description") or ""), known) if i not in cited]
-        cited = cited or [i.item_id for i in view.items if i.is_person]
-        return ComposedAnswer("\n\n".join(blocks), tuple(cited), False, "chronology")
+        cited = text_items((str(e.get("description") or "") for e in shown), view)
+        return ComposedAnswer("\n\n".join(blocks), tuple(cited or [t.item_id for t in targets]), False, "chronology")
     description = str(view.incident.get("description") or "").strip()
     if description:
         window = _window(view)
@@ -785,7 +866,7 @@ def _chronology(view: ReportView, targets: Sequence[Item]) -> ComposedAnswer:
             f"{resolve_references(description, mentions).rstrip('.')}."
             + (f" It runs {window} in the video." if window else "")
         )
-        cited = referenced_ids(description, known) or [i.item_id for i in view.items if i.is_person]
+        cited = text_items([description], view)
         return ComposedAnswer(
             "\n\n".join([text, *_unknowns(view, description, mentions)]), tuple(cited), False, "chronology"
         )
@@ -924,14 +1005,13 @@ def _taken(view: ReportView, targets: Sequence[Item]) -> ComposedAnswer:
     something ("did the hooded man steal anything?").
     """
     mentions = view.mentions()
-    known = [i.item_id for i in view.items]
     objects = [t for t in targets if t.kind != "entity"]
     focus = objects or list(targets)
     takings = _events_about(view, focus, _TAKING)
     if takings:
         shown = takings[:MAX_EVENTS]
         sentences = [_event_sentence(e, mentions) for e in shown]
-        cited = list(dict.fromkeys(i for e in shown for i in referenced_ids(str(e.get("description") or ""), known)))
+        cited = text_items((str(e.get("description") or "") for e in shown), view)
         lead = "The report records this taking:" if len(shown) == 1 else "The report records these takings, in order:"
         return ComposedAnswer(" ".join([lead, *sentences]), tuple(cited or [t.item_id for t in focus]), False, "taken")
     if focus:
