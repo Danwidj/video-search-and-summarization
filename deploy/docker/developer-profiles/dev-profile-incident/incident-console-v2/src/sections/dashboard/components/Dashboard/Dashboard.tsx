@@ -9,7 +9,9 @@ import { CalendarIcon } from 'lucide-react';
 import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
 import { href, type Filters, type LinkFilters, type Range } from '@/modules/dashboard/domain/links';
 import {
+  allSplit,
   assetRows,
+  type BarRow,
   customWindow,
   dashboardView,
   delta,
@@ -56,6 +58,10 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const splitConfig = {
   official: { label: 'Official', color: 'var(--chart-1)' },
   notOfficial: { label: 'Not yet official', color: 'var(--chart-3)' },
+} satisfies ChartConfig;
+
+const totalConfig = {
+  total: { label: 'Reports', color: 'var(--muted-foreground)' },
 } satisfies ChartConfig;
 
 const severityConfig = {
@@ -312,7 +318,7 @@ export function Dashboard() {
           <Panel className="xl:col-span-4" title="Evidence by kind" subtitle="Entities, instruments and assets in the counted reports">
             {panel(
               (d) => (
-                <SplitBars emptyText={emptyText} rows={evidenceRows(d)} />
+                <EvidenceBars emptyText={emptyText} rows={evidenceRows(d)} />
               ),
               'h-40',
             )}
@@ -425,9 +431,11 @@ function Total({ data, change, link }: { data: DashboardAnalytics; change: numbe
           </div>
         ))}
       </dl>
-      <p className="border-t border-ink/10 pt-3 text-sm text-ink/70">
-        <span className="font-semibold text-ink tabular-nums">{data.multipleVersions}</span> with more than one version
-      </p>
+      {data.multipleVersions !== null && (
+        <p className="border-t border-ink/10 pt-3 text-sm text-ink/70">
+          <span className="font-semibold text-ink tabular-nums">{data.multipleVersions}</span> with more than one version
+        </p>
+      )}
       <p className="text-xs text-ink-caption">
         All time: {data.videos.uploaded} videos uploaded, {data.videos.withoutReport} without a report.
       </p>
@@ -472,7 +480,7 @@ function Trend({ points, emptyText }: { points: DashboardAnalytics['trend']; emp
 
 const MAX_TICK_LENGTH = 18;
 
-function RowTick({ x = 0, y = 0, row, href: url }: { x?: number; y?: number; row: SplitRow; href?: string }) {
+function RowTick({ x = 0, y = 0, row, href: url }: { x?: number; y?: number; row: BarRow; href?: string }) {
   const shown = row.label.length > MAX_TICK_LENGTH ? `${row.label.slice(0, MAX_TICK_LENGTH - 1)}…` : row.label;
   const label = (
     <text className="fill-ink text-xs capitalize" dy={4} textAnchor="end" x={x} y={y}>
@@ -492,8 +500,17 @@ const ROW_HEIGHT = 40;
 const LEGEND_HEIGHT = 36;
 const LABEL_ANCHOR = 1e-6;
 
-/** Rows of official and not-yet-official bars. With hrefFor, each row opens its reports; without it, the rows are read only. */
-function SplitBars({ rows, emptyText, hrefFor }: { rows: SplitRow[]; emptyText: string; hrefFor?: (row: SplitRow) => string }) {
+/** Evidence by kind, or its not-loaded state when the RPC does not return it yet. */
+function EvidenceBars({ rows, emptyText }: { rows: SplitRow[] | null; emptyText: string }) {
+  if (!rows) return <NoData text="Evidence counts are not available yet." />;
+  return <SplitBars emptyText={emptyText} rows={rows} />;
+}
+
+/**
+ * Rows of official and not-yet-official bars, or of totals alone when a row has no split. With hrefFor, each row opens its
+ * reports; without it, the rows are read only.
+ */
+function SplitBars({ rows, emptyText, hrefFor }: { rows: BarRow[]; emptyText: string; hrefFor?: (row: BarRow) => string }) {
   const router = useRouter();
   if (!rows.length) return <NoData text={emptyText} />;
   const byLabel = new Map(rows.map((row) => [row.label, row]));
@@ -501,8 +518,13 @@ function SplitBars({ rows, emptyText, hrefFor }: { rows: SplitRow[]; emptyText: 
     const row = rows[index];
     if (row && hrefFor) router.push(hrefFor(row));
   };
+  const split = allSplit(rows);
   return (
-    <ChartContainer config={splitConfig} className="aspect-auto w-full" style={{ height: rows.length * ROW_HEIGHT + LEGEND_HEIGHT }}>
+    <ChartContainer
+      config={split ? splitConfig : totalConfig}
+      className="aspect-auto w-full"
+      style={{ height: rows.length * ROW_HEIGHT + (split ? LEGEND_HEIGHT : 0) }}
+    >
       <BarChart accessibilityLayer barCategoryGap="30%" data={rows} layout="vertical" margin={{ top: 0, right: 28, left: 0, bottom: 0 }}>
         {/* Headroom past the longest bar, so its total label is not clipped at the chart's edge. */}
         <XAxis allowDecimals={false} domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.12)]} hide type="number" />
@@ -519,24 +541,38 @@ function SplitBars({ rows, emptyText, hrefFor }: { rows: SplitRow[]; emptyText: 
           width={132}
         />
         <ChartTooltip content={<ChartTooltipContent />} cursor={false} />
-        <ChartLegend content={<ChartLegendContent />} itemSorter={null} />
-        <Bar
-          className={hrefFor ? 'cursor-pointer' : undefined}
-          dataKey="official"
-          fill="var(--color-official)"
-          onClick={(_entry, index) => activate(index)}
-          isAnimationActive={false}
-          stackId="split"
-        />
-        <Bar
-          className={hrefFor ? 'cursor-pointer' : undefined}
-          dataKey="notOfficial"
-          fill="var(--color-notOfficial)"
-          isAnimationActive={false}
-          onClick={(_entry, index) => activate(index)}
-          radius={[0, 4, 4, 0]}
-          stackId="split"
-        />
+        {split ? (
+          <>
+            <ChartLegend content={<ChartLegendContent />} itemSorter={null} />
+            <Bar
+              className={hrefFor ? 'cursor-pointer' : undefined}
+              dataKey="official"
+              fill="var(--color-official)"
+              onClick={(_entry, index) => activate(index)}
+              isAnimationActive={false}
+              stackId="split"
+            />
+            <Bar
+              className={hrefFor ? 'cursor-pointer' : undefined}
+              dataKey="notOfficial"
+              fill="var(--color-notOfficial)"
+              isAnimationActive={false}
+              onClick={(_entry, index) => activate(index)}
+              radius={[0, 4, 4, 0]}
+              stackId="split"
+            />
+          </>
+        ) : (
+          <Bar
+            className={hrefFor ? 'cursor-pointer' : undefined}
+            dataKey="total"
+            fill="var(--color-total)"
+            isAnimationActive={false}
+            onClick={(_entry, index) => activate(index)}
+            radius={[0, 4, 4, 0]}
+            stackId="split"
+          />
+        )}
         {/* Recharts drops a label on a zero-width bar, so the total hangs off a sliver at the end of the stack. */}
         <Bar dataKey={() => LABEL_ANCHOR} fill="transparent" isAnimationActive={false} legendType="none" stackId="split" tooltipType="none">
           <LabelList className="fill-ink font-semibold" dataKey="total" fontSize={12} offset={8} position="right" />

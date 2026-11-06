@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
+  allSplit,
   assetRows,
   customWindow,
   dashboardView,
@@ -100,4 +101,24 @@ test('a calendar range is a zoneless UTC window from the first day to the day af
   const single = customWindow({ from: new Date(2026, 9, 5) });
   assert.equal(single.before, new Date(2026, 9, 6).toISOString().replace('Z', ''), 'one picked day is a one-day range');
   assert.equal(formatCalendarDay(new Date(2026, 9, 28)), 'Oct 28, 2026');
+});
+
+test('rows without a loaded split draw from their totals alone, and missing evidence has no rows', async () => {
+  const { dashboardFromRpc } = await import('../src/modules/dashboard/infrastructure/supabase/mappers/dashboard.ts');
+  const { multipleVersions, evidence, ...older } = analytics;
+  const mapped = dashboardFromRpc({
+    ...older,
+    entityTypes: analytics.entityTypes.map(({ label, count }) => ({ label, count })),
+    topInstruments: analytics.topInstruments.map(({ label, count }) => ({ label, count })),
+  });
+  assert.equal(evidenceRows(mapped), null);
+  assert.deepEqual(entityTypeRows(mapped), [
+    { key: 'human', label: 'human', total: 3 },
+    { key: 'unknown', label: 'unknown', total: 1 },
+  ]);
+  assert.deepEqual(instrumentRows(mapped), [{ key: 'machete', label: 'machete', total: 1 }]);
+  assert.equal(allSplit(entityTypeRows(mapped)), false);
+  assert.equal(allSplit(instrumentRows(mapped)), false);
+  assert.equal(allSplit(entityTypeRows(dashboardFromRpc(analytics))), true);
+  assert.equal(allSplit(evidenceRows(dashboardFromRpc(analytics))), true);
 });

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { DashboardAnalytics, EvidenceKind, OfficialSplit } from '@/modules/dashboard/domain/types';
+import type { DashboardAnalytics, EvidenceKind, MaybeSplitRankedValue, OfficialSplit } from '@/modules/dashboard/domain/types';
 import type { Range } from '@/modules/dashboard/domain/links';
 
 export type DashboardView = 'loading' | 'failed' | 'ready';
@@ -11,12 +11,23 @@ export function dashboardView(data: DashboardAnalytics | null, error: string): D
   return error ? 'failed' : 'loading';
 }
 
-/** One row of a split bar chart. */
-export interface SplitRow extends OfficialSplit {
+/** One row of a bar chart that has only its total. */
+export interface CountRow {
   key: string;
   label: string;
   total: number;
 }
+
+/** One row of a split bar chart. */
+export interface SplitRow extends CountRow, OfficialSplit {}
+
+/** A row of a bar chart: split when its split is known, else its total only. */
+export type BarRow = SplitRow | CountRow;
+
+export const isSplitRow = (row: BarRow): row is SplitRow => 'official' in row && 'notOfficial' in row;
+
+/** Rows draw as the official split only when every row has one; otherwise as one series of totals. */
+export const allSplit = (rows: BarRow[]): rows is SplitRow[] => rows.every(isSplitRow);
 
 export const SEVERITY_LABELS = { high: 'High (4-5)', medium: 'Medium (3)', low: 'Low (1-2)' } as const;
 
@@ -48,8 +59,9 @@ export const TOP_INSTRUMENT_ROWS = 5;
 
 const EVIDENCE_LABELS: Record<EvidenceKind, string> = { entities: 'Entities', instruments: 'Instruments', assets: 'Assets' };
 
-/** Evidence items of the counted reports by kind (one row each, always in the RPC's order). */
-export function evidenceRows(data: DashboardAnalytics): SplitRow[] {
+/** Evidence items of the counted reports by kind (one row each, always in the RPC's order); null when not loaded. */
+export function evidenceRows(data: DashboardAnalytics): SplitRow[] | null {
+  if (!data.evidence) return null;
   return data.evidence.map(({ kind, count, official, notOfficial }) => ({
     key: kind,
     label: EVIDENCE_LABELS[kind],
@@ -59,16 +71,19 @@ export function evidenceRows(data: DashboardAnalytics): SplitRow[] {
   }));
 }
 
-/** Canonical entity types (human, animal, unknown), counted per report. */
-export function entityTypeRows(data: DashboardAnalytics): SplitRow[] {
-  return data.entityTypes.map(({ label, count, official, notOfficial }) => ({ key: label, label, total: count, official, notOfficial }));
+function rankedRow({ label, count, official, notOfficial }: MaybeSplitRankedValue): BarRow {
+  if (official === null || notOfficial === null) return { key: label, label, total: count };
+  return { key: label, label, total: count, official, notOfficial };
 }
 
-/** The most-used instrument names, exact and normalised, counted per report. */
-export function instrumentRows(data: DashboardAnalytics): SplitRow[] {
-  return data.topInstruments
-    .slice(0, TOP_INSTRUMENT_ROWS)
-    .map(({ label, count, official, notOfficial }) => ({ key: label, label, total: count, official, notOfficial }));
+/** Canonical entity types (human, animal, unknown), counted per report; a row without its split has its total only. */
+export function entityTypeRows(data: DashboardAnalytics): BarRow[] {
+  return data.entityTypes.map(rankedRow);
+}
+
+/** The most-used instrument names, exact and normalised, counted per report; a row without its split has its total only. */
+export function instrumentRows(data: DashboardAnalytics): BarRow[] {
+  return data.topInstruments.slice(0, TOP_INSTRUMENT_ROWS).map(rankedRow);
 }
 
 /** A calendar selection in the viewer's zone: a day, or the first and last day of a range. */

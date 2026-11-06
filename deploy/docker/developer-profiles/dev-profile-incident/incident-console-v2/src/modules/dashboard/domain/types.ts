@@ -18,6 +18,12 @@ export interface OfficialSplit {
 
 export interface SplitRankedValue extends RankedValue, OfficialSplit {}
 
+/** A ranked value whose split an older get_incident_dashboard does not return: then official and notOfficial are null, never 0. */
+export interface MaybeSplitRankedValue extends RankedValue {
+  official: number | null;
+  notOfficial: number | null;
+}
+
 export interface SeverityCounts {
   low: number;
   medium: number;
@@ -60,8 +66,11 @@ export interface DashboardAnalytics {
   /** total, split by whether the counted revision is official. */
   official: number;
   notOfficial: number;
-  /** Counted reports whose video has more than one report version (AI and human alike); not part of the split. */
-  multipleVersions: number;
+  /**
+   * Counted reports whose video has more than one report version (AI and human alike); not part of the split. null when
+   * the RPC does not return it (a definition older than 20261106140000).
+   */
+  multipleVersions: number | null;
   /** All-time video counts, whatever the period and filters. */
   videos: { uploaded: number; withOfficial: number; awaitingSelection: number; withoutReport: number };
   previous: { total: number; human: number; ai: number; high: number } | null;
@@ -78,10 +87,13 @@ export interface DashboardAnalytics {
   /** day and hour are null only for a report without generated_datetime. */
   heatmap: Array<{ day: number | null; hour: number | null; count: number } & OfficialSplit>;
   confidence: Array<{ bucket: number; count: number }>;
-  /** Evidence items of the counted reports, one entry per kind, in the order entities, instruments, assets. */
-  evidence: EvidenceTotal[];
-  entityTypes: SplitRankedValue[];
-  topInstruments: SplitRankedValue[];
+  /**
+   * Evidence items of the counted reports, one entry per kind, in the order entities, instruments, assets. null when the
+   * RPC does not return it (a definition older than 20261106140000).
+   */
+  evidence: EvidenceTotal[] | null;
+  entityTypes: MaybeSplitRankedValue[];
+  topInstruments: MaybeSplitRankedValue[];
   topAssets: SplitRankedValue[];
   threatLevels: Array<{ level: number; count: number }>;
   modelCoverage: ModelCoverage[];
