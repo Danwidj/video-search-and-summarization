@@ -2,33 +2,243 @@
   "name": "chat-routed-multi-turn-v1",
   "note": "Written before any answer was seen. Separate from the frozen C3 set. Each turn runs through the real router on a stored report version, with the real earlier answers as history. Report versions are read-only finals revisions.",
   "conversations": [
-    {"id": "A-entity", "purpose": "A pronoun refers to the person just discussed.", "turns": [
-      {"version": 142, "question": "What did the man in the white shirt do?", "pass": "Says what the report records of the man in the white shirt."},
-      {"version": 142, "question": "What did he do next?", "pass": "Stays on the man in the white shirt and gives a later event from the timeline."}]},
-    {"id": "B-temporal", "purpose": "A temporal follow-up keeps its anchor.", "turns": [
-      {"version": 123, "question": "What happened before the explosion?", "pass": "Says the report records nothing before it, or names only what it records."},
-      {"version": 123, "question": "And what happened immediately afterward?", "pass": "Gives the event after the explosion, not after something else."}]},
-    {"id": "C-uncertainty", "purpose": "Recorded fact stays apart from uncertainty.", "turns": [
-      {"version": 127, "question": "Was the object a weapon?", "pass": "Separates what the report records from what it does not establish."},
-      {"version": 127, "question": "How certain are you?", "pass": "Answers about the report's certainty without claiming more than it states."}]},
-    {"id": "D-version", "purpose": "An earlier answer from another version must not leak. Adversarial: the console starts a new thread on a version change, so this history cannot reach the model in production.", "turns": [
-      {"version": 6, "question": "What animal is in this incident?", "pass": "Follows version 6 (a monkey)."},
-      {"version": 121, "question": "What did the animal knock over?", "pass": "Follows version 121 (a dog), and does not call the animal a monkey as a fact of this report."}]},
-    {"id": "E-insufficient", "purpose": "A detail the report lacks is acknowledged.", "turns": [
-      {"version": 143, "question": "What colour is the dog's collar?", "pass": "Says the report does not record it. No colour is invented."},
-      {"version": 143, "question": "Are you sure the report doesn't say?", "pass": "Holds to that, without inventing a colour."}]},
-    {"id": "F-navigation", "purpose": "A follow-up keeps its timestamps and cards.", "turns": [
-      {"version": 143, "question": "What happened to the vase?", "pass": "Gives the events with times, and a Vase card."},
-      {"version": 143, "question": "When did that happen?", "pass": "Gives the report's times, as clickable text, and keeps a Vase card."}]},
-    {"id": "G-sequence", "purpose": "An elliptical follow-up continues the sequence.", "turns": [
-      {"version": 135, "question": "What did the bear do at the refrigerator?", "pass": "Gives the refrigerator events with times and cards."},
-      {"version": 135, "question": "And after that?", "pass": "Gives the later events, in order."}]},
-    {"id": "H-ambiguous", "purpose": "An ambiguous person is not guessed.", "turns": [
-      {"version": 21, "question": "What did the man do?", "pass": "Says what the report records. May say two men are recorded."},
-      {"version": 21, "question": "What about the other man?", "pass": "Gives only what the report records of another man."}]},
-    {"id": "I-motive", "purpose": "A motive is not invented.", "turns": [
-      {"version": 129, "question": "Why did he attack the other man?", "pass": "Says the report does not establish why."}]},
-    {"id": "J-no-referent", "purpose": "A follow-up with nothing before it is not answered by guessing.", "turns": [
-      {"version": 142, "question": "What about that one?", "pass": "Says it cannot tell what is meant, or asks. Invents no referent."}]}
+    {
+      "id": "A-entity",
+      "purpose": "A pronoun refers to the person just discussed.",
+      "turns": [
+        {
+          "version": 142,
+          "question": "What did the man in the white shirt do?",
+          "pass": "Says what the report records of the man in the white shirt."
+        },
+        {
+          "version": 142,
+          "question": "What did he do next?",
+          "pass": "Stays on the man in the white shirt and gives a later event from the timeline."
+        }
+      ]
+    },
+    {
+      "id": "B-temporal",
+      "purpose": "A temporal follow-up keeps its anchor.",
+      "turns": [
+        {
+          "version": 123,
+          "question": "What happened before the explosion?",
+          "pass": "Says the report records nothing before it, or names only what it records."
+        },
+        {
+          "version": 123,
+          "question": "And what happened immediately afterward?",
+          "pass": "Gives the event after the explosion, not after something else."
+        }
+      ]
+    },
+    {
+      "id": "C-uncertainty",
+      "purpose": "Recorded fact stays apart from uncertainty.",
+      "turns": [
+        {
+          "version": 127,
+          "question": "Was the object a weapon?",
+          "pass": "Separates what the report records from what it does not establish."
+        },
+        {
+          "version": 127,
+          "question": "How certain are you?",
+          "pass": "Answers about the report's certainty without claiming more than it states."
+        }
+      ]
+    },
+    {
+      "id": "D-version",
+      "purpose": "An earlier answer from another version must not leak. Adversarial: the console starts a new thread on a version change, so this history cannot reach the model in production.",
+      "turns": [
+        {
+          "version": 6,
+          "question": "What animal is in this incident?",
+          "pass": "Follows version 6 (a monkey)."
+        },
+        {
+          "version": 121,
+          "question": "What did the animal knock over?",
+          "pass": "Follows version 121 (a dog), and does not call the animal a monkey as a fact of this report."
+        }
+      ]
+    },
+    {
+      "id": "E-insufficient",
+      "purpose": "A detail the report lacks is acknowledged.",
+      "turns": [
+        {
+          "version": 143,
+          "question": "What colour is the dog's collar?",
+          "pass": "Says the report does not record it. No colour is invented."
+        },
+        {
+          "version": 143,
+          "question": "Are you sure the report doesn't say?",
+          "pass": "Holds to that, without inventing a colour."
+        }
+      ]
+    },
+    {
+      "id": "F-navigation",
+      "purpose": "A follow-up keeps its timestamps and cards.",
+      "turns": [
+        {
+          "version": 143,
+          "question": "What happened to the vase?",
+          "pass": "Gives the events with times, and a Vase card."
+        },
+        {
+          "version": 143,
+          "question": "When did that happen?",
+          "pass": "Gives the report's times, as clickable text, and keeps a Vase card."
+        }
+      ]
+    },
+    {
+      "id": "G-sequence",
+      "purpose": "An elliptical follow-up continues the sequence.",
+      "turns": [
+        {
+          "version": 135,
+          "question": "What did the bear do at the refrigerator?",
+          "pass": "Gives the refrigerator events with times and cards."
+        },
+        {
+          "version": 135,
+          "question": "And after that?",
+          "pass": "Gives the later events, in order."
+        }
+      ]
+    },
+    {
+      "id": "H-ambiguous",
+      "purpose": "An ambiguous person is not guessed.",
+      "turns": [
+        {
+          "version": 21,
+          "question": "What did the man do?",
+          "pass": "Says what the report records. May say two men are recorded."
+        },
+        {
+          "version": 21,
+          "question": "What about the other man?",
+          "pass": "Gives only what the report records of another man."
+        }
+      ]
+    },
+    {
+      "id": "I-motive",
+      "purpose": "A motive is not invented.",
+      "turns": [
+        {
+          "version": 129,
+          "question": "Why did he attack the other man?",
+          "pass": "Says the report does not establish why."
+        }
+      ]
+    },
+    {
+      "id": "J-no-referent",
+      "purpose": "A follow-up with nothing before it is not answered by guessing.",
+      "turns": [
+        {
+          "version": 142,
+          "question": "What about that one?",
+          "pass": "Says it cannot tell what is meant, or asks. Invents no referent."
+        }
+      ]
+    },
+    {
+      "id": "K1-begin",
+      "purpose": "An answerable free-form question keeps its navigation. Added after the frozen run showed that set is nearly all refusals, before any of these were asked.",
+      "turns": [
+        {
+          "version": 120,
+          "question": "How did the confrontation begin?",
+          "pass": "Answers from the report, gives the report's times for the events it mentions, and has cards for the items it names."
+        }
+      ]
+    },
+    {
+      "id": "K2-near",
+      "purpose": "An answerable free-form question keeps its navigation. Added after the frozen run showed that set is nearly all refusals, before any of these were asked.",
+      "turns": [
+        {
+          "version": 129,
+          "question": "Which objects were near the attacker?",
+          "pass": "Answers from the report, gives the report's times for the events it mentions, and has cards for the items it names."
+        }
+      ]
+    },
+    {
+      "id": "K3-injury",
+      "purpose": "An answerable free-form question keeps its navigation. Added after the frozen run showed that set is nearly all refusals, before any of these were asked.",
+      "turns": [
+        {
+          "version": 126,
+          "question": "Was anyone visibly injured?",
+          "pass": "Answers from the report, gives the report's times for the events it mentions, and has cards for the items it names."
+        }
+      ]
+    },
+    {
+      "id": "K4-severity",
+      "purpose": "An answerable free-form question keeps its navigation. Added after the frozen run showed that set is nearly all refusals, before any of these were asked.",
+      "turns": [
+        {
+          "version": 143,
+          "question": "Why was this classified with this severity?",
+          "pass": "Answers from the report, gives the report's times for the events it mentions, and has cards for the items it names."
+        }
+      ]
+    },
+    {
+      "id": "K5-bear",
+      "purpose": "An answerable free-form question keeps its navigation. Added after the frozen run showed that set is nearly all refusals, before any of these were asked.",
+      "turns": [
+        {
+          "version": 135,
+          "question": "What did the bear break?",
+          "pass": "Answers from the report, gives the report's times for the events it mentions, and has cards for the items it names."
+        }
+      ]
+    },
+    {
+      "id": "K6-register",
+      "purpose": "An answerable free-form question keeps its navigation. Added after the frozen run showed that set is nearly all refusals, before any of these were asked.",
+      "turns": [
+        {
+          "version": 122,
+          "question": "What did the person do at the cash register?",
+          "pass": "Answers from the report, gives the report's times for the events it mentions, and has cards for the items it names."
+        }
+      ]
+    },
+    {
+      "id": "K7-vehicles",
+      "purpose": "An answerable free-form question keeps its navigation. Added after the frozen run showed that set is nearly all refusals, before any of these were asked.",
+      "turns": [
+        {
+          "version": 123,
+          "question": "What happened to the vehicles?",
+          "pass": "Answers from the report, gives the report's times for the events it mentions, and has cards for the items it names."
+        }
+      ]
+    },
+    {
+      "id": "K8-after",
+      "purpose": "An answerable free-form question keeps its navigation. Added after the frozen run showed that set is nearly all refusals, before any of these were asked.",
+      "turns": [
+        {
+          "version": 21,
+          "question": "What happened to the man after the dog attacked him?",
+          "pass": "Answers from the report, gives the report's times for the events it mentions, and has cards for the items it names."
+        }
+      ]
+    }
   ]
 }

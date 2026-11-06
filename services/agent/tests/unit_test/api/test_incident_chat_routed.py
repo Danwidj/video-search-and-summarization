@@ -280,6 +280,11 @@ def test_a_time_stated_in_seconds_is_known_rounded_either_way() -> None:
     assert body["grounding"]["unknown_times"] == ["0:15"]
 
 
+def test_an_id_the_question_wrote_is_not_rewritten() -> None:
+    body = _ask("Who is holding stick I2?", FakeModel(answer="The report has no item I2.", citations=[])).json()
+    assert "no item I2" in body["message"]["content"] and body["grounding"]["ids_resolved"] == []
+
+
 def test_ids_stay_out_of_the_text() -> None:
     body = _ask("Who pushed him?", FakeModel(answer="E2 pushes E1.")).json()
     assert "E2" not in body["message"]["content"] and body["grounding"]["ids_resolved"] == ["E2", "E1"]

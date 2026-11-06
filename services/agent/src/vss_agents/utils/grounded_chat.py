@@ -317,7 +317,9 @@ def check_routed(
             raise ChatModelError(f"chat model reply lacks {key}")
     if not isinstance(reply.get("video_could_answer"), bool):
         raise ChatModelError("chat model reply lacks video_could_answer")
-    checked = check_answer(reply, context, question=question, retired=retired)
+    # A question that writes an id ("who holds stick I2?") may be answered with that id: the reader used it first.
+    keep_ids = report_answers.names_an_id(question)
+    checked = check_answer(reply, context, question=question, retired=retired, keep_ids=keep_ids)
     mentions = item_mentions(context, retired)
     parts = [checked.content]
     for label, key in (
@@ -326,7 +328,7 @@ def check_routed(
     ):
         text = reply[key].strip()
         if text:
-            parts.append(f"{label}: {report_answers.resolve_references(text, mentions)}")
+            parts.append(f"{label}: {text if keep_ids else report_answers.resolve_references(text, mentions)}")
     content = "\n\n".join(parts)
     cited = checked.item_ids
     if not checked.insufficient_evidence:
@@ -384,7 +386,12 @@ class GroundedAnswer:
 
 
 def check_answer(
-    reply: Mapping[str, Any], context: Mapping[str, Any], *, question: str = "", retired: Iterable[str] = ()
+    reply: Mapping[str, Any],
+    context: Mapping[str, Any],
+    *,
+    question: str = "",
+    retired: Iterable[str] = (),
+    keep_ids: bool = False,
 ) -> GroundedAnswer:
     """The model's answer with its citations checked against the context; unknown ids are dropped and counted.
 
@@ -408,7 +415,9 @@ def check_answer(
     insufficient = bool(reply["insufficient_evidence"])
     content = reply["answer"].strip()
     mentions = item_mentions(context, retired)
-    leaked: list[str] = [] if report_answers.asks_for_ids(question) else report_answers.replaced_ids(content, mentions)
+    leaked: list[str] = (
+        [] if keep_ids or report_answers.asks_for_ids(question) else report_answers.replaced_ids(content, mentions)
+    )
     if leaked:
         content = report_answers.resolve_references(content, mentions)
     return GroundedAnswer(
