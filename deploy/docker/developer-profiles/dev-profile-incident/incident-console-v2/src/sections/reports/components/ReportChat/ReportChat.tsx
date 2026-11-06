@@ -2,6 +2,7 @@
 'use client';
 
 import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { XIcon } from 'lucide-react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +12,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
+import { SheetClose } from '@/components/ui/sheet';
 import {
   MessageScroller,
   MessageScrollerContent,
@@ -154,12 +156,12 @@ export function ReportChat({
   return (
     <Card
       aria-label="Ask about this incident"
-      className="flex h-full w-full flex-col overflow-hidden border-0 bg-card text-card-foreground shadow-none"
+      className="flex h-full w-full flex-col overflow-hidden rounded-none border-0 bg-card text-card-foreground shadow-none"
       data-testid="report-chat"
     >
-      <div className="flex items-start justify-between gap-2 border-b border-border bg-muted/40 py-3 pr-14 pl-3.5">
+      <div className="relative flex min-h-24 items-center border-b border-border/70 bg-muted/40 px-5 py-5 pr-14">
         <div className="min-w-0">
-          <b className="text-sm">Ask about this incident</b>
+          <h2 className="text-lg font-bold tracking-tight text-foreground">Ask about this incident</h2>
           <p className="mt-1.5">
             <Badge
               className="text-[11px] font-semibold"
@@ -167,21 +169,25 @@ export function ReportChat({
               title="The chat follows the version you have selected"
               variant="outline"
             >
-              Asking about {target.label}
+              {target.label}
             </Badge>
           </p>
         </div>
-        <div className="flex gap-1.5">
-          <Button
-            disabled={!messages.length || busy}
-            onClick={() => onThreadChange({ messages: [], sessionId: undefined, failed: null })}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            New chat
+        <SheetClose asChild>
+          <Button aria-label="Close chat" className="absolute top-3 right-3" size="icon-sm" type="button" variant="ghost">
+            <XIcon aria-hidden="true" />
           </Button>
-        </div>
+        </SheetClose>
+        <Button
+          className="absolute right-4 bottom-3"
+          disabled={!messages.length || busy}
+          onClick={() => onThreadChange({ messages: [], sessionId: undefined, failed: null })}
+          size="xs"
+          type="button"
+          variant="outline"
+        >
+          New chat
+        </Button>
       </div>
       <MessageScrollerProvider>
         <MessageScroller className="flex min-h-0 flex-1 flex-col">
