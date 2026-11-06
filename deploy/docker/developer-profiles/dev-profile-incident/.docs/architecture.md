@@ -156,7 +156,7 @@ The extension is a set of routes registered by the stock worker, one NAT tool, a
 | `evidence-embeddings` route | Route | Embeds a revision's evidence items as passage text with the same model search uses; returns vectors only, the console writes the rows |
 | `revision-embedding` route | Route | Embeds a version's summary text (`revision_summary_text`: "type: title", then the description) as a passage with the same model; the console stores the vector on a human version at Save and in the automatic repair |
 | `chat` route | Route | Template mode composes an answer from one report version without a model call; grounded mode (behind a flag) answers from one version with a chat model and checked citations, and answers library questions by a planned, counted search |
-| `chart-requests` and `charts` routes | Routes | The agent's own LLM turns a dashboard request into a chart specification; the stock chart generator draws the figures the console sends |
+| `chart-requests` and `charts` routes | Routes | The agent's own LLM turns a dashboard request into a chart specification; the chart generator (`chart_generator`) places the figures the console sends into a Chart.js configuration that the browser draws, with a PNG fallback |
 | `box/describe` and `box/track` routes | Routes | Name and describe a reviewer-drawn box with the VLM; follow the box through the clip with the object tracker. Nothing is stored |
 | Detector, zoom namer, evidence store, scratch store, perception client, embedder | Interfaces with one production implementation each | The remote VLM as the open-vocabulary detector and namer, object storage as the evidence and scratch store, HTTP clients for the perception stack and the embedding endpoint; in-memory and fake variants for tests |
 
