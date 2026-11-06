@@ -179,10 +179,15 @@ export function Dashboard() {
           <div className="flex flex-wrap items-center gap-2">
             <Select
               value={days}
+              onOpenChange={(open) => {
+                if (open) {
+                  pickerFromSelect.current = false;
+                  return;
+                }
+                if (pickerFromSelect.current) openPicker();
+              }}
               onValueChange={(val) => {
-                if (val !== 'custom') return setDays(val);
-                pickerFromSelect.current = true;
-                openPicker();
+                if (val !== 'custom') setDays(val);
               }}
             >
               <SelectTrigger className="w-[140px] border-ink/10 bg-white text-ink">
@@ -198,7 +203,20 @@ export function Dashboard() {
                 <SelectItem value="7">Last 7 days</SelectItem>
                 <SelectItem value="30">Last 30 days</SelectItem>
                 <SelectItem value="all">All time</SelectItem>
-                <SelectItem value="custom">Custom range</SelectItem>
+                <SelectItem
+                  onClick={(event) => {
+                    if (!event.defaultPrevented) pickerFromSelect.current = true;
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') pickerFromSelect.current = true;
+                  }}
+                  onPointerUp={(event) => {
+                    if (event.pointerType === 'mouse' && !event.defaultPrevented) pickerFromSelect.current = true;
+                  }}
+                  value="custom"
+                >
+                  Custom range
+                </SelectItem>
               </SelectContent>
             </Select>
             <Popover onOpenChange={(open) => (open ? openPicker() : setPickerOpen(false))} open={pickerOpen}>
