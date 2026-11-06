@@ -133,4 +133,28 @@ describe('get_incident_dashboard mapping', () => {
     assert.deepEqual(dashboardFromRpc(null).severityByScope.notOfficial, { low: 0, medium: 0, high: 0 });
     assert.equal(dashboardFromRpc(null).official, 0);
   });
+
+  test('a result from a definition older than 20261106140000 reads its missing figures as not loaded, never as 0', () => {
+    const { multipleVersions, evidence, ...older } = analytics;
+    older.entityTypes = analytics.entityTypes.map(({ label, count }) => ({ label, count }));
+    older.topInstruments = analytics.topInstruments.map(({ label, count }) => ({ label, count }));
+    const mapped = dashboardFromRpc(older);
+    assert.equal(mapped.multipleVersions, null);
+    assert.equal(mapped.evidence, null);
+    assert.deepEqual(mapped.entityTypes, [
+      { label: 'human', count: 3, official: null, notOfficial: null },
+      { label: 'unknown', count: 1, official: null, notOfficial: null },
+    ]);
+    assert.deepEqual(mapped.topInstruments, [{ label: 'machete', count: 1, official: null, notOfficial: null }]);
+    assert.equal(mapped.total, analytics.total, 'the figures it does return are unchanged');
+    assert.deepEqual(mapped.topAssets, analytics.topAssets);
+  });
+
+  test('a result with the new fields keeps them, a loaded 0 included', () => {
+    const mapped = dashboardFromRpc({ ...analytics, multipleVersions: 0 });
+    assert.equal(mapped.multipleVersions, 0);
+    assert.deepEqual(mapped.evidence, analytics.evidence);
+    assert.deepEqual(mapped.entityTypes, analytics.entityTypes);
+    assert.deepEqual(mapped.topInstruments, analytics.topInstruments);
+  });
 });
