@@ -2,11 +2,12 @@
 
 // Store reviewer items: for each item of a saved edit that came from the box tool (or was re-tracked), cut the crop and the
 // whole frame at the first-seen second, store them and the track file under `edit-<N>/`, and answer the evidence entry the
-// new revision holds for it. The reviewer's own box is the box, so nothing is detected here.
+// new revision holds for it. An item whose image the reviewer set (Set image, `image_pick`) is cut at the frame and box they
+// drew instead, and keeps its track and text. The reviewer's own box is the box, so nothing is detected here.
 
 import { boxRegion } from '@/lib/evidence/frame-geometry';
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
-import { reviewerEntryFields, type ReviewerPayload } from '@/modules/reports/domain/reviewer-item';
+import { type ImagePick, imageEntryFields, reviewerEntryFields, type ReviewerPayload } from '@/modules/reports/domain/reviewer-item';
 import {
   type EvidenceEntry,
   type EvidenceItemType,
@@ -37,21 +38,31 @@ const REPLACED_FIELDS = [
   'track_partial',
 ];
 
+// A reviewer's new image replaces the old crop but not the item's track: only the box tool or a re-track replaces that.
+const TRACK_FIELDS = ['track_gap', 'track', 'track_first_seen_seconds', 'track_last_seen_seconds', 'track_source', 'track_partial'];
+const IMAGE_REPLACED_FIELDS = REPLACED_FIELDS.filter((field) => !TRACK_FIELDS.includes(field));
+
 interface ReviewerItem {
   type: EvidenceItemType;
   itemId: string;
   sourceId: string | null;
-  reviewer: ReviewerPayload;
+  /** Null for an item that only had its image set. */
+  reviewer: ReviewerPayload | null;
+  pick: ImagePick | null;
 }
 
-/** The edit's items that carry reviewer data, by their final IDs. */
+/** The edit's items that carry reviewer data or a picked image, by their final IDs. */
 export function reviewerItems(edit: StructuredEdit): ReviewerItem[] {
-  const pick = <T extends { source_id: string | null; reviewer?: ReviewerPayload | null }>(
+  const pick = <T extends { source_id: string | null; reviewer?: ReviewerPayload | null; image_pick?: ImagePick | null }>(
     type: EvidenceItemType,
     items: T[],
     idOf: (item: T) => string,
   ): ReviewerItem[] =>
-    items.flatMap((item) => (item.reviewer ? [{ type, itemId: idOf(item), sourceId: item.source_id, reviewer: item.reviewer }] : []));
+    items.flatMap((item) =>
+      item.reviewer || item.image_pick
+        ? [{ type, itemId: idOf(item), sourceId: item.source_id, reviewer: item.reviewer ?? null, pick: item.image_pick ?? null }]
+        : [],
+    );
   return [
     ...pick('entity', edit.entities, (item) => item.entity_id),
     ...pick('instrument', edit.instruments, (item) => item.instrument_id),
@@ -87,10 +98,10 @@ export async function storeReviewerItems(
       reviewerTrackKey(videoKey, n, item.itemId),
     ]),
   );
-  for (const { type, itemId, sourceId, reviewer } of items) {
-    const first = reviewer.track?.samples[0];
-    const seconds = first ? first.t : reviewer.still_seconds;
-    const box = first ? first.box : reviewer.still_box;
+  for (const { type, itemId, sourceId, reviewer, pick } of items) {
+    const first = reviewer?.track?.samples[0];
+    const seconds = pick ? pick.seconds : first ? first.t : reviewer?.still_seconds;
+    const box = pick ? pick.box : first ? first.box : reviewer?.still_box;
     const region = boxRegion(box);
     if (seconds === null || seconds === undefined || !region)
       throw new StoreRejection('invalid', `${itemId}: a reviewer item needs a track, or a still second and box`);
@@ -101,15 +112,17 @@ export async function storeReviewerItems(
     const keys = {
       image: uploadedEvidenceKey(videoKey, editNumber, itemId),
       frame: reviewerFrameKey(videoKey, editNumber, itemId),
-      track: reviewer.track ? reviewerTrackKey(videoKey, editNumber, itemId) : null,
+      track: reviewer?.track ? reviewerTrackKey(videoKey, editNumber, itemId) : null,
     };
     await store.put(keys.image, crop, 'image/jpeg');
     await store.put(keys.frame, frame, 'image/jpeg');
-    if (reviewer.track && keys.track) await store.put(keys.track, Buffer.from(JSON.stringify(reviewer.track)), 'application/json');
+    if (reviewer?.track && keys.track) await store.put(keys.track, Buffer.from(JSON.stringify(reviewer.track)), 'application/json');
     const base = sourceId ? parentEvidence.find((entry) => entry.item_type === type && entry.item_id === sourceId) : undefined;
-    const kept = Object.fromEntries(Object.entries(base ?? {}).filter(([key]) => !REPLACED_FIELDS.includes(key)));
-    const entry = { ...kept, item_type: type, item_id: itemId, ...reviewerEntryFields(reviewer, keys) } as EvidenceEntry;
-    // A re-tracked item keeps the source its entry had (an AI entry has none); only a box the reviewer drew is `reviewer`.
+    const replaced = reviewer ? REPLACED_FIELDS : IMAGE_REPLACED_FIELDS;
+    const kept = Object.fromEntries(Object.entries(base ?? {}).filter(([key]) => !replaced.includes(key)));
+    const fields = reviewer ? reviewerEntryFields(reviewer, keys, pick) : imageEntryFields({ seconds, box: box as ImagePick['box'] }, keys);
+    const entry = { ...kept, item_type: type, item_id: itemId, ...fields } as EvidenceEntry;
+    // A re-tracked or re-imaged item keeps the source its entry had (an AI entry has none); only a box the reviewer drew is `reviewer`.
     if (base) {
       if (base.source === undefined) delete entry.source;
       else entry.source = base.source;

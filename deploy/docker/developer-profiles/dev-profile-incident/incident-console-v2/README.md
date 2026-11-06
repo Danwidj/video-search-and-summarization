@@ -15,6 +15,7 @@ The console opens on `http://127.0.0.1:3200`; `GET /api/health` should report `r
 - **Mock mode:** `./start.sh --mode mock` runs a zero-GPU mock that mimics the backend, a backup rather than the real one; verify UI work on the VM. To run the console by hand in mock mode, start the [mock backend](../mock-backend/base_profile_mock/README.md) and the [VLM gateway](../vlm-gateway/README.md), then `npm install && npm run dev` here.
 - **Settings:** `.env.local` is a symlink to the profile's shared `../.env.local`. Edit that file, not the symlink.
 - **ffmpeg:** every upload is probed and, unless it is already an H.264 MP4, converted to one at its original resolution; evidence frames and crops also need `ffmpeg`. `npm install` fetches both binaries. The console uses `FFMPEG_PATH` or `FFPROBE_PATH` first, then the bundled copy, then `PATH` ([host-binaries.ts](src/lib/video/host-binaries.ts)).
+- **Evidence image (Edit mode):** clicking an evidence card's image opens a picker: choose a frame of the report's video, drag a crop with the mouse, **Use this image**. Save as new version cuts it on the server (`image_pick`, with `ffmpeg`) and stores it as that item's image; the text and track stay ([console reference](../.docs/console-reference.md#report-versions-view-edit-and-history)).
 - **Background jobs:** a loop in this console's server process runs queued analyses one at a time. Every console pointed at finals takes jobs from the same queue; set `ANALYSIS_JOB_LOOP=off` to keep this one out.
 
 ## Check it

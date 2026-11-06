@@ -159,12 +159,14 @@ test('the client posts to the proxy routes and reads their answers', async () =>
   }
 });
 
-test('Edit mode offers + Add evidence and one Edit per card, and no Replace image or crop picker', async () => {
+test('Edit mode offers Add evidence and, per card, Edit track and a clickable image (Set image), and no Replace image or upload-only picker', async () => {
   const pane = await readFile(new URL('reports/components/ReportEditPane/ReportEditPane.tsx', sections), 'utf8');
-  assert.match(pane, /\+ Add evidence/);
-  assert.match(pane, /onClick=\{onEdit\}[\s\S]*?>\s*Edit\s*</);
+  assert.match(pane, /data-testid="add-evidence"/);
+  assert.match(pane, /data-testid="edit-track"/);
+  assert.match(pane, /'set-image'/);
   assert.doesNotMatch(pane, /Replace image|EvidenceFramePicker|Track from my box/i);
   assert.match(pane, /<BoxTool/);
+  assert.match(pane, /<EvidenceImagePicker/);
   const dialog = await readFile(new URL('evidence/components/BoxTool/BoxTool.tsx', sections), 'utf8');
   for (const text of [
     'Analyse this box',
