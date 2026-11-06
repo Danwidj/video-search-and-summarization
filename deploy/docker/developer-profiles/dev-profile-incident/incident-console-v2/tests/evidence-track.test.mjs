@@ -17,6 +17,7 @@ const {
   parseTrackSamples,
   presenceRegion,
   presenceSeekSeconds,
+  draftOverlay,
   STILL_BOX_LEAD_SECONDS,
   STILL_BOX_WINDOW_SECONDS,
   stillBoxesFor,
@@ -308,4 +309,135 @@ test('the track use case reads only the key the revision names, and a malformed 
   assert.equal(await getEvidenceTrack(incidents, store([]), { ...request, itemId: 'E9' }), null);
   assert.equal(await getEvidenceTrack(incidents, store([]), { ...request, revisionId: revisionId + 50 }), null);
   assert.deepEqual(read, [TRACK_KEY, TRACK_KEY, TRACK_KEY, TRACK_KEY]);
+});
+
+// The draft the Edit mode overlay reads: an item's saved evidence is found through its source id.
+const savedEvidence = (id, fields) => ({
+  track: null,
+  trackUrl: null,
+  trackFirstSeenSeconds: null,
+  trackLastSeenSeconds: null,
+  located: true,
+  boxSeconds: null,
+  boundingBox: null,
+  ...fields,
+  id,
+});
+const tracked = (id) => savedEvidence(id, { track: `${id}.json`, trackUrl: `/t/${id}`, trackFirstSeenSeconds: 1, trackLastSeenSeconds: 9 });
+const stored = (id) => savedEvidence(id, { boxSeconds: 4, boundingBox: [100, 100, 300, 300] });
+const draftBase = {
+  entities: [
+    { entityId: 'E1', label: 'man', type: 'human', evidence: tracked('E1') },
+    { entityId: 'E2', label: 'woman', type: 'human', evidence: stored('E2') },
+  ],
+  instruments: [{ instrumentId: 'I1', name: 'knife', evidence: tracked('I1') }],
+  assets: [{ assetId: 'A1', name: 'car', evidence: tracked('A1') }],
+};
+const details = (key, sourceId, extra = {}) => ({ key, sourceId, reviewer: null, imagePick: null, ...extra });
+const baseDraft = () => ({
+  incident: {},
+  entities: [
+    { ...details('e1', 'E1'), label: 'man', type: 'human', canonicalId: 'E1' },
+    { ...details('e2', 'E2'), label: 'woman', type: 'human', canonicalId: 'E2' },
+  ],
+  instruments: [{ ...details('i1', 'I1'), name: 'knife' }],
+  assets: [{ ...details('a1', 'A1'), name: 'car' }],
+});
+const heldSamples = [{ t: 2, box: [10, 10, 200, 200] }];
+const colours = (overlay) => Object.fromEntries(overlay.tracks.map((item) => [item.id, item.colour]));
+
+test('an unchanged draft shows what the saved version shows, in the same colours', () => {
+  const overlay = draftOverlay(baseDraft(), draftBase);
+  assert.deepEqual(
+    overlay.tracks.map(({ id, label, trackUrl, samples: own }) => [id, label, trackUrl, own]),
+    [
+      ['e1', 'man', '/t/E1', undefined],
+      ['i1', 'knife', '/t/I1', undefined],
+      ['a1', 'car', '/t/A1', undefined],
+    ],
+  );
+  assert.deepEqual(
+    overlay.tracks.map((item) => item.colour),
+    trackedReportItems(draftBase).map((item) => item.colour),
+  );
+  assert.deepEqual(overlay.stills, [{ id: 'e2', label: 'woman', box: [100, 100, 300, 300], seconds: 4 }]);
+});
+
+test('a re-tracked item draws the samples held in the draft, and a still item that gains a track stops being a still', () => {
+  const draft = baseDraft();
+  draft.entities[0].reviewer = { track: { samples: heldSamples } };
+  draft.entities[1].reviewer = { track: { samples: heldSamples } };
+  const overlay = draftOverlay(draft, draftBase);
+  assert.deepEqual(overlay.tracks[0].samples, heldSamples);
+  assert.equal(overlay.tracks[0].trackUrl, null);
+  assert.deepEqual(overlay.tracks[1].samples, heldSamples);
+  assert.deepEqual(overlay.stills, []);
+});
+
+test('a reviewer still and a picked image move the stored box; a pick on a tracked item keeps its track', () => {
+  const draft = baseDraft();
+  draft.entities[0].reviewer = { track: null, stillSeconds: 7, stillBox: [1, 2, 30, 40] };
+  draft.entities[1].imagePick = { seconds: 5.5, box: [5, 5, 50, 50] };
+  draft.instruments[0].imagePick = { seconds: 6, box: [6, 6, 60, 60] };
+  const overlay = draftOverlay(draft, draftBase);
+  assert.deepEqual(
+    overlay.stills.map(({ id, seconds, box }) => [id, seconds, box]),
+    [
+      ['e1', 7, [1, 2, 30, 40]],
+      ['e2', 5.5, [5, 5, 50, 50]],
+    ],
+  );
+  assert.deepEqual(
+    overlay.tracks.map((item) => item.id),
+    ['i1', 'a1'],
+  );
+});
+
+test('a deleted item draws nothing, and an item with no box and no track draws nothing', () => {
+  const draft = baseDraft();
+  draft.assets = [];
+  draft.entities = draft.entities.filter((entity) => entity.key !== 'e2');
+  draft.instruments.push({ ...details('i2', null), name: '' });
+  const overlay = draftOverlay(draft, draftBase);
+  assert.deepEqual(
+    overlay.tracks.map((item) => item.id),
+    ['e1', 'i1'],
+  );
+  assert.deepEqual(overlay.stills, []);
+});
+
+test("a new item keeps other items' colours where it can: it joins the end of its kind, and only later kinds' tracks shift, as Save will store them", () => {
+  const before = colours(draftOverlay(baseDraft(), draftBase));
+  const reviewer = { track: { samples: heldSamples } };
+
+  const withAsset = baseDraft();
+  withAsset.assets.push({ ...details('a2', null), name: 'bag', reviewer });
+  const afterAsset = colours(draftOverlay(withAsset, draftBase));
+  assert.deepEqual({ ...afterAsset, a2: undefined }, { ...before, a2: undefined }, 'a new last item moves nobody');
+  assert.equal(new Set(Object.values(afterAsset)).size, 4, 'and takes a colour of its own');
+
+  const withStill = baseDraft();
+  withStill.entities.push({
+    ...details('e3', null),
+    label: 'dog',
+    type: 'animal',
+    reviewer: { track: null, stillSeconds: 3, stillBox: [1, 1, 9, 9] },
+  });
+  assert.deepEqual(colours(draftOverlay(withStill, draftBase)), before, 'a new still takes no colour');
+
+  const withEntity = baseDraft();
+  withEntity.entities.push({ ...details('e3', null), label: 'dog', type: 'animal', reviewer });
+  const afterEntity = colours(draftOverlay(withEntity, draftBase));
+  assert.equal(afterEntity.e1, before.e1, 'an earlier item of its kind keeps its colour');
+  assert.equal(afterEntity.e3, trackColour(1));
+  assert.equal(afterEntity.i1, trackColour(2), 'a tracked item of a later kind takes the colour it will have once saved');
+});
+
+test('Edit mode feeds the overlay from the draft and hides the item whose Edit track dialog is open', async () => {
+  const page = await readFile(new URL('../src/sections/reports/components/ReportPage/ReportPage.tsx', import.meta.url), 'utf8');
+  assert.match(page, /draftOverlay\(draft, editBase\.report\.structured\)/);
+  assert.match(page, /tracks\.filter\(\(item\) => item\.id !== editingTrackKey\)/);
+  assert.match(page, /stills\.filter\(\(item\) => item\.id !== editingTrackKey\)/);
+  assert.doesNotMatch(page, /mode === 'view' && !inPip/, 'the overlay is not View-only any more');
+  assert.match(page, /onEditingTrack=\{setEditingTrackKey\}/);
 });

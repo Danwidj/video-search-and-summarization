@@ -6,6 +6,7 @@
 // presence bar shows.
 
 import { boxRegion, containFrame } from '@/lib/evidence/frame-geometry';
+import type { EditDraft } from '@/modules/reports/domain/edit-draft';
 import type { ReportView } from '@/modules/reports/domain/report-view';
 import type { EvidenceItemType } from '@/modules/reports/domain/revision';
 
@@ -234,11 +235,18 @@ export function stillBoxesFor(structured: ReportView['structured']): StillBox[] 
   return reportItems(structured).flatMap(({ id, label, evidence }) => stillBoxFor({ id, title: label, evidence }) ?? []);
 }
 
+/** Whether a saved item has a track the player can read and a span to show for it. */
+function isTracked<T extends ReportView['structured']['entities'][number]['evidence']>(
+  evidence: T,
+): evidence is T & { trackUrl: string; trackFirstSeenSeconds: number; trackLastSeenSeconds: number } {
+  return !!evidence?.trackUrl && evidence.trackFirstSeenSeconds !== null && evidence.trackLastSeenSeconds !== null;
+}
+
 /** The report's tracked items (entities, then instruments, then assets, each by id), each with its colour. */
 export function trackedReportItems(structured: ReportView['structured']): TrackedReportItem[] {
   return reportItems(structured)
     .flatMap(({ kind, id, label, evidence }) => {
-      if (!evidence?.trackUrl || evidence.trackFirstSeenSeconds === null || evidence.trackLastSeenSeconds === null) return [];
+      if (!isTracked(evidence)) return [];
       return [
         {
           kind,
@@ -251,4 +259,51 @@ export function trackedReportItems(structured: ReportView['structured']): Tracke
       ];
     })
     .map((item, index) => ({ ...item, colour: trackColour(index) }));
+}
+
+/** An item of the draft that has a track, as the Edit mode overlay draws it: its stored track's route, or a reviewer's samples held in the browser. */
+export interface DraftTrackedItem {
+  id: string;
+  label: string;
+  colour: string;
+  trackUrl: string | null;
+  samples?: TrackSample[];
+}
+
+/**
+ * What the video shows for an edit draft, before Save: an unchanged item keeps its saved track or still box (found through
+ * its source id), a re-tracked or added item shows the reviewer's track or still, and a deleted one shows nothing. Items are
+ * keyed by draft key, and take colours by position in the order Save stores them, so a draft's colours are the ones the
+ * saved version will show; an item added to a kind can only shift the tracked items of the kinds after it.
+ */
+export function draftOverlay(draft: EditDraft, base: ReportView['structured'] | null): { tracks: DraftTrackedItem[]; stills: StillBox[] } {
+  const saved = new Map(base ? reportItems(base).map((item) => [`${item.kind}:${item.id}`, item.evidence]) : []);
+  const items = [
+    ...draft.entities.map((item) => ({ kind: 'entity' as const, item, label: item.label || item.type || item.canonicalId })),
+    ...draft.instruments.map((item) => ({ kind: 'instrument' as const, item, label: item.name || item.sourceId || 'New instrument' })),
+    ...draft.assets.map((item) => ({ kind: 'asset' as const, item, label: item.name || item.sourceId || 'New asset' })),
+  ];
+  const tracks: DraftTrackedItem[] = [];
+  const stills: StillBox[] = [];
+  for (const { kind, item, label } of items) {
+    const { key: id, reviewer, imagePick } = item;
+    const evidence = item.sourceId ? (saved.get(`${kind}:${item.sourceId}`) ?? null) : null;
+    const common = { id, label, colour: trackColour(tracks.length) };
+    if (reviewer?.track?.samples.length) tracks.push({ ...common, trackUrl: null, samples: reviewer.track.samples });
+    else if (!reviewer && isTracked(evidence)) tracks.push({ ...common, trackUrl: evidence.trackUrl });
+    else {
+      // Save moves a still item's stored box to a picked image, so the draft does too; a tracked item keeps its track.
+      const own =
+        reviewer?.stillBox && reviewer.stillSeconds !== undefined ? { box: reviewer.stillBox, seconds: reviewer.stillSeconds } : null;
+      const still = imagePick
+        ? { id, label, box: imagePick.box, seconds: imagePick.seconds }
+        : own
+          ? { id, label, ...own }
+          : reviewer
+            ? null
+            : stillBoxFor({ id, title: label, evidence });
+      if (still) stills.push(still);
+    }
+  }
+  return { tracks, stills };
 }

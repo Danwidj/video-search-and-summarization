@@ -14,12 +14,13 @@ import {
   trackBoxAt,
 } from '@/modules/reports/domain/track';
 
-/** One tracked item the overlay draws: its name (shown as the box label, never its id), colour and the console route its samples are read from. */
+/** One tracked item the overlay draws: its name (shown as the box label, never its id), colour and either the console route its samples are read from or, for a draft's unsaved track, the samples themselves. */
 export interface TrackedItem {
   id: string;
   label: string;
   colour: string;
-  trackUrl: string;
+  trackUrl: string | null;
+  samples?: TrackSample[];
 }
 
 // Each track is read once per page load; a failed or malformed one is cached as empty, so it draws nothing and is not retried.
@@ -102,9 +103,10 @@ export function TrackOverlay({
 
   useEffect(() => {
     let live = true;
-    for (const item of items) {
-      void loadTrack(item.trackUrl).then((samples) => {
-        if (live) setTracks((current) => (current[item.trackUrl] === samples ? current : { ...current, [item.trackUrl]: samples }));
+    for (const { trackUrl: url } of items) {
+      if (!url) continue;
+      void loadTrack(url).then((samples) => {
+        if (live) setTracks((current) => (current[url] === samples ? current : { ...current, [url]: samples }));
       });
     }
     return () => {
@@ -132,7 +134,7 @@ export function TrackOverlay({
           <StillBoxMark frameAspect={frameAspect} key={still.id} selectedId={selectedId} still={still} tileAspect={tileAspect} />
         ))}
       {items.map((item) => {
-        const samples = tracks[item.trackUrl];
+        const samples = item.samples ?? (item.trackUrl ? tracks[item.trackUrl] : null);
         const style = samples ? containedBoxStyle(trackBoxAt(samples, seconds), frameAspect, tileAspect) : null;
         if (!style) return null;
         const selected = item.id === selectedId;

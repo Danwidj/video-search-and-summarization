@@ -40,7 +40,7 @@ import {
 } from '@/modules/reports/domain/edit-draft';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
-import { stillBoxesFor, trackedReportItems } from '@/modules/reports/domain/track';
+import { draftOverlay, stillBoxesFor, trackedReportItems } from '@/modules/reports/domain/track';
 import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
 import { type ChatThread, EMPTY_CHAT_THREAD, ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
@@ -107,6 +107,8 @@ export function ReportPage({
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveProblems, setSaveProblems] = useState<string[]>([]);
+  // The draft item whose Edit track dialog is open: the dialog shows its box, so the video does not until Done.
+  const [editingTrackKey, setEditingTrackKey] = useState<string | null>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is an explicit refetch trigger
   useEffect(() => {
@@ -154,6 +156,16 @@ export function ReportPage({
   const trackedItems = useMemo(() => (shownReport ? trackedReportItems(shownReport.structured) : []), [shownReport]);
   const stillBoxes = useMemo(() => (shownReport ? stillBoxesFor(shownReport.structured) : []), [shownReport]);
   const selectedTrackId = trackSelection && trackSelection.revisionId === shownReport?.revisionId ? trackSelection.id : null;
+  // In Edit mode the video shows the draft, so a change appears before Save; the View overlay shows the opened version.
+  const overlay = useMemo(() => {
+    if (mode !== 'edit' || !draft || !editBase) return { tracks: trackedItems, stills: stillBoxes, selectedId: selectedTrackId };
+    const { tracks, stills } = draftOverlay(draft, editBase.report.structured);
+    return {
+      tracks: tracks.filter((item) => item.id !== editingTrackKey),
+      stills: stills.filter((item) => item.id !== editingTrackKey),
+      selectedId: null,
+    };
+  }, [mode, draft, editBase, editingTrackKey, trackedItems, stillBoxes, selectedTrackId]);
   const selectTrack = useCallback(
     (id: string | null) => setTrackSelection(id && shownReport ? { revisionId: shownReport.revisionId, id } : null),
     [shownReport],
@@ -446,17 +458,12 @@ export function ReportPage({
                     >
                       <track kind="captions" />
                     </MutedVideo>
-                    {mode === 'view' && !inPip && (trackedItems.length > 0 || stillBoxes.length > 0) && (
+                    {!inPip && (overlay.tracks.length > 0 || overlay.stills.length > 0) && (
                       <TrackOverlay
                         frameAspect={videoAspect}
-                        items={trackedItems.map((item) => ({
-                          id: item.id,
-                          label: item.label,
-                          colour: item.colour,
-                          trackUrl: item.trackUrl,
-                        }))}
-                        selectedId={selectedTrackId}
-                        stills={stillBoxes}
+                        items={overlay.tracks}
+                        selectedId={overlay.selectedId}
+                        stills={overlay.stills}
                         video={videoRef}
                       />
                     )}
@@ -552,6 +559,7 @@ export function ReportPage({
                     draft={draft}
                     officialMissing={!officialRevision && revisions !== null}
                     onChange={changeDraft}
+                    onEditingTrack={setEditingTrackKey}
                     onSeek={seek}
                     title={reportHeading(editBase.report)}
                     videoId={videoId}

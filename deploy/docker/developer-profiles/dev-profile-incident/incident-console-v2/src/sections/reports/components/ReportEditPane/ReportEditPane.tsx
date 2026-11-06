@@ -38,7 +38,7 @@ import type { ImagePick, ReviewerDraftItem as BoxToolItem, ReviewerTrack } from 
 import type { EvidenceItemType as BoxItemType } from '@/modules/reports/domain/revision';
 import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, type EditDraft } from '@/modules/reports/domain/edit-draft';
 import { formatClock } from '@/modules/reports/domain/normalize';
-import { STILL_BOX_COLOUR, trackedReportItems } from '@/modules/reports/domain/track';
+import { draftOverlay, STILL_BOX_COLOUR, trackedReportItems } from '@/modules/reports/domain/track';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
 import { EvidenceCarousel } from '@/sections/evidence/components/EvidenceCarousel';
 import { BoxTool, type ExistingItem } from '@/sections/evidence/components/BoxTool';
@@ -73,6 +73,7 @@ export function ReportEditPane({
   videoId,
   videoSrc,
   onChange,
+  onEditingTrack,
   onSeek,
   boxClient,
   officialMissing = false,
@@ -85,6 +86,8 @@ export function ReportEditPane({
   videoId: string;
   videoSrc: string;
   onChange: (draft: EditDraft) => void;
+  /** The draft item whose Edit track dialog is open, or null: the page hides that item's box on the video meanwhile. */
+  onEditingTrack?: (key: string | null) => void;
   onSeek: (seconds: number) => void;
   /** Replaces the box tool's calls to the console routes (tests). */
   boxClient?: BoxToolClient;
@@ -105,8 +108,15 @@ export function ReportEditPane({
     row: NonNullable<PairRow['b']>;
     saved: NonNullable<PairRow['a']>['evidence'] | null;
   } | null>(null);
+  const editingTrackKey = trackEditor?.row.key ?? null;
+  useEffect(() => {
+    onEditingTrack?.(editingTrackKey);
+    return () => onEditingTrack?.(null);
+  }, [editingTrackKey, onEditingTrack]);
   const pairing = pairReport(a, draft);
+  // A's cards take the colours of the version they show, B's the colours the video gives the draft.
   const savedColours = new Map(a ? trackedReportItems(a).map((item) => [item.id, item.colour]) : []);
+  const draftColours = new Map(draftOverlay(draft, a).tracks.map((item) => [item.id, item.colour]));
   const patchIncident = (patch: Partial<EditDraft['incident']>) => onChange({ ...draft, incident: { ...draft.incident, ...patch } });
   const patchEntity = (key: string, patch: Partial<EditDraft['entities'][number]>) =>
     onChange({ ...draft, entities: draft.entities.map((entity) => (entity.key === key ? { ...entity, ...patch } : entity)) });
@@ -409,7 +419,7 @@ export function ReportEditPane({
                 <PairRowView
                   aRevisionNo={aRevisionNo}
                   aColour={(row.a && savedColours.get(savedItemId(row.a))) ?? STILL_BOX_COLOUR}
-                  bColour={(row.b?.sourceId && savedColours.get(row.b.sourceId)) || STILL_BOX_COLOUR}
+                  bColour={(row.b && draftColours.get(row.b.key)) ?? STILL_BOX_COLOUR}
                   videoId={videoId}
                   videoSrc={videoSrc}
                   draft={draft}
