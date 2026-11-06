@@ -20,7 +20,7 @@ Server-only variables, read from `incident-console-v2/.env.local` (a symlink to 
 | `ANALYSIS_MODE` | `gateway` (default) or `agent` |
 | `VLM_GATEWAY_URL` | the gateway, required in gateway mode; `start.sh` exports `http://127.0.0.1:8600` in mock mode only |
 | `INCIDENT_AGENT_BASE_URL` | the agent or the mock (chat, search, embeddings, and analysis in agent mode); uploads do not use it |
-| `VLM_MODEL` | default model in the picker, one of `contracts/inference.json` (default `nvidia/cosmos-3-nano-reasoner`) |
+| `VLM_MODEL` | default model in the picker, one of `contracts/inference.json` (default `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, Nemotron 3 Nano Omni Reasoning) |
 | `CONTRACTS_DIR` | the shared `contracts/` directory (default `../contracts`) |
 | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | PostgREST |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | video and evidence storage |

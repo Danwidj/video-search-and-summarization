@@ -24,7 +24,7 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 
 | `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
 |---|---|---|---|
-| `gateway` | `start.sh --mode mock` | console -> `vlm-gateway` :8600 -> Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v4` | Console writes `videos`, `model_runs` and the AI revision (gateway analysis does not crop, so its evidence entries have no image) |
+| `gateway` | `start.sh --mode mock` | console -> `vlm-gateway` :8600 -> Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`, else Nemotron 3 Nano Omni Reasoning), on `incident-contract-v4` | Console writes `videos`, `model_runs` and the AI revision (gateway analysis does not crop, so its evidence entries have no image) |
 | `agent` | `start.sh --mode vm` | console -> `vss-agent` `POST /api/v1/incidents/{id}/analyze` -> Brev. P1 only, on the model the console sends (checked against the `contracts/inference.json` allowlist; the agent's `VLM_NAME` applies only when none is sent). The console sends `skip_rp1: true`, matching gateway mode. The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | The console writes `videos` and the `model_runs` record. The agent crops evidence to R2 and appends the AI `report_revisions` row itself (inserting a placeholder `model_runs` row only if the console has not yet). The request also takes `model` and `reviewer_prompt` (max 1000 chars, this run only); the console's reviewer-prompt field is sent as `reviewer_prompt`. |
 
 ## Instructions
