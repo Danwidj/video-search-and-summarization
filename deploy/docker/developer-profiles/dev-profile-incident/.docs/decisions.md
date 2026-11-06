@@ -2,6 +2,13 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-06: A time in a routed answer must belong to the event beside it, and code adds missing ones
+- **Decision:** `utils/chat_attribution.py` ties each written time to the timeline event its clause describes; one that does not fit stays plain text, and the wording is never changed. Code adds an event's time to a clause that plainly describes that event and gives none. Items only denied in an answer get no card.
+- **Why:** the check only asked whether a second was in the report, so "exploding at 1:31", the end of an event starting at 1:12, became a link to the wrong moment. Omitting a jump is safer than a wrong one.
+- **Rejected:** rewriting the model's times (changes its wording, and "by 0:03" has no safe rewrite); event markers in the model's output (needs a new prompt and paid checks, and still needs this check for a model that ignores them).
+- **Limit:** matching is on words, so paraphrase loses a link, and one time string is unlinked everywhere in an answer if any use of it fails.
+- **Links:** [`chat_attribution.py`](../../../../../services/agent/src/vss_agents/utils/chat_attribution.py), [routes](mvp2/chat-routing.md)
+
 ### 2026-11-06: Chat routes by question behind `INCIDENT_CHAT_MODE=routed`, and a video check needs a click
 - **Status:** built and off. The default stays template. The text-model pilot ran on 6 Nov ([results](mvp2/chat-routing.md#text-model-pilot-2026-11-06-paid-owner-approved)); turning either setting on still needs approval ([plan](mvp2/chat-routing.md#before-switching-on)).
 - **Decision:**
