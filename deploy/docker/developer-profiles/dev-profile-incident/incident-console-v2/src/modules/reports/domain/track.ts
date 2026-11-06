@@ -270,13 +270,24 @@ export interface DraftTrackedItem {
   samples?: TrackSample[];
 }
 
+/** The frame second and box of a draft item's new evidence image. */
+export interface DraftItemFrame {
+  seconds: number;
+  box: number[];
+}
+
 /**
  * What the video shows for an edit draft, before Save: an unchanged item keeps its saved track or still box (found through
  * its source id), a re-tracked or added item shows the reviewer's track or still, and a deleted one shows nothing. Items are
  * keyed by draft key, and take colours by position in the order Save stores them, so a draft's colours are the ones the
- * saved version will show; an item added to a kind can only shift the tracked items of the kinds after it.
+ * saved version will show; an item added to a kind can only shift the tracked items of the kinds after it. `frames` holds
+ * the second and box of each item whose evidence image Save will cut anew (a pick, else a reviewer track's first sample, else
+ * a reviewer still), so the timeline's thumbnail agrees with the box on the video.
  */
-export function draftOverlay(draft: EditDraft, base: ReportView['structured'] | null): { tracks: DraftTrackedItem[]; stills: StillBox[] } {
+export function draftOverlay(
+  draft: EditDraft,
+  base: ReportView['structured'] | null,
+): { tracks: DraftTrackedItem[]; stills: StillBox[]; frames: Record<string, DraftItemFrame> } {
   const saved = new Map(base ? reportItems(base).map((item) => [`${item.kind}:${item.id}`, item.evidence]) : []);
   const items = [
     ...draft.entities.map((item) => ({ kind: 'entity' as const, item, label: item.label || item.type || item.canonicalId })),
@@ -285,25 +296,29 @@ export function draftOverlay(draft: EditDraft, base: ReportView['structured'] | 
   ];
   const tracks: DraftTrackedItem[] = [];
   const stills: StillBox[] = [];
+  const frames: Record<string, DraftItemFrame> = {};
   for (const { kind, item, label } of items) {
     const { key: id, reviewer, imagePick } = item;
     const evidence = item.sourceId ? (saved.get(`${kind}:${item.sourceId}`) ?? null) : null;
     const common = { id, label, colour: trackColour(tracks.length) };
+    const firstSample = reviewer?.track?.samples[0];
+    const ownStill =
+      reviewer?.stillBox && reviewer.stillSeconds !== undefined ? { box: reviewer.stillBox, seconds: reviewer.stillSeconds } : null;
+    const frame = imagePick ?? (firstSample ? { box: firstSample.box, seconds: firstSample.t } : ownStill);
+    if (frame) frames[id] = frame;
     if (reviewer?.track?.samples.length) tracks.push({ ...common, trackUrl: null, samples: reviewer.track.samples });
     else if (!reviewer && isTracked(evidence)) tracks.push({ ...common, trackUrl: evidence.trackUrl });
     else {
       // Save moves a still item's stored box to a picked image, so the draft does too; a tracked item keeps its track.
-      const own =
-        reviewer?.stillBox && reviewer.stillSeconds !== undefined ? { box: reviewer.stillBox, seconds: reviewer.stillSeconds } : null;
       const still = imagePick
         ? { id, label, box: imagePick.box, seconds: imagePick.seconds }
-        : own
-          ? { id, label, ...own }
+        : ownStill
+          ? { id, label, ...ownStill }
           : reviewer
             ? null
             : stillBoxFor({ id, title: label, evidence });
       if (still) stills.push(still);
     }
   }
-  return { tracks, stills };
+  return { tracks, stills, frames };
 }

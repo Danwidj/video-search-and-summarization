@@ -13,6 +13,8 @@ const { deleteDraftItem, draftChangeCount, draftToStructured, pairReport, revert
 );
 const { draftFromView, editFromDraft, nextCanonicalEntityId, newEntityDraft } = await import('../src/modules/reports/domain/edit-draft.ts');
 const { buildTimelineLanes } = await import('../src/lib/reports/timeline-lanes.ts');
+const { addBoxItem, retrackDraftItem } = await import('../src/lib/evidence/box-tool.ts');
+const { draftOverlay } = await import('../src/modules/reports/domain/track.ts');
 const { buildReportView, aiRevisionRow } = await import('./support/report-view.mjs');
 const { humanRevisionContent } = await import('../src/modules/reports/domain/revision.ts');
 const { revisionRecordFromRows } = await import('../src/modules/reports/infrastructure/supabase/mappers/report.ts');
@@ -266,4 +268,87 @@ test('View to Edit to View round trip keeps entity IDs, lane titles and order id
     buildTimelineLanes(roundTripView.structured).map((l) => l.title),
     buildTimelineLanes(initialView.structured).map((l) => l.title),
   );
+});
+
+// The timeline in Edit mode, through the same source as the video: the draft and the overlay's frames.
+const editLanes = (draft) => buildTimelineLanes(draftToStructured(draft, 'v1', draftOverlay(draft, view.structured).frames));
+const reviewerTrack = (first, last) => ({
+  itemType: 'entity',
+  name: '',
+  description: '',
+  aiProposal: null,
+  track: {
+    source: 'reviewer',
+    samples: [
+      { t: first, box: [100, 100, 300, 300] },
+      { t: last, box: [120, 120, 320, 320] },
+    ],
+    span: [first, last],
+    partial: false,
+    lostAt: null,
+  },
+});
+
+test('the timeline follows a changed span and first frame after Edit track, as the video does', () => {
+  const draft = base();
+  const before = editLanes(draft)[0];
+  const key = draft.entities[0].key;
+  const retracked = retrackDraftItem(draft, 'entity', key, reviewerTrack(2.4, 7.2));
+  const lane = editLanes(retracked)[0];
+  assert.deepEqual(lane.span, { start: 2, end: 8 }, 'whole seconds around the new track');
+  assert.equal(lane.imageUrl, null, 'the old image no longer describes the item');
+  assert.deepEqual(lane.frame, { src: '/api/reports/v1/frame?t=2.4', box: [100, 100, 300, 300] });
+  assert.deepEqual(draftOverlay(retracked, view.structured).tracks[0].samples[0].box, lane.frame.box, 'the same box as on the video');
+  assert.deepEqual(editLanes(draft)[0], before, 'Undo goes back to the earlier draft');
+});
+
+test('the timeline follows a rename and a Set image pick; a pick moves the thumbnail, not the span', () => {
+  const draft = base();
+  const before = editLanes(draft)[0];
+  const renamed = { ...draft, entities: draft.entities.map((entity, i) => (i ? entity : { ...entity, label: 'attacker' })) };
+  assert.equal(editLanes(renamed)[0].title, `${draft.entities[0].canonicalId} · attacker`);
+  const picked = {
+    ...draft,
+    entities: draft.entities.map((entity, i) => (i ? entity : { ...entity, imagePick: { seconds: 5.5, box: [5, 5, 50, 50] } })),
+  };
+  const lane = editLanes(picked)[0];
+  assert.deepEqual(lane.frame, { src: '/api/reports/v1/frame?t=5.5', box: [5, 5, 50, 50] });
+  assert.deepEqual(lane.span, before.span);
+});
+
+test('a deleted item leaves the timeline at once and comes back on Undo; its held instruments go with it', () => {
+  const draft = base();
+  const holder = draft.instruments.find((instrument) => instrument.holderKey);
+  const entity = draft.entities.find((item) => item.key === holder.holderKey);
+  const gone = deleteDraftItem(draft, 'entity', entity.key);
+  const lanes = editLanes(gone);
+  assert.equal(lanes.filter((lane) => lane.kind === 'entity').length, draft.entities.length - 1);
+  assert.ok(!lanes.flatMap((lane) => lane.markers).some((marker) => marker.id === holder.key), 'its instrument is gone too');
+  assert.deepEqual(editLanes(draft), buildTimelineLanes(draftToStructured(draft, 'v1', {})), 'Undo restores the earlier draft');
+});
+
+test('an added entity gets a lane after the others, in the order Save stores, with its span and first frame; an instrument follows its holder', () => {
+  const draft = base();
+  const added = addBoxItem(draft, { ...reviewerTrack(3, 6), name: 'dog', description: 'A dog' }, null);
+  const entities = editLanes(added).filter((lane) => lane.kind === 'entity');
+  assert.equal(entities.length, draft.entities.length + 1);
+  const lane = entities.at(-1);
+  assert.match(lane.title, /· dog$/);
+  assert.deepEqual(lane.span, { start: 3, end: 6 });
+  assert.equal(lane.frame.src, '/api/reports/v1/frame?t=3');
+
+  const key = added.entities.at(-1).key;
+  const moved = { ...added, instruments: added.instruments.map((instrument, i) => (i ? instrument : { ...instrument, holderKey: key })) };
+  assert.ok(
+    editLanes(moved)
+      .find((row) => row.title === lane.title)
+      .markers.some((marker) => marker.id === moved.instruments[0].key),
+    'the changed holder moves the instrument to that lane',
+  );
+});
+
+test('View keeps the saved timeline, also while a draft is kept: only Edit mode draws the draft', () => {
+  const page = readFileSync(join(process.cwd(), 'src/sections/reports/components/ReportPage/ReportPage.tsx'), 'utf8');
+  assert.match(page, /const draftStructured = mode === 'edit' && draft \? draftToStructured\(draft, videoId, overlay\.frames\) : null;/);
+  assert.match(page, /structured=\{draftStructured \?\? report\.structured\}/);
 });

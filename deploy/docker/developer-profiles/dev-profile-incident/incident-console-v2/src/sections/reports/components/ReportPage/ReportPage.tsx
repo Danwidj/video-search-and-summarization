@@ -158,9 +158,11 @@ export function ReportPage({
   const selectedTrackId = trackSelection && trackSelection.revisionId === shownReport?.revisionId ? trackSelection.id : null;
   // In Edit mode the video shows the draft, so a change appears before Save; the View overlay shows the opened version.
   const overlay = useMemo(() => {
-    if (mode !== 'edit' || !draft || !editBase) return { tracks: trackedItems, stills: stillBoxes, selectedId: selectedTrackId };
-    const { tracks, stills } = draftOverlay(draft, editBase.report.structured);
+    if (mode !== 'edit' || !draft || !editBase)
+      return { tracks: trackedItems, stills: stillBoxes, selectedId: selectedTrackId, frames: {} };
+    const { tracks, stills, frames } = draftOverlay(draft, editBase.report.structured);
     return {
+      frames,
       tracks: tracks.filter((item) => item.id !== editingTrackKey),
       stills: stills.filter((item) => item.id !== editingTrackKey),
       selectedId: null,
@@ -302,7 +304,8 @@ export function ReportPage({
     ? `/reports/${encodeURIComponent(videoId)}/compare?left=${report.revisionId}&right=${otherAiRevision.revisionId}`
     : null;
   const officialLabel = officialRevision ? `v${officialRevision.revisionNo}` : 'none';
-  const draftStructured = draft ? draftToStructured(draft) : null;
+  // Only in Edit mode: a draft kept while the reviewer looks back at View does not change what View's timeline shows.
+  const draftStructured = mode === 'edit' && draft ? draftToStructured(draft, videoId, overlay.frames) : null;
 
   const changeDraft = (next: EditDraft) => {
     if (draft) setUndoStack((stack) => [...stack.slice(-49), draft]);
