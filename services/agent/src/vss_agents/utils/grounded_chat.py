@@ -137,8 +137,11 @@ class OpenAIChatModel:
                 )
         except httpx.HTTPError as exc:
             raise ChatModelError(f"chat model call failed: {type(exc).__name__}: {exc}") from exc
+        if response.status_code == 429:
+            raise ChatModelError("the chat model is busy (rate limited)")
         if response.status_code >= 400:
-            raise ChatModelError(f"chat model returned HTTP {response.status_code}: {response.text[:300]}")
+            # The provider's body can hold account details, and this message reaches the browser.
+            raise ChatModelError(f"chat model returned HTTP {response.status_code}")
         body = response.json()
         self.last_usage = {**(body.get("usage") or {}), "elapsed_ms": round((self.clock() - started) * 1000.0, 1)}
         try:
