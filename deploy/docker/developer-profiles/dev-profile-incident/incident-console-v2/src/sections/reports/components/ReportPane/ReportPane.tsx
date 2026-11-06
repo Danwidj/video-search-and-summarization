@@ -211,11 +211,6 @@ export function ReportPane({
               )}
             </Row>
           </dl>
-          {differences.fields.length > 0 && (
-            <Badge className="mt-3 text-xs font-semibold text-destructive" data-testid="reviewer-edited" variant="secondary">
-              Reviewer-edited after generation: {differences.fields.join(', ')}
-            </Badge>
-          )}
         </CardContent>
       </UICard>
 
