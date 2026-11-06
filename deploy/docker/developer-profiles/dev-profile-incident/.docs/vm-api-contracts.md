@@ -140,7 +140,7 @@ Answers a question from stored evidence (`chat-contract-v1`, [`contracts/chat-co
 Request: `{"session_id"?: <1-128 chars>, "messages": [{"role": "user"|"assistant"|"system", "content": <non-empty>}, ...] (at least one `user` message), "context"?: {"scope": "global"|"incident", "incident_id"?, "evidence_crop_ids"?: [...]}, "version_id"?: <int >= 1>, "draft_report"?: {...}}`. `draft_report` (an unsaved edit of the version) requires `version_id`, else `422`.
 
 How a question is answered (template mode: no model):
-- **A version that is not official, or a draft:** the answer is composed from that version's report (`utils/report_answers.py`), by the kind of question:
+- **Any version, official or not, or a draft:** the answer is composed from that version's report (`utils/report_answers.py`), by the kind of question:
   - what happened, or the order of events: the timeline in time order, one list line per event with its `m:ss` time, on separate lines. An event wholly outside the incident window is context, under "Before the incident" or "After the incident"; those headings appear only when such an event exists. Then "What the report could not establish": up to three of the report's `uncertainties` that share a word with the events, title or description. The incident description stands in when there is no timeline;
   - who: the people, with their descriptions and when they are seen;
   - objects, or a named object: the instruments (with who held them) and the assets;
@@ -150,8 +150,7 @@ How a question is answered (template mode: no model):
   - when, or how long: the incident window, or a named item's time;
   - severity and type.
   A question the report cannot answer gets "This report doesn't mention ..." and no citations.
-- **Prose and citations:** items are named by their labels or descriptions. The ids the P1 timeline uses as references are resolved first, so the prose holds no item or incident id unless the question asks for ids. The citations are the items the answer relies on, each with its evidence entry's crop and second.
-- **The official version with no draft:** goes to the route's search client (decision 2026-10-24). The default client (`DisabledSearchClient`) searches nothing, so the answer says this chat mode doesn't answer questions about the official version yet.
+- **Prose and citations:** items are named by their labels or descriptions. The ids the P1 timeline uses as references are resolved first, so the prose holds no item or incident id unless the question asks for ids. The citations are the items the answer relies on, each with its evidence entry's crop and the second that crop was found at (`box_seconds`, else `timestamp_seconds`).
 - **A library question** (no version): also goes to the search client, so it gets "This chat mode doesn't answer questions across the whole library yet". The canned client's demo incidents are no longer served.
 - **An injected search client** (tests, or a later real one): its hits read as prose grouped by incident (type and title, item names and times), with the ids only in the citations.
 

@@ -2,6 +2,13 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-06: Template chat answers the official version from its report, and citations use the crop's second
+- **Status:** approved by the owner on 2026-11-06. Replaces [2026-10-24](archive/decisions-superseded.md#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2-superseded-2026-11-06) for template mode; grounded mode already answered it. Grounded mode stays off.
+- **Decision:** in template mode the official version is answered from its own report, like any other version, so the search client no longer takes part in a question that names a version. A template citation seeks to the evidence entry's `box_seconds`, else its `timestamp_seconds`, else the item's second.
+- **Why:** marking a report official replaced its chat answers with "This chat mode doesn't answer questions about the official version yet". No video had an official version on 6 Nov (0 of 15), so nobody had met it, but the first star would have. For the second: the evidence card and grounded mode use `box_seconds`, and the two differ by 1 s or more on 29 of 66 evidence entries, so a card could jump away from the moment its image shows.
+- **Rejected:** keeping the official version on the search client (it finds nothing for a finals video); turning on grounded mode to fix this (not validated against template mode yet).
+- **Links:** [`incident_chat.py`](../../../../../services/agent/src/vss_agents/api/incident_chat.py), [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat)
+
 ### 2026-11-06: The report chat panel is not modal and its conversation lives on the report page
 - **Decision:** the report page's chat sheet is non-modal, has no overlay and stays open when the page behind it is used; only its close button, Escape or the toggle closes it. Each version's conversation (and its draft's) is held by `ReportPage`, so closing the panel keeps it; a new Edit draft starts a new conversation. `seek` uses the player on screen, which below the `lg` breakpoint is the compact one. The library chat sheet is unchanged.
 - **Why:** checked in a browser on 6 Nov against the VM agent. While the panel was open the overlay took the clicks and the player was `aria-hidden`, so a jump could not be paused or scrubbed. Closing the panel to watch unmounted the chat and lost the conversation. Below `lg`, seeks went to the hidden player, so a jump did nothing visible.
@@ -318,7 +325,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [contract](vm-api-contracts.md#post-apiv1incidentschat), [`grounded_chat.py`](../../../../../services/agent/src/vss_agents/utils/grounded_chat.py)
 
 ### 2026-11-02: Grounded chat answers from one report version with a chat model, behind a mode switch (Gate M2 approved by the chatbot feature owner)
-- **Status:** approved on 2026-11-02 by the authorised chatbot feature owner (Gate M2). The decision covers implementing and integrating grounded report chat (P5), library chat (P6) and console report chat (P7), and it supersedes [2026-10-24: Chat about the official version uses the in-memory chat search client](#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2) for grounded mode. **The production default does not change:** template mode stays the default (`INCIDENT_CHAT_MODE` unset) until Evaluation V2 validates grounded mode, and nothing is deployed to the shared agent by this merge. First proposed 2026-11-01.
+- **Status:** approved on 2026-11-02 by the authorised chatbot feature owner (Gate M2). The decision covers implementing and integrating grounded report chat (P5), library chat (P6) and console report chat (P7), and it supersedes [2026-10-24: Chat about the official version uses the in-memory chat search client](archive/decisions-superseded.md#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2-superseded-2026-11-06) for grounded mode. **The production default does not change:** template mode stays the default (`INCIDENT_CHAT_MODE` unset) until Evaluation V2 validates grounded mode, and nothing is deployed to the shared agent by this merge. First proposed 2026-11-01.
 - **Decision:** with `INCIDENT_CHAT_MODE=grounded`, an incident question is answered by a chat model from one report version: the asked one, else the official one, or the reviewer's draft.
   - The model is `INCIDENT_CHAT_MODEL`, default Nemotron 3 Ultra, which the endpoint check (RB1) must confirm.
   - It sees the registered prompt `chat/incident-answer`, the version as JSON (incident, items with ids, timeline) and the last eight turns.
@@ -533,7 +540,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - removing the ids from the old sentence: it would still list items for every question;
   - answering the official version from its saved report as well: that supersedes the 2026-10-24 decision (Gate M2);
   - wiring the real search store or a model into this mode: that is grounded chat (P5 and P6), behind the same gate.
-- **Links:** [`report_answers.py`](../../../../../services/agent/src/vss_agents/utils/report_answers.py), [`incident_chat.py`](../../../../../services/agent/src/vss_agents/api/incident_chat.py), [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat), [2026-10-24 decision](#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2).
+- **Links:** [`report_answers.py`](../../../../../services/agent/src/vss_agents/utils/report_answers.py), [`incident_chat.py`](../../../../../services/agent/src/vss_agents/api/incident_chat.py), [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat), [2026-10-24 decision](archive/decisions-superseded.md#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2-superseded-2026-11-06).
 
 ### 2026-11-01: The dashboard breaks ties in byte order (COLLATE "C"), whatever the database collation
 - **Decision:** every text tie-break in `get_incident_dashboard` (types, entity, instrument and asset labels, model names) says `COLLATE "C"`. The function is otherwise unchanged (migration `20261101120000_dashboard_byte_order_ties.sql`).
@@ -1331,13 +1338,6 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:** Reproduced on 2026-10-25 (known issue 8): a SIGTERM to `start.sh` alone left `next-server`, the mock and the gateway listening, because bash runs a trap only after the foreground command returns, and killing a wrapper (`uv run`, `npm run`) does not stop the server it started. Ctrl-C from a terminal worked only because the terminal signals the whole process group.
 - **Rejected:** `setsid` or `set -m` per child (`setsid` is not on macOS laptops, and `set -m` changes terminal and signal handling for every background job, including the VM lock's `ssh -tt`); killing process groups (all children share `start.sh`'s group, so it would signal `start.sh` too).
 - **Links:** [`incident-profile-operations.md`](incident-profile-operations.md); `eval/tests/test_start_script.py`.
-
-### 2026-10-24: Chat about the official version uses the in-memory chat search client for MVP2
-- **Superseded for grounded mode (2026-11-02):** see [Grounded chat answers from one report version](#2026-11-02-grounded-chat-answers-from-one-report-version-with-a-chat-model-behind-a-mode-switch-gate-m2-approved-by-the-chatbot-feature-owner). This entry still describes template mode, which remains the default.
-- **Decision:** A chat question about the official revision with no draft goes to the agent chat route's search client, which stays the in-memory canned client for MVP2, so it finds no evidence for a finals video. Other versions and drafts are answered from their saved evidence.
-- **Why:** A deliberate choice by the captain (2026-10-24); no reason was recorded.
-- **Rejected:** none recorded.
-- **Links:** [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat).
 
 ### 2026-10-24: A human revision's search text comes from its evidence entries as they are
 - **Decision:** On Save, an item that keeps its image copies the parent's evidence entry, so its search passage (`"{item_name}: {description}"`) is the parent's text, not the reviewer's edit; an item with a replaced or added image gets an entry with neither field, so its vector is close to empty (`humanRevisionContent`). This is deliberate.

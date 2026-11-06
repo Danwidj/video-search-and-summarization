@@ -333,12 +333,13 @@ def test_chat_non_official_version_cites_its_own_saved_crops():
     assert not list(response_validator.iter_errors(data))
 
 
-def test_chat_official_version_uses_search_index():
+def test_chat_official_version_is_answered_from_its_own_report():
     search = FakeSearchClient(hits=[])
-    store = FakeRevisionStore(revisions={3: _revision(3)}, official={"V1": 3})
+    store = FakeRevisionStore(revisions={2: _revision(2), 3: _revision(3)}, official={"V1": 3})
     resp = _ask(_make_client(search, store), version_id=3)
     assert resp.status_code == 200
-    assert search.last_filters == {"incident_id": "V1"}
+    assert search.last_query is None, "no search: the version asked about is the source"
+    assert resp.json()["message"]["citations"][0]["crop_image_url"].endswith("evidence/V1/batch3/I1.jpg")
 
 
 def test_chat_draft_uses_draft_items_with_crops_from_base_version():
@@ -725,19 +726,41 @@ def test_the_default_client_never_serves_demo_hits_for_a_library_question():
     assert "Assault007" not in resp.text and "machete" not in resp.text
 
 
-def test_the_official_version_keeps_the_decision_and_says_nothing_was_searched():
-    search = FakeSearchClient()  # an enabled client: the official version is searched (decision 2026-10-24)
-    message = _ask_version("What happened, in order?", official=True, search=search)
-    assert search.last_filters == {"incident_id": VIDEO}
-    assert message["content"] == (
-        "No matching incidents or evidence items were found for 'What happened, in order?' in this incident."
-    )
+def test_marking_a_version_official_does_not_change_its_answer():
+    plain = _ask_version("What happened, in order?")
+    official = _ask_version("What happened, in order?", official=True)
+    assert official == plain
+    assert "2:14" in official["content"] and official["citations"]
+
+
+def test_the_official_version_is_answered_with_the_default_search_client_too():
     store = FakeRevisionStore(revisions={7: _robbery_revision()}, official={VIDEO: 7})
     resp = _make_client(revision_store=store).post(
         "/api/v1/incidents/chat",
         json={"messages": [{"role": "user", "content": "What happened?"}], "version_id": 7},
     )
-    assert resp.json()["message"] == {"role": "assistant", "content": NOT_SEARCHED["official"], "citations": []}
+    assert resp.status_code == 200
+    assert "walks up to the counter" in resp.json()["message"]["content"]
+    assert "official" not in NOT_SEARCHED
+
+
+def _citation_seconds(entry: dict[str, Any]) -> float:
+    revision = _robbery_revision()
+    item = {"item_id": "E1", "item_type": "entity", "image": "evidence/run1/E1.jpg", **entry}
+    revision["evidence"] = [item]
+    store = FakeRevisionStore(revisions={7: revision})
+    resp = _make_client(revision_store=store).post(
+        "/api/v1/incidents/chat",
+        json={"messages": [{"role": "user", "content": "Who is involved?"}], "version_id": 7},
+    )
+    return next(c for c in resp.json()["message"]["citations"] if c["item_id"] == "E1")["timestamp_seconds"]
+
+
+def test_a_citation_jumps_to_the_second_its_crop_was_found_at():
+    assert _citation_seconds({"box_seconds": 12.5, "timestamp_seconds": 0}) == 12.5
+    assert _citation_seconds({"box_seconds": 0, "timestamp_seconds": 9}) == 0, "second 0 is a real second"
+    assert _citation_seconds({"box_seconds": None, "timestamp_seconds": 9}) == 9
+    assert _citation_seconds({"timestamp_seconds": 9}) == 9
 
 
 def test_search_hits_read_as_prose_by_incident_with_ids_only_in_citations():
