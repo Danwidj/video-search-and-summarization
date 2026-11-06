@@ -166,7 +166,7 @@ class PerceptionClient(Protocol):
 
     async def remove_stream(self, sensor_id: str, camera_url: str) -> None: ...
 
-    async def stream_count(self) -> int: ...
+    async def has_stream(self, sensor_id: str) -> bool: ...
 
     async def latest_frame_id(self, sensor_id: str) -> int | None: ...
 
@@ -259,9 +259,14 @@ class HttpPerceptionClient:
             json=self._sensor_body(sensor_id, camera_url, "camera_remove"),
         )
 
-    async def stream_count(self) -> int:
+    async def has_stream(self, sensor_id: str) -> bool:
+        """Whether get-stream-info lists this sensor id: ``{"stream-info": {"stream-info": [{"camera_id": ...}]}}``."""
         response = await self._request("GET", f"{self.provision_url}/api/v1/stream/get-stream-info")
-        return int(response.json().get("stream-count") or 0)
+        outer = response.json().get("stream-info")
+        streams = outer.get("stream-info") if isinstance(outer, dict) else None
+        return isinstance(streams, list) and any(
+            isinstance(s, dict) and s.get("camera_id") == sensor_id for s in streams
+        )
 
     async def metrics(self) -> dict[str, Any]:
         """DeepStream's ``/metrics`` (``stream-stats`` per stream); a liveness signal, since ``/ready`` stays YES."""
@@ -358,9 +363,9 @@ class FakePerceptionClient:
         if "remove_stream" in self.fail:
             raise self.fail["remove_stream"]
 
-    async def stream_count(self) -> int:
-        self._record("stream_count")
-        return len(self.added)
+    async def has_stream(self, sensor_id: str) -> bool:
+        self._record("has_stream")
+        return sensor_id in self.added
 
     async def _all(self) -> list[Frame]:
         # Serve through the same paging rule as HttpPerceptionClient so the rule is exercised.

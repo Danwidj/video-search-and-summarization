@@ -452,7 +452,7 @@ class TestRunLifecycle:
     @pytest.mark.asyncio
     async def test_no_frames_with_the_stream_gone_skips_at_the_timeout_not_the_deadline(self):
         client = FakePerceptionClient([])
-        client.fail["stream_count"] = PerceptionError("down")  # an unreadable count reads as gone
+        client.fail["has_stream"] = PerceptionError("down")  # an unreadable reply reads as gone
         time, _, run = self._run(client)
         outcome = await run
         assert outcome.skipped == "no frames from perception"

@@ -2355,6 +2355,7 @@ class CropEvidenceService:
                 )
                 for entry in entries
                 if entry["item_type"] == "entity"
+                and entry.get("item_name") != "animal"  # person tracks are never given to an animal by time alone
                 and entry["item_id"] not in candidates
                 and not ((crop := crops.get(entry["item_id"])) is not None and crop.located)
             ]
@@ -2396,6 +2397,8 @@ class CropEvidenceService:
                         entry["track_gap"] = TRACK_RECUT_GAP
                     elif tracking.summary.skipped:
                         entry["track_gap"] = tracking.summary.skipped
+                    elif entry.get("item_name") == "animal":
+                        entry["track_gap"] = "person tracking does not follow animals"
                     elif crop is not None and crop.located:
                         entry["track_gap"] = "no person track overlapped this person's box"
                     else:
