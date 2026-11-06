@@ -907,8 +907,10 @@ def _composed_answer(
                 for value in (entry.get("box_seconds"), entry.get("timestamp_seconds"))
                 if isinstance(value, int | float) and not isinstance(value, bool)
             ),
-            item.seconds or 0,
+            item.seconds,
         )
+        if seconds is None:  # no stored moment: a card would have to invent one
+            continue
         citations.append(
             EvidenceCitation(
                 incident_id=video_id,

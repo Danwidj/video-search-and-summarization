@@ -2,6 +2,13 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-06: A template chat answer cites the items its report text names, matched by id or by name
+- **Decision:** a chronology, a description fallback and a taking cite the items their report text refers to, each once, in order of first mention. An id in the text counts. Otherwise an item counts when its name or label stands whole in the text (articles and plurals aside), or when a person's or animal's head word does ("the dog") and no other entity shares it. The longest phrase wins a stretch of text. Items tied on it are one object if they share a name and label, else the text does not say which it means and none is cited. Descriptions are not matched. With nothing named there are no citations. A card keeps its stored second, and an item with none gets no card.
+- **Why:** the fallback cited every person when the text held no ids. 54 of 57 stored events hold none, so an animal attack with a dog and three assets had no cards, while other reports listed bystanders the events never mention, and objects were never cited. On the 16 default-opened reports on 6 Nov the rule cites what each timeline names: the dog, coffee table and vase but not the sofa, and not rev 129's pedestrian.
+- **Rejected:** word overlap (the first version's "on ground", from "backpack on ground", matched "remains on the ground"); matching descriptions (they mention neighbouring things); a model call to choose cards (not worth a call, and grounded mode stays off).
+- **Known limit:** text that names an item differently gets no card: "the vehicle" for a car, or "the man" with two men in the report. A one-word name can also match the same word used another way.
+- **Links:** [`report_answers.py`](../../../../../services/agent/src/vss_agents/utils/report_answers.py)
+
 ### 2026-11-06: The report chat offers one suggested question, Show the timeline of events
 - **Decision:** the panel keeps PR 491's single suggestion and its header, and the owner chose the wording **Show the timeline of events**. Who, what was taken and weapons are still answered when typed.
 - **Why:** PR 491 cut the list to one and recorded that in the docs, so the panel stays short. It kept the old text, "What happened, in order?", without a stated reason. The new wording says what the answer is: a timed list. Typing the old question still gives the same answer.

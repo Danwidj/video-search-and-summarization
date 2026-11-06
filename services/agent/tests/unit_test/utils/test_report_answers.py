@@ -177,6 +177,144 @@ def _chronology(**overrides):
     return ra.compose("What happened, in order?", ra.report_view(_report(**overrides)))
 
 
+def _asset(asset_id, name, label=""):
+    return {"asset_id": asset_id, "name": name, "description": "", "label": label, "timestamp_seconds": 0}
+
+
+def _entity(entity_id, label, kind="human"):
+    return {"entity_id": entity_id, "type": kind, "description": "", "label": label, "timestamp_seconds": 0}
+
+
+def _cited(*events, entities=(), assets=(), instruments=()):
+    report = _report(
+        entities=list(entities),
+        assets=list(assets),
+        instruments=list(instruments),
+        timeline=[_event(10 + n, None, text) for n, text in enumerate(events)],
+    )
+    return list(ra.compose("What happened?", ra.report_view(report)).item_ids)
+
+
+def test_a_chronology_cites_the_items_its_events_name_and_not_the_others():
+    assert _cited(
+        "The dog approaches the coffee table and knocks over the vase of sunflowers.",
+        "The vase shatters on the floor, spilling the sunflowers.",
+        "The dog jumps onto the coffee table and then jumps down.",
+        entities=[_entity("E1", "black and tan dog", "animal")],
+        assets=[
+            _asset("A1", "vase", "broken vase with sunflowers"),
+            _asset("A2", "coffee table", "wooden coffee table"),
+            _asset("A3", "sofa", "white sectional sofa"),
+        ],
+    ) == ["E1", "A2", "A1"], "each once, in the order the events name them; the sofa is never mentioned"
+
+
+def test_an_event_id_is_a_citation_even_when_the_item_is_not_named():
+    assert _cited("E2 strikes.", "A1 falls.", entities=[_entity("E2", "man")], assets=[_asset("A1", "vase")]) == [
+        "E2",
+        "A1",
+    ]
+
+
+def test_ids_and_names_combine_in_one_answer():
+    assert _cited("E2 lifts the vase.", entities=[_entity("E2", "man in blue")], assets=[_asset("A1", "vase")]) == [
+        "E2",
+        "A1",
+    ]
+
+
+def test_no_named_item_means_no_citations_and_never_every_person():
+    assert (
+        _cited(
+            "Smoke fills the road.",
+            entities=[_entity("E1", "person near billboard"), _entity("E2", "person near car")],
+            assets=[_asset("A1", "billboard")],
+        )
+        == []
+    )
+
+
+def test_a_person_is_matched_by_label_or_outfit_whatever_the_articles():
+    assert _cited(
+        "The man in dark shorts attacks the man in the dark pants.",
+        entities=[
+            _entity("E1", "man in white shirt and dark pants"),
+            _entity("E2", "man in white shirt and dark shorts"),
+            _entity("E3", "pedestrian with large bag"),
+        ],
+    ) == ["E2", "E1"]
+    assert _cited("A person wearing a dark jacket enters.", entities=[_entity("E1", "person in dark jacket")]) == ["E1"]
+
+
+def test_a_head_word_counts_only_when_one_entity_has_it():
+    assert _cited("The child opens the door.", entities=[_entity("E1", "child in white shirt")]) == ["E1"]
+    assert _cited("The bear runs.", entities=[_entity("E1", "black bear", "animal")]) == ["E1"]
+    two_men = [_entity("E1", "man in light shirt"), _entity("E2", "man in dark shirt")]
+    assert _cited("The man walks away.", entities=two_men) == []
+
+
+def test_text_that_could_mean_several_items_cites_none_of_them():
+    cars = [_asset("A1", "car", "silver hatchback"), _asset("A2", "car", "white sedan")]
+    assert _cited("The car stops.", assets=cars) == []
+    same_label = [_entity("E1", "man in light shirt"), _entity("E2", "man in light shirt")]
+    assert _cited("A man in a light shirt runs.", entities=same_label) == []
+
+
+def test_the_longest_name_decides_which_item_the_text_means():
+    vans = [_asset("A1", "van", "white van"), _asset("A2", "van", "blue van")]
+    assert _cited("The white van stops.", assets=vans) == ["A1"]
+
+
+def test_one_object_filed_twice_gets_one_citation():
+    instrument = {"instrument_id": "I1", "name": "till", "label": "till", "description": "", "timestamp_seconds": 3}
+    assert _cited(
+        "He empties the till.", "He closes the till.", instruments=[instrument], assets=[_asset("A1", "till", "till")]
+    ) == ["I1"]
+
+
+def test_a_label_after_its_connector_names_nothing():
+    backpack = _asset("A1", "backpack", "backpack on ground")
+    assert _cited("He remains on the ground.", assets=[backpack]) == [], "'on ground' is not the backpack"
+    assert _cited("He sits at the table.", assets=[_asset("A1", "chair", "chairs and table")]) == []
+
+
+def test_a_name_inside_a_longer_word_or_a_vague_label_does_not_match():
+    assert _cited("He enters the bathroom.", assets=[_asset("A1", "bat")]) == []
+    assert _cited("He holds an object.", assets=[_asset("A1", "", "object")]) == []
+
+
+def test_plural_and_label_tail_forms_match():
+    assert _cited("Two vases fall.", assets=[_asset("A1", "vase")]) == ["A1"]
+    assert _cited("He leans on the display rack.", assets=[_asset("A1", "toy display", "aisle display rack")]) == ["A1"]
+
+
+def test_a_typed_and_a_suggested_chronology_cite_the_same_items():
+    view = ra.report_view(_report())
+    answers = [
+        ra.compose(q, view) for q in ("What happened?", "What happened, in order?", "Show the timeline of events")
+    ]
+    assert {a.item_ids for a in answers} == {("E1", "A1", "I1")}
+    assert {a.text for a in answers} == {answers[0].text}
+
+
+def test_the_description_fallback_and_a_taking_cite_by_name_too():
+    assets = [_asset("A1", "safe"), _asset("A2", "sofa")]
+    no_timeline = _report(
+        incident={"type": "burglary", "description": "The safe is forced."}, assets=assets, timeline=[], instruments=[]
+    )
+    assert ra.compose("What happened?", ra.report_view(no_timeline)).item_ids == ("A1",)
+    taking = _report(assets=assets, instruments=[], timeline=[_event(10, None, "He steals the safe.")])
+    assert ra.compose("Was anything taken?", ra.report_view(taking)).item_ids == ("A1",)
+
+
+def test_an_item_removed_in_a_draft_is_not_cited_by_its_old_name():
+    base = _report(assets=[_asset("A1", "vase")], instruments=[], timeline=[_event(10, None, "The vase falls.")])
+    draft = {"incident": {"description": "x"}, "entities": base["entities"], "instruments": [], "assets": []}
+    report = ra.overlay_draft(base, draft)
+    view = ra.report_view(report, retired=ra.item_ids(base) - ra.item_ids(report))
+    assert "A1" not in ra.compose("What happened?", view).item_ids
+
+
 def _event(start, end, description):
     return {"start_seconds": start, "end_seconds": end, "description": description}
 

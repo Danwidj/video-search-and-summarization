@@ -150,7 +150,7 @@ How a question is answered (template mode: no model):
   - when, or how long: the incident window, or a named item's time;
   - severity and type.
   A question the report cannot answer gets "This report doesn't mention ..." and no citations.
-- **Prose and citations:** items are named by their labels or descriptions. The ids the P1 timeline uses as references are resolved first, so the prose holds no item or incident id unless the question asks for ids. The citations are the items the answer relies on, each with its evidence entry's crop and the second that crop was found at (`box_seconds`, else `timestamp_seconds`).
+- **Prose and citations:** items are named by their labels or descriptions. The ids the P1 timeline uses as references are resolved first, so the prose holds no item or incident id unless the question asks for ids. The citations are the items the answer relies on, each with its evidence entry's crop and the second that crop was found at (`box_seconds`, else `timestamp_seconds`). A chronology cites only the items its events refer to, by id or by whole name; text that could mean several items cites none, and an item with no stored second gets no citation ([decision](decisions.md#2026-11-06-a-template-chat-answer-cites-the-items-its-report-text-names-matched-by-id-or-by-name)).
 - **A library question** (no version): also goes to the search client, so it gets "This chat mode doesn't answer questions across the whole library yet". The canned client's demo incidents are no longer served.
 - **An injected search client** (tests, or a later real one): its hits read as prose grouped by incident (type and title, item names and times), with the ids only in the citations.
 

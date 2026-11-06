@@ -756,6 +756,90 @@ def _citation_seconds(entry: dict[str, Any]) -> float:
     return next(c for c in resp.json()["message"]["citations"] if c["item_id"] == "E1")["timestamp_seconds"]
 
 
+def _animal_revision(revision_id: int, *, vase_image: str | None = "evidence/rev/A1.jpg") -> dict[str, Any]:
+    """A report shaped like the one that drew no cards: a dog, three assets and a timeline with no ids."""
+
+    def asset(asset_id: str, name: str) -> dict[str, Any]:
+        return {"asset_id": asset_id, "name": name, "label": name, "description": "", "timestamp_seconds": 0}
+
+    payload = {
+        "incident": {"type": "animal attack", "start_timestamp": 0, "end_timestamp": 5},
+        "entities": [
+            {"entity_id": "E1", "type": "animal", "label": "tan dog", "description": "", "timestamp_seconds": 0}
+        ],
+        "instruments": [],
+        "assets": [asset("A1", "vase"), asset("A2", "coffee table"), asset("A3", "sofa")],
+        "timeline": [
+            {"start_seconds": 0, "end_seconds": 1, "description": "The dog knocks over the vase on the coffee table."},
+            {"start_seconds": 1, "end_seconds": 2, "description": "The vase shatters on the floor."},
+        ],
+    }
+    evidence = [
+        {"item_type": "entity", "item_id": "E1", "image": f"evidence/{revision_id}/E1.jpg", "timestamp_seconds": 0},
+        {"item_type": "asset", "item_id": "A1", "image": vase_image, "timestamp_seconds": 0, "box_seconds": 0.4},
+        {"item_type": "asset", "item_id": "A2", "image": f"evidence/{revision_id}/A2.jpg", "timestamp_seconds": 0},
+        {"item_type": "asset", "item_id": "A3", "image": f"evidence/{revision_id}/A3.jpg", "timestamp_seconds": 0},
+    ]
+    return {"id": revision_id, "video_id": VIDEO, "payload": payload, "evidence": evidence}
+
+
+def _ask_animal(revisions: dict[int, dict[str, Any]], version_id: int, question: str, **extra: Any) -> dict[str, Any]:
+    store = FakeRevisionStore(revisions=revisions)
+    resp = _make_client(revision_store=store).post(
+        "/api/v1/incidents/chat",
+        json={"messages": [{"role": "user", "content": question}], "version_id": version_id, **extra},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["message"]
+
+
+def test_a_chronology_of_an_animal_attack_has_cards_for_what_it_names():
+    message = _ask_animal({7: _animal_revision(7)}, 7, "What happened?")
+    assert [c["item_id"] for c in message["citations"]] == ["E1", "A1", "A2"], "the sofa is never mentioned"
+
+
+def test_a_card_keeps_its_stored_second_not_the_events():
+    message = _ask_animal({7: _animal_revision(7)}, 7, "Show the timeline of events")
+    assert {c["item_id"]: c["timestamp_seconds"] for c in message["citations"]} == {"E1": 0, "A1": 0.4, "A2": 0}
+
+
+def test_a_card_with_no_crop_is_kept_with_an_empty_image():
+    message = _ask_animal({7: _animal_revision(7, vase_image=None)}, 7, "What happened?")
+    vase = next(c for c in message["citations"] if c["item_id"] == "A1")
+    assert vase["crop_image_url"] == "" and vase["timestamp_seconds"] == 0.4
+
+
+def test_an_item_with_no_stored_second_gets_no_card_rather_than_an_invented_one():
+    revision = _animal_revision(7)
+    del revision["payload"]["assets"][1]["timestamp_seconds"]
+    revision["evidence"] = [e for e in revision["evidence"] if e["item_id"] != "A2"]
+    message = _ask_animal({7: revision}, 7, "What happened?")
+    assert [c["item_id"] for c in message["citations"]] == ["E1", "A1"]
+
+
+def test_cards_come_from_the_version_asked_about():
+    other = _animal_revision(8)
+    other["evidence"] = [{**e, "image": f"evidence/8/{e['item_id']}.jpg"} for e in other["evidence"]]
+    message = _ask_animal({7: _animal_revision(7), 8: other}, 7, "What happened?")
+    assert all("/8/" not in c["crop_image_url"] for c in message["citations"])
+    assert _ask_animal({7: _animal_revision(7), 8: other}, 8, "What happened?")["citations"][0][
+        "crop_image_url"
+    ].endswith("evidence/8/E1.jpg")
+
+
+def test_an_official_version_and_a_draft_get_cards_too():
+    store = FakeRevisionStore(revisions={7: _animal_revision(7)}, official={VIDEO: 7})
+    resp = _make_client(revision_store=store).post(
+        "/api/v1/incidents/chat",
+        json={"messages": [{"role": "user", "content": "What happened?"}], "version_id": 7},
+    )
+    assert [c["item_id"] for c in resp.json()["message"]["citations"]] == ["E1", "A1", "A2"]
+    payload = _animal_revision(7)["payload"]
+    draft = {"incident": {}, "entities": payload["entities"], "instruments": [], "assets": payload["assets"][:1]}
+    message = _ask_animal({7: _animal_revision(7)}, 7, "What happened?", draft_report=draft)
+    assert [c["item_id"] for c in message["citations"]] == ["E1", "A1"], "the draft removed the coffee table"
+
+
 def test_a_citation_jumps_to_the_second_its_crop_was_found_at():
     assert _citation_seconds({"box_seconds": 12.5, "timestamp_seconds": 0}) == 12.5
     assert _citation_seconds({"box_seconds": 0, "timestamp_seconds": 9}) == 0, "second 0 is a real second"
