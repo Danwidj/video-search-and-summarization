@@ -220,7 +220,7 @@ export function ReportChat({
                   </Message>
                 ) : (
                   <Message align="start" className="self-start" key={message.id}>
-                    <Bubble>
+                    <Bubble variant="muted">
                       <BubbleContent className="rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-foreground">
                         <AnswerText content={message.content} durationSeconds={durationSeconds} onSeek={onSeek} />
                         {!!message.citations?.length && (
