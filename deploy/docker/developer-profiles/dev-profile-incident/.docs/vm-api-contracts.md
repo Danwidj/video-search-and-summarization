@@ -156,6 +156,10 @@ How a question is answered (template mode: no model):
 
 Response `200`: `{"session_id", "message": {"role": "assistant", "content", "citations": [{"incident_id", "item_id", "item_type", "timestamp_seconds", "crop_image_url"}, ...]}}`. Errors: `400` no non-empty `user` message, or a `version_id` that belongs to another incident than `context.incident_id`; `404` unknown `version_id`; `502` evidence search or revision error; `503` report revisions unavailable.
 
+**In template mode, also:** a question about one moment ("what happened after the man fell?") gets the events on that side of it, found by the action it names, or says the report doesn't record that moment; what followed the incident is the timeline's events after its window. A follow-up that needs the conversation ("what did he do next?") is told to name the person, because this mode reads one question at a time.
+
+**Routed mode (`INCIDENT_CHAT_MODE=routed`; off).** Answers with [`chat-contract-v3`](../contracts/chat-contract-v3/README.md). Code answers a report-field question with no model call; the chat model reads the version for the rest, with the prompt `chat/incident-routed`, the report's uncertainties and the last eight turns. `message.source` says which, `grounding.route` is `deterministic`, `report_llm` or `insufficient`, and `grounding.unknown_times` lists times the report does not hold. `message.video_offer` appears only with video checks on. A library question is answered as in grounded mode. Routes and rules: [`mvp2/chat-routing.md`](mvp2/chat-routing.md).
+
 **Grounded mode (`INCIDENT_CHAT_MODE=grounded`; default `template`; merged with Gate M2 approved on 2026-11-02, off by default and not enabled on the VM).** An incident question is answered by a chat model from one report version: `version_id`, else the incident's official version (`409` when it has none), or the reviewer's `draft_report`.
 - **Model:** `INCIDENT_CHAT_MODEL`, default `nvidia/nemotron-3-ultra`, at `INCIDENT_CHAT_BASE_URL` (else `LLM_BASE_URL`) with `INCIDENT_CHAT_API_KEY` (else `OPENAI_API_KEY`). Strict JSON schema, temperature 0.
 - **What the model sees:** the registered system prompt `chat/incident-answer` ([`contracts/prompts/`](../contracts/prompts/README.md)), the version's incident, items (with ids and evidence seconds) and timeline as JSON, and the last eight user and assistant turns. The timeline is sorted by time, and each event carries `start_clock` and `end_clock` (`m:ss`). System turns are dropped.
@@ -174,6 +178,12 @@ Response `200`: `{"session_id", "message": {"role": "assistant", "content", "cit
   - **No match:** a question that is not a count, with no matching report, is insufficient evidence, without a second model call.
   - **`grounding`:** gains `scope: "library"`, `plan`, `matching`, `count_exact`, `answered_by`, `candidates`, `versions` (each incident's version, for links), `incident_titles`, `item_names` (each cited item's name, so citations are labelled without ids) and `plan_prompt_sha256`; `usage` adds up the turn's calls. `version_id` and `official` are `null`.
 - **Unchanged:** every question in template mode (composed from the report, above) keeps exactly the v1 keys.
+
+## `POST /api/v1/incidents/{video_id}/video-check`
+
+A reviewer's confirmed fresh look at the video. Off unless `INCIDENT_VIDEO_CHECK_ENABLED` is set: a request is then a `404` and no model is called. It writes nothing. Code: [`incident_video_check.py`](../../../../../services/agent/src/vss_agents/api/incident_video_check.py).
+
+Request: `{"question": <1-500 chars>, "stored_answer": <1-4000 chars>}`. Response `200`: `{"content", "source": "video", "can_answer", "relation", "model", "usage"}`. `content` has labelled parts (`Stored report:`, `Video reanalysis:`, and `Discrepancy:` on a conflict); `relation` is `agrees`, `conflicts`, `unrelated` or `unclear`. The VLM (`VLM_NAME` at `VLM_GATEWAY_BASE_URL`, else `VLM_BASE_URL`) sees only the question and the clip. `404` no video file; `502` with a reason for a timeout, rate limit or unreadable reply. The console calls it from `POST /api/chat/video-check`.
 
 ## `POST /api/v1/incidents/chart-requests`
 

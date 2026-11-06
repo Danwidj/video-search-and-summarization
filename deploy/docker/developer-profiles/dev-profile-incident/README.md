@@ -53,5 +53,5 @@ Incident search and reporting on NVIDIA's VSS blueprint. A reviewer uploads a cl
 - [Operations runbook](.docs/incident-profile-operations.md): running <vm-host>
 - [VM API contracts](.docs/vm-api-contracts.md): agent endpoints and the tunnel
 - [Decision log](.docs/decisions.md): why things are the way they are; [superseded entries](.docs/archive/decisions-superseded.md) are archived
-- [Search spec](.docs/mvp2/README.md), [console layout](.docs/mvp2/console-hexagonal-architecture.md), [search evaluation](.docs/mvp2/eval.md), [experiment decisions](.docs/mvp2/experiment-decision-record.md)
+- [Search spec](.docs/mvp2/README.md), [console layout](.docs/mvp2/console-hexagonal-architecture.md), [report-first chat routing](.docs/mvp2/chat-routing.md), [search evaluation](.docs/mvp2/eval.md), [experiment decisions](.docs/mvp2/experiment-decision-record.md)
 - Evaluation reports: [final report](eval/docs/experiments/final-report.md), [methodology v2.0](eval/methodology/evaluation-methodology-v2.0.md), [all experiment reports](eval/docs/experiments/)
