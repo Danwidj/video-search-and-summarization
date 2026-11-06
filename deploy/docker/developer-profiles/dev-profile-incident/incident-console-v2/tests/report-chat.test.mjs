@@ -125,3 +125,23 @@ test('a citation under an answer is named like its evidence card, never by its i
   assert.doesNotMatch(chat, />\s*\{citation\.itemId\}/, 'the chip never renders the id');
   assert.match(chat, /citationTitle\(titles, citation\)/);
 });
+
+test('every video time in an answer is a button, and the answer text goes through the time finder', () => {
+  const chat = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportChat', 'ReportChat.tsx'), 'utf8');
+  assert.match(chat, /segmentChatText\(content, \{ durationSeconds \}\)/);
+  assert.match(chat, /<AnswerText content=\{message\.content\}/);
+  assert.doesNotMatch(chat, /<p className="whitespace-pre-wrap">\{message\.content\}<\/p>/, 'an answer is never rendered as bare text');
+  assert.match(chat, /onClick=\{\(\) => onSeek\(segment\.seconds\)\}/);
+  assert.match(chat, /\{segment\.text\}/, 'the button shows the time as written');
+});
+
+test('a citation with no crop draws no empty image', () => {
+  const chat = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportChat', 'ReportChat.tsx'), 'utf8');
+  assert.match(chat, /citation\.cropImageUrl \? \(/);
+});
+
+test('the page bounds every seek and gives the chat the video length', () => {
+  const page = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportPage', 'ReportPage.tsx'), 'utf8');
+  assert.match(page, /seekTarget\(seconds, video\.duration\)/);
+  assert.match(page, /durationSeconds=\{playerDuration\}/);
+});
