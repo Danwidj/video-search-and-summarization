@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { evidenceDisplay } from '@/lib/evidence/evidence-view';
 import { type EvidenceDetailItem, evidenceDetailLines } from '@/modules/reports/domain/evidence-detail';
-import { type StillBox, stillBoxFor, type TrackedReportItem } from '@/modules/reports/domain/track';
+import { STILL_BOX_COLOUR, type StillBox, stillBoxFor, type TrackedReportItem } from '@/modules/reports/domain/track';
 import { EvidenceFrame, KIND_LABEL } from '@/sections/evidence/components/EvidenceFrame';
 import { PresenceBar } from '@/sections/reports/components/PresenceBar';
 
@@ -91,6 +91,8 @@ function Detail({
       <EvidenceFrame
         aspect={16 / 9}
         box={shown.box}
+        boxColour={track?.colour ?? STILL_BOX_COLOUR}
+        boxLabel={item.title}
         frameSrc={shown.frameSrc}
         fullFrame
         kind={item.kind}

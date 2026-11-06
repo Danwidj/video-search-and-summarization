@@ -187,6 +187,8 @@ export const TRACK_COLOURS = [
   '#78350f', // brown
   '#475569', // slate
 ] as const;
+/** The colour of an untracked item's stored box, on the player and on its card: dark text on it, unlike the track colours. */
+export const STILL_BOX_COLOUR = '#fbbf24';
 export const trackColour = (index: number): string =>
   TRACK_COLOURS[((index % TRACK_COLOURS.length) + TRACK_COLOURS.length) % TRACK_COLOURS.length];
 

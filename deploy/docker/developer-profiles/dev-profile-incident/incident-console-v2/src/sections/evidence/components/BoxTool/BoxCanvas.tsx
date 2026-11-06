@@ -7,6 +7,7 @@ import { useRef, useState } from 'react';
 import { boxRegion } from '@/lib/evidence/frame-geometry';
 import { dragRegion, type FramePoint, regionBox } from '@/lib/evidence/frame-picker';
 import type { Box } from '@/modules/reports/domain/reviewer-item';
+import { STILL_BOX_COLOUR } from '@/modules/reports/domain/track';
 
 const percent = (fraction: number) => `${+(fraction * 100).toFixed(3)}%`;
 
@@ -19,6 +20,7 @@ export function BoxCanvas({
   box,
   drawable,
   label,
+  colour,
   onDraw,
   testId,
   children,
@@ -26,6 +28,8 @@ export function BoxCanvas({
   box: readonly number[] | null;
   drawable: boolean;
   label?: string;
+  /** The item's colour on the video; white where the box has none yet. */
+  colour?: string;
   onDraw?: (box: Box) => void;
   testId: string;
   children: React.ReactNode;
@@ -78,10 +82,21 @@ export function BoxCanvas({
         <div
           className="pointer-events-none absolute border-2 border-white bg-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.6)]"
           data-testid={`${testId}-box`}
-          style={{ left: percent(region.x), top: percent(region.y), width: percent(region.w), height: percent(region.h) }}
+          style={{
+            left: percent(region.x),
+            top: percent(region.y),
+            width: percent(region.w),
+            height: percent(region.h),
+            ...(colour ? { borderColor: colour } : {}),
+          }}
         >
           {label && !drawn && (
-            <span className="absolute -top-5 left-0 max-w-full truncate rounded bg-white px-1.5 text-[10px] font-semibold text-ink">
+            <span
+              className={`absolute -top-5 left-0 max-w-full truncate rounded px-1.5 text-[10px] font-semibold ${
+                !colour ? 'bg-white text-ink' : colour === STILL_BOX_COLOUR ? 'text-black' : 'text-white'
+              }`}
+              style={colour ? { backgroundColor: colour } : undefined}
+            >
               {label}
             </span>
           )}

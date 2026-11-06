@@ -83,3 +83,17 @@ test('EvidenceFrame and FrameViewer render the states and boxes the report page 
   assert.match(viewer, /aria-pressed/);
   assert.match(viewer, /onSelect/);
 });
+
+test('every evidence card titles its box and draws it in the colour the item has on the video', async () => {
+  const read = (path) => readFile(new URL(path, components), 'utf8');
+  const frame = await read('evidence/components/EvidenceFrame/EvidenceFrame.tsx');
+  assert.match(frame, /label=\{boxLabel \?\? label\}/, 'the box carries the title in both framings');
+  assert.equal(frame.match(/<DrawnBox/g).length, 2, 'a whole frame and a cut frame draw the same box');
+  assert.match(frame, /data-testid="evidence-frame-box-label"/);
+  assert.match(frame, /colour === STILL_BOX_COLOUR/, 'an untracked item is dashed amber, as on the player');
+  const view = await read('reports/components/ReportPane/ReportPane.tsx');
+  assert.match(view, /boxColour=\{track\?\.colour \?\? STILL_BOX_COLOUR\}/, 'a saved card takes its track colour, else the still colour');
+  const edit = await read('reports/components/ReportEditPane/ReportEditPane.tsx');
+  assert.match(edit, /boxLabel=\{savedItemName\(item\)\}/, 'side A shows the name, not the id');
+  assert.match(edit, /boxLabel=\{draftItemName\(item\)\}/, 'side B shows the name as it is being typed');
+});

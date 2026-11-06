@@ -21,7 +21,7 @@ import {
   instrumentDetail,
 } from '@/modules/reports/domain/evidence-detail';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
-import { type StillBox, type TrackedReportItem, trackedReportItems } from '@/modules/reports/domain/track';
+import { STILL_BOX_COLOUR, type StillBox, type TrackedReportItem, trackedReportItems } from '@/modules/reports/domain/track';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
 import { EvidenceCarousel } from '@/sections/evidence/components/EvidenceCarousel';
 import { EvidenceDetailDialog } from '@/sections/reports/components/EvidenceDetailDialog';
@@ -336,6 +336,7 @@ function Card({
         <EvidenceFrame
           aspect={16 / 9}
           box={shown.box}
+          boxColour={track?.colour ?? STILL_BOX_COLOUR}
           className="rounded-none!"
           frameSrc={shown.frameSrc}
           fullFrame
