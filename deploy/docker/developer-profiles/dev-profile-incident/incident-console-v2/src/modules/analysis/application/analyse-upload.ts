@@ -24,6 +24,8 @@ export interface UploadAnalysisInput {
   /** The model id; empty or missing runs the default model. */
   model?: string | null;
   additionalInstruction?: string;
+  /** SHA-256 of the file as uploaded, stored on the new video row (videos.content_sha256). */
+  contentSha256?: string | null;
 }
 
 export interface UploadAnalysisDeps {
@@ -56,7 +58,7 @@ export async function analyseUpload(input: UploadAnalysisInput, deps: UploadAnal
       r2Key: input.r2Key,
       model: input.model || deps.defaultModel,
       additionalInstruction: input.additionalInstruction,
-      newVideo: { uploadedAt: deps.now().toISOString() },
+      newVideo: { uploadedAt: deps.now().toISOString(), contentSha256: input.contentSha256 ?? null },
     },
     deps.ports,
     deps.mode,

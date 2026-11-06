@@ -29,6 +29,8 @@ export interface AnalysisJob {
   /** The new video and AI revision once done (null again if the video was deleted later). */
   videoId: string | null;
   revisionId: number | null;
+  /** SHA-256 of the file as uploaded; null for a job queued before the hash existed. */
+  contentSha256: string | null;
 }
 
 /** How the loop finished one claim. */

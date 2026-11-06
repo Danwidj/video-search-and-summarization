@@ -84,6 +84,8 @@ export interface MissingEmbedding {
 export interface VideoRepository {
   listVideos(filter: VideoListFilter, page: number, pageSize: number): Promise<Page<VideoListItem>>;
   getVideo(videoId: string): Promise<VideoRecord | null>;
+  /** The video whose uploaded file has this SHA-256 (videos.content_sha256), or null; also null before the column exists. */
+  findByContentHash(contentSha256: string): Promise<VideoRecord | null>;
   /** The records a video's analysis history is built from; null for an unknown video. */
   listRunHistory(videoId: string): Promise<RunHistoryRecords | null>;
   /**

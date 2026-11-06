@@ -4,11 +4,16 @@ import { createReadStream } from 'node:fs';
 
 import { NextResponse } from 'next/server';
 
-import { getServiceConfiguration, isR2Configured } from '@/lib/env';
+import { getAnalysisJobs, getDbAdapters } from '@/lib/container';
+import { getServiceConfiguration, isR2Configured, isSupabaseConfigured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
+import { duplicateResponse } from '@/lib/http/duplicate-response';
 import { putR2Video, r2ObjectExists, verifyR2Video } from '@/lib/r2/config';
 import { firstFreeName, inspectUploadName, uploadKeyForName } from '@/lib/r2/names';
 import { TranscodeError, prepareUpload } from '@/lib/video/transcode';
+import { sha256OfBlob } from '@/lib/uploads-hash';
+import { findDuplicateUpload } from '@/modules/jobs/application';
+import { DuplicateUploadError } from '@/modules/uploads/domain/duplicate';
 
 // Upload, probe, convert and store a 10-minute 4K phone clip: the conversion
 // alone is allowed 25 minutes (lib/video/transcode.ts). Documented with the
@@ -31,7 +36,10 @@ const MAX_UPLOAD_BYTES = 5 * 1024 ** 3;
  *
  * This is the only upload: the browser hands the file to the console, which
  * keeps the R2 credentials server-side. `converted` in the answer says whether
- * ffmpeg ran or the file was stored byte for byte.
+ * ffmpeg ran or the file was stored byte for byte. `contentSha256` is the hash of
+ * the file as uploaded, which the analysis job carries to the video row. A file
+ * whose content is already a video in the library, or a queued job, is answered
+ * with HTTP 409 and the existing video, before anything is stored.
  */
 export async function POST(request: Request) {
   try {
@@ -49,6 +57,15 @@ export async function POST(request: Request) {
     const config = getServiceConfiguration();
     if (!isR2Configured(config)) throw new Error('R2 is not configured');
 
+    // The content is checked before anything is converted or stored. It is hashed as uploaded, so a file
+    // that is converted to H.264 keeps the hash of the original, whose bytes the reviewer picks again.
+    const contentSha256 = await sha256OfBlob(file);
+    if (isSupabaseConfigured(config)) {
+      const db = getDbAdapters(config);
+      const duplicate = await findDuplicateUpload(getAnalysisJobs(config), db.videos, contentSha256);
+      if (duplicate) return duplicateResponse(new DuplicateUploadError(duplicate));
+    }
+
     const prepared = await prepareUpload(file);
     try {
       const checked = inspectUploadName(filename);
@@ -56,7 +73,7 @@ export async function POST(request: Request) {
       const key = uploadKeyForName(name);
       await putR2Video(config, key, createReadStream(prepared.path), 'video/mp4', prepared.size);
       await verifyR2Video(config, key, prepared.size);
-      return NextResponse.json({ filePath: key, name, converted: prepared.converted });
+      return NextResponse.json({ filePath: key, name, converted: prepared.converted, contentSha256 });
     } finally {
       await prepared.cleanup();
     }

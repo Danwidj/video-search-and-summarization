@@ -41,6 +41,7 @@ export async function tick(): Promise<boolean> {
           r2Key: job.filePath,
           model: job.model,
           videoId: jobVideoId(job),
+          contentSha256: job.contentSha256,
         },
         deps,
       );

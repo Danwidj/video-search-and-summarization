@@ -20,6 +20,8 @@ import type {
 import type { OfficialCrop } from '@/modules/reports/domain/revision';
 
 export interface InMemoryVideo extends VideoRecord {
+  /** SHA-256 of the uploaded file (videos.content_sha256). */
+  contentSha256?: string | null;
   /** Ids of this video's report revisions. */
   revisionIds: number[];
 }
@@ -66,10 +68,15 @@ export class InMemoryVideoRepository implements VideoRepository {
     return { items, totalItems: all.length };
   }
 
+  async findByContentHash(contentSha256: string): Promise<VideoRecord | null> {
+    const found = [...this.videos.values()].find((video) => video.contentSha256 === contentSha256);
+    return found ? this.getVideo(found.videoId) : null;
+  }
+
   async getVideo(videoId: string): Promise<VideoRecord | null> {
     const video = this.videos.get(videoId);
     if (!video) return null;
-    const { revisionIds: _ids, ...record } = video;
+    const { revisionIds: _ids, contentSha256: _hash, ...record } = video;
     return record;
   }
 
