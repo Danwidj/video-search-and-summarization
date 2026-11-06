@@ -29,6 +29,9 @@ shares no words with any item, so it got the report's first five items. This mod
   the assets. A named object the report does not record is said to be absent;
 - **when, or how long:** the incident window, or when a named item is seen;
 - **severity** and **type**;
+- **what came after or before a moment:** the events on that side of the event the question points at, never the whole
+  timeline; a moment the report does not record is said to be missing. What followed the incident is the timeline's
+  events after its window;
 - **anything else:** the timeline events that share the question's words; otherwise a plain statement that the report
   does not say, with no citations.
 
@@ -305,6 +308,52 @@ _LABEL_HEAD_END = re.compile(r"\s(?:in|with|wearing|near|on|at|inside|lying|walk
 _LABEL_OUTFIT = re.compile(r"^(.+?\s(?:in|wearing)\s)(.+\sand\s.+)$")
 # Words too general to identify one object on their own.
 _VAGUE_NAMES = frozenset({"object", "objects", "item", "items", "thing", "things"})
+# A question about one moment in the order of events, not about the whole of it.
+_SEQUENCE = re.compile(r"\b(?:after|afterwards?|before|next|then|following|prior to|until|later|earlier|leading up)\b")
+_EARLIER = re.compile(r"\b(?:before|prior to|earlier|leading up)\b")
+_IMMEDIATE = re.compile(r"\b(?:immediately|right after|straight after|just after|directly after)\b")
+_AFTER_INCIDENT = re.compile(
+    r"\bafter (?:the |this )?(?:incident|attack|assault|altercation|fight|event)\b(?: (?:ended|was over|finished|stopped))?"
+    r"|\bafter (?:it|that) (?:ended|was over|finished|stopped)\b"
+)
+# Past forms the plural rules cannot reach, so "fell" meets an event that says "falls".
+_PAST_FORMS = {
+    "fell": "fall",
+    "fallen": "fall",
+    "ran": "run",
+    "struck": "strike",
+    "threw": "throw",
+    "thrown": "throw",
+    "stole": "steal",
+    "stolen": "steal",
+    "left": "leave",
+    "went": "go",
+    "came": "come",
+    "broke": "break",
+    "broken": "break",
+    "shot": "shoot",
+    "held": "hold",
+    "knelt": "kneel",
+    "stood": "stand",
+}
+_PEOPLE_NOUNS = frozenset(
+    {"man", "men", "woman", "women", "guy", "boy", "girl", "child", "attacker", "victim", "suspect"}
+)
+# Words that ask nothing beyond the kind of answer: "who appears", "what was identified".
+_PLAIN_TEXT = (
+    "appear appears anything anyone identified identify recorded record listed list mentioned present there affected "
+    "rated rating level given part during between finish finishes timestamp timestamps point place individual individuals"
+)
+_PLAIN_WORDS = frozenset(_PLAIN_TEXT.split())
+# A question that leans on the conversation, or that asks for reasoning a template cannot give.
+_CONTEXT = re.compile(
+    r"\b(?:he|she|they|him|her|them|his|hers|their|next|else|afterwards?|that one|this one|the other|"
+    r"did that|was that|that happen\w*)\b"
+)
+# A judgement about one thing ("was the object a weapon?"), which a list of items cannot settle.
+_JUDGEMENT = re.compile(r"^\s*(?:was|is|were|are)\s+(?:the|that|this|those|these)\b")
+_REASONING = re.compile(r"^\s*(?:why|how come)\b|\bhow did\b|\bexplain\b|\bbecause\b|\breason\b")
+_THIS_INCIDENT = re.compile(r"\b(?:in|of|for|during) (?:this|the) (?:event|incident)\b")
 _TIME_FIRST = re.compile(r"^\s*(?:when|what time|how long|at what (?:second|point|time|moment))\b")
 
 
@@ -635,6 +684,11 @@ def resolve_references(text: str, mentions: Mapping[str, str]) -> str:
 def asks_for_ids(question: str) -> bool:
     """Whether a question asks for item ids ("what are the item ids of ..."): only then may ids appear in the prose."""
     return bool(_ASKS_IDS.search(question.lower()))
+
+
+def names_an_id(question: str) -> bool:
+    """Whether a question itself writes an item id ("who is holding stick I2?")."""
+    return bool(_ID.search(question))
 
 
 def referenced_ids(text: str, known: Iterable[str]) -> list[str]:
@@ -1093,6 +1147,118 @@ def _incident_type(view: ReportView) -> ComposedAnswer:
     return ComposedAnswer(text, (), False, "type")
 
 
+def _chronology_asked(q: str) -> bool:
+    """Whether a lower-case question asks for the course of events. "This event" only names the incident: "what
+    property was involved in this event?" asks about the property."""
+    return bool(_CHRONOLOGY.search(_THIS_INCIDENT.sub(" ", q)))
+
+
+def _intent_words(q: str) -> set[str]:
+    """The words of a lower-case question that say what kind of answer it wants, rather than what it is about."""
+    return {
+        w
+        for pattern in (_CHRONOLOGY, _PEOPLE, _OBJECTS, _WHEN, _SEVERITY, _TYPE, _TAKEN, _HARM)
+        for match in pattern.finditer(q)
+        for w in _words(match.group(0))
+    }
+
+
+def action_words(text: str) -> set[str]:
+    # A verb's -s form is not a plural: "leaves" is "leave", which the plural rules read as "leaf".
+    bases = [_PAST_FORMS.get(word, word) for word in _tokens(text)]
+    return {
+        variant for base in bases for variant in (*_variants(base), base.removesuffix("s"), base.removesuffix("ed"))
+    }
+
+
+def _block(lead: str, events: Sequence[Mapping[str, Any]], mentions: Mapping[str, str]) -> str:
+    return lead + "\n" + "\n".join(_event_line(e, mentions) for e in events)
+
+
+def incident_end(view: ReportView) -> float | None:
+    """The second the report says the incident ends, if it says."""
+    return _num(view.incident.get("end_timestamp"))
+
+
+def _after_incident(view: ReportView) -> ComposedAnswer:
+    """What followed the incident: the timeline's events after its window, or that the report records none."""
+    mentions = view.mentions()
+    after = [e for e in view.timeline if _phase(e, view.incident) == "after"]
+    if not after:
+        return ComposedAnswer("The report records nothing after the incident ends.", (), True, "after_incident")
+    cited = text_items((str(e.get("description") or "") for e in after), view)
+    return ComposedAnswer(
+        _block("After the incident, the report records:", after, mentions), tuple(cited), False, "sequence"
+    )
+
+
+def _around(view: ReportView, q: str) -> ComposedAnswer:
+    """What came after or before the moment a question points at, found by the action it names ("the man fell").
+
+    The words that only say who ("man", or an item's name) would match most events, so they do not pick the moment.
+    The first event with the action is that moment. With no such event the report does not say.
+    """
+    names = set().union(*(i.name_words for i in view.items)) if view.items else set()
+    wanted = action_words(_SEQUENCE.sub(" ", q)) - _intent_words(q) - names - _PEOPLE_NOUNS
+    events = list(view.timeline)
+    moment = next((n for n, e in enumerate(events) if wanted & action_words(str(e.get("description") or ""))), None)
+    if moment is None:
+        return ComposedAnswer(
+            "The report's timeline doesn't record that moment, so it can't say what came around it. "
+            "Ask for the timeline of events to see everything it records.",
+            (),
+            True,
+            "sequence",
+        )
+    when = clock(events[moment].get("start_seconds"))
+    at = f"The report puts that moment at {when}." if when else "The report records that moment."
+    side = events[:moment] if _EARLIER.search(q) else events[moment + 1 :]
+    word = "Before" if _EARLIER.search(q) else "After"
+    if not side:
+        return ComposedAnswer(f"{at} It records nothing {word.lower()} that.", (), True, "sequence")
+    if _IMMEDIATE.search(q):
+        side = side[-1:] if _EARLIER.search(q) else side[:1]
+    mentions = view.mentions()
+    cited = text_items((str(e.get("description") or "") for e in side), view)
+    return ComposedAnswer(_block(f"{at} {word} it:", side, mentions), tuple(cited), False, "sequence")
+
+
+def is_plain(question: str, view: ReportView) -> bool:
+    """Whether a question asks only for a kind of report field ("who appears?", "what happened?"), which a composed
+    answer gives in full. One that names something, reasons, leans on the conversation or points at one moment does not.
+    """
+    q = _ASKS_IDS.sub(" ", question.lower())
+    if _REASONING.search(q) or _CONTEXT.search(q) or _SEQUENCE.search(q) or _JUDGEMENT.search(q):
+        return _AFTER_INCIDENT.search(q) is not None
+    left = set(_tokens(q)) - _intent_words(q) - _PLAIN_WORDS
+    return not {w for w in left if not _variants(w) & (_intent_words(q) | _PLAIN_WORDS)} and compose(
+        question, view
+    ).kind in (
+        "chronology",
+        "people",
+        "objects",
+        "taken",
+        "harm",
+        "taken-harm",
+        "time",
+        "severity",
+        "type",
+    )
+
+
+def needs_context(question: str, view: ReportView) -> bool:
+    """Whether a question means something only through the turns before it: "what did he do next?" names no item."""
+    q = question.lower()
+    return bool(_CONTEXT.search(q)) and not _named_items(question, view)
+
+
+def has_no_subject(question: str, view: ReportView) -> bool:
+    """Whether a question is only a pointer ("what about that one?", "what did he do?"): with no conversation before it,
+    nothing says what it means."""
+    q = question.lower()
+    return needs_context(question, view) and not set(_tokens(_CONTEXT.sub(" ", q))) - _intent_words(q)
+
+
 def compose(question: str, view: ReportView) -> ComposedAnswer:
     """The answer to one question about one report version, or a statement that the report does not say."""
     asks_ids = bool(_ASKS_IDS.search(question.lower()))
@@ -1104,12 +1270,7 @@ def compose(question: str, view: ReportView) -> ComposedAnswer:
     known_words |= _words(
         " ".join(str(view.incident.get(k) or "") for k in ("type", "title", "description", "location"))
     )
-    intent_words = {
-        w
-        for pattern in (_CHRONOLOGY, _PEOPLE, _OBJECTS, _WHEN, _SEVERITY, _TYPE, _TAKEN, _HARM)
-        for match in pattern.finditer(q)
-        for w in _words(match.group(0))
-    }
+    intent_words = _intent_words(q)
     # Category words ("tools", "weapons") ask for every item of a kind; only other words name a particular item, and
     # an item whose name or label matches beats one whose description merely mentions the word.
     naming = words - intent_words
@@ -1124,9 +1285,15 @@ def compose(question: str, view: ReportView) -> ComposedAnswer:
     ]
     how_many = bool(_HOW_MANY.search(q))
     people_q = bool(_PEOPLE.search(q)) and (bool(_PEOPLE_NAMED.search(q)) or not _OBJECT_KINDS.search(q))
-    if _TIME_FIRST.search(q):
+    if _AFTER_INCIDENT.search(q):
+        answer = _after_incident(view)
+    elif _TIME_FIRST.search(q):
         answer = _when(view, targets)
-    elif _CHRONOLOGY.search(q):
+    elif _TYPE.search(q):
+        answer = _incident_type(view)
+    elif _chronology_asked(q) and _SEQUENCE.search(q):
+        answer = _around(view, q)
+    elif _chronology_asked(q):
         answer = _chronology(view, targets)
     elif _TAKEN.search(q) or _HARM.search(q):
         # A question may ask both ("what was taken, or what could cause harm?"): each part is answered.
@@ -1139,8 +1306,6 @@ def compose(question: str, view: ReportView) -> ComposedAnswer:
                 all(part.insufficient_evidence for part in parts),
                 "taken-harm",
             )
-    elif _TYPE.search(q):
-        answer = _incident_type(view)
     elif _SEVERITY.search(q) and not targets:
         answer = _severity(view)
     elif _WHEN.search(q):

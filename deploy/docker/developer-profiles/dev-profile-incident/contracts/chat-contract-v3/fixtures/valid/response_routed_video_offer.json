@@ -1,0 +1,28 @@
+{
+  "session_id": "s1",
+  "message": {
+    "role": "assistant",
+    "content": "The report does not say what colour his shirt was.",
+    "citations": [],
+    "insufficient_evidence": true,
+    "source": "report_llm",
+    "video_offer": {
+      "reason": "The report does not record the colour of his shirt."
+    }
+  },
+  "grounding": {
+    "mode": "routed",
+    "scope": "incident",
+    "model": "nvidia/nemotron-3-ultra",
+    "version_id": 7,
+    "official": false,
+    "draft": false,
+    "dropped_citations": [],
+    "ids_resolved": [],
+    "route": "report_llm",
+    "route_reason": "needs_reading",
+    "unknown_times": [
+      "0:99"
+    ]
+  }
+}

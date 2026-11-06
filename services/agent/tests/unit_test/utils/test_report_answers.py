@@ -195,6 +195,95 @@ def _cited(*events, entities=(), assets=(), instruments=()):
     return list(ra.compose("What happened?", ra.report_view(report)).item_ids)
 
 
+def _moments():
+    events = [
+        _event(5, 8, "He walks to the door."),
+        _event(10, 12, "He falls to the ground."),
+        _event(20, 25, "He stands up."),
+        _event(30, 32, "He leaves."),
+    ]
+    return ra.report_view(_report(timeline=events))
+
+
+def test_describe_and_event_do_not_turn_a_field_question_into_a_chronology():
+    view = ra.report_view(_report())
+    assert ra.compose("What kind of incident does this report describe?", view).kind == "type"
+    assert ra.compose("What property was involved in this event?", view).kind == "objects"
+    assert ra.compose("Describe what happened", view).kind == "chronology"
+
+
+def test_a_question_about_one_moment_is_not_the_whole_timeline():
+    answer = ra.compose("What happened after the man fell?", _moments())
+    assert answer.text.startswith("The report puts that moment at 0:10. After it:")
+    assert "0:20" in answer.text and "0:30" in answer.text and "0:05" not in answer.text
+
+
+def test_before_and_immediately_look_the_right_way():
+    assert "0:05\u20130:08 He walks" in ra.compose("What happened before he fell?", _moments()).text
+    assert "0:20" not in ra.compose("What happened before he fell?", _moments()).text
+    right_after = ra.compose("What happened immediately after he fell?", _moments()).text
+    assert "0:20" in right_after and "0:30" not in right_after
+
+
+def test_a_moment_the_report_does_not_record_is_said_to_be_missing():
+    answer = ra.compose("What happened after the explosion?", _moments())
+    assert answer.insufficient_evidence and answer.item_ids == ()
+    assert "doesn't record that moment" in answer.text
+
+
+def test_a_past_tense_finds_the_event_in_the_present_tense():
+    view = ra.report_view(_report(timeline=[_event(5, 8, "The dog continues to attack him."), _event(9, 10, "He runs.")]))
+    assert "0:09" in ra.compose("What happened after the dog attacked him?", view).text
+
+
+def test_the_last_event_has_nothing_after_it():
+    answer = ra.compose("What happened after he left?", _moments())
+    assert "records nothing after that" in answer.text and answer.insufficient_evidence
+
+
+def test_after_the_incident_is_the_context_after_its_window():
+    view = ra.report_view(_report(timeline=[_event(10, 12, "Inside."), _event(70, 72, "He drives off.")]))
+    text = ra.compose("What happened after the incident ended?", view).text
+    assert "1:10\u20131:12 He drives off." in text and "Inside" not in text
+    empty = ra.compose("What happened after the incident?", ra.report_view(_report()))
+    assert empty.insufficient_evidence and empty.text == "The report records nothing after the incident ends."
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Show the timeline of events",
+        "What happened?",
+        "What happened, in order?",
+        "Who appears?",
+        "How serious was it?",
+    ],
+)
+def test_a_plain_question_needs_no_reading(question):
+    assert ra.is_plain(question, ra.report_view(_report()))
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Why was it so bad?",
+        "How did it begin?",
+        "What did he do?",
+        "What happened next?",
+        "What happened after he fell?",
+    ],
+)
+def test_a_question_that_reasons_or_leans_on_the_conversation_is_not_plain(question):
+    assert not ra.is_plain(question, ra.report_view(_report()))
+
+
+def test_a_pronoun_needs_the_conversation_unless_the_question_names_someone():
+    view = ra.report_view(_report())
+    assert ra.needs_context("What did he do next?", view)
+    assert not ra.needs_context("What did the hooded person do after he left?", view)
+    assert not ra.needs_context("Who is involved?", view)
+
+
 def test_a_chronology_cites_the_items_its_events_name_and_not_the_others():
     assert _cited(
         "The dog approaches the coffee table and knocks over the vase of sunflowers.",
