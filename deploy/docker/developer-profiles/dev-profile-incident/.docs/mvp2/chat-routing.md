@@ -24,7 +24,9 @@ A motive is never offered a check: footage cannot show one.
 
 - **Model answers** have three labelled parts: what the report records, an interpretation, and what is not established. Code writes the labels.
 - **Citations** must be ids the version holds; an unknown id is dropped and recorded. A card uses its evidence entry's second. An item with no stored second gets no card. An item the answer names gets a card even if the model forgot to cite it, or flagged a useful partial answer as insufficient.
-- **Times** in a model answer are checked against every second the report holds, including times stated in its words ("about 4.5s"). A time it does not hold stays plain text. The check cannot tell whether a real time belongs to the event it is written beside.
+- **Times** in a model answer must belong to the event they stand beside (`utils/chat_attribution.py`). A single time must be that event's start, or its end after "by" or "until". A range must run from an event's start to an event's end, both described by the sentence. In text that describes no event, a time may be a named item's own stored second, or the incident window. Anything else stays plain text: no jump is better than a wrong one. The written text is never changed.
+- **Missing times** are added by code: a clause that plainly describes one event, and gives no time, gets that event's time from the report, once per event. A denial or a description of an object gets none.
+- **Cards for a partial answer** come from what it affirms: an item only denied ("no collar on the dog") gets none.
 - **Video looks** are blind: the VLM gets the question and clip, never the report's claim. A text call then compares them. A conflict is flagged for a person; nothing is corrected or stored. Their times are never linked, they get no cards, and the console keeps them out of the history the report model reads.
 
 Conversations are per version: `ReportPage` holds a thread per version and draft, a closed panel keeps it, New chat clears it. The agent is stateless and reads the last eight turns from the request.
@@ -109,9 +111,11 @@ In a browser, on replayed real replies: 6 of 6 times seeked correctly, and 5 of 
 ### Unsupported claims
 
 The paid AI judge was not run, to stay in budget. One reader (Claude, unvalidated) read all answers and checked a sample against their reports.
-- **Misattributed time:** Explosion041 says the vehicle exploded "at 1:31". The report's event runs 1:12 to 1:31, so the time exists but is the wrong end, and it would seek to the wrong moment. **The time check proves a time is in the report, not that it belongs to that event.**
+- **Misattributed time:** Explosion041 says the vehicle exploded "at 1:31". The report's event runs 1:12 to 1:31, so the time exists but is the wrong end, and it would have sought to the wrong moment. Fixed after the pilot by tying each time to its event (see above): replaying all 52 stored answers leaves 6 times unlinked, including this one, and a read of the 50 written times that stay linked found none on the wrong event.
 - **Small embellishment:** "remaining visible until the video ends" (H turn 2).
 - No invented person, object or event was found.
+
+The figures above predate the attribution fix, which only touches times and cards: the stored-reply replay is its evidence.
 
 ### Not measured
 
@@ -125,11 +129,10 @@ The paid AI judge was not run, to stay in budget. One reader (Claude, unvalidate
 **Routed mode is not ready for shared users yet.** The deterministic route is. The model route has no answer-quality blocker, but:
 
 1. **Re-run the frozen questions on the final prompt** (about 72,000 tokens), and run the judged checks or a human review.
-2. **Decide on times:** accept that a time can be real but misattributed, or have code attach event times.
-3. **Plan for the shared key:** its limit of 4 parallel requests was hit during this work. A rate limit shows as an error, with no fallback answer.
-4. **Video pilot (paid, needs approval):** see below.
-5. **Turn on:** set `INCIDENT_CHAT_MODE=routed` in `generated.env.remote` (ask first) and restart `vss-agent`. It needs a chat endpoint (`INCIDENT_CHAT_BASE_URL`, else `LLM_BASE_URL`). Video checks need `INCIDENT_VIDEO_CHECK_ENABLED=1` too.
-6. **Roll back:** unset the settings and restart. Template mode needs no console change.
+2. **Plan for the shared key:** its limit of 4 parallel requests was hit during this work. A rate limit shows as an error, with no fallback answer.
+3. **Video pilot (paid, needs approval):** see below.
+4. **Turn on:** set `INCIDENT_CHAT_MODE=routed` in `generated.env.remote` (ask first) and restart `vss-agent`. It needs a chat endpoint (`INCIDENT_CHAT_BASE_URL`, else `LLM_BASE_URL`). Video checks need `INCIDENT_VIDEO_CHECK_ENABLED=1` too.
+5. **Roll back:** unset the settings and restart. Template mode needs no console change.
 
 ## Video checks: what remains
 
