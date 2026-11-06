@@ -2,6 +2,17 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-06: The chat keeps the report timeline and relevant uncertainties, and the report page stays without them
+- **Status:** an exception to [2026-10-28: The report timeline is being removed](#2026-10-28-the-report-timeline-is-being-removed), approved by the owner on 2026-11-06 for the chatbot work. It needs the captain's agreement, because the 28 Oct direction was the captain's. [2026-11-01](#2026-11-01-the-console-no-longer-shows-the-model-event-timeline-or-the-model-reported-uncertainties) stands: nothing returns to the report page.
+- **Decision:**
+  - `timeline` stays in `incident-contract-v4` as the chat's source for a what-happened answer, and is not restored to the report UI.
+  - Uncertainties reach a chat answer only in a chronology, and only those that relate to the events shown.
+  - Removing `timeline` from the contract (action item 5) is on hold, and would first need another source for the chronology.
+- **Why:** the timeline is the only ordered, timed account of an incident the system stores. Without it a what-happened answer falls back to one description paragraph. Audit on 6 Nov of the 15 reports the library opens by default: all 15 have a timeline, with 2 to 7 events each.
+- **The 28 Oct concern still applies:** the timeline is unscored and can disagree with the incident window (6 of 57 events fell outside it). Such an event may be real lead-up or aftermath, so the answer labels it as context around the incident rather than dropping it or treating it as wrong.
+- **Rejected:** deleting the timeline as planned (the chat loses its chronology); restoring it to the report page (the 1 Nov decision stands); building a chronology from first-seen and last-seen times (they place items, not events).
+- **Links:** [`report_answers.py`](../../../../../services/agent/src/vss_agents/utils/report_answers.py), [`status.md`](status.md#5-action-items).
+
 ### 2026-11-06: The P1 call streams its reply and waits out HTTP 429 inside the existing worker
 - **Decision:** `run_p1` sends `stream: true` with `stream_options: {include_usage: true}` (without it the service sends no token counts) for the main analysis call (the contract's request builder still says `stream: false`, which eval and the golden fixtures use) and joins the server-sent events into the same `content`, `finish_reason` and `usage` the validator reads; a plain JSON answer is still read as before. A stream that drops, carries an error event or ends with no finish reason is a failed attempt (`P1StreamError`, not retried). `run_p1_with_retry` waits and calls again after an HTTP 429 (`retry-after`, else 5 s doubling to 30 s with jitter), at most 4 calls, and only when the wait plus 60 s of call fits the analysis deadline (`P1_RATE_LIMIT_*` in `incident_report_gen.py`); other 4xx and 5xx errors are not retried, and the runaway retry is unchanged. Each wait is one log line. The logic lives in the existing agent call path, with no new worker or queue.
 - **Why:** the dog-yard clip failed on 5 Nov with `Priority-based rate limit exceeded` (429) and with HTTP 524, which Cloudflare returns when the service sends no byte for 125 s; a streamed reply keeps bytes flowing, and a wait inside the 240 s budget cannot push an analysis past the console's 300 s limit. It adds no capacity.
@@ -907,6 +918,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** PR #246, `incident-console-v2/src/modules/reports/domain/edit-draft.ts`, `incident-console-v2/src/lib/reports/compare.ts`.
 
 ### 2026-10-28: The report timeline is being removed
+- **Amended (2026-11-06):** the contract removal is on hold, because the chat's chronology reads the timeline ([exception](#2026-11-06-the-chat-keeps-the-report-timeline-and-relevant-uncertainties-and-the-report-page-stays-without-them)).
 - **Decision:** the model-generated `timeline` is being dropped from the report. The console no longer shows it ([2026-11-01](#2026-11-01-the-console-no-longer-shows-the-model-event-timeline-or-the-model-reported-uncertainties)), but `incident-contract-v4` still carries `timeline`. Removing it from the contract is a version bump per the contract rules and is an open action in [`status.md`](status.md#5-action-items).
 - **Why:** the timeline is enrichment, not a core scored field: its violations are not fatal under `core-scored-v1`, and it could disagree with the incident window ([`analysis-schema.md`](analysis-schema.md)).
 - **Links:** [`analysis-schema.md`](analysis-schema.md), [`status.md`](status.md#5-action-items).
