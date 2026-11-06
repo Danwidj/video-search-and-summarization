@@ -28,7 +28,7 @@ The harness needs no Supabase and no network. It runs on a throwaway local Postg
 
 ```bash
 cd supabase/tests
-# Applies every file in ../migrations/ in order: 47 tests (security and behaviour)
+# Applies every file in ../migrations/ in order, then runs the security and behaviour tests
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
 # Midterm freeze and unfreeze on a local replica
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
