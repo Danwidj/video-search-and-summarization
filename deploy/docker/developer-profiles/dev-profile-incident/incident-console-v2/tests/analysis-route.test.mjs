@@ -8,6 +8,9 @@ import { afterEach, beforeEach, mock, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
+const { agentBridge } = await import('./support/agent-bridge.mjs');
+const AGENT_URL = await agentBridge();
+
 let headContentLength = 1024;
 // The stored video's bytes for ranged reads (the MP4 length reader); null = unreadable.
 let videoBytes = null;
@@ -81,7 +84,7 @@ const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
 
 function setBaseEnv() {
-  process.env.INCIDENT_AGENT_BASE_URL = 'http://agent.test:8000';
+  process.env.INCIDENT_AGENT_BASE_URL = AGENT_URL;
   process.env.VLM_GATEWAY_URL = 'http://gateway.test:8600';
   process.env.INCIDENT_SUPABASE_URL = 'https://supabase.test';
   process.env.INCIDENT_SUPABASE_SERVICE_ROLE_KEY = 'test-key';

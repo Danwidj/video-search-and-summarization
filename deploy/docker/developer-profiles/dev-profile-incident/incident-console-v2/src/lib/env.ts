@@ -3,6 +3,8 @@
 export interface ServiceConfiguration {
   analysisMode: 'gateway' | 'agent';
   agentUrl?: string;
+  /** Seconds an agent-mode analysis may run (INCIDENT_ANALYSIS_TIMEOUT_SECONDS); undefined means the default, 600. */
+  analysisTimeoutSeconds?: number;
   gatewayUrl?: string;
   vlmModel: string;
   supabaseUrl?: string;
@@ -18,6 +20,12 @@ function optionalEnvironmentValue(name: string): string | undefined {
   return value || undefined;
 }
 
+/** A positive, finite number of seconds, else undefined (a blank or bad value leaves the default). */
+function positiveSeconds(name: string): number | undefined {
+  const value = Number(optionalEnvironmentValue(name));
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 export function getServiceConfiguration(): ServiceConfiguration {
   const rawMode = optionalEnvironmentValue('ANALYSIS_MODE')?.toLowerCase();
   const analysisMode: 'gateway' | 'agent' = rawMode === 'agent' ? 'agent' : 'gateway';
@@ -25,6 +33,7 @@ export function getServiceConfiguration(): ServiceConfiguration {
   return {
     analysisMode,
     agentUrl: optionalEnvironmentValue('INCIDENT_AGENT_BASE_URL'),
+    analysisTimeoutSeconds: positiveSeconds('INCIDENT_ANALYSIS_TIMEOUT_SECONDS'),
     gatewayUrl: optionalEnvironmentValue('VLM_GATEWAY_URL'),
     vlmModel: optionalEnvironmentValue('VLM_MODEL') || 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
     supabaseUrl: optionalEnvironmentValue('INCIDENT_SUPABASE_URL'),

@@ -2248,9 +2248,24 @@ class TestPeopleWithNoBoxGetATrack:
         assert person["track"] and person["box_source"] == "track-time" and person["image_gap"] is None
 
     @pytest.mark.asyncio
-    async def test_it_works_when_the_time_budget_stopped_the_detector(self, tiny_video_path: Path) -> None:
+    async def test_it_works_when_the_time_budget_stopped_the_detector(
+        self, tiny_video_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Tracking starts with time left (it is not started with the reserve or less), finishes, and then the budget
+        # ends while the detector is still answering: the finished tracks are still used.
+        monkeypatch.setattr("vss_agents.utils.crop_evidence.TRACKING_BUDGET_RESERVE_SECONDS", 0.05)
         request = self._request(self._track("7", 0.0, 1.8))
-        (person,) = await self._run(tiny_video_path, self._report(("E1", 0, 1)), request, deadline=time.monotonic() - 1)
+        detector = _HangingDetector()
+        try:
+            (person,) = await self._run(
+                tiny_video_path,
+                self._report(("E1", 0, 1)),
+                request,
+                detector=detector,
+                deadline=time.monotonic() + 0.5,
+            )
+        finally:
+            detector.release.set()
         assert person["track"] and person["image"] and person["image_gap"] is None
 
     @pytest.mark.asyncio
@@ -2291,3 +2306,72 @@ class TestPeopleWithNoBoxGetATrack:
         (person,) = await self._run(tiny_video_path, self._report(("E1", 0, 1)), request, detector=located)
         assert "track" not in person and "box_source" not in person
         assert person["track_gap"] == "no person track overlapped this person's box"
+
+
+class TestPersonTrackingTimeBudget:
+    """Person tracking is not started, and not waited on, past the analysis budget (the 10 minute change)."""
+
+    DETECTOR = FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="x")])
+
+    @pytest.mark.asyncio
+    async def test_tracking_is_not_started_with_its_reserve_or_less_left(self, tiny_video_path: Path) -> None:
+        started: list[str] = []
+
+        async def runner(video_ref: object, *, sensor_id: str, **_: object) -> TrackingOutcome:
+            started.append(sensor_id)
+            return TrackingOutcome()
+
+        request = TrackingRequest(sensor_id="s", runner=runner)
+        results = await CropEvidenceService(
+            detector=self.DETECTOR, store=InMemoryEvidenceStore()
+        ).process_incident_report(
+            video_ref=tiny_video_path,
+            video_id="v",
+            report=REPORT,
+            batch_id="b",
+            tracking=request,
+            deadline=time.monotonic() + 20,
+        )
+        assert started == [] and request.summary.skipped == TIME_BUDGET_GAP
+        assert len(results) == 3
+
+    @pytest.mark.asyncio
+    async def test_a_tracking_run_still_going_when_the_budget_ends_is_stopped_and_the_evidence_returned(
+        self, tiny_video_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "vss_agents.utils.crop_evidence.TRACKING_BUDGET_RESERVE_SECONDS", 0.5
+        )  # keep the test short
+        cancelled = asyncio.Event()
+
+        async def runner(video_ref: object, *, sensor_id: str, **_: object) -> TrackingOutcome:
+            try:
+                await asyncio.sleep(60)  # a long clip: the tracker follows it in real time
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+            return TrackingOutcome()
+
+        request = TrackingRequest(sensor_id="s", runner=runner)
+        deadline = time.monotonic() + 1.5
+        started = time.monotonic()
+        results = await CropEvidenceService(
+            detector=self.DETECTOR, store=InMemoryEvidenceStore()
+        ).process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b", tracking=request, deadline=deadline
+        )
+        assert time.monotonic() - started < 10.0
+        assert cancelled.is_set() and request.summary.skipped == TIME_BUDGET_GAP
+        assert len(results) == 3 and all(r["image"] for r in results)  # the crops were not lost
+
+    @pytest.mark.asyncio
+    async def test_without_a_deadline_tracking_is_awaited_as_before(self, tiny_video_path: Path) -> None:
+        async def runner(video_ref: object, *, sensor_id: str, **_: object) -> TrackingOutcome:
+            await asyncio.sleep(0.2)
+            return TrackingOutcome()
+
+        request = TrackingRequest(sensor_id="s", runner=runner)
+        await CropEvidenceService(detector=self.DETECTOR, store=InMemoryEvidenceStore()).process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b", tracking=request
+        )
+        assert request.summary.skipped != TIME_BUDGET_GAP

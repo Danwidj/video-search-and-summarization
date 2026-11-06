@@ -281,11 +281,11 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             tool_input["max_caption_calls"] = body.max_caption_calls
 
         try:
-            result = await run_cancel.run_until_disconnect(
-                lambda: incident_report_gen_tool.ainvoke(tool_input), request.is_disconnected
+            result = await run_cancel.run_until_request_disconnect(
+                lambda: incident_report_gen_tool.ainvoke(tool_input), request
             )
         except run_cancel.AnalysisCancelledError as exc:
-            # The client (the console, at its 300 s limit) has gone: the run was stopped and wrote no report.
+            # The client (the console, at its 600 s limit) has gone: the run was stopped and wrote no report.
             logger.warning("/analyze cancelled for incident_id=%s: the caller disconnected", incident_id)
             raise HTTPException(status_code=499, detail="The caller disconnected; the analysis was stopped") from exc
         except IncidentExtractionError as exc:
