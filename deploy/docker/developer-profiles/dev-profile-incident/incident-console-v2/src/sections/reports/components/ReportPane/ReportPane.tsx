@@ -21,7 +21,7 @@ import {
   instrumentDetail,
 } from '@/modules/reports/domain/evidence-detail';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
-import { STILL_BOX_COLOUR, type StillBox, type TrackedReportItem, trackedReportItems } from '@/modules/reports/domain/track';
+import { STILL_BOX_COLOUR, type StillBox, type TrackedReportItem, stillBoxFor, trackedReportItems } from '@/modules/reports/domain/track';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
 import { EvidenceCarousel } from '@/sections/evidence/components/EvidenceCarousel';
 import { EvidenceDetailDialog } from '@/sections/reports/components/EvidenceDetailDialog';
@@ -40,7 +40,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 /**
  * The scrolling part of View mode: the version, its report fields, its evidence grouped by holder (each card opens in
- * detail; a tracked item's card also selects its box in the player and shows where it is on screen), and the model's own output.
+ * detail, and also selects the item's box in the player; a tracked item's card shows where it is on screen), and the model's own output.
  */
 export function ReportPane({
   report,
@@ -58,7 +58,7 @@ export function ReportPane({
   officialMissing?: boolean;
   /** Link to compare this version with another AI version, when there is one. */
   compareHref?: string | null;
-  /** The tracked item whose box the player emphasises; null for none. */
+  /** The item whose box the player emphasises; null for none. */
   selectedTrackId?: string | null;
   onSelectTrack?: (id: string | null) => void;
 }) {
@@ -75,15 +75,16 @@ export function ReportPane({
   const tracked = new Map(trackedReportItems(structured).map((item) => [`${item.kind}:${item.id}`, item]));
   const cardProps = (item: EvidenceDetailItem) => {
     const track = tracked.get(`${item.kind}:${item.id}`) ?? null;
+    const hasBox = track !== null || stillBoxFor(item) !== null;
     return {
       item,
       track,
       playerDuration,
-      selected: track !== null && selectedTrackId === track.id,
+      selected: hasBox && selectedTrackId === item.id,
       onOpen: setDetail,
       onSeek,
       // Opening the card also selects its box in the player.
-      onSelect: track ? (toggle: boolean) => onSelectTrack(toggle && selectedTrackId === track.id ? null : track.id) : undefined,
+      onSelect: hasBox ? (toggle: boolean) => onSelectTrack(toggle && selectedTrackId === item.id ? null : item.id) : undefined,
       videoId: report.videoId,
     };
   };
@@ -279,7 +280,7 @@ function IdBadge({ id }: { id: string }) {
 
 /**
  * One evidence item: its whole video frame with the box drawn on it (never a cut-out crop). The whole card is a button
- * (click, Enter or Space) that opens the item in detail; a tracked item's card also selects its box in the player and shows
+ * (click, Enter or Space) that opens the item in detail and selects its box in the player; a tracked item's card also shows
  * its presence bar, whose own buttons seek without opening it.
  */
 function Card({
@@ -304,7 +305,7 @@ function Card({
   const { seconds } = item;
   const lines = evidenceDetailLines(item);
   const shown = evidenceDisplay(item.evidence, videoId);
-  // Opening the card also selects its box in the player (a tracked item); inner buttons and links keep their own action.
+  // Opening the card also selects its box in the player; inner buttons and links keep their own action.
   const open = () => {
     onOpen(item);
     onSelect?.(false);
@@ -329,7 +330,7 @@ function Card({
         open();
       }}
       role="button"
-      style={selected && track ? ({ '--tw-ring-color': track.colour } as CSSProperties) : undefined}
+      style={selected ? ({ '--tw-ring-color': track?.colour ?? STILL_BOX_COLOUR } as CSSProperties) : undefined}
       tabIndex={0}
     >
       <div data-testid="evidence-open">

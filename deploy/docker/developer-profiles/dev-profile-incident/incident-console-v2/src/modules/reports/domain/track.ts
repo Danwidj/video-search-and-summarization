@@ -136,8 +136,8 @@ export function presenceSeekSeconds(fraction: number, durationSeconds: number, f
 }
 
 /**
- * An untracked item's box held on the player: the stored box at the second it was found. An item with a track draws that
- * track instead; one with no box, no second or a detector miss has nothing to hold.
+ * An untracked item's box on the player: the stored box, shown for a moment from the second it was found. An item with a
+ * track draws that track instead; one with no box, no second or a detector miss has nothing to show.
  */
 export interface StillBox {
   id: string;
@@ -164,11 +164,13 @@ export function stillBoxFor(item: {
   return { id: item.id, label: item.title, box: evidence.boundingBox as number[], seconds: evidence.boxSeconds };
 }
 
-/** How far the playhead may drift from a held still box before the player has moved on and the box goes. */
-export const STILL_BOX_TOLERANCE_SECONDS = 0.25;
-/** Whether a held still box still belongs to the frame on screen: the player is paused at its second, give or take. */
-export const stillBoxHolds = (still: StillBox, playheadSeconds: number): boolean =>
-  Math.abs(playheadSeconds - still.seconds) <= STILL_BOX_TOLERANCE_SECONDS;
+/** How long a still box stays on the player from its second. It is one stored box, not a following one, so it stays short. */
+export const STILL_BOX_WINDOW_SECONDS = 2;
+/** How far before its second a still box already shows: a seek can land a frame short of the second it asked for. */
+export const STILL_BOX_LEAD_SECONDS = 0.25;
+/** Whether a still box is on screen at this playhead, playing or paused. */
+export const stillBoxShows = (still: StillBox, playheadSeconds: number): boolean =>
+  playheadSeconds >= still.seconds - STILL_BOX_LEAD_SECONDS && playheadSeconds <= still.seconds + STILL_BOX_WINDOW_SECONDS;
 
 /**
  * One stable colour per tracked item, by its position among the report's tracked items (entities, then instruments,
@@ -203,9 +205,9 @@ export interface TrackedReportItem {
   colour: string;
 }
 
-/** The report's tracked items (entities, then instruments, then assets, each by id), each with its colour. */
-export function trackedReportItems(structured: ReportView['structured']): TrackedReportItem[] {
-  const all = [
+/** The report's items in the order they take colours (entities, then instruments, then assets, each by id), named as the player names them. */
+function reportItems(structured: ReportView['structured']) {
+  return [
     ...structured.entities.map((item) => ({
       kind: 'entity' as const,
       id: item.entityId,
@@ -225,7 +227,16 @@ export function trackedReportItems(structured: ReportView['structured']): Tracke
       evidence: item.evidence,
     })),
   ];
-  return all
+}
+
+/** The still box of every untracked item in the report. */
+export function stillBoxesFor(structured: ReportView['structured']): StillBox[] {
+  return reportItems(structured).flatMap(({ id, label, evidence }) => stillBoxFor({ id, title: label, evidence }) ?? []);
+}
+
+/** The report's tracked items (entities, then instruments, then assets, each by id), each with its colour. */
+export function trackedReportItems(structured: ReportView['structured']): TrackedReportItem[] {
+  return reportItems(structured)
     .flatMap(({ kind, id, label, evidence }) => {
       if (!evidence?.trackUrl || evidence.trackFirstSeenSeconds === null || evidence.trackLastSeenSeconds === null) return [];
       return [

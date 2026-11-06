@@ -6,9 +6,10 @@ import { type RefObject, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
   containedBoxStyle,
+  STILL_BOX_COLOUR,
   parseTrackSamples,
   type StillBox,
-  stillBoxHolds,
+  stillBoxShows,
   type TrackSample,
   trackBoxAt,
 } from '@/modules/reports/domain/track';
@@ -78,23 +79,21 @@ function usePlayhead(video: RefObject<HTMLVideoElement | null>): number {
  * A box over the report player that follows each tracked person: the box at the playhead (interpolated between samples,
  * hidden outside the track's span), one colour per person with its name, the selected one emphasised. It never takes a
  * pointer event, so the player's own controls work through it.
- * An untracked item's `still` box is held at its second until the video plays or moves on, then `onStillDone` clears it.
+ * An untracked item's box shows for a moment from its second (`stillBoxShows`), playing or paused; several can overlap.
  */
 export function TrackOverlay({
   video,
   items,
   frameAspect,
   selectedId,
-  still = null,
-  onStillDone = () => undefined,
+  stills = [],
 }: {
   video: RefObject<HTMLVideoElement | null>;
   items: TrackedItem[];
   /** The video's own width / height. */
   frameAspect: number;
   selectedId: string | null;
-  still?: StillBox | null;
-  onStillDone?: () => void;
+  stills?: StillBox[];
 }) {
   const seconds = usePlayhead(video);
   const tileRef = useRef<HTMLDivElement>(null);
@@ -114,21 +113,6 @@ export function TrackOverlay({
   }, [items]);
 
   useEffect(() => {
-    const element = video.current;
-    if (!still || !element) return;
-    const release = () => onStillDone();
-    const moved = () => {
-      if (!stillBoxHolds(still, element.currentTime)) onStillDone();
-    };
-    element.addEventListener('play', release);
-    element.addEventListener('seeked', moved);
-    return () => {
-      element.removeEventListener('play', release);
-      element.removeEventListener('seeked', moved);
-    };
-  }, [still, video, onStillDone]);
-
-  useEffect(() => {
     const tile = tileRef.current;
     if (!tile) return;
     const measure = () => {
@@ -142,7 +126,11 @@ export function TrackOverlay({
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden" data-testid="track-overlay" ref={tileRef}>
-      {still && stillBoxHolds(still, seconds) && <StillBoxMark frameAspect={frameAspect} still={still} tileAspect={tileAspect} />}
+      {stills
+        .filter((still) => stillBoxShows(still, seconds))
+        .map((still) => (
+          <StillBoxMark frameAspect={frameAspect} key={still.id} selectedId={selectedId} still={still} tileAspect={tileAspect} />
+        ))}
       {items.map((item) => {
         const samples = tracks[item.trackUrl];
         const style = samples ? containedBoxStyle(trackBoxAt(samples, seconds), frameAspect, tileAspect) : null;
@@ -178,18 +166,37 @@ export function TrackOverlay({
   );
 }
 
-/** The held box of an untracked item: dashed, so it reads as a stored box and not a following one. */
-function StillBoxMark({ still, frameAspect, tileAspect }: { still: StillBox; frameAspect: number; tileAspect: number }) {
+/** The box of an untracked item: dashed, so it reads as a stored box and not a following one; selected and dimmed as a track is. */
+function StillBoxMark({
+  still,
+  selectedId,
+  frameAspect,
+  tileAspect,
+}: {
+  still: StillBox;
+  selectedId: string | null;
+  frameAspect: number;
+  tileAspect: number;
+}) {
   const style = containedBoxStyle(still.box, frameAspect, tileAspect);
   if (!style) return null;
+  const selected = still.id === selectedId;
+  const dimmed = selectedId !== null && !selected;
   return (
     <div
-      className="absolute rounded-sm border-[3px] border-dashed border-amber-400"
-      data-testid="still-box"
+      className={cn('absolute rounded-sm border-2 border-dashed transition-opacity', selected && 'border-[3px]', dimmed && 'opacity-50')}
+      data-selected={selected ? 'true' : undefined}
       data-still-item={still.id}
-      style={{ ...style, boxShadow: '0 0 0 2px rgb(0 0 0 / 0.45)' }}
+      data-testid="still-box"
+      style={{ ...style, borderColor: STILL_BOX_COLOUR, boxShadow: selected ? '0 0 0 2px rgb(0 0 0 / 0.45)' : undefined }}
     >
-      <span className="absolute -top-[1.35rem] -left-[3px] max-w-56 truncate rounded-sm bg-amber-400 px-1 py-px font-mono text-[11.5px] font-bold text-black">
+      <span
+        className={cn(
+          'absolute -top-[1.35rem] -left-[2px] max-w-56 truncate rounded-sm px-1 py-px font-mono text-[10.5px] font-bold text-black',
+          selected && 'text-[11.5px]',
+        )}
+        style={{ backgroundColor: STILL_BOX_COLOUR }}
+      >
         {still.label}
       </span>
     </div>

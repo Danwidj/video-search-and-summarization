@@ -5,6 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { register } from 'node:module';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -16,8 +17,11 @@ const {
   parseTrackSamples,
   presenceRegion,
   presenceSeekSeconds,
+  STILL_BOX_LEAD_SECONDS,
+  STILL_BOX_WINDOW_SECONDS,
+  stillBoxesFor,
   stillBoxFor,
-  stillBoxHolds,
+  stillBoxShows,
   trackBoxAt,
   trackColour,
   trackedReportItems,
@@ -158,12 +162,35 @@ test('an untracked item holds its stored box at the second it was found; a track
   assert.equal(stillBoxFor(item(null)), null);
 });
 
-test('a held still box stays while the player rests at its second and goes when the playhead moves on', () => {
+test('a still box shows for 2 s from its second, and from a seek that lands just short of it', () => {
   const still = { id: 'E2', label: 'man in blue', box: [100, 200, 600, 700], seconds: 12.5 };
-  assert.equal(stillBoxHolds(still, 12.5), true);
-  assert.equal(stillBoxHolds(still, 12.7), true, 'a frame either side');
-  assert.equal(stillBoxHolds(still, 13), false);
-  assert.equal(stillBoxHolds(still, 3), false);
+  assert.equal(STILL_BOX_WINDOW_SECONDS, 2);
+  assert.equal(STILL_BOX_LEAD_SECONDS, 0.25);
+  assert.equal(stillBoxShows(still, 12.5), true);
+  assert.equal(stillBoxShows(still, 12.25), true, 'the lead edge');
+  assert.equal(stillBoxShows(still, 12.24), false);
+  assert.equal(stillBoxShows(still, 14.5), true, 'the end of the window');
+  assert.equal(stillBoxShows(still, 14.51), false);
+  assert.equal(stillBoxShows(still, 3), false);
+});
+
+test('every untracked item with a stored box has a still box, named as the player names it, and a tracked one has none', () => {
+  const structured = structuredFromPayload(payload, [
+    entry('E1', { track: TRACK_KEY, track_first_seen_seconds: 78, track_last_seen_seconds: 95 }),
+    entry('E2', { box_seconds: 12, bounding_box: [100, 200, 600, 700], located: true }),
+    entry('E3', { box_seconds: 12, bounding_box: [100, 200, 600, 700], located: false }),
+  ]);
+  assert.deepEqual(
+    stillBoxesFor(structured).map(({ id, label, seconds }) => [id, label, seconds]),
+    [['E2', structured.entities[1].label || structured.entities[1].type, 12]],
+  );
+});
+
+test('overlapping still boxes are all drawn, and neither a play nor a seek clears them', async () => {
+  const overlay = await readFile(new URL('../src/sections/reports/components/TrackOverlay/TrackOverlay.tsx', import.meta.url), 'utf8');
+  assert.match(overlay, /stills\s*\.filter\(\(still\) => stillBoxShows\(still, seconds\)\)\s*\.map/);
+  assert.doesNotMatch(overlay, /onStillDone/);
+  assert.match(overlay, /const selected = still\.id === selectedId;/, 'the selected card is emphasised, as a track is');
 });
 
 test('a person the run did not track says why, on the card and the pop-up lines, and a tracked one does not', () => {

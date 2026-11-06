@@ -40,7 +40,7 @@ import {
 } from '@/modules/reports/domain/edit-draft';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
-import { trackedReportItems } from '@/modules/reports/domain/track';
+import { stillBoxesFor, trackedReportItems } from '@/modules/reports/domain/track';
 import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
 import { type ChatThread, EMPTY_CHAT_THREAD, ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
@@ -152,6 +152,7 @@ export function ReportPage({
   const [trackSelection, setTrackSelection] = useState<{ revisionId: number; id: string } | null>(null);
   const shownReport = state.status === 'ready' ? state.report : null;
   const trackedItems = useMemo(() => (shownReport ? trackedReportItems(shownReport.structured) : []), [shownReport]);
+  const stillBoxes = useMemo(() => (shownReport ? stillBoxesFor(shownReport.structured) : []), [shownReport]);
   const selectedTrackId = trackSelection && trackSelection.revisionId === shownReport?.revisionId ? trackSelection.id : null;
   const selectTrack = useCallback(
     (id: string | null) => setTrackSelection(id && shownReport ? { revisionId: shownReport.revisionId, id } : null),
@@ -182,11 +183,7 @@ export function ReportPage({
     }
   }, []);
 
-  // An untracked item's box, held on the paused player at the second it was found; a new version starts without one.
-  const [stillPin, setStillPin] = useState<{ revisionId: number; still: StillBox } | null>(null);
-  const still = stillPin && stillPin.revisionId === shownReport?.revisionId ? stillPin.still : null;
-  const clearStill = useCallback(() => setStillPin(null), []);
-  // Plays from `seconds`; with a `held` still box (an item with no track) it only seeks there and pauses, box shown, until the user plays.
+  // Plays from `seconds`; with a `held` still box (an item with no track) it only seeks there, pauses and selects the box, which then stays until the playhead leaves its window.
   const seek = useCallback(
     (seconds: number, held?: StillBox | null) => {
       const video = [videoRef.current, compactVideoRef.current].find((player) => player?.getClientRects().length) ?? videoRef.current;
@@ -196,10 +193,9 @@ export function ReportPage({
       video.currentTime = target;
       if (held && shownReport) {
         video.pause();
-        setStillPin({ revisionId: shownReport.revisionId, still: held });
+        setTrackSelection({ revisionId: shownReport.revisionId, id: held.id });
         return;
       }
-      setStillPin(null);
       void video.play().catch(() => undefined);
     },
     [shownReport],
@@ -450,7 +446,7 @@ export function ReportPage({
                     >
                       <track kind="captions" />
                     </MutedVideo>
-                    {mode === 'view' && !inPip && (trackedItems.length > 0 || still) && (
+                    {mode === 'view' && !inPip && (trackedItems.length > 0 || stillBoxes.length > 0) && (
                       <TrackOverlay
                         frameAspect={videoAspect}
                         items={trackedItems.map((item) => ({
@@ -459,9 +455,8 @@ export function ReportPage({
                           colour: item.colour,
                           trackUrl: item.trackUrl,
                         }))}
-                        onStillDone={clearStill}
                         selectedId={selectedTrackId}
-                        still={still}
+                        stills={stillBoxes}
                         video={videoRef}
                       />
                     )}

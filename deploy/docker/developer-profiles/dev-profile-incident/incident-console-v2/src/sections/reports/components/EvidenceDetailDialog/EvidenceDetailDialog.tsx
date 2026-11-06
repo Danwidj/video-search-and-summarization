@@ -31,7 +31,7 @@ export function EvidenceDetailDialog({
   /** The report's video; an older item's frame is cut from its stored file. */
   videoId: string;
   onClose: () => void;
-  /** An untracked item passes its still box: the page seeks to the box's second, pauses and holds the box. */
+  /** An untracked item passes its still box: the page seeks to the box's second, pauses and selects the box. */
   onPlayFrom: (seconds: number, still?: StillBox | null) => void;
   /** The item's track, when it has one. */
   track?: TrackedReportItem | null;
@@ -151,7 +151,7 @@ function Detail({
             onClick={() => {
               if (seconds === null) return;
               onClose();
-              // An item with no track has only its stored box: seek to the second it was found, pause and hold the box.
+              // An item with no track has only its stored box: seek to the second it was found and pause with the box shown.
               if (still) onPlayFrom(still.seconds, still);
               else onPlayFrom(seconds);
             }}
