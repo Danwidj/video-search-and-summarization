@@ -554,6 +554,10 @@ DEFAULT_GROUNDING_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com"
 DEFAULT_GROUNDING_MODEL = "nvidia/cosmos-3-super-reasoner"
 GROUNDING_MAX_EDGE_PIXELS = 1280
 GROUNDING_MAX_ATTEMPTS = 4
+# A healthy grounding call answers in 2-4 s (the stored run provenance); a stalled one used to hold an item, and a
+# slot of the 240 s analysis budget, for the old 120 s timeout. A call that times out is tried once more.
+GROUNDING_TIMEOUT_SECONDS = 20.0
+GROUNDING_TIMEOUT_RETRIES = 1
 # The most boxes one whole-frame search (``DefaultDetector.detect_all``) returns.
 MAX_DETECTIONS_PER_QUERY = 32
 # Items of one report cropped at once; each crop is a blocking frame read plus a grounding call.
@@ -621,39 +625,76 @@ class CropCallBudget:
 
 
 DETECTOR_STOP_AFTER_ERRORS = 3
+DETECTOR_COOLDOWN_SECONDS = 10.0
+DETECTOR_MAX_TRIPS = 3
 
 
 class DetectorBreaker:
-    """Stops a run's detector calls after ``limit`` errors in a row (an HTTP error or a timeout; a success resets).
+    """Pauses a run's detector calls after ``limit`` errors in a row (an HTTP error or a timeout; a success resets).
 
-    One breaker is shared by the concurrent items of a run (worker threads), so it is locked. Once tripped it stays
-    tripped for the rest of the run: callers check :attr:`tripped` before a call and carry on without the detector.
+    The first trips are pauses: calls wait out ``cooldown_seconds`` and then go ahead again, and one more error
+    straight after the pause trips it again. Three quick timeouts across the run's concurrent items therefore do not
+    end detection while budget remains. After ``max_trips`` trips with no success between them the breaker is
+    :attr:`stopped` for the rest of the run, so a dead service cannot spend the whole budget.
+
+    One breaker is shared by the concurrent items of a run (worker threads), so it is locked. :attr:`tripped` says
+    whether a call is refused now (pausing or stopped).
     """
 
-    def __init__(self, stage: str, limit: int = DETECTOR_STOP_AFTER_ERRORS) -> None:
+    def __init__(
+        self,
+        stage: str,
+        limit: int = DETECTOR_STOP_AFTER_ERRORS,
+        cooldown_seconds: float = DETECTOR_COOLDOWN_SECONDS,
+        max_trips: int = DETECTOR_MAX_TRIPS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self.stage = stage
         self.limit = limit
+        self.cooldown_seconds = cooldown_seconds
+        self.max_trips = max_trips
+        self._clock = clock
         self._streak = 0
-        self._tripped = False
+        self._trips = 0
+        self._open_until = 0.0
+        self._stopped = False
         self._lock = threading.Lock()
 
     @property
+    def stopped(self) -> bool:
+        """Whether the breaker tripped for good: no further call is made in this run."""
+        return self._stopped
+
+    @property
     def tripped(self) -> bool:
-        return self._tripped
+        return self._stopped or self._clock() < self._open_until
+
+    def cooldown_left(self) -> float:
+        """Seconds until calls are allowed again; 0 when they are (or never will be: see :attr:`stopped`)."""
+        return 0.0 if self._stopped else max(0.0, self._open_until - self._clock())
 
     def record_success(self) -> None:
         with self._lock:
             self._streak = 0
+            self._trips = 0
 
     def record_error(self, exc: BaseException) -> None:
         with self._lock:
+            now = self._clock()
+            if self._stopped or now < self._open_until:
+                return  # a call that started before the trip: already counted
             self._streak += 1
-            if self._tripped or self._streak < self.limit:
+            if self._streak < self.limit:
                 return
-            self._tripped = True
+            self._trips += 1
+            self._streak = self.limit - 1  # after the pause one more error trips it again
+            self._stopped = self._trips >= self.max_trips
+            self._open_until = now + self.cooldown_seconds
+            stopped = self._stopped
         logger.warning(
-            "%s stopped calling the detector after %d consecutive errors (last: %s)",
+            "%s %s calling the detector after %d consecutive errors (last: %s)",
             self.stage,
+            "stopped" if stopped else "paused",
             self.limit,
             type(exc).__name__,
         )
@@ -666,9 +707,10 @@ class DetectorStoppedError(RuntimeError):
 class GuardedDetector:
     """Any detector under a run's :class:`DetectorBreaker` and time budget (``deadline``, a ``time.monotonic()`` value).
 
-    A call after the breaker tripped or the deadline passed raises ``DetectorStoppedError`` without reaching the
-    detector (``crop_evidence_item`` treats it like any detector failure); a failed call counts towards tripping the
-    breaker and a reply resets it. A cap error is neither.
+    A call while the breaker is paused waits out the pause (inside the deadline); a call after it stopped for good or
+    the deadline passed raises ``DetectorStoppedError`` without reaching the detector (``crop_evidence_item`` treats
+    it like any detector failure). A failed call counts towards tripping the breaker and a reply resets it. A cap
+    error is neither.
     """
 
     def __init__(self, detector: Any, breaker: DetectorBreaker, deadline: float | None = None) -> None:
@@ -680,10 +722,15 @@ class GuardedDetector:
         return bool(self.detector.is_available()) if hasattr(self.detector, "is_available") else True
 
     def detect(self, frame: np.ndarray, query: str) -> Sequence[Detection | dict[str, Any]]:
-        if self.breaker.tripped:
-            raise DetectorStoppedError("detector stopped after consecutive errors")
-        if self.deadline is not None and time.monotonic() >= self.deadline:
-            raise DetectorStoppedError(TIME_BUDGET_GAP)
+        while True:
+            if self.breaker.stopped:
+                raise DetectorStoppedError("detector stopped after consecutive errors")
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                raise DetectorStoppedError(TIME_BUDGET_GAP)
+            pause = self.breaker.cooldown_left()
+            if pause <= 0:
+                break
+            time.sleep(pause if self.deadline is None else max(0.0, min(pause, self.deadline - time.monotonic())))
         try:
             detections: Sequence[Detection | dict[str, Any]] = (
                 self.detector.detect(frame, query) if hasattr(self.detector, "detect") else self.detector(frame, query)
@@ -752,10 +799,12 @@ class DefaultDetector:
         min_score: float = 0.2,
         base_url: str | None = None,
         api_key: str | None = None,
-        timeout_seconds: float = 120.0,
+        timeout_seconds: float = GROUNDING_TIMEOUT_SECONDS,
         call_budget: CropCallBudget | None = None,
         zoom_budget: CropCallBudget | None = None,
         max_attempts: int = GROUNDING_MAX_ATTEMPTS,
+        timeout_retries: int = GROUNDING_TIMEOUT_RETRIES,
+        deadline: float | None = None,
     ) -> None:
         self.model_name = model_name or os.getenv("VLM_NAME") or DEFAULT_GROUNDING_MODEL
         self.min_score = min_score
@@ -769,6 +818,14 @@ class DefaultDetector:
         self.call_budget = call_budget
         self.zoom_budget = zoom_budget
         self.max_attempts = max_attempts
+        self.timeout_retries = timeout_retries
+        self.deadline = deadline  # a ``time.monotonic()`` value: no request is sent or left waiting past it
+
+    def with_deadline(self, deadline: float | None) -> "DefaultDetector":
+        """A copy whose grounding requests stop at ``deadline`` (a ``time.monotonic()`` value; None means no limit)."""
+        bounded = copy.copy(self)
+        bounded.deadline = deadline
+        return bounded
 
     def with_zoom_budget(self, budget: CropCallBudget) -> "DefaultDetector":
         """A copy for one request whose zoomed-second-look attempts draw on ``budget``."""
@@ -807,12 +864,20 @@ class DefaultDetector:
         run_provenance.record_call(stage, ok=ok, usage=usage, elapsed_ms=elapsed_ms, model=self.model_name)
 
     def _request_box(self, body: dict[str, Any]) -> dict[str, Any]:
-        """POST the grounding request, retrying rate limits, server errors and unparseable replies.
+        """POST the grounding request, retrying rate limits, server errors, unparseable replies and timeouts.
 
+        A timeout is retried up to ``timeout_retries`` times, and no request waits past ``deadline`` (the attempt's
+        timeout is cut to what is left; with nothing left ``DetectorStoppedError`` is raised before sending).
         Every attempt is counted in the run provenance under the current detector stage (grounding, object
         tracking), refused, failed and retried ones included.
         """
+        timeouts = 0
         for attempt in range(1, self.max_attempts + 1):
+            timeout = self.timeout_seconds
+            if self.deadline is not None:
+                timeout = min(timeout, self.deadline - time.monotonic())
+                if timeout <= 0:
+                    raise DetectorStoppedError(TIME_BUDGET_GAP)
             if self.call_budget is not None:
                 try:
                     self.call_budget.acquire()  # before sending: a refused attempt is never made
@@ -825,8 +890,15 @@ class DefaultDetector:
                     self._chat_url(),
                     json=body,
                     headers={"Authorization": f"Bearer {self.api_key}"},
-                    timeout=self.timeout_seconds,
+                    timeout=timeout,
                 )
+            except httpx.TimeoutException:
+                self._count(None, started, None, ok=False)
+                timeouts += 1
+                if timeouts > self.timeout_retries or attempt == self.max_attempts:
+                    raise
+                logger.warning("Grounding request timed out after %.0f s (attempt %d); retrying", timeout, attempt)
+                continue
             except Exception:
                 self._count(None, started, None, ok=False)
                 raise
@@ -1718,15 +1790,27 @@ class CropEvidenceService:
         When person tracking was requested, a person left without a track keeps ``track_gap``, the reason (the run's
         skip reason, else that no track overlapped the box or that the person was not located).
 
+        A person with no box (not located, or the detector stopped, failed or ran out of time) is matched to a solid
+        person track by the seconds the report gives for them (:func:`track_evidence.match_by_time`), when one track
+        clearly fits and no other person took it. They get the track and an image cut from its first sample with no
+        detector call, ``box_source`` is ``track-time`` on their entry, and ``image_gap`` is cleared. This also holds
+        when the breaker has tripped or the budget stopped the locate step. An ambiguous or crowded person stays
+        unmatched with the reason in ``track_gap``.
+
         Failing detector (grounding and object tracking): after :data:`DETECTOR_STOP_AFTER_ERRORS` errors in a row
-        the locate step stops calling the detector (the rest of its items get an ``image_gap``) and object tracking
-        carries on with tracker-only samples.
+        the detector is paused for :data:`DETECTOR_COOLDOWN_SECONDS` and then tried again; after
+        :data:`DETECTOR_MAX_TRIPS` pauses with no reply between them the locate step stops calling it for good (the
+        rest of its items get an ``image_gap``). Object tracking carries on with tracker-only samples meanwhile. A
+        grounding request times out after :data:`GROUNDING_TIMEOUT_SECONDS`, is tried once more, and never waits past
+        ``deadline``.
 
         Time budget (``deadline``, a ``time.monotonic()`` value; None means unlimited): an item not yet located when it
         passes is left with an ``image_gap``, object tracking is shortened to leave
         :data:`TRACKING_BUDGET_RESERVE_SECONDS` (or skipped), and an unchecked second look gets a ``zoom_gap``.
         """
         active_detector = detector if detector is not None else self.detector
+        if isinstance(active_detector, DefaultDetector) and deadline is not None:
+            active_detector = active_detector.with_deadline(deadline)  # a stalled request ends with the budget
         zoom_on = zoom_names_enabled() if zoom_names is None else zoom_names
         # ``namer`` overrides the shared one for this call (an experiment's zoom-capped copy).
         namer = (namer if namer is not None else self.namer) if zoom_on else None
@@ -1740,7 +1824,8 @@ class CropEvidenceService:
             detector_ready = self.is_detector_available()
         semaphore = asyncio.Semaphore(EVIDENCE_CROP_CONCURRENCY)
         crops: dict[str, CropResult] = {}
-        crop_breaker = DetectorBreaker("Evidence crop")
+        time_matched: set[str] = set()  # people with no box whose track was matched by on-screen time
+        crop_breaker = DetectorBreaker("Evidence crop", cooldown_seconds=DETECTOR_COOLDOWN_SECONDS)
         crop_detector = GuardedDetector(active_detector, crop_breaker, deadline)
 
         def time_left() -> float | None:
@@ -1768,8 +1853,10 @@ class CropEvidenceService:
                 return
             async with semaphore:
                 left = time_left()
-                if crop_breaker.tripped:
-                    entry["image_gap"] = f"detector stopped after {crop_breaker.limit} consecutive errors"
+                if crop_breaker.stopped:
+                    entry["image_gap"] = (
+                        f"detector stopped after {crop_breaker.limit} consecutive errors, {crop_breaker.max_trips} times"
+                    )
                     return
                 if left is not None and left <= 0:
                     entry["image_gap"] = TIME_BUDGET_GAP
@@ -1823,6 +1910,8 @@ class CropEvidenceService:
                         gap=f"{DIFFERENT_OBJECT_GAP}: the box is probably on something else, so the frame is shown without a crop",
                     )
                     crops[entry["item_id"]] = crop
+                    if track is not None and tracking is not None:
+                        entry["track_gap"] = f"{DIFFERENT_OBJECT_GAP}: the matched person track was not used"
                     track = None
             if same_as is not None and not (crop.located and crop.image_bytes is not None):
                 same_as = None  # this item's own crop was refused by the second look: it keeps its own frame
@@ -1847,6 +1936,11 @@ class CropEvidenceService:
             entry["located"] = crop.located
             if crop.located and crop.image_bytes is not None:
                 entry["image"] = key
+                if track is not None and entry["item_id"] in time_matched:
+                    # No detector found this person: the box is the track's first sample (``box_source``, like
+                    # ``track_source``, is set only when it is not the detector's), so the locate failure is moot.
+                    entry["image_gap"] = None
+                    entry["box_source"] = track_evidence.TIME_MATCH_SOURCE
                 entry["bounding_box"] = crop.normalized_box
                 detected = getattr(crop, "detected_box", None)  # a custom cropper may not report it
                 if detected is not None:  # the detector's own box, before the 5% crop padding
@@ -1859,6 +1953,8 @@ class CropEvidenceService:
                         entry["track_source"] = track.source
                     if tracking is not None and track.source == track_evidence.PERSON_TRACK_SOURCE:
                         tracking.summary.matched += 1
+                        if entry["item_id"] in time_matched:
+                            tracking.summary.matched_by_time += 1
                         if tracking.summary.marks is not None:
                             path = "parsed" if entry["item_id"] in tracking.marked else "fallback"
                             tracking.summary.marks[path] += 1
@@ -2149,6 +2245,7 @@ class CropEvidenceService:
         object_task = asyncio.create_task(_track_objects()) if object_tracking is not None else None
 
         matched_tracks: dict[str, track_evidence.Track] = {}
+        time_gaps: dict[str, str] = {}
         if tracking is not None and tracking_task is not None:
             try:
                 outcome = await tracking_task
@@ -2186,8 +2283,29 @@ class CropEvidenceService:
             ]
             free = [track for track in outcome.tracks if track.track_id not in taken]
             candidates = {**marked, **track_evidence.associate_tracks(located, free, tracking.min_iou)}
+            # A person with no box (not located, or the detector stopped or ran out of time) is matched to a track by
+            # the seconds the report gives for them: one clear fit only, and never a track already taken.
+            people = [
+                (
+                    entry["item_id"],
+                    float(entry["first_seen_seconds"]),
+                    float(entry["last_seen_seconds"] + 1),  # a whole second: it lasts until the next begins
+                )
+                for entry in entries
+                if entry["item_type"] == "entity"
+                and entry["item_id"] not in candidates
+                and not ((crop := crops.get(entry["item_id"])) is not None and crop.located)
+            ]
+            taken_ids = {track.track_id for track in candidates.values()}
+            spare = [track for track in free if track.track_id not in taken_ids]
+            by_time, time_gaps = track_evidence.match_by_time(people, spare)
+            time_matched.update(by_time)
+            candidates.update(by_time)
             recut = await asyncio.gather(*(_recut(by_id[item_id], track) for item_id, track in candidates.items()))
             matched_tracks = {item_id: track for item_id, track in zip(candidates, recut, strict=True) if track}
+            time_matched.intersection_update(matched_tracks)
+            for item_id in by_time.keys() - matched_tracks.keys():
+                time_gaps[item_id] = "the matched person track's first frame could not be read"
 
         if object_task is not None:
             try:
@@ -2206,11 +2324,17 @@ class CropEvidenceService:
             # A person left without a track says why, so the console can show it (``track_gap``, like ``image_gap``).
             for entry in entries:
                 if entry["item_type"] == "entity" and entry["item_id"] not in matched_tracks:
-                    entry["track_gap"] = tracking.summary.skipped or (
-                        "no person track overlapped this person's box"
-                        if (crop := crops.get(entry["item_id"])) is not None and crop.located
-                        else "this person was not located, so no track could be matched"
-                    )
+                    crop = crops.get(entry["item_id"])
+                    if tracking.summary.skipped:
+                        entry["track_gap"] = tracking.summary.skipped
+                    elif crop is not None and crop.located:
+                        entry["track_gap"] = "no person track overlapped this person's box"
+                    else:
+                        entry["track_gap"] = (
+                            f"this person was not located, and {time_gaps[entry['item_id']]}"
+                            if entry["item_id"] in time_gaps
+                            else "this person was not located, so no track could be matched"
+                        )
 
         # Items on one box share one stored image: the first is uploaded, the rest point at it (each keeps its own
         # entry, so every item id and report reference stays valid). A twin whose first item did not store an image

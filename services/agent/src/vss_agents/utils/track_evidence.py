@@ -81,6 +81,11 @@ SETTLE_SECONDS = 3.0
 END_REACHED_WITHIN_FRAMES = 3
 SAMPLES_PER_SECOND = 5
 ASSOCIATION_WINDOW_SECONDS = 0.5
+# Matching a person with no box to a track by the seconds the report says they are on screen: the share of the two
+# spans that is common (intersection over union, in seconds) must reach MIN, and beat the next track's by MARGIN.
+TIME_MATCH_MIN_OVERLAP = 0.5
+TIME_MATCH_MARGIN = 0.2
+TIME_MATCH_SOURCE = "track-time"
 # A track backs an entity only when it is solid: at least this many real detections, and at
 # least this share of its samples real. A ghost is one detection followed by tracker-only boxes drifting away.
 MIN_REAL_SAMPLES = 2
@@ -210,11 +215,14 @@ class TrackingSummary:
     boxes_confirmed: int = 0
     boxes_moved: int = 0
     boxes_kept: int = 0
+    # People with no box that were matched to a track by on-screen time (part of ``matched``).
+    matched_by_time: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         summary: dict[str, Any] = {
             "enabled": self.enabled,
             "matched": self.matched,
+            "matched_by_time": self.matched_by_time,
             "tracks": self.tracks,
             "elapsed_ms": round(self.elapsed_ms, 1),
             "skipped": self.skipped,
@@ -505,6 +513,65 @@ def associate_tracks(
         matched[item_id] = tracks[t_index]
         used_tracks.add(t_index)
     return matched
+
+
+def time_overlap(first: float, last: float, track: Track) -> float:
+    """How much of ``first`` to ``last`` (video seconds) and the track's visible span are common, from 0 to 1.
+
+    Intersection over union of the two spans. A report gives whole seconds, so ``last`` is read as the end of that
+    second by the caller. A track with no visible sample overlaps nothing.
+    """
+    samples = visible_samples(track)
+    if not samples:
+        return 0.0
+    start, end = samples[0].t, samples[-1].t
+    common = min(last, end) - max(first, start)
+    if common <= 0:
+        return 0.0
+    return common / ((last - first) + (end - start) - common)
+
+
+def match_by_time(
+    people: Sequence[tuple[str, float, float]], tracks: Sequence[Track]
+) -> tuple[dict[str, Track], dict[str, str]]:
+    """Match people who have no box to solid tracks by on-screen time: ``({item_id: track}, {item_id: why not})``.
+
+    ``people`` are ``(item_id, first_seen, last_seen)`` in video seconds. A track is a person's candidate when its
+    visible span overlaps theirs (:func:`time_overlap`). A match is made only when one candidate clearly fits: the
+    best overlap is at least :data:`TIME_MATCH_MIN_OVERLAP` and beats the next candidate's by
+    :data:`TIME_MATCH_MARGIN`. A track that is the clear fit of two or more people goes to none of them, so a track
+    is never given to two people. The report's spans are rough (a last-seen second is often loose), which is why a
+    close second candidate means no match rather than a guess. Crowded clips stay partly unmatched.
+    """
+    solid = [track for track in tracks if is_solid(track)]
+    picks: dict[str, tuple[Track, float]] = {}
+    unmatched: dict[str, str] = {}
+    for item_id, first, last in people:
+        scored = sorted(((time_overlap(first, last, track), index) for index, track in enumerate(solid)), reverse=True)
+        scored = [(score, index) for score, index in scored if score > 0]
+        if not scored:
+            unmatched[item_id] = "no person track overlapped the seconds this person is on screen"
+            continue
+        best, runner_up = scored[0][0], scored[1][0] if len(scored) > 1 else 0.0
+        if best < TIME_MATCH_MIN_OVERLAP or best - runner_up < TIME_MATCH_MARGIN:
+            unmatched[item_id] = (
+                f"{len(scored)} person tracks overlap the seconds this person is on screen and none clearly fits "
+                f"(best {best:.0%}, next {runner_up:.0%})"
+            )
+            continue
+        picks[item_id] = (solid[scored[0][1]], best)
+    claims: dict[str, list[str]] = {}
+    for item_id, (track, _) in picks.items():
+        claims.setdefault(track.track_id, []).append(item_id)
+    matched: dict[str, Track] = {}
+    for item_id, (track, _) in picks.items():
+        if len(claims[track.track_id]) > 1:
+            unmatched[item_id] = (
+                f"{len(claims[track.track_id])} people fit the same person track, so it was not given to any"
+            )
+        else:
+            matched[item_id] = track
+    return matched, unmatched
 
 
 def first_seen_sample(track: Track) -> Sample:

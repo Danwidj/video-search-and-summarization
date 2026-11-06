@@ -38,10 +38,12 @@ from vss_agents.utils.track_evidence import first_seen_sample
 from vss_agents.utils.track_evidence import is_hdr
 from vss_agents.utils.track_evidence import is_real
 from vss_agents.utils.track_evidence import is_solid
+from vss_agents.utils.track_evidence import match_by_time
 from vss_agents.utils.track_evidence import nearest_sample
 from vss_agents.utils.track_evidence import parse_probe
 from vss_agents.utils.track_evidence import run_tracking
 from vss_agents.utils.track_evidence import sensor_id_for
+from vss_agents.utils.track_evidence import time_overlap
 from vss_agents.utils.track_evidence import track_json
 from vss_agents.utils.track_evidence import tracking_enabled
 from vss_agents.utils.track_evidence import visible_samples
@@ -595,3 +597,51 @@ class TestConfirmation:
         found = nearest_sample([self.TRACK, other], 80.0, 80, 92, exclude={"2"})
         assert found is not None and found[0].track_id == "3"
         assert nearest_sample([self.TRACK], 80.0, 80, 80.5) is None
+
+
+def _span(track_id: str, start: float, end: float) -> Track:
+    """A solid track seen from ``start`` to ``end`` seconds."""
+    steps = 6
+    times = [start + (end - start) * i / steps for i in range(steps + 1)]
+    return Track(track_id, [Sample(t, (100, 100, 400, 300), 0.9) for t in times])
+
+
+class TestMatchByTime:
+    def test_the_overlap_is_the_share_of_the_two_spans_in_common(self) -> None:
+        assert time_overlap(21, 47, _span("1", 21.3, 46.6)) == pytest.approx(0.97, abs=0.02)
+        assert time_overlap(0, 5, _span("1", 6, 9)) == 0.0
+        assert time_overlap(0, 5, Track("2", [Sample(1.0, (1, 1, 2, 2), -0.1)])) == 0.0, "no visible sample"
+
+    def test_one_clear_fit_is_matched(self) -> None:
+        near, far = _span("1", 21.3, 46.6), _span("3", 35.1, 41.1)
+        matched, gaps = match_by_time([("E2", 21, 47)], [near, far])
+        assert matched == {"E2": near} and gaps == {}
+
+    def test_a_close_second_candidate_leaves_the_person_unmatched(self) -> None:
+        # the first person's last-seen second is loose: both tracks nearly fit, so neither is guessed
+        matched, gaps = match_by_time([("E1", 2, 47)], [_span("0", 2.2, 23.1), _span("1", 21.3, 46.6)])
+        assert matched == {}
+        assert "2 person tracks overlap" in gaps["E1"] and "none clearly fits" in gaps["E1"]
+
+    def test_a_weak_overlap_is_not_matched_even_when_alone(self) -> None:
+        matched, gaps = match_by_time([("E8", 67, 73)], [_span("22", 63.1, 68.4)])
+        assert matched == {} and "none clearly fits" in gaps["E8"]
+
+    def test_no_overlapping_track_says_so(self) -> None:
+        matched, gaps = match_by_time([("E1", 0, 3)], [_span("1", 10, 12)])
+        assert matched == {} and gaps["E1"] == "no person track overlapped the seconds this person is on screen"
+
+    def test_a_ghost_track_is_never_a_candidate(self) -> None:
+        ghost = Track("9", [Sample(0.0, (1, 1, 2, 2), 0.9), Sample(3.0, (1, 1, 2, 2), -0.1)])
+        assert match_by_time([("E1", 0, 3)], [ghost])[0] == {}
+
+    def test_a_track_is_never_given_to_two_people(self) -> None:
+        only = _span("20", 57.5, 64.0)
+        matched, gaps = match_by_time([("E6", 57, 63), ("E7", 57, 63)], [only])
+        assert matched == {}
+        assert "2 people fit the same person track" in gaps["E6"] and gaps["E6"] == gaps["E7"]
+
+    def test_two_people_with_their_own_tracks_both_match(self) -> None:
+        a, b = _span("1", 0.0, 10.0), _span("2", 30.0, 40.0)
+        matched, _ = match_by_time([("E1", 0, 10), ("E2", 30, 41)], [a, b])
+        assert matched == {"E1": a, "E2": b}
