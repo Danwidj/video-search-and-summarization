@@ -231,6 +231,11 @@ def test_a_moment_the_report_does_not_record_is_said_to_be_missing():
     assert "doesn't record that moment" in answer.text
 
 
+def test_a_past_tense_finds_the_event_in_the_present_tense():
+    view = ra.report_view(_report(timeline=[_event(5, 8, "The dog continues to attack him."), _event(9, 10, "He runs.")]))
+    assert "0:09" in ra.compose("What happened after the dog attacked him?", view).text
+
+
 def test_the_last_event_has_nothing_after_it():
     answer = ra.compose("What happened after he left?", _moments())
     assert "records nothing after that" in answer.text and answer.insufficient_evidence

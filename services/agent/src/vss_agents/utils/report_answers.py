@@ -1164,7 +1164,9 @@ def _intent_words(q: str) -> set[str]:
 def _action_words(text: str) -> set[str]:
     # A verb's -s form is not a plural: "leaves" is "leave", which the plural rules read as "leaf".
     bases = [_PAST_FORMS.get(word, word) for word in _tokens(text)]
-    return {variant for base in bases for variant in (*_variants(base), base.removesuffix("s"))}
+    return {
+        variant for base in bases for variant in (*_variants(base), base.removesuffix("s"), base.removesuffix("ed"))
+    }
 
 
 def _block(lead: str, events: Sequence[Mapping[str, Any]], mentions: Mapping[str, str]) -> str:
