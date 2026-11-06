@@ -164,3 +164,8 @@ test('the player stays usable beside the chat, and a jump reaches the player on 
   assert.match(page, /ref=\{compactVideoRef\}/);
   assert.match(page, /\[videoRef\.current, compactVideoRef\.current\]\.find/);
 });
+
+test('an answer sits on the muted bubble, so its times, citation titles and version line can be read', () => {
+  const chat = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportChat', 'ReportChat.tsx'), 'utf8');
+  assert.match(chat, /<Message align="start"[^>]*>\s*<Bubble variant="muted">/);
+});
