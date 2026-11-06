@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { PictureInPicture2Icon } from 'lucide-react';
+import { MessageSquareTextIcon, PictureInPicture2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -400,13 +400,14 @@ export function ReportPage({
           <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={videoId} />
           <Button
             aria-expanded={chatOpen}
-            className="text-xs font-semibold"
+            className="border-primary/20 bg-primary/5 text-xs font-semibold hover:bg-primary/10"
             data-testid="chat-toggle"
             onClick={() => setChatOpen((open) => !open)}
             size="sm"
             type="button"
             variant="outline"
           >
+            <MessageSquareTextIcon aria-hidden="true" data-icon="inline-start" />
             Ask about this incident
           </Button>
           <Tabs onValueChange={(value) => switchMode(value as Mode)} value={mode}>
@@ -501,7 +502,7 @@ export function ReportPage({
                   videoSeconds={playerDuration}
                 />
               </ResizablePanel>
-              <ResizableHandle aria-label="Resize timeline and analysis history" withHandle />
+              <ResizableHandle aria-label="Resize timeline and versions" withHandle />
               <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="27.5%" minSize="15%">
                 <ReportVersions
                   currentRevisionId={mode === 'edit' && editBase ? editBase.revisionId : report.revisionId}
@@ -610,6 +611,9 @@ export function ReportPage({
                       >
                         Revert
                       </Button>
+                      <Button onClick={() => switchMode('view')} size="sm" type="button" variant="outline">
+                        Go back to view
+                      </Button>
                       <Button disabled={changes === 0 || saving} onClick={() => setSaveOpen(true)} type="button">
                         Save as new version
                       </Button>
@@ -697,7 +701,12 @@ export function ReportPage({
 
       {/* Not modal: the player stays usable beside the chat, so a jump can be watched, paused or scrubbed from there. */}
       <Sheet modal={false} onOpenChange={setChatOpen} open={chatOpen}>
-        <SheetContent className="flex flex-col p-0 sm:max-w-md" onInteractOutside={(event) => event.preventDefault()} side="right">
+        <SheetContent
+          className="flex flex-col p-0 sm:max-w-md"
+          onInteractOutside={(event) => event.preventDefault()}
+          showCloseButton={false}
+          side="right"
+        >
           <SheetHeader className="sr-only">
             <SheetTitle>Ask about this incident</SheetTitle>
             <SheetDescription>Conversational questions and answers about this incident</SheetDescription>

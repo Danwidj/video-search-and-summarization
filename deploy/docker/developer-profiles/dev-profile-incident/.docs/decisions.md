@@ -70,6 +70,12 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Card name (same day):** `evidence_crops.item_name` holds the report item's `label` (fallback: name, then type), so a card is titled "black bear" or "cash register" instead of "animal" or "high heel shoe". Chosen over changing the report format or prompt (rejected by the captain): the label is already in every revision's `evidence`, so only the crop writer and a one-off row rewrite (54 of 62 rows, no re-embedding) change.
 - **Links:** [`data.md`](data.md#evidence_crops), [`console-reference.md`](console-reference.md), migration `20261105090000_evidence_crop_seconds_slices_frames.sql`, [`repair-missing-crops`](../incident-console-v2/src/modules/reports/application/repair-missing-crops/index.ts)
 
+### 2026-11-05: The Videos surface and analysis-history UI are removed completely
+- **Decision:** Remove the report-card **History** action, the `/videos/[videoId]` route, `VideoHistoryScreen`, `RunHistoryList` and its browser hook. Re-analysis stays in the report page's `ReanalysisDialog`. `POST /api/videos/[videoId]/runs` remains because it is the re-analysis command endpoint; its GET response and server-side history model remain available to tests and integrations but have no console page.
+- **Why:** the Library and each report's version graph are the console's incident navigation. A separate video-history page duplicated those surfaces and contradicted the earlier removal of the Videos page.
+- **Alternatives rejected:** retaining a hidden deep link (still a supported page); redirecting `/videos/[id]` to a report (there may be no chosen report revision, and the link is no longer emitted); deleting the entire runs route (would remove report-page re-analysis).
+- **Links:** [`IncidentCard.tsx`](../incident-console-v2/src/sections/library/components/IncidentCard/IncidentCard.tsx), [`ReportPage.tsx`](../incident-console-v2/src/sections/reports/components/ReportPage/ReportPage.tsx), [`console-reference.md`](console-reference.md).
+
 ### 2026-11-03: Architecture documentation follows C4 and arc42 views in NVIDIA's blueprint style and carries no deployment values
 - **Decision:** `.docs/architecture.md` is an explanation page in arc42's section order (introduction and goals, constraints, context and scope, solution strategy, building block view, runtime view, deployment view, crosscutting concepts, decisions, quality requirements, risks and technical debt, glossary) with C4 context, container, component and deployment views drawn as draw.io figures (`.drawio.svg` files in `.docs/figures/`, which GitHub renders as images), and with NVIDIA's names for the stock components. It describes roles and interactions only: no ports, hosts, addresses, user or machine names, GPU indices, paths, bucket names, private URLs, secrets or environment-file references; those stay in [`incident-profile-operations.md`](incident-profile-operations.md), the skills, [`vm-api-contracts.md`](vm-api-contracts.md) and [`status.md`](status.md). Page-level console behaviour, routes and configuration moved unchanged to [`console-reference.md`](console-reference.md) under their old headings, so existing links still resolve. A stock-versus-added table, derived from the git history since the profile's first commit, records the boundary with the upstream blueprint.
 - **Why:** the previous page mixed four kinds of documentation (architecture, console reference, deployment values, procedures), repeated values the runbook and the skills already hold, and had no explicit boundary, constraints or quality scenarios. NVIDIA's own VSS pages keep architecture sections free of deployment values and list ports in a separate section.
@@ -818,22 +824,6 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:** Nothing in the UI could switch to dark mode, so the code was dead weight that every shadcn component add would grow.
 - **Alternatives rejected:** *Wiring a theme toggle:* large change touching most files, and no requirement for it.
 - **Links:** `src/app/styles.css`, `src/components/ui/sonner.tsx`, `src/components/ui/chart.tsx`.
-
-### 2026-10-29: Videos tab and screen removed in favour of focused incident workflow
-- **Decision:** Remove the Videos tab (`/videos`) from the primary navigation header and mobile dropdown, delete the `/videos` page route (`src/app/videos/page.tsx`) and the `VideosScreen` section component (`src/sections/videos/components/VideosScreen/`). Dashboard overview metrics ("Uploaded videos", "Awaiting official report", "Without a report") render as static summary cards without links to the removed route. The individual video history route (`/videos/[videoId]`) is retained for history inspection and re-runs.
-- **Why:** The dedicated `/videos` inventory table duplicated video discovery already served by the Incident Library (`/library`) and added navigational clutter. Removing the tab streamlines the console into three core areas: Analyze (upload orchestration), Library (incident exploration and evidence search), and Dashboard (analytics).
-- **Alternatives rejected:**
-  - *Retaining the Videos tab with reduced scope:* Rejected because user navigation is simpler when incident reports in `/library` serve as the single destination for video results.
-  - *Repointing dashboard video metrics to `/library`:* Rejected because `/library` displays analyzed incident reports, not unanalyzed video assets or clips awaiting an official report selection.
-- **Links:** `src/sections/shell/components/AppHeader/AppHeader.tsx`, `src/sections/dashboard/components/Dashboard/Dashboard.tsx`, `src/app/videos/page.tsx`, `src/sections/videos/components/VideosScreen/VideosScreen.tsx`.
-
-### 2026-10-29: Remove orphaned "Analysis history for this video" section from report page
-- **Decision:** Remove the orphaned `AdvancedReportTools` component (`src/sections/reports/components/AdvancedReportTools/`) and its "Analysis history for this video" section from `incident-console-v2`. Re-analysis continues to be provided by `ReanalysisDialog` in the sticky top bar, while video run history remains on `/videos/[videoId]` (`VideoHistoryScreen`). Test assertions and documentation references are updated accordingly.
-- **Why:** The re-analysis card was migrated to `ReanalysisDialog` in the sticky top bar (#266), leaving `AdvancedReportTools` unmounted from the report page and orphaned. Deleting the component eliminates dead code and removes the obsolete bottom run history list per product direction.
-- **Alternatives rejected:**
-  - *Restyling or re-mounting the bottom run history on the report page:* Rejected as redundant with the version history panel in the top band and the dedicated video history screen.
-  - *Deleting `RunHistoryList` or `/api/videos/[videoId]/runs`:* Rejected because they are still actively used by the Videos screen (`VideoHistoryScreen`) and re-analysis orchestration.
-- **Links:** `src/sections/reports/components/ReportPage/ReportPage.tsx`, `tests/report-editing-ui.test.mjs`, PR #266.
 
 ### 2026-10-29: AnalysisWorkspace upload target uses a composed shadcn dropzone
 - **Decision:** The hand-written drag-and-drop `<button>` in `AnalysisWorkspace.tsx` is replaced with a dropzone composed of shadcn/ui components (`Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `Button`, `Badge`, and `lucide-react`'s `Upload` icon) over the native hidden file input. The dropzone Card is keyboard-accessible (`role="button"`, `tabIndex={0}`, with Enter and Space handlers dispatching to the hidden file input), displays a visual `Upload` orbit icon, a "New analysis" badge, title, description, and an outline "Browse video files" button. Drag-and-drop states (`border-primary bg-primary/10`) provide responsive feedback, and pre-upload validation behaviours are preserved: name checks, duplicate-name warning, unsafe-character replacement notice, progress, and error alert states.
@@ -1740,3 +1730,41 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:** The campus firewall on `kwanz-ws` drops outbound port 5432, so raw Postgres drivers fail; PostgREST lacks client-held transactions, so each write is one row.
 - **Rejected:** direct Postgres / `asyncpg` on the VM.
 - **Links:** [`data.md`](data.md); `services/agent/src/vss_agents/utils/incident_db.py`.
+
+### 2026-11-02: `compose up --yes` in every start path
+- **Decision:** Every `docker compose up` that start.sh reaches (`vm-ensure-docker.sh`, `tracking-stack.sh`, `rebuild-svc.sh`) passes `--yes`.
+- **Why:** Compose 2.35.1 asks "Volume exists but doesn't match configuration. Recreate?" and waits on stdin, which hung start.sh for 13 minutes over no-tty ssh. With stdin closed and no `--yes` it does not abort, it silently keeps the old container. `--yes` recreates both. Verified on kwanz-ws with a throwaway project.
+- **Rejected:** piping `yes` (undocumented, masks other prompts); `down -v` first (destroys unrelated state).
+
+### 2026-11-02: Closing `start.sh` leaves the VM backend running
+- **Decision:** No exit path of `start.sh` (last session or not, Ctrl-C, SIGTERM, SIGHUP, error) stops anything on the VM. `cleanup()` stops only laptop-side things: the console, the local mock and gateway, the SSH tunnel and temp files. The VM active-run flock (`.run/active-runs.lock`, held by `ssh -tt ... sleep infinity`), `VSS_LOCK_FILE`, `.scripts/vm-stop-backend.sh` and `test-vm-stop-backend.sh` are removed, since the lock only existed to find the last session. The start path is unchanged and still starts whatever is missing. To stop the backend on purpose, run `native-services.sh stop` and `tracking-stack.sh stop` on the VM.
+- **Why:** The backend (shared vss-agent, Phoenix, the tracking stack) is shared by several people and workers. The last-exit stop killed it under others' runs on 2026-11-02, while workers were using it. Leaving a shared service up costs idle memory; stopping it costs other people's work.
+- **Rejected:** keeping the stop behind an opt-in flag (nothing needs it; the manual scripts already exist); keeping the lock for registration only (no reader).
+- **Links:** [`../start.sh`](../start.sh); [`incident-profile-operations.md`](incident-profile-operations.md); [`../skills/incident-start/SKILL.md`](../skills/incident-start/SKILL.md).
+
+### 2026-11-02: Tracker model files are fetched at agent start, pinned by hash, not committed
+- **Decision:** `.scripts/tracker-models.sh` (run by `native-services.sh` before it starts `vss-agent`, non-fatal) downloads the two NanoTrack v2 `.onnx` files (about 1.8 MB) into `<repo>/.tools/tracker-models` and checks each SHA-256 before renaming it into place. `native-services.sh` exports that dir as `INCIDENT_OBJECT_TRACKING_MODEL_DIR` unless the env file sets it.
+- **Source:** `HonglinChu/SiamTrackers` at commit `8fe6791fecf13b95e6f19770af8963a9fc98759b` (2022-12-13), `NanoTrack/models/nanotrackv2/`: `https://raw.githubusercontent.com/HonglinChu/SiamTrackers/8fe6791fecf13b95e6f19770af8963a9fc98759b/NanoTrack/models/nanotrackv2/<file>`. `nanotrack_backbone_sim.onnx`: 1,056,849 bytes, SHA-256 `530bdd0cd00f19afab79a863e71ba71e3312395a5dc9151af675082bdaaa2fc4`. `nanotrack_head_sim.onnx`: 726,198 bytes, SHA-256 `0d8c0637be849f092cc7236cae02e55c8b9455ebe37ba50601d6115db4247cd9`.
+- **Licence (unclear):** the repository has no licence file (`gh api repos/HonglinChu/SiamTrackers/license` returns 404), and it is the only published source of these weights (OpenCV's `opencv_extra` download script points to it). The captain chose Nano on 2026-11-02 knowing this. Because the licence is unclear, the files are fetched at deploy time and never redistributed through this repository. The Apache-2.0 alternative is `opencv_zoo`'s `object_tracking_vittrack_2023sep.onnx` (about 4 points less accurate in the tracker scout); switching needs only a new pinned file here.
+- **Why:** the shared VM has no manual step, matches how `media-tools.sh` handles ffmpeg, and a mismatching download is refused rather than loaded.
+- **Rejected:** committing the binaries (licence); an unpinned download (a moved upstream file would change tracking silently).
+- **Links:** [`../.scripts/tracker-models.sh`](../.scripts/tracker-models.sh), [`../.scripts/native-services.sh`](../.scripts/native-services.sh), [`../.scripts/test-native-services.sh`](../.scripts/test-native-services.sh).
+
+### 2026-11-02: Library cards trade info lines for a bigger thumbnail
+- **Decision:** `IncidentCard` shows only the incident type, official status, title and one-line summary under the thumbnail. The file name and "Added" date are in the title tooltip; evidence and version counts are only in the "..." menu.
+- **Why:** the earlier cards led with a larger thumbnail. Card height is fixed by the viewport grid (PR 264), so every info line removed gives the thumbnail height (93 to 137 px at 1440x900). The pre-shadcn card (before PR 255) had a 16:9 thumbnail; PR 255 cut it to 96 px, PR 260 to 80 px and PR 264 made it fill what the info left.
+- **Rejected:** shrinking the summary or title (the title and type are what people scan for).
+
+### 2026-11-03: Track labels show the item's name, never its id
+- **Decision:** the player overlay box, the presence bars' accessible names and the pop-up label a track with the item's name (`TrackedReportItem.label`: entity label or type, instrument or asset name; the id only when a name is empty). Ids (`E1`, `T-1`, `N-1`) stay internal keys (`data-track-item`, selection, routes) and the id badge on cards and the pop-up title is unchanged.
+- **Why:** captain, 2 Nov: tracking reads by the names of evidence, not codes; part of the add/track evidence build.
+- **Links:** [`TrackOverlay.tsx`](../incident-console-v2/src/sections/reports/components/TrackOverlay/TrackOverlay.tsx), [`track.ts`](../incident-console-v2/src/modules/reports/domain/track.ts).
+# 2026-11-05 — Reviewer frame extraction retries an HTTPS-reader segfault from a temporary local file
+
+**Decision.** The console normally lets ffmpeg range-read the signed R2 video URL. If that process terminates with `SIGSEGV`, it streams the same URL to a temporary local MP4, retries the requested frame from disk, and removes the temporary directory. Reviewer crop and full-frame extraction remain sequential.
+
+**Why.** The bundled static ffmpeg can segfault in its HTTPS/range reader for a valid uploaded clip. That prevented saving a human revision containing newly added evidence even though the browser could play the video. A local-file retry bypasses the crashing network protocol path without weakening validation or storing temporary media permanently.
+
+**Alternatives rejected.** Retrying the same URL repeats the crash; making Add to draft generate the final image couples reversible draft work to ffmpeg; keeping the temporary file leaks incident video data; replacing the bundled ffmpeg globally is a broader deployment change and does not provide per-request recovery.
+
+**Links.** [`incident-console-v2/src/lib/video/ffmpeg-frame.ts`](../incident-console-v2/src/lib/video/ffmpeg-frame.ts), [`console-reference.md`](console-reference.md)
