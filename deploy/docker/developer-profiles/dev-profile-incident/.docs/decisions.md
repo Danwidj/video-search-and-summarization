@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-06: The report chat offers one suggested question, Show the timeline of events
+- **Decision:** the panel keeps PR 491's single suggestion and its header, and the owner chose the wording **Show the timeline of events**. Who, what was taken and weapons are still answered when typed.
+- **Why:** PR 491 cut the list to one and recorded that in the docs, so the panel stays short. It kept the old text, "What happened, in order?", without a stated reason. The new wording says what the answer is: a timed list. Typing the old question still gives the same answer.
+- **Rejected:** the four chips first built for this work (they would have undone PR 491).
+- **Links:** [`ReportChat.tsx`](../incident-console-v2/src/sections/reports/components/ReportChat/ReportChat.tsx)
+
 ### 2026-11-06: Template chat answers the official version from its report, and citations use the crop's second
 - **Status:** approved by the owner on 2026-11-06. Replaces [2026-10-24](archive/decisions-superseded.md#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2-superseded-2026-11-06) for template mode; grounded mode already answered it. Grounded mode stays off.
 - **Decision:** in template mode the official version is answered from its own report, like any other version, so the search client no longer takes part in a question that names a version. A template citation seeks to the evidence entry's `box_seconds`, else its `timestamp_seconds`, else the item's second.
@@ -17,7 +23,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [`ReportPage.tsx`](../incident-console-v2/src/sections/reports/components/ReportPage/ReportPage.tsx), [`ReportChat.tsx`](../incident-console-v2/src/sections/reports/components/ReportChat/ReportChat.tsx)
 
 ### 2026-11-06: The chat keeps the report timeline and relevant uncertainties, and the report page stays without them
-- **Status:** an exception to [2026-10-28: The report timeline is being removed](#2026-10-28-the-report-timeline-is-being-removed), approved by the owner on 2026-11-06 for the chatbot work. It needs the captain's agreement, because the 28 Oct direction was the captain's. [2026-11-01](#2026-11-01-the-console-no-longer-shows-the-model-event-timeline-or-the-model-reported-uncertainties) stands: nothing returns to the report page.
+- **Status:** an exception to [2026-10-28: The report timeline is being removed](#2026-10-28-the-report-timeline-is-being-removed), approved by the owner on 2026-11-06 for the chatbot work. **The captain's agreement is pending** ([action item 19](status.md#5-action-items)), because the 28 Oct direction was the captain's. [2026-11-01](#2026-11-01-the-console-no-longer-shows-the-model-event-timeline-or-the-model-reported-uncertainties) stands: nothing returns to the report page.
 - **Decision:**
   - `timeline` stays in `incident-contract-v4` as the chat's source for a what-happened answer, and is not restored to the report UI.
   - Uncertainties reach a chat answer only in a chronology, and only those that relate to the events shown.
