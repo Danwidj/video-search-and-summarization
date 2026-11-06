@@ -120,7 +120,7 @@ export function ReportVersions({
 
                 return (
                   <li
-                    className={`flex items-stretch gap-2 rounded-xl px-1 py-1.5 text-xs ${current ? 'bg-primary/10' : ''}`}
+                    className={`relative flex items-stretch gap-2 rounded-xl px-1 py-1.5 text-xs ${current ? 'bg-primary/10' : mode === 'view' ? 'hover:bg-primary/5' : ''}`}
                     data-testid="revision-row"
                     key={revision.revisionId}
                   >
@@ -141,6 +141,14 @@ export function ReportVersions({
                         style={{ left: lane * LANE_WIDTH + LANE_WIDTH / 2 }}
                       />
                     </span>
+                    {mode === 'view' && !current && (
+                      <button
+                        aria-label={`View v${revision.revisionNo}`}
+                        className="absolute inset-0 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => onOpen(revision.revisionId)}
+                        type="button"
+                      />
+                    )}
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-x-2">
                         <b>v{revision.revisionNo}</b>
@@ -166,7 +174,7 @@ export function ReportVersions({
                           aria-label={starLabel}
                           aria-busy={busy}
                           aria-pressed={official}
-                          className="h-7 w-7 self-center p-0 text-base leading-none text-amber-600 hover:text-amber-700 disabled:opacity-40"
+                          className="relative z-10 h-7 w-7 self-center p-0 text-base leading-none text-amber-600 hover:text-amber-700 disabled:opacity-40"
                           data-testid={official ? 'clear-official' : 'make-official'}
                           disabled={busyId !== null}
                           onClick={() => void toggleOfficial(revision)}
@@ -198,17 +206,7 @@ export function ReportVersions({
                       <Badge className="self-center px-2 py-0.5 text-[10.5px] font-bold" variant="default">
                         Viewing
                       </Badge>
-                    ) : (
-                      <Button
-                        className="h-6 self-center px-2 text-[10.5px] font-semibold"
-                        onClick={() => onOpen(revision.revisionId)}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        View
-                      </Button>
-                    )}
+                    ) : null}
                   </li>
                 );
               })}
