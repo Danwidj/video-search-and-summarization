@@ -2,7 +2,7 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Area, AreaChart, Bar, BarChart, Cell, CartesianGrid, LabelList, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import type { DateRange } from 'react-day-picker';
 import { CalendarIcon } from 'lucide-react';
@@ -79,6 +79,7 @@ export function Dashboard() {
   const [custom, setCustom] = useState<DateRange | undefined>(undefined);
   const [draft, setDraft] = useState<DateRange | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerFromSelect = useRef(false);
   const [compare, setCompare] = useState(true);
   const [filters, setFilters] = useState<Filters>(NONE);
   const [error, setError] = useState('');
@@ -176,11 +177,24 @@ export function Dashboard() {
             </Label>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={days} onValueChange={(val) => (val === 'custom' ? openPicker() : setDays(val))}>
+            <Select
+              value={days}
+              onValueChange={(val) => {
+                if (val !== 'custom') return setDays(val);
+                pickerFromSelect.current = true;
+                openPicker();
+              }}
+            >
               <SelectTrigger className="w-[140px] border-ink/10 bg-white text-ink">
                 <SelectValue placeholder="Select period" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent
+                onCloseAutoFocus={(event) => {
+                  if (!pickerFromSelect.current) return;
+                  pickerFromSelect.current = false;
+                  event.preventDefault();
+                }}
+              >
                 <SelectItem value="7">Last 7 days</SelectItem>
                 <SelectItem value="30">Last 30 days</SelectItem>
                 <SelectItem value="all">All time</SelectItem>
