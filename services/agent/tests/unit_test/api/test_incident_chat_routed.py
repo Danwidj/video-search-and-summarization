@@ -171,7 +171,7 @@ def test_a_report_field_question_is_answered_by_code_with_no_model_call(question
         "Which objects were near the attacker?",
         "Was anyone visibly injured?",
         "Why was this classified as high severity?",
-        "What did he do next?",
+        "What did the man do after he fell?",
     ],
 )
 def test_a_question_that_needs_reading_goes_to_the_model(question: str) -> None:
@@ -211,7 +211,7 @@ def test_the_model_reads_the_report_its_uncertainties_and_the_conversation() -> 
 def test_a_follow_up_stays_on_the_version_asked_about() -> None:
     other = _revision(8, uncertainties=["Only in version eight."])
     model = FakeModel()
-    _ask("What did he do next?", model, store=Store({7: _revision(), 8: other}))
+    _ask("What did the man do next?", model, store=Store({7: _revision(), 8: other}))
     assert "Only in version eight." not in model.calls[0][1]["content"]
 
 
@@ -225,7 +225,7 @@ def test_a_draft_is_what_the_model_reads() -> None:
 
 def test_the_parts_of_an_answer_keep_their_labels() -> None:
     content = _ask(
-        "Was he hurt?",
+        "Was the man hurt?",
         FakeModel(
             answer="The report records him on the floor.",
             interpretation="He may have been hurt.",
@@ -251,7 +251,7 @@ def test_an_item_the_answer_names_gets_a_card_even_if_the_model_forgot_to_cite_i
 
 
 def test_with_no_citation_the_cards_come_from_what_the_text_names() -> None:
-    body = _ask("Where did he end up?", FakeModel(answer="He was pushed to the wall.", citations=[])).json()
+    body = _ask("Where did the man end up?", FakeModel(answer="He was pushed to the wall.", citations=[])).json()
     assert [c["item_id"] for c in body["message"]["citations"]] == ["A1"]
 
 
@@ -297,6 +297,39 @@ def test_an_answer_the_report_cannot_give_is_the_insufficient_route_with_no_card
     ).json()
     assert body["grounding"]["route"] == "insufficient" and body["message"]["citations"] == []
     assert "video_offer" not in body["message"]
+
+
+def test_a_partial_answer_flagged_insufficient_keeps_cards_for_what_it_names_and_no_others() -> None:
+    body = _ask(
+        "How did it start?",
+        FakeModel(
+            answer="The man in the white shirt pushes him. It does not say why.",
+            citations=[{"item_id": "A1"}],
+            insufficient_evidence=True,
+        ),
+    ).json()
+    assert [c["item_id"] for c in body["message"]["citations"]] == ["E2"], (
+        "A1 is cited but not named, so it is not trusted"
+    )
+
+
+@pytest.mark.parametrize("question", ["What about that one?", "What did he do?", "What did he do next?"])
+def test_a_pointer_with_nothing_before_it_is_asked_about_with_no_model_call(question: str) -> None:
+    model = FakeModel()
+    body = _ask(question, model).json()
+    assert model.calls == [] and body["grounding"]["route_reason"] == "no_subject"
+    assert body["message"]["content"].startswith("Which person or object")
+
+
+@pytest.mark.parametrize("question", ["Was the object a weapon?", "When did that happen?"])
+def test_a_judgement_or_a_pointer_at_the_last_answer_goes_to_the_model(question: str) -> None:
+    model = FakeModel()
+    messages = [
+        {"role": "user", "content": "What happened to the vase?"},
+        {"role": "assistant", "content": "It fell."},
+        {"role": "user", "content": question},
+    ]
+    assert _ask(messages, model).json()["message"]["source"] == "report_llm" and len(model.calls) == 1
 
 
 def test_a_failed_model_is_an_error_not_an_answer() -> None:
@@ -378,7 +411,7 @@ def test_a_blank_question_is_refused_before_any_model_call() -> None:
 def test_a_question_about_another_version_reads_that_version_only() -> None:
     model = FakeModel()
     store = Store({7: _revision(), 8: _revision(8, uncertainties=["Only in version eight."])})
-    _ask("What did he do?", model, version=8, store=store)
+    _ask("What did the man do?", model, version=8, store=store)
     assert "Only in version eight." in model.calls[0][1]["content"]
 
 

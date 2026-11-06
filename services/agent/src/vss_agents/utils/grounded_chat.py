@@ -310,7 +310,8 @@ def check_routed(
 
     An interpretation and a missing detail are written under their own labels, so a reading cannot pass as a recorded
     fact. The cards are the valid citations plus any item the answer names without citing it
-    (:func:`report_answers.text_items`), so navigation does not depend on the model remembering to cite.
+    (:func:`report_answers.text_items`), so navigation does not depend on the model remembering to cite, or on its
+    insufficient flag.
     """
     for key in ("interpretation", "not_established"):
         if not isinstance(reply.get(key), str):
@@ -330,10 +331,10 @@ def check_routed(
         if text:
             parts.append(f"{label}: {text if keep_ids else report_answers.resolve_references(text, mentions)}")
     content = "\n\n".join(parts)
-    cited = checked.item_ids
-    if not checked.insufficient_evidence:
-        named = report_answers.text_items([checked.content], view)
-        cited = (*cited, *(item_id for item_id in named if item_id not in cited))
+    # The model often flags a useful partial answer as insufficient. Its citations are then not used, but what the
+    # answer itself names from the report keeps its card.
+    named = report_answers.text_items([checked.content], view)
+    cited = (*checked.item_ids, *(item_id for item_id in named if item_id not in checked.item_ids))
     return RoutedAnswer(
         content=content,
         item_ids=cited,

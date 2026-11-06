@@ -344,7 +344,12 @@ _PLAIN_TEXT = (
 )
 _PLAIN_WORDS = frozenset(_PLAIN_TEXT.split())
 # A question that leans on the conversation, or that asks for reasoning a template cannot give.
-_CONTEXT = re.compile(r"\b(?:he|she|they|him|her|them|his|hers|their|next|else|afterwards?)\b")
+_CONTEXT = re.compile(
+    r"\b(?:he|she|they|him|her|them|his|hers|their|next|else|afterwards?|that one|this one|the other|"
+    r"did that|was that|that happen\w*)\b"
+)
+# A judgement about one thing ("was the object a weapon?"), which a list of items cannot settle.
+_JUDGEMENT = re.compile(r"^\s*(?:was|is|were|are)\s+(?:the|that|this|those|these)\b")
 _REASONING = re.compile(r"^\s*(?:why|how come)\b|\bhow did\b|\bexplain\b|\bbecause\b|\breason\b")
 _THIS_INCIDENT = re.compile(r"\b(?:in|of|for|during) (?:this|the) (?:event|incident)\b")
 _TIME_FIRST = re.compile(r"^\s*(?:when|what time|how long|at what (?:second|point|time|moment))\b")
@@ -1219,7 +1224,7 @@ def is_plain(question: str, view: ReportView) -> bool:
     answer gives in full. One that names something, reasons, leans on the conversation or points at one moment does not.
     """
     q = _ASKS_IDS.sub(" ", question.lower())
-    if _REASONING.search(q) or _CONTEXT.search(q) or _SEQUENCE.search(q):
+    if _REASONING.search(q) or _CONTEXT.search(q) or _SEQUENCE.search(q) or _JUDGEMENT.search(q):
         return _AFTER_INCIDENT.search(q) is not None
     left = set(_tokens(q)) - _intent_words(q) - _PLAIN_WORDS
     return not {w for w in left if not _variants(w) & (_intent_words(q) | _PLAIN_WORDS)} and compose(
@@ -1241,6 +1246,13 @@ def needs_context(question: str, view: ReportView) -> bool:
     """Whether a question means something only through the turns before it: "what did he do next?" names no item."""
     q = question.lower()
     return bool(_CONTEXT.search(q)) and not _named_items(question, view)
+
+
+def has_no_subject(question: str, view: ReportView) -> bool:
+    """Whether a question is only a pointer ("what about that one?", "what did he do?"): with no conversation before it,
+    nothing says what it means."""
+    q = question.lower()
+    return needs_context(question, view) and not set(_tokens(_CONTEXT.sub(" ", q))) - _intent_words(q)
 
 
 def compose(question: str, view: ReportView) -> ComposedAnswer:
