@@ -124,7 +124,7 @@ Read from `generated.env.remote`; verify with `incident-operate-vm` before relyi
 | `EXTERNAL_IP` | `localhost` (tunnelled browser access) |
 | `VSS_AGENT_HOST` | `127.0.0.1` (loopback only; the laptop reaches it via the SSH tunnel) |
 | `VSS_AGENT_CONFIG_FILE` | `./deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` |
-| `LLM_NAME` / `VLM_NAME` | `nvidia/nemotron-3-ultra` / `nvidia/cosmos-3-super-reasoner` |
+| `LLM_NAME` / `VLM_NAME` | `nvidia/nemotron-3-ultra` / `nvidia/cosmos-3-super-reasoner` (the evidence detector, zoom and object tracker use Nano from code, not `VLM_NAME`) |
 | `LLM_BASE_URL` / `VLM_BASE_URL` | `https://switchyard-13doh4lsz.brevlab.com` (no trailing `/v1`) |
 | `LLM_MODEL_TYPE` / `VLM_MODEL_TYPE` | `openai` |
 | GPU | GPU 0 only; GPU 1 is never used ([GPU rule](incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote), item 10) |
