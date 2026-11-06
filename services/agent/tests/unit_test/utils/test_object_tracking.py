@@ -35,6 +35,7 @@ import numpy as np
 import pytest
 
 from vss_agents.utils import object_tracking
+from vss_agents.utils.crop_evidence import GROUNDING_TIMEOUT_SECONDS
 from vss_agents.utils.crop_evidence import BudgetedDetector
 from vss_agents.utils.crop_evidence import CropCallBudget
 from vss_agents.utils.crop_evidence import DefaultDetector
@@ -346,7 +347,7 @@ class TestDetectorStop:
     async def test_a_stop_is_logged_once_with_its_reason(self, clip: Path, caplog: pytest.LogCaptureFixture) -> None:
         with caplog.at_level("WARNING", logger="vss_agents.utils.crop_evidence"):
             await run(clip, FlakyDetector(always_fail=True, error=status_error(429)), seed_at(4.0))
-        stops = [r.getMessage() for r in caplog.records if "stopped calling the detector" in r.getMessage()]
+        stops = [r.getMessage() for r in caplog.records if "calling the detector after" in r.getMessage()]
         assert len(stops) == 1 and "3 consecutive errors" in stops[0] and "HTTPStatusError" in stops[0]
 
     @pytest.mark.asyncio
@@ -404,7 +405,10 @@ class TestDetectorLatency:
             outcome = await run(clip, detector, seed_at(4.0), config=config)
         assert seen_limits and set(seen_limits) == {(7.0, 1)}
         assert outcome.items["I1"]["detector_errors"] == outcome.items["I1"]["detector_calls"]
-        assert (detector.timeout_seconds, detector.max_attempts) == (120.0, 4)  # the shared detector is untouched
+        assert (detector.timeout_seconds, detector.max_attempts) == (
+            GROUNDING_TIMEOUT_SECONDS,
+            4,
+        )  # the shared detector is untouched
 
 
 class TestAnchoring:

@@ -178,6 +178,20 @@ test('a person the run did not track says why, on the card and the pop-up lines,
   assert.equal(lines[2].notTracked, null, 'an entry without a reason shows nothing');
 });
 
+test('a person whose box came from a track that fits the report seconds carries a "Matched by time" badge', () => {
+  const { entities } = structuredFromPayload(payload, [
+    entry('E1', { track: TRACK_KEY, track_first_seen_seconds: 21, track_last_seen_seconds: 47, box_source: 'track-time' }),
+    entry('E2', { track: TRACK_KEY, track_first_seen_seconds: 21, track_last_seen_seconds: 47 }),
+    entry('E3', { box_source: 'something-new' }),
+  ]);
+  const badges = entities.map((entity) => evidenceDetailLines(entityDetail(entity, [])).badges);
+  assert.equal(entities[0].evidence.boxSource, 'track-time');
+  assert.deepEqual(badges[0], ['Matched by time']);
+  assert.equal(entities[1].evidence.boxSource, null, 'a detector box has no source');
+  assert.equal(entities[2].evidence.boxSource, null, 'an unknown source is ignored');
+  assert.deepEqual([badges[1], badges[2]], [[], []]);
+});
+
 test('only tracked items are drawn, each with its own colour in id order', () => {
   const structured = structuredFromPayload(payload, [
     entry('E1', { track: TRACK_KEY, track_first_seen_seconds: 78, track_last_seen_seconds: 95 }),

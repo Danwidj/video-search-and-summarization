@@ -97,7 +97,7 @@ export interface EvidenceDetailLines {
   notTracked: string | null;
   /** The time the item is shown at, as a clock. */
   time: string | null;
-  /** Badges for a reviewer's work: "Added by reviewer", then "Incomplete track" when the tracker lost the item. */
+  /** Badges: "Added by reviewer", "Matched by time" (the box is a person track's, not a detector's), then "Incomplete track" when the tracker lost the item. */
   badges: string[];
   /** Why Play from here is disabled; null when it can play. */
   playNote: string | null;
@@ -123,6 +123,7 @@ export function evidenceDetailLines(item: EvidenceDetailItem): EvidenceDetailLin
     time: item.seconds === null ? null : formatClock(item.seconds),
     badges: [
       ...(item.evidence?.addedByReviewer ? ['Added by reviewer'] : []),
+      ...(item.evidence?.boxSource === 'track-time' ? ['Matched by time'] : []),
       ...(item.evidence?.track && item.evidence.trackPartial ? ['Incomplete track'] : []),
     ],
     playNote: item.seconds === null ? 'No time was recorded for this item, so it cannot be played from here.' : null,

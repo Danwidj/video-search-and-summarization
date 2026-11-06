@@ -56,6 +56,8 @@ export interface ItemEvidence {
   trackLastSeenSeconds: number | null;
   /** 'reviewer' for a track made from a reviewer's box; null for an AI track or none. */
   trackSource: 'reviewer' | null;
+  /** 'track-time' when no detector found the person and the agent took the box from the track that fits the report's seconds; null otherwise. */
+  boxSource: 'track-time' | null;
   /** True when the tracker lost the item before the window ended: the View badge reads "Incomplete track". */
   trackPartial: boolean;
   /** Why a person has no track when the run tracked people (the agent's `track_gap`); null when tracked or not recorded. */
