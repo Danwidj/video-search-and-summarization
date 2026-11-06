@@ -49,6 +49,7 @@ from typing import Protocol
 import httpx
 
 from vss_agents import incident_contract
+from vss_agents.utils import chat_attribution
 from vss_agents.utils import report_answers
 
 if TYPE_CHECKING:
@@ -322,7 +323,7 @@ def check_routed(
     keep_ids = report_answers.names_an_id(question)
     checked = check_answer(reply, context, question=question, retired=retired, keep_ids=keep_ids)
     mentions = item_mentions(context, retired)
-    parts = [checked.content]
+    parts: list[str] = []
     for label, key in (
         ("Interpretation, not recorded in the report", "interpretation"),
         ("Not established", "not_established"),
@@ -330,10 +331,12 @@ def check_routed(
         text = reply[key].strip()
         if text:
             parts.append(f"{label}: {text if keep_ids else report_answers.resolve_references(text, mentions)}")
-    content = "\n\n".join(parts)
+    rest = "\n\n".join(parts)
+    timed = chat_attribution.attribute(checked.content, rest, context, view, mentions)
+    content = "\n\n".join([timed.content, *parts])
     # The model often flags a useful partial answer as insufficient. Its citations are then not used, but what the
-    # answer itself names from the report keeps its card.
-    named = report_answers.text_items([checked.content], view)
+    # answer affirms keeps its card. An item only denied ("no collar on the dog") is not evidence for anything.
+    named = report_answers.text_items([chat_attribution.affirmed(checked.content)], view)
     cited = (*checked.item_ids, *(item_id for item_id in named if item_id not in checked.item_ids))
     return RoutedAnswer(
         content=content,
@@ -343,7 +346,7 @@ def check_routed(
         not_established=reply["not_established"].strip(),
         dropped_citations=checked.dropped_citations,
         ids_resolved=checked.ids_resolved,
-        unknown_times=tuple(unknown_times(content, context)),
+        unknown_times=tuple(dict.fromkeys([*unknown_times(content, context), *timed.unattributed])),
     )
 
 
