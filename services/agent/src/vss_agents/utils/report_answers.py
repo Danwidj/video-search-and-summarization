@@ -679,6 +679,11 @@ def asks_for_ids(question: str) -> bool:
     return bool(_ASKS_IDS.search(question.lower()))
 
 
+def names_an_id(question: str) -> bool:
+    """Whether a question itself writes an item id ("who is holding stick I2?")."""
+    return bool(_ID.search(question))
+
+
 def referenced_ids(text: str, known: Iterable[str]) -> list[str]:
     """The known item ids a piece of report text refers to, in order of first reference."""
     known = set(known)
