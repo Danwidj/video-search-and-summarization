@@ -109,12 +109,6 @@ export function formatCalendarDay(date: Date): string {
   return `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
 }
 
-/** Percent change against the previous period; null when there is nothing to compare with. */
-export function delta(now: number, before?: number): number | null {
-  if (before === undefined) return null;
-  return before ? Math.round(((now - before) / before) * 100) : now ? 100 : 0;
-}
-
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** A trend date (YYYY-MM-DD, already the viewer's day) as "Oct 28"; never re-read through a Date, which would shift it. */
