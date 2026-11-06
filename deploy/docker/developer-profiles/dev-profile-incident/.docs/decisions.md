@@ -2,6 +2,13 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-06: The report chat panel is not modal and its conversation lives on the report page
+- **Decision:** the report page's chat sheet is non-modal, has no overlay and stays open when the page behind it is used; only its close button, Escape or the toggle closes it. Each version's conversation (and its draft's) is held by `ReportPage`, so closing the panel keeps it; a new Edit draft starts a new conversation. `seek` uses the player on screen, which below the `lg` breakpoint is the compact one. The library chat sheet is unchanged.
+- **Why:** checked in a browser on 6 Nov against the VM agent. While the panel was open the overlay took the clicks and the player was `aria-hidden`, so a jump could not be paused or scrubbed. Closing the panel to watch unmounted the chat and lost the conversation. Below `lg`, seeks went to the hidden player, so a jump did nothing visible.
+- **Amends:** [2026-11-03](#2026-11-03-every-console-video-is-silent-play-clip-is-removed-and-the-chat-sheet-does-not-blur-the-page), where the shared overlay "still dims the page": that now applies to the library chat only.
+- **Rejected:** closing the panel on every jump (loses the place in a long answer); keeping the panel mounted while closed (a hidden sheet in the page's focus order).
+- **Links:** [`ReportPage.tsx`](../incident-console-v2/src/sections/reports/components/ReportPage/ReportPage.tsx), [`ReportChat.tsx`](../incident-console-v2/src/sections/reports/components/ReportChat/ReportChat.tsx)
+
 ### 2026-11-06: The chat keeps the report timeline and relevant uncertainties, and the report page stays without them
 - **Status:** an exception to [2026-10-28: The report timeline is being removed](#2026-10-28-the-report-timeline-is-being-removed), approved by the owner on 2026-11-06 for the chatbot work. It needs the captain's agreement, because the 28 Oct direction was the captain's. [2026-11-01](#2026-11-01-the-console-no-longer-shows-the-model-event-timeline-or-the-model-reported-uncertainties) stands: nothing returns to the report page.
 - **Decision:**
