@@ -20,17 +20,17 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_MONTH = /^\d{4}-\d{2}$/;
 
-/** A YYYY-MM-DD that is a real calendar day (no 30 February), and nothing else. */
+/** A YYYY-MM-DD that is a real calendar day in years 0001 to 9999 (no 30 February, no year 0000), and nothing else. */
 export function isRealDay(text: string): boolean {
-  if (!ISO_DAY.test(text)) return false;
+  if (!ISO_DAY.test(text) || text.startsWith('0000')) return false;
   return new Date(`${text}T00:00:00Z`).toISOString().slice(0, 10) === text;
 }
 
-/** A YYYY-MM whose month is 01 to 12. */
+/** A YYYY-MM whose month is 01 to 12 in years 0001 to 9999. */
 export function isRealMonth(text: string): boolean {
   if (!ISO_MONTH.test(text)) return false;
   const month = Number(text.slice(5));
-  return month >= 1 && month <= 12;
+  return month >= 1 && month <= 12 && isRealDay(`${text}-01`);
 }
 
 /** The day `count` days after a YYYY-MM-DD day (before it when negative). */
@@ -119,10 +119,14 @@ function wallClock(instant: number, timeZone: string): number {
   return Date.UTC(value('year'), value('month') - 1, value('day'), value('hour'), value('minute'), value('second'));
 }
 
-/** Local midnight at the start of a YYYY-MM-DD day in `timeZone`. Two passes settle an offset that changes on that day. */
+/**
+ * The first instant of a YYYY-MM-DD day in `timeZone`: local midnight, or the end of the daylight saving gap when
+ * midnight does not exist that day (America/Santiago, America/Havana). Two passes settle an offset that changes on that day.
+ */
 export function startOfDay(day: string, timeZone: string): Date {
   const [year, month, date] = day.split('-').map(Number) as [number, number, number];
   const wall = Date.UTC(year, month - 1, date);
   const first = wall - (wallClock(wall, timeZone) - wall);
-  return new Date(wall - (wallClock(first, timeZone) - first));
+  const second = wall - (wallClock(first, timeZone) - first);
+  return new Date(todayIn(timeZone, new Date(second)) < day ? first : second);
 }

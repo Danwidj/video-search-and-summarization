@@ -73,6 +73,9 @@ describe('calendar periods that are refused', () => {
     'an empty period': {},
     'a calendar period with a non-string date': { day: 20261028 },
     'a period naming a word': 'october',
+    'a day in year 0000': { day: '0000-01-01' },
+    'a month in year 0000': { month: '0000-01' },
+    'a range from year 0000': { from: '0000-12-31', to: '0001-01-01' },
   };
   for (const [name, period] of Object.entries(refused)) {
     test(`refuses ${name}`, () => {
@@ -100,6 +103,18 @@ describe('the calendar day is the viewer time zone day', () => {
     // New York moves to daylight time on 8 March 2026: midnight is 05:00 UTC before, 04:00 UTC after.
     assert.deepEqual(startOfDay('2026-03-08', 'America/New_York'), new Date('2026-03-08T05:00:00Z'));
     assert.deepEqual(startOfDay('2026-03-09', 'America/New_York'), new Date('2026-03-09T04:00:00Z'));
+  });
+
+  test('startOfDay is the first instant of the day where daylight saving skips midnight', () => {
+    // Santiago and Havana jump from 00:00 to 01:00, so the day starts at 01:00 local, not 23:00 the day before.
+    const santiago = startOfDay('2026-09-06', 'America/Santiago');
+    assert.deepEqual(santiago, new Date('2026-09-06T04:00:00Z'));
+    assert.equal(todayIn('America/Santiago', santiago), '2026-09-06');
+    assert.equal(todayIn('America/Santiago', new Date(santiago.getTime() - 1)), '2026-09-05');
+    const havana = startOfDay('2026-03-08', 'America/Havana');
+    assert.deepEqual(havana, new Date('2026-03-08T05:00:00Z'));
+    assert.equal(todayIn('America/Havana', havana), '2026-03-08');
+    assert.equal(todayIn('America/Havana', new Date(havana.getTime() - 1)), '2026-03-07');
   });
 
   test('addDays moves across a month and a year', () => {

@@ -11,6 +11,7 @@ export function chartSummary(chart: Pick<GeneratedChart, 'title' | 'scope' | 'se
     return `${label} ${total}`;
   });
   // A calendar period is named in the title already, so its scope is not read out a second time.
-  const scope = chart.scope.filter((item) => !chart.title.includes(item));
+  const [period, ...filters] = chart.scope;
+  const scope = period !== undefined && chart.title.endsWith(`, ${period}`) ? filters : chart.scope;
   return `${chart.title}${scope.length ? `, ${scope.join(', ')}` : ''}. ${totals.join('; ')}.`;
 }
