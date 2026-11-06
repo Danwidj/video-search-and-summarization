@@ -19,9 +19,17 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
-import { type ChatTarget, chatRequestBody, citationTitle } from '@/lib/chat/report-chat';
+import {
+  type AnswerSource,
+  answerSourceLine,
+  type ChatTarget,
+  chatHistory,
+  chatRequestBody,
+  citationTitle,
+  offersVideoCheck,
+} from '@/lib/chat/report-chat';
 import { segmentChatText } from '@/lib/chat/timestamps';
-import type { ChatCitation, ChatResponse } from '@/modules/chat/domain/chat';
+import type { ChatCitation, ChatResponse, VideoOffer } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
 const SUGGESTIONS = ['Show the timeline of events'];
@@ -36,6 +44,11 @@ type ChatMessage = {
   answeredFrom?: string;
   /** chat-contract-v2: the report could not answer this question. */
   insufficientEvidence?: boolean;
+  /** chat-contract-v3: where the answer came from; a fresh video check is 'video'. */
+  source?: AnswerSource;
+  videoOffer?: VideoOffer;
+  /** Times the agent found the report does not hold. They stay plain text. */
+  unknownTimes?: string[];
 };
 
 /** One conversation. The report page holds it, so closing the panel does not lose it. */
@@ -53,14 +66,16 @@ function AnswerText({
   content,
   durationSeconds,
   onSeek,
+  unsupported,
 }: {
   content: string;
   durationSeconds: number | null;
   onSeek: (seconds: number) => void;
+  unsupported?: string[];
 }) {
   return (
     <p className="whitespace-pre-wrap" data-testid="chat-answer">
-      {segmentChatText(content, { durationSeconds }).map((segment, index) =>
+      {segmentChatText(content, { durationSeconds, unsupported }).map((segment, index) =>
         segment.kind === 'time' ? (
           <button
             aria-label={`Jump to ${segment.text} in the video`}
@@ -123,7 +138,7 @@ export function ReportChat({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
-          chatRequestBody({ messages: next.map(({ role, content }) => ({ role, content })), sessionId, videoId, target }),
+          chatRequestBody({ messages: chatHistory(next).map(({ role, content }) => ({ role, content })), sessionId, videoId, target }),
         ),
       });
       const payload = (await response.json()) as Partial<ChatResponse> & { error?: string };
@@ -131,13 +146,48 @@ export function ReportChat({
       messageSequence += 1;
       onThreadChange({
         sessionId: payload.sessionId,
-        messages: [...next, { ...payload.message, id: `msg-${messageSequence}`, answeredFrom: target.label }],
+        messages: [
+          ...next,
+          {
+            ...payload.message,
+            id: `msg-${messageSequence}`,
+            answeredFrom: target.label,
+            unknownTimes: payload.grounding?.unknownTimes,
+          },
+        ],
       });
     } catch (cause) {
       onThreadChange({ failed: cause instanceof Error ? cause.message : 'Chat failed' });
     } finally {
       onThreadChange({ busy: false });
     }
+  }
+
+  /** Runs the fresh look the reviewer confirmed. Its result joins the conversation as its own, labelled message. */
+  async function checkVideo(answer: ChatMessage) {
+    const asked = messages.slice(0, messages.indexOf(answer)).findLast((message) => message.role === 'user');
+    if (!asked) return;
+    const kept = messages.map((message) => (message === answer ? { ...message, videoOffer: undefined } : message));
+    onThreadChange({ messages: kept, busy: true, failed: null });
+    let content: string;
+    try {
+      const response = await fetch('/api/chat/video-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId, question: asked.content, storedAnswer: answer.content }),
+      });
+      const payload = (await response.json()) as { content?: string; error?: string };
+      if (!response.ok || !payload.content) throw new Error(payload.error || 'No result returned');
+      content = payload.content;
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : 'The check failed';
+      content = `The video check did not finish: ${reason} The answer above from the stored report stands.`;
+    }
+    messageSequence += 1;
+    onThreadChange({
+      messages: [...kept, { id: `msg-${messageSequence}`, role: 'assistant', content, source: 'video', answeredFrom: target.label }],
+      busy: false,
+    });
   }
 
   function ask(event: FormEvent) {
@@ -228,7 +278,19 @@ export function ReportChat({
                   <Message align="start" className="self-start" key={message.id}>
                     <Bubble variant="muted">
                       <BubbleContent className="rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-foreground">
-                        <AnswerText content={message.content} durationSeconds={durationSeconds} onSeek={onSeek} />
+                        {message.source === 'video' ? (
+                          // A fresh look's times are not checked against anything, so they stay plain text.
+                          <p className="whitespace-pre-wrap" data-testid="chat-video-result">
+                            {message.content}
+                          </p>
+                        ) : (
+                          <AnswerText
+                            content={message.content}
+                            durationSeconds={durationSeconds}
+                            onSeek={onSeek}
+                            unsupported={message.unknownTimes}
+                          />
+                        )}
                         {!!message.citations?.length && (
                           <ul className="mt-2 grid gap-1.5" data-testid="chat-citations">
                             {message.citations.map((citation) => (
@@ -268,8 +330,19 @@ export function ReportChat({
                             Not in this report
                           </Badge>
                         )}
+                        {offersVideoCheck(message.videoOffer, durationSeconds) && (
+                          <div className="mt-2 grid gap-1.5" data-testid="chat-video-offer">
+                            <p className="text-xs">
+                              {message.videoOffer?.reason} Checking the original video runs a new AI look. It can take a minute and does not
+                              change the report.
+                            </p>
+                            <Button disabled={busy} onClick={() => void checkVideo(message)} size="xs" type="button" variant="outline">
+                              Check original video
+                            </Button>
+                          </div>
+                        )}
                         <p className="mt-1.5 text-[10.5px] text-muted-foreground" data-testid="chat-answered-from">
-                          Answered from the stored report: {message.answeredFrom}
+                          {answerSourceLine(message.source, message.answeredFrom ?? '')}
                         </p>
                       </BubbleContent>
                     </Bubble>

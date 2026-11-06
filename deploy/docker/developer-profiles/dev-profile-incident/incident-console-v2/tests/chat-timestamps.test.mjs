@@ -119,3 +119,8 @@ test('a seek never gets a value that is no position, and stays inside a known le
   assert.equal(seekTarget(31, Number.NaN), 31);
   assert.equal(seekTarget(31), 31);
 });
+
+test('a time the agent found the report does not hold is left as text, whatever it looks like', () => {
+  assert.deepEqual(times('At 0:22, then 0:58.', { unsupported: ['0:58'] }), [['0:22', 22]]);
+  assert.equal(joined('At 0:22, then 0:58.', { unsupported: ['0:58'] }), 'At 0:22, then 0:58.');
+});
