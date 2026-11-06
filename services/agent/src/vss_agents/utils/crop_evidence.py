@@ -566,7 +566,7 @@ class OpenVocabularyDetector(Protocol):
 
 
 DEFAULT_GROUNDING_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com"
-DEFAULT_GROUNDING_MODEL = "nvidia/cosmos-3-super-reasoner"
+DEFAULT_GROUNDING_MODEL = "nvidia/cosmos-3-nano-reasoner"
 GROUNDING_MAX_EDGE_PIXELS = 1280
 GROUNDING_MAX_ATTEMPTS = 4
 # A healthy grounding call answers in 2-4 s (the stored run provenance); a stalled one used to hold an item, and a
@@ -805,8 +805,9 @@ class DefaultDetector:
 
     Sends the video frame and the item label to an OpenAI-compatible chat completions endpoint
     (Brev Switchyard) and asks for one tight bounding box, so no local detector weights are needed.
-    Settings: ``VLM_GATEWAY_BASE_URL`` or ``VLM_BASE_URL``, ``VLM_GATEWAY_API_KEY`` or ``OPENAI_API_KEY``,
-    and ``VLM_NAME`` (each overridable through the constructor).
+    Settings: ``VLM_GATEWAY_BASE_URL`` or ``VLM_BASE_URL``, and ``VLM_GATEWAY_API_KEY`` or ``OPENAI_API_KEY``
+    (each overridable through the constructor). The model is ``DEFAULT_GROUNDING_MODEL`` unless the constructor
+    names one; ``VLM_NAME`` is not read, because search and the chat's video check keep their own model through it.
     """
 
     def __init__(
@@ -822,7 +823,7 @@ class DefaultDetector:
         timeout_retries: int = GROUNDING_TIMEOUT_RETRIES,
         deadline: float | None = None,
     ) -> None:
-        self.model_name = model_name or os.getenv("VLM_NAME") or DEFAULT_GROUNDING_MODEL
+        self.model_name = model_name or DEFAULT_GROUNDING_MODEL
         self.min_score = min_score
         self.base_url = (
             base_url or os.getenv("VLM_GATEWAY_BASE_URL") or os.getenv("VLM_BASE_URL") or DEFAULT_GROUNDING_BASE_URL

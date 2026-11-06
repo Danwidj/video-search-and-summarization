@@ -1365,6 +1365,13 @@ class TestZoomSecondLook:
         post.assert_not_called()
         assert all("key missing" in e["zoom_gap"] and e["zoom_checked"] is False for e in by_id.values())
 
+    def test_the_default_detector_ignores_vlm_name_and_a_caller_can_still_name_a_model(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("VLM_NAME", "nvidia/cosmos-3-super-reasoner")
+        assert DefaultDetector(api_key="k").model_name == "nvidia/cosmos-3-nano-reasoner"
+        assert DefaultDetector(api_key="k", model_name="m").model_name == "m"
+
     def test_the_default_detector_is_also_the_namer_and_its_zoom_calls_are_outside_the_budget(self) -> None:
         detector = DefaultDetector(api_key="k", base_url="https://vlm.example", model_name="m")
         service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
