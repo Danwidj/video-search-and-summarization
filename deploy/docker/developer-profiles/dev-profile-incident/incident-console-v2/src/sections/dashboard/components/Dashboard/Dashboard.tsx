@@ -162,7 +162,11 @@ export function Dashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-4">
-          <Button className="border-ink/10 bg-white font-normal text-ink" onClick={() => jumpToChartRequest(document, window)} variant="outline">
+          <Button
+            className="border-ink/10 bg-white font-normal text-ink"
+            onClick={() => jumpToChartRequest(document, window)}
+            variant="outline"
+          >
             <ChartColumnIcon data-icon="inline-start" />
             Ask for a chart
           </Button>
