@@ -71,7 +71,7 @@ Test data: on 2026-10-24 the rows and R2 objects of the three end-to-end test vi
 
 ## 4. Known issues
 
-Deliberate behaviour that can look like an issue (the Cosmos timeline, chat about the official version, a human revision's search text) is recorded in [`decisions.md`](decisions.md). Only open issues are listed here; the number of an issue is stable, and resolved ones are in the [archive](#7-archive) under the same number.
+Deliberate behaviour that can look like an issue (the Cosmos timeline, a human revision's search text) is recorded in [`decisions.md`](decisions.md). Only open issues are listed here; the number of an issue is stable, and resolved ones are in the [archive](#7-archive) under the same number.
 
 12. **Open (found 2026-10-31): every console on finals shares one analysis job queue.**
     - Each console with the loop on claims from the same `analysis_jobs` table, so a job can run on another person's console, against that console's agent or gateway and code version.
@@ -81,7 +81,7 @@ Deliberate behaviour that can look like an issue (the Cosmos timeline, chat abou
 16. **Open: the shared agent's chat lists items with their ids.**
     - **What happened:** on 2026-11-01, "What happened, in order?" on `vc8328cb9cdcdfa99fa8` (revision 87, not official) returned "5 relevant item(s) were identified: human (E1) in vc8328cb9cdcdfa99fa8 (incident at 134s); ...". That is template mode's keyword list of evidence items.
     - **The fix (merged, #435):** answers are composed from the version's report, ids appear only in citations, and library questions get no demo hits ([decision](decisions.md#2026-11-01-template-chat-answers-from-the-report-version-in-prose-and-the-default-chat-search-client-searches-nothing)). It reaches `kwanz-ws` only with an approved restart of the shared agent.
-    - **Still not answered:** official-version and library questions, which this mode does not answer until the agent runs `INCIDENT_CHAT_MODE=grounded` ([action item 16](#5-action-items)).
+    - **Still not answered:** library questions, which this mode does not answer until the agent runs `INCIDENT_CHAT_MODE=grounded` ([action item 16](#5-action-items)). Official versions are answered from their report since 6 Nov, once the agent is restarted on that code.
 
 ## 5. Action items
 
