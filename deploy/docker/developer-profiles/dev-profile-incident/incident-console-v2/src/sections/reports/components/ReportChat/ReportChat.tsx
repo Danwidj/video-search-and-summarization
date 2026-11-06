@@ -22,7 +22,7 @@ import { segmentChatText } from '@/lib/chat/timestamps';
 import type { ChatCitation, ChatResponse } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
-const SUGGESTIONS = ['Show the timeline of events', 'Who appears?', 'Was anything taken?', 'Any weapons?'];
+const SUGGESTIONS = ['Show the timeline of events'];
 
 let messageSequence = 0;
 
