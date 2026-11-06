@@ -36,6 +36,16 @@ type ChatMessage = {
   insufficientEvidence?: boolean;
 };
 
+/** One conversation. The report page holds it, so closing the panel does not lose it. */
+export type ChatThread = {
+  messages: ChatMessage[];
+  sessionId?: string;
+  busy: boolean;
+  failed: string | null;
+};
+
+export const EMPTY_CHAT_THREAD: ChatThread = { messages: [], busy: false, failed: null };
+
 /** An answer's text as written, each video time in it a button that jumps there. */
 function AnswerText({
   content,
@@ -77,23 +87,24 @@ function AnswerText({
 export function ReportChat({
   videoId,
   target,
+  thread,
+  onThreadChange,
   onSeek,
   durationSeconds = null,
   titles = {},
 }: {
   videoId: string;
   target: ChatTarget;
+  thread: ChatThread;
+  onThreadChange: (change: Partial<ChatThread>) => void;
   onSeek: (seconds: number) => void;
   /** The player's length, once known: a time past it is not offered as a jump. */
   durationSeconds?: number | null;
   /** Each cited item's name (citationTitles), so a citation is shown without its id. */
   titles?: Record<string, string>;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [sessionId, setSessionId] = useState<string | undefined>();
+  const { messages, sessionId, busy, failed } = thread;
   const [question, setQuestion] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
   const scrollerViewportRef = useRef<HTMLDivElement>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll to bottom whenever chat state updates
@@ -104,9 +115,7 @@ export function ReportChat({
   async function send(text: string, history: ChatMessage[]) {
     messageSequence += 1;
     const next: ChatMessage[] = [...history, { id: `msg-${messageSequence}`, role: 'user', content: text }];
-    setMessages(next);
-    setBusy(true);
-    setFailed(null);
+    onThreadChange({ messages: next, busy: true, failed: null });
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -117,13 +126,15 @@ export function ReportChat({
       });
       const payload = (await response.json()) as Partial<ChatResponse> & { error?: string };
       if (!response.ok || !payload.message) throw new Error(payload.error || 'No answer returned');
-      setSessionId(payload.sessionId);
       messageSequence += 1;
-      setMessages([...next, { ...payload.message, id: `msg-${messageSequence}`, answeredFrom: target.label }]);
+      onThreadChange({
+        sessionId: payload.sessionId,
+        messages: [...next, { ...payload.message, id: `msg-${messageSequence}`, answeredFrom: target.label }],
+      });
     } catch (cause) {
-      setFailed(cause instanceof Error ? cause.message : 'Chat failed');
+      onThreadChange({ failed: cause instanceof Error ? cause.message : 'Chat failed' });
     } finally {
-      setBusy(false);
+      onThreadChange({ busy: false });
     }
   }
 
@@ -163,11 +174,7 @@ export function ReportChat({
         <div className="flex gap-1.5">
           <Button
             disabled={!messages.length || busy}
-            onClick={() => {
-              setMessages([]);
-              setSessionId(undefined);
-              setFailed(null);
-            }}
+            onClick={() => onThreadChange({ messages: [], sessionId: undefined, failed: null })}
             size="sm"
             type="button"
             variant="outline"

@@ -145,3 +145,22 @@ test('the page bounds every seek and gives the chat the video length', () => {
   assert.match(page, /seekTarget\(seconds, video\.duration\)/);
   assert.match(page, /durationSeconds=\{playerDuration\}/);
 });
+
+test('the conversation lives on the page, so closing the panel keeps it, and each version has its own', () => {
+  const read = (name) => readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', name, `${name}.tsx`), 'utf8');
+  const chat = read('ReportChat');
+  const page = read('ReportPage');
+  assert.doesNotMatch(chat, /useState<ChatMessage\[\]>/, 'the panel holds no conversation of its own');
+  assert.match(page, /useState<Record<string, ChatThread>>/);
+  assert.match(page, /thread=\{chatThreads\[threadKey\] \?\? EMPTY_CHAT_THREAD\}/);
+  assert.match(page, /chatThreadKey\(target\.versionId, /, 'a thread is keyed by the version asked about');
+  assert.match(page, /_earlierDraft/, 'a new draft does not inherit answers about an earlier draft');
+});
+
+test('the player stays usable beside the chat, and a jump reaches the player on screen', () => {
+  const page = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportPage', 'ReportPage.tsx'), 'utf8');
+  assert.match(page, /<Sheet modal=\{false\}/);
+  assert.match(page, /onInteractOutside=\{\(event\) => event\.preventDefault\(\)\}/, 'using the player does not close the chat');
+  assert.match(page, /ref=\{compactVideoRef\}/);
+  assert.match(page, /\[videoRef\.current, compactVideoRef\.current\]\.find/);
+});
