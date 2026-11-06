@@ -151,17 +151,59 @@ class TestHttpClient:
         assert seen[0].headers["x-stream-id"] == "run"
 
     @pytest.mark.asyncio
-    async def test_delete_uses_the_sensor_route_and_stream_count_reads_the_stream_info(self):
+    async def test_delete_uses_the_sensor_route(self):
         seen: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             seen.append(request)
-            return httpx.Response(200, json={"stream-count": 2})
+            return httpx.Response(200, json={"reason": "OK"})
 
         client = _http(handler)
         await client.delete_file("a_1")
-        assert await client.stream_count() == 2
         assert (seen[0].method, seen[0].url.path) == ("DELETE", "/api/v1/sensor/a_1")
+
+    @pytest.mark.asyncio
+    async def test_has_stream_reads_the_nested_get_stream_info_by_camera_id(self):
+        # The live response (<vm-host>, 2026-11-07): the count and the list sit under a nested "stream-info".
+        live = {
+            "reason": "GET_LIVE_STREAM_INFO_SUCCESS",
+            "status": "HTTP/1.1 200 OK",
+            "stream-info": {
+                "stream-count": 1,
+                "stream-info": [
+                    {
+                        "camera_id": "incident-5131dd96-m5786bf85c5ac7d3096c",
+                        "camera_name": "incident-5131dd96-m5786bf85c5ac7d3096c",
+                        "source_id": 4,
+                    }
+                ],
+            },
+        }
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, json=live)
+
+        client = _http(handler)
+        assert await client.has_stream("incident-5131dd96-m5786bf85c5ac7d3096c") is True
+        assert await client.has_stream("incident-other-run") is False, "another run's registration does not count"
+        assert seen[0].url.path == "/api/v1/stream/get-stream-info"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"stream-count": 1},  # the old top-level shape
+            {"stream-info": {"stream-count": 0, "stream-info": []}},
+            {"stream-info": {"stream-count": 0}},
+            {"stream-info": "oops"},
+            {},
+        ],
+    )
+    async def test_has_stream_reads_a_missing_key_or_empty_list_as_gone(self, body):
+        client = _http(lambda _: httpx.Response(200, json=body))
+        assert await client.has_stream("run") is False
 
     @pytest.mark.asyncio
     async def test_frames_page_backwards_with_the_documented_query(self):
@@ -191,5 +233,5 @@ class TestHttpClient:
     async def test_a_http_failure_is_a_perception_error_that_names_the_path_only(self):
         client = _http(lambda _: httpx.Response(503))
         with pytest.raises(PerceptionError) as caught:
-            await client.stream_count()
+            await client.has_stream("run")
         assert "/api/v1/stream/get-stream-info" in str(caught.value)

@@ -658,7 +658,7 @@ async def run_tracking(
                 if (
                     highest is None
                     and waited > active.no_frames_timeout_seconds
-                    and not await _stream_alive(active_client)
+                    and not await _stream_alive(active_client, sensor_id)
                 ):
                     logger.warning("incident tracking: no frames within %.0f s and the stream is gone", waited)
                     return done(skipped="no frames from perception")
@@ -698,12 +698,12 @@ async def run_tracking(
                     logger.warning("incident tracking: NvStreamer file delete failed: %s", type(exc).__name__)
 
 
-async def _stream_alive(client: PerceptionClient) -> bool:
-    """Whether the stack still has a stream registered (get-stream-info); an unreadable count reads as gone."""
+async def _stream_alive(client: PerceptionClient, sensor_id: str) -> bool:
+    """Whether this run's own sensor id is still registered (get-stream-info); an unreadable reply reads as gone."""
     try:
-        return await client.stream_count() > 0
+        return await client.has_stream(sensor_id)
     except Exception as exc:
-        logger.warning("incident tracking: stream count failed (%s)", type(exc).__name__)
+        logger.warning("incident tracking: stream check failed (%s)", type(exc).__name__)
         return False
 
 
