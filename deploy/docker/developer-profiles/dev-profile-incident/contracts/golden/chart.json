@@ -3,12 +3,14 @@
   "description": "Dashboard 'Ask for a chart' requests (console only). The console sends these two messages, the exact ones the model gets, to the agent's POST /api/v1/incidents/chart-requests; the agent passes them unchanged to one of its own LLMs. The reply is validated by the console and never shown.",
   "cases": {
     "request": {
-      "description": "A chart request; the reply is classified by generateChart, never shown.",
+      "description": "A chart request; the reply is classified by generateChart, never shown. The user message starts with today's date and the viewer's time zone.",
       "producers": [
         "console"
       ],
       "inputs": {
-        "request": "pie of severity for assaults in the last 30 days"
+        "request": "pie of severity for assaults in the last 30 days",
+        "today": "2026-11-06",
+        "timezone": "UTC"
       },
       "body": {
         "messages": [
@@ -16,12 +18,12 @@
             "role": "system",
             "content": {
               "$contract_text": "prompts/chart/system.txt",
-              "sha256": "c6cf07800e90541b63650db8e2bd279e4fc2cf482207176cb749b6a361a27c70"
+              "sha256": "44a99a54ab0bfb2e9021cca6a9a2bc3a149683e7045015993b88befee85cd3e2"
             }
           },
           {
             "role": "user",
-            "content": "pie of severity for assaults in the last 30 days"
+            "content": "Today is 2026-11-06 (time zone UTC).\nRequest: pie of severity for assaults in the last 30 days"
           }
         ]
       }

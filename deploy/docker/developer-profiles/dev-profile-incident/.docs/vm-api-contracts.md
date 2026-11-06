@@ -189,7 +189,7 @@ Request: `{"question": <1-500 chars>, "stored_answer": <1-4000 chars>}`. Respons
 
 Reads one dashboard chart request with the agent's own LLM: the `llms:` entry named by `chart_generator.llm_name` in `dev-profile-base/vss-agent/configs/config.yml` (`${LLM_MODEL_TYPE:-nim}_llm`). The console sends the two messages the model gets, and the route passes them to that LLM unchanged. It returns the JSON object the model wrote. It validates nothing else: the console checks the object against its allowlist and refuses anything else.
 
-Request: `{"messages": [{"role": "system", "content": "<the chart prompt, 1-20000 characters>"}, {"role": "user", "content": "<the request, 1-300 characters>"}]}`. Exactly those two messages in that order; any other key or shape is `422`.
+Request: `{"messages": [{"role": "system", "content": "<the chart prompt, 1-20000 characters>"}, {"role": "user", "content": "Today is <YYYY-MM-DD> (time zone <IANA zone>).\nRequest: <the request, 1-300 characters>"}]}`. Exactly those two messages in that order; any other key or shape is `422`. The first line of the user message is the viewer's day and time zone, so the model can read "October" as a year ([decision](decisions.md#2026-11-06-dashboard-chart-requests-take-calendar-periods-a-month-a-day-or-a-range-read-against-today-in-the-viewers-time-zone)).
 
 Response `200`: `{"reply": {...} | null}`, with `null` when the model wrote no JSON object.
 

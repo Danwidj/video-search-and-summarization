@@ -8,6 +8,7 @@
 import { z } from 'zod';
 
 import { INCIDENT_TYPES } from '@/modules/contract/domain/types';
+import { CALENDAR_MAX_DAYS, type CalendarPeriod, calendarDays } from '@/modules/dashboard/domain/chart-period';
 import type { DashboardSeverity } from '@/modules/dashboard/domain/DashboardRepository';
 
 export const CHART_METRICS = ['incidents', 'instruments', 'analyses'] as const;
@@ -23,8 +24,11 @@ export const CHART_PERIODS = {
   last_365_days: 365,
   all_time: null,
 } as const;
-export type ChartPeriod = keyof typeof CHART_PERIODS;
-const PERIOD_NAMES = Object.keys(CHART_PERIODS) as [ChartPeriod, ...ChartPeriod[]];
+export type PresetPeriod = keyof typeof CHART_PERIODS;
+const PERIOD_NAMES = Object.keys(CHART_PERIODS) as [PresetPeriod, ...PresetPeriod[]];
+
+/** A preset (a string, as before) or a calendar period: one month, one day, or from and to (both inclusive). */
+export type ChartPeriod = PresetPeriod | CalendarPeriod;
 
 interface ChartDimension {
   metric: ChartMetric;
@@ -215,26 +219,40 @@ export const CHART_DIMENSIONS = {
 export type ChartDimensionName = keyof typeof CHART_DIMENSIONS;
 const DIMENSION_NAMES = Object.keys(CHART_DIMENSIONS) as [ChartDimensionName, ...ChartDimensionName[]];
 
-const chartSpecSchema = z
-  .object({
-    metric: z.enum(CHART_METRICS),
-    dimension: z.enum(DIMENSION_NAMES),
-    period: z.enum(PERIOD_NAMES),
-    incidentType: z.enum(INCIDENT_TYPES).nullable(),
-    severity: z.enum(CHART_SEVERITIES).nullable(),
-  })
-  .strict()
-  .refine((spec) => {
-    const dimension: ChartDimension = CHART_DIMENSIONS[spec.dimension];
-    return dimension.metric === spec.metric && (dimension.filterable || (spec.incidentType === null && spec.severity === null));
-  });
+// Each calendar form is strict, so a month object cannot carry a day, and a date is checked by calendarDays, which needs today.
+const calendarPeriodSchema = z.union([
+  z.object({ month: z.string() }).strict(),
+  z.object({ day: z.string() }).strict(),
+  z.object({ from: z.string(), to: z.string() }).strict(),
+]);
 
-export type ChartSpec = z.infer<typeof chartSpecSchema>;
+/** The spec schema for a request made on `today` (YYYY-MM-DD, in the viewer's time zone). */
+function chartSpecSchema(today: string) {
+  return z
+    .object({
+      metric: z.enum(CHART_METRICS),
+      dimension: z.enum(DIMENSION_NAMES),
+      period: z.union([z.enum(PERIOD_NAMES), calendarPeriodSchema]),
+      incidentType: z.enum(INCIDENT_TYPES).nullable(),
+      severity: z.enum(CHART_SEVERITIES).nullable(),
+    })
+    .strict()
+    .refine((spec) => {
+      const dimension: ChartDimension = CHART_DIMENSIONS[spec.dimension];
+      return dimension.metric === spec.metric && (dimension.filterable || (spec.incidentType === null && spec.severity === null));
+    })
+    .refine((spec) => typeof spec.period === 'string' || calendarDays(spec.period, today) !== null);
+}
 
-/** The spec a model reply describes, or null for anything else: a refusal, a non-allowlisted value or an unknown key. */
-export function parseChartSpec(reply: unknown): ChartSpec | null {
-  const parsed = chartSpecSchema.safeParse(reply);
-  return parsed.success ? parsed.data : null;
+export type ChartSpec = Omit<z.infer<ReturnType<typeof chartSpecSchema>>, 'period'> & { period: ChartPeriod };
+
+/**
+ * The spec a model reply describes, or null for anything else: a refusal, a non-allowlisted value, an unknown key, or a
+ * calendar period that is malformed, reversed, longer than CALENDAR_MAX_DAYS or not up to today (`today`, YYYY-MM-DD).
+ */
+export function parseChartSpec(reply: unknown, today: string): ChartSpec | null {
+  const parsed = chartSpecSchema(today).safeParse(reply);
+  return parsed.success ? (parsed.data as ChartSpec) : null;
 }
 
 /** Every allowlisted value, as exported to contracts/prompts/chart/allowlist.json for evaluation (drift-tested). */
@@ -243,6 +261,7 @@ export function chartAllowlist(): Record<string, unknown> {
     metrics: [...CHART_METRICS],
     severities: [...CHART_SEVERITIES],
     periods: { ...CHART_PERIODS },
+    calendarPeriods: { forms: ['month', 'day', 'from-to'], maxRangeDays: CALENDAR_MAX_DAYS },
     incidentTypes: [...INCIDENT_TYPES],
     dimensions: CHART_DIMENSIONS,
   };

@@ -30,7 +30,7 @@ const ChartJsView = dynamic(() => import('./ChartJsView').then((module) => modul
 
 export { CHART_REQUEST_ID, CHART_REQUEST_INPUT_ID };
 
-const EXAMPLES = ['Incident distribution', 'Severity breakdown', 'Trends over time'];
+const EXAMPLES = ['Incident distribution', 'Severity breakdown', 'Trends over time', 'Incident types in October'];
 const KIND_LABELS: Record<ChartKind, string> = {
   bar: 'Bar',
   stacked_bar: 'Stacked bar',
@@ -116,7 +116,8 @@ export function ChartRequest() {
               <AlertDescription>
                 Charts can count reports by incident type, severity, status, version, entity type, instrument, asset or confidence, show
                 trends by day, week or month, report activity by weekday or hour, instrument threat levels, and analyses by model or
-                outcome, over the last 7, 30, 90 or 365 days or all time.
+                outcome. The period can be the last 7, 30, 90 or 365 days, all time, a calendar month, a day, or a range of up to a year
+                that ends today or earlier.
               </AlertDescription>
             </Alert>
           )}
