@@ -352,7 +352,7 @@ stored. It never returns `payload`, notes, signed URLs or video content.
 #### `get_incident_dashboard`
 
 Counts each video once through `searchable_revision_id`: its **official revision, else its newest**,
-the same rule as the library and search (migration `20261031090000_dashboard_official_else_newest.sql`). The latest definition is `20261106140000_dashboard_versions_and_evidence.sql` (not yet applied to finals; it also carries the byte-order ties of `20261101120000`).
+the same rule as the library and search (migration `20261031090000_dashboard_official_else_newest.sql`). The latest definition is `20261106140000_dashboard_versions_and_evidence.sql` (applied to finals on 2026-11-06; it also carries the byte-order ties of `20261101120000`, which are live through it).
 Ranked lists and types sort by count, then by label, type or model name in byte order (`COLLATE "C"`,
 migration `20261101120000`), so ties rank the same on every database.
 It only reads `videos.official_revision_id`, to report the split, and never sets it. Filtered by the
