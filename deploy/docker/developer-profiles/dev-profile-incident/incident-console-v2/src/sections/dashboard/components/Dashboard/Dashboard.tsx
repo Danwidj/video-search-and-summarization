@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Area, AreaChart, Bar, BarChart, Cell, CartesianGrid, LabelList, Pie, PieChart, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, Cell, LabelList, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import type { DateRange } from 'react-day-picker';
 import { CalendarIcon, ChartColumnIcon, HistoryIcon } from 'lucide-react';
 import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
@@ -17,7 +17,6 @@ import {
   entityTypeRows,
   evidenceRows,
   formatCalendarDay,
-  formatDay,
   instrumentRows,
   revisedReports,
   SEVERITY_LABELS,
@@ -302,12 +301,24 @@ export function Dashboard() {
           </Panel>
           <Panel
             className="lg:col-span-2 xl:col-span-8"
-            title="Reports generated over time"
-            subtitle={`Reports per day by report date (${timeZone}), official and not yet official`}
+            title="Activity by day and hour"
+            subtitle={`Report time (${timeZone}); select a cell to filter this page`}
           >
             {panel(
               (d) => (
-                <Trend emptyText={emptyText} points={d.trend} />
+                <Heatmap
+                  data={d.heatmap}
+                  emptyText={emptyText}
+                  onSelect={(day, hour) =>
+                    setFilters((f) =>
+                      f.day === String(day) && f.hour === String(hour)
+                        ? { ...f, day: '', hour: '' }
+                        : { ...f, day: String(day), hour: String(hour) },
+                    )
+                  }
+                  selected={`${filters.day}-${filters.hour}`}
+                  timeZone={timeZone}
+                />
               ),
               'h-56',
             )}
@@ -364,30 +375,6 @@ export function Dashboard() {
                 <SplitBars emptyText={emptyText} rows={entityTypeRows(d)} />
               ),
               'h-40',
-            )}
-          </Panel>
-          <Panel
-            className="lg:col-span-2 xl:col-span-12"
-            title="Activity by day and hour"
-            subtitle={`Report time (${timeZone}); select a cell to filter this page`}
-          >
-            {panel(
-              (d) => (
-                <Heatmap
-                  data={d.heatmap}
-                  emptyText={emptyText}
-                  onSelect={(day, hour) =>
-                    setFilters((f) =>
-                      f.day === String(day) && f.hour === String(hour)
-                        ? { ...f, day: '', hour: '' }
-                        : { ...f, day: String(day), hour: String(hour) },
-                    )
-                  }
-                  selected={`${filters.day}-${filters.hour}`}
-                  timeZone={timeZone}
-                />
-              ),
-              'h-56',
             )}
           </Panel>
         </div>
@@ -480,41 +467,6 @@ function RevisedChip({ count }: { count: number }) {
         <TooltipContent>{explanation}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
-  );
-}
-
-function Trend({ points, emptyText }: { points: DashboardAnalytics['trend']; emptyText: string }) {
-  if (!points.some((x) => x.count)) return <NoData text={emptyText} />;
-  return (
-    <ChartContainer config={splitConfig} className="aspect-auto h-56 w-full">
-      <AreaChart accessibilityLayer data={points} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
-        <CartesianGrid vertical={false} />
-        <XAxis axisLine={false} dataKey="date" minTickGap={28} tickFormatter={formatDay} tickLine={false} tickMargin={8} />
-        <YAxis allowDecimals={false} axisLine={false} tickLine={false} width={28} />
-        <ChartTooltip content={<ChartTooltipContent labelFormatter={(value) => formatDay(String(value))} />} cursor={false} />
-        <ChartLegend content={<ChartLegendContent />} itemSorter={null} />
-        <Area
-          dataKey="official"
-          fill="var(--color-official)"
-          fillOpacity={0.35}
-          isAnimationActive={false}
-          stackId="split"
-          stroke="var(--color-official)"
-          strokeWidth={2}
-          type="monotone"
-        />
-        <Area
-          dataKey="notOfficial"
-          fill="var(--color-notOfficial)"
-          fillOpacity={0.35}
-          isAnimationActive={false}
-          stackId="split"
-          stroke="var(--color-notOfficial)"
-          strokeWidth={2}
-          type="monotone"
-        />
-      </AreaChart>
-    </ChartContainer>
   );
 }
 
