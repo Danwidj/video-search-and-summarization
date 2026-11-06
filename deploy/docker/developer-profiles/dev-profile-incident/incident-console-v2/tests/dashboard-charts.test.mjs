@@ -9,7 +9,6 @@ import {
   assetRows,
   customWindow,
   dashboardView,
-  delta,
   entityTypeRows,
   evidenceRows,
   formatCalendarDay,
@@ -50,11 +49,7 @@ test('reports with no severity are counted apart from the severity bands', () =>
   assert.equal(unratedReports(withBands(0, 0, 0, 0)), 0);
 });
 
-test('a period comparison and a trend day read as written', () => {
-  assert.equal(delta(5, undefined), null);
-  assert.equal(delta(5, 0), 100);
-  assert.equal(delta(0, 0), 0);
-  assert.equal(delta(3, 2), 50);
+test('a trend day reads as written', () => {
   assert.equal(formatDay('2026-10-28'), 'Oct 28');
   assert.equal(formatDay('2026-01-01'), 'Jan 1', 'never shifted by a time zone');
 });
@@ -121,4 +116,16 @@ test('rows without a loaded split draw from their totals alone, and missing evid
   assert.equal(allSplit(instrumentRows(mapped)), false);
   assert.equal(allSplit(entityTypeRows(dashboardFromRpc(analytics))), true);
   assert.equal(allSplit(evidenceRows(dashboardFromRpc(analytics))), true);
+});
+
+test('the dashboard has no period comparison; its jump button reaches the chart request', () => {
+  const dashboard = readFileSync(join(process.cwd(), 'src', 'sections', 'dashboard', 'components', 'Dashboard', 'Dashboard.tsx'), 'utf8');
+  const chartRequest = readFileSync(
+    join(process.cwd(), 'src', 'sections', 'dashboard', 'components', 'ChartRequest', 'ChartRequest.tsx'),
+    'utf8',
+  );
+  assert.doesNotMatch(dashboard, /previous period|compare-period|setCompare|% vs\. previous/);
+  assert.match(dashboard, /Ask for a chart/);
+  assert.match(dashboard, /prefers-reduced-motion: reduce/);
+  assert.match(chartRequest, /id=\{CHART_REQUEST_ID\}/);
 });

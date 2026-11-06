@@ -27,6 +27,9 @@ const ChartJsView = dynamic(() => import('./ChartJsView').then((module) => modul
   loading: () => <Skeleton className="h-72 w-full rounded-2xl" />,
 });
 
+/** The section's anchor id: the dashboard's Ask for a chart button scrolls to it. */
+export const CHART_REQUEST_ID = 'ask-for-a-chart';
+
 const EXAMPLES = ['Incident distribution', 'Severity breakdown', 'Trends over time'];
 const KIND_LABELS: Record<ChartKind, string> = {
   bar: 'Bar',
@@ -51,7 +54,7 @@ export function ChartRequest() {
     if (text.trim()) void submit(text.trim(), chartKind);
   };
   return (
-    <Card className="mt-6 rounded-3xl border-ink/10 bg-white p-6 shadow-none" data-testid="chart-request">
+    <Card className="mt-6 rounded-3xl border-ink/10 bg-white p-6 shadow-none" data-testid="chart-request" id={CHART_REQUEST_ID}>
       <CardHeader className="gap-1 p-0">
         <CardTitle className="text-lg font-semibold text-ink">Ask for a chart</CardTitle>
         <CardDescription className="text-xs text-ink-caption">

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Area, AreaChart, Bar, BarChart, Cell, CartesianGrid, LabelList, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import type { DateRange } from 'react-day-picker';
-import { CalendarIcon } from 'lucide-react';
+import { CalendarIcon, ChartColumnIcon, LayersIcon } from 'lucide-react';
 import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
 import { href, type Filters, type LinkFilters, type Range } from '@/modules/dashboard/domain/links';
 import {
@@ -14,7 +14,6 @@ import {
   type BarRow,
   customWindow,
   dashboardView,
-  delta,
   entityTypeRows,
   evidenceRows,
   formatCalendarDay,
@@ -28,8 +27,6 @@ import {
 } from '@/modules/dashboard/domain/charts';
 import { getViewerTimeZone } from '@/lib/time';
 import { severityChartColor } from '@/lib/ui/severity';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -50,7 +47,7 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { cn } from 'cn';
-import { ChartRequest } from '@/sections/dashboard/components/ChartRequest';
+import { CHART_REQUEST_ID, ChartRequest } from '@/sections/dashboard/components/ChartRequest';
 
 const NONE: Filters = { type: '', severity: '', day: '', hour: '' };
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -80,7 +77,6 @@ export function Dashboard() {
   const [draft, setDraft] = useState<DateRange | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerFromSelect = useRef(false);
-  const [compare, setCompare] = useState(true);
   const [filters, setFilters] = useState<Filters>(NONE);
   const [error, setError] = useState('');
   const [timeZone, setTimeZone] = useState('UTC');
@@ -153,6 +149,14 @@ export function Dashboard() {
   const emptyText = active ? 'No reports match these filters.' : days === 'all' ? 'No reports yet.' : 'No reports in this period.';
   const panel = (content: (d: DashboardAnalytics) => ReactNode, skeletonHeight: string) =>
     data ? content(data) : <Skeleton className={cn('w-full rounded-xl', skeletonHeight)} />;
+  // The jump link: smooth unless the viewer prefers reduced motion, then focus the request box without scrolling twice.
+  const jumpToChartRequest = () => {
+    const section = document.getElementById(CHART_REQUEST_ID);
+    if (!section) return;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    section.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    section.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+  };
   return (
     <div className="mx-auto max-w-[1500px] px-4 pb-20 pt-8 sm:px-6 lg:px-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -165,17 +169,10 @@ export function Dashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="compare-period"
-              checked={compare}
-              disabled={days === 'all'}
-              onCheckedChange={(checked) => setCompare(Boolean(checked))}
-            />
-            <Label htmlFor="compare-period" className="cursor-pointer text-sm font-normal select-none">
-              vs. previous period
-            </Label>
-          </div>
+          <Button className="border-ink/10 bg-white font-normal text-ink" onClick={jumpToChartRequest} variant="outline">
+            <ChartColumnIcon data-icon="inline-start" />
+            Ask for a chart
+          </Button>
           <div className="flex flex-wrap items-center gap-2">
             <Select
               value={days}
@@ -300,7 +297,7 @@ export function Dashboard() {
           >
             {panel(
               (d) => (
-                <Total change={compare ? delta(d.total, d.previous?.total) : null} data={d} link={link} />
+                <Total data={d} link={link} />
               ),
               'h-48',
             )}
@@ -425,7 +422,7 @@ function NoData({ text }: { text: string }) {
   );
 }
 
-function Total({ data, change, link }: { data: DashboardAnalytics; change: number | null; link: (extra?: LinkFilters) => string }) {
+function Total({ data, link }: { data: DashboardAnalytics; link: (extra?: LinkFilters) => string }) {
   const parts = [
     { key: 'official', label: 'Official', value: data.official, swatch: 'bg-chart-1' },
     { key: 'not_official', label: 'Not yet official', value: data.notOfficial, swatch: 'bg-chart-3' },
@@ -436,12 +433,6 @@ function Total({ data, change, link }: { data: DashboardAnalytics; change: numbe
         <Link className="text-5xl font-semibold text-ink hover:underline" href={link()}>
           {data.total}
         </Link>
-        {change !== null && (
-          <p className="mt-1 text-xs text-ink-caption">
-            {change > 0 ? '+' : ''}
-            {change}% vs. previous
-          </p>
-        )}
       </div>
       <div aria-hidden="true" className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-ink/8">
         {parts.map(({ key, value, swatch }) => (
@@ -464,9 +455,15 @@ function Total({ data, change, link }: { data: DashboardAnalytics; change: numbe
         ))}
       </dl>
       {data.multipleVersions !== null && (
-        <p className="border-t border-ink/10 pt-3 text-sm text-ink/70">
-          <span className="font-semibold text-ink tabular-nums">{data.multipleVersions}</span> with more than one version
-        </p>
+        <dl className="flex items-center justify-between gap-3 rounded-xl border border-ink/10 bg-ink/5 px-3 py-2">
+          <dt className="flex min-w-0 items-center gap-1.5 text-xs text-ink/60">
+            <LayersIcon aria-hidden="true" className="size-3.5 shrink-0" />
+            Multiple versions
+          </dt>
+          <dd className="text-sm font-semibold text-ink tabular-nums" title="Counted reports whose video has more than one report version">
+            {data.multipleVersions}
+          </dd>
+        </dl>
       )}
       <p className="text-xs text-ink-caption">
         All time: {data.videos.uploaded} videos uploaded, {data.videos.withoutReport} without a report.
