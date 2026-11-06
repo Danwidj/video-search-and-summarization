@@ -1,0 +1,16 @@
+correction,subject,run,metric,original,corrected,failed_runs_added
+D2 final rows keep failed runs,nano-pipeline-nanoground,c3-track-b-contingency-nano-grounding,entity_recall,0.7048,0.6271,4
+D2 final rows keep failed runs,nano-pipeline-nanoground,c3-track-b-contingency-nano-grounding,entity_f1,0.4821,0.4625,4
+D2 final rows keep failed runs,nano-pipeline-nanoground,c3-track-b-contingency-nano-grounding,instrument_f1,0.1081,0.1053,4
+D2 final rows keep failed runs,nano-pipeline-nanoground,c3-track-b-contingency-nano-grounding,asset_f1,0.402,0.3883,4
+D2 final rows keep failed runs,nano-pipeline-nanoground,c3-track-b-contingency-nano-grounding,object_score,0.419,0.4034,4
+D2 final rows keep failed runs,nano-pipeline,c1b,entity_recall,0.7391,0.68,2
+D2 final rows keep failed runs,nano-pipeline,c1b,entity_f1,0.2282,0.2252,2
+D2 final rows keep failed runs,nano-pipeline,c1b,instrument_f1,0.2759,0.2759,2
+D2 final rows keep failed runs,nano-pipeline,c1b,asset_f1,0.3717,0.3717,2
+D2 final rows keep failed runs,nano-pipeline,c1b,object_score,0.2902,0.2886,2
+D2 final rows keep failed runs,super-pipeline,c1b,entity_recall,0.7045,0.7045,0
+D2 final rows keep failed runs,super-pipeline,c1b,entity_f1,0.5688,0.5688,0
+D2 final rows keep failed runs,super-pipeline,c1b,instrument_f1,0.1111,0.1111,0
+D2 final rows keep failed runs,super-pipeline,c1b,asset_f1,0.4037,0.4037,0
+D2 final rows keep failed runs,super-pipeline,c1b,object_score,0.4655,0.4655,0

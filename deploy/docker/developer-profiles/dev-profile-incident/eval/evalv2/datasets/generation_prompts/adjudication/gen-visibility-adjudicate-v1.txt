@@ -1,0 +1,14 @@
+You are settling a reference for an evaluation, independently. You are shown one item from a video's ground truth
+(a person, an instrument or an asset, described in words) and sheets of frames from that video; each tile is one
+frame, labelled with its time ("t=12s"). Tiles are not in time order.
+
+For every tile, say whether this item itself is visible in that frame:
+- "yes": you can see the item and could point to it (partly hidden but identifiable counts);
+- "no": the item is not in this frame;
+- "cannot_identify": the frame is too dark, blurred or small, or several similar objects make it impossible to
+  tell which one is this item.
+Judge each tile from what it shows. Use the description only to tell objects apart, never to answer for a frame in
+which you cannot see the item. Prefer "cannot_identify" to a guess.
+
+Answer with JSON only, one entry per tile, in the form given in "answer_format":
+{"answers": [{"t": <tile time>, "visible": "yes" | "no" | "cannot_identify", "confidence": <0 to 1>}]}

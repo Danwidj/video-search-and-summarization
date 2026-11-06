@@ -1,0 +1,77 @@
+corpus,provenance,tier,answered,planned,no_report,source,metric,value,n,ci_low,ci_high
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,exact_answer_accuracy,0.3333,6,0.0,0.6667
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,refusal_recall,,0,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,false_refusal_rate,0.25,16,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,judged_contradiction_rate,0.0833,12,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,judged_unsupported_claim_rate,0.0909,11,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,judged_fact_recall,0.89,10,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,citation_precision,1.0,11,1.0,1.0
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,citation_recall,0.6875,16,0.4375,0.875
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,citation_validity,1.0,11,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,retrieval_recall_at_5,0.1667,6,0.0,0.5
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,retrieval_coverage_at_5,0.3333,6,0.0,0.6667
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_proposed,16,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,retrieval_mrr_at_5,0.1667,6,0.0,0.5
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,exact_answer_accuracy,0.8356,73,0.7429,0.9143
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,refusal_recall,1.0,20,1.0,1.0
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,false_refusal_rate,0.0241,83,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,judged_contradiction_rate,0.05,80,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,judged_unsupported_claim_rate,0.0411,73,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,judged_fact_recall,,0,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,citation_precision,0.9818,55,0.9516,1.0
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,citation_recall,0.5882,83,0.4619,0.7034
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,citation_validity,0.6912,68,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,retrieval_recall_at_5,0.5736,14,0.3918,0.7554
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,retrieval_coverage_at_5,0.8,14,0.6429,0.9429
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,ai_validated,103,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,retrieval_mrr_at_5,0.8929,14,0.7143,1.0
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,exact_answer_accuracy,0.7975,79,0.7013,0.8824
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,refusal_recall,1.0,20,1.0,1.0
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,false_refusal_rate,0.0606,99,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,judged_contradiction_rate,0.0543,92,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,judged_unsupported_claim_rate,0.0476,84,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,judged_fact_recall,0.89,10,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,citation_precision,0.9848,66,0.959,1.0
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,citation_recall,0.6042,99,0.4889,0.7087
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,citation_validity,0.7342,79,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,retrieval_recall_at_5,0.4515,20,0.281,0.6294
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,retrieval_coverage_at_5,0.66,20,0.47,0.83
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,119,119,0,c3-chat-a5-oracle-judge/score-judged/report.json,retrieval_mrr_at_5,0.675,20,0.475,0.85
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,,,,c3-chat-a5-oracle-judge/score-judged/report.json,latency_ms_median,2008.4,125,,
+oracle,A5-c1 oracle corpus (frozen GT reports); references AI-generated,all,,,,c3-chat-a5-oracle-judge/score-judged/report.json,total_tokens,118384,125,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,exact_answer_accuracy,0.0,6,0.0,0.0
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,refusal_recall,,0,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,false_refusal_rate,0.3333,15,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,judged_contradiction_rate,0.9,10,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,judged_unsupported_claim_rate,0.0,9,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,judged_fact_recall,0.1278,9,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,citation_precision,1.0,9,1.0,1.0
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,citation_recall,0.6,15,0.3333,0.8667
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,citation_validity,1.0,9,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,retrieval_recall_at_5,0.1667,6,0.0,0.5
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,retrieval_coverage_at_5,0.3333,6,0.0,0.6667
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_proposed,15,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,retrieval_mrr_at_5,0.1667,6,0.0,0.5
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,exact_answer_accuracy,0.2059,68,0.1111,0.3125
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,refusal_recall,0.8824,17,0.7059,1.0
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,false_refusal_rate,0.1948,77,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,judged_contradiction_rate,0.75,64,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,judged_unsupported_claim_rate,0.0175,57,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,judged_fact_recall,,0,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,citation_precision,0.8649,37,0.7524,0.9537
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,citation_recall,0.3905,77,0.2965,0.4851
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,citation_validity,0.6038,53,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,retrieval_recall_at_5,0.3099,14,0.1515,0.4901
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,retrieval_coverage_at_5,0.7857,14,0.5714,0.9571
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",ai_validated,94,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,retrieval_mrr_at_5,0.4429,14,0.2464,0.6429
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,exact_answer_accuracy,0.1892,74,0.1026,0.2857
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,refusal_recall,0.8824,17,0.7059,1.0
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,false_refusal_rate,0.2174,92,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,judged_contradiction_rate,0.7703,74,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,judged_unsupported_claim_rate,0.0152,66,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,judged_fact_recall,0.1278,9,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,citation_precision,0.8913,46,0.7971,0.9643
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,citation_recall,0.4247,92,0.3266,0.5233
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,citation_validity,0.6613,62,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,retrieval_recall_at_5,0.2669,20,0.1257,0.4343
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,retrieval_coverage_at_5,0.65,20,0.45,0.84
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,109,119,10,c3-chat-a5-system-contingency-judge/score-judged/report.json,retrieval_mrr_at_5,0.36,20,0.1875,0.5375
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,,,,c3-chat-a5-system-contingency-judge/score-judged/report.json,latency_ms_median,1712.4,113,,
+system,"A5-c2 CONTINGENCY corpus (Nano-grounded pipeline reports), not the original Super corpus",all,,,,c3-chat-a5-system-contingency-judge/score-judged/report.json,total_tokens,169460,113,,

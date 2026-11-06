@@ -83,20 +83,42 @@ def frame_path(frames_root: Path | str, clip: str, t: float) -> str:
     return str(Path(frames_root) / clip / f"t{float(t):08.3f}.jpg")
 
 
+def clamp_times(times: Sequence[float], frame_end_s: float | None) -> tuple[list[float], list[float]]:
+    """``times`` split into those a decoder can return a frame for and those it cannot (C3-E, 2026-11-04).
+
+    A frame time is kept only when it falls before the end of the clip's last decodable frame (its presentation time
+    plus its duration, measured by ``scripts/v2_frame_limits.py``). The manifest's durations are rounded up to the
+    half second, so without this a clip's last planned frame can lie past its last frame (Assault018 at 12.5 s).
+    """
+    if frame_end_s is None:
+        return list(times), []
+    return [t for t in times if t < frame_end_s - 1e-9], [t for t in times if not t < frame_end_s - 1e-9]
+
+
 def plan(gt_index: Mapping[str, Any], clips: Sequence[str], durations: Mapping[str, float], *,
-         videos: Mapping[str, Path | str]) -> dict[str, Any]:
-    """Items, frame times, queries and the extraction plan for ``clips`` (only clips with at least one item)."""
+         videos: Mapping[str, Path | str], frame_ends: Mapping[str, float] | None = None) -> dict[str, Any]:
+    """Items, frame times, queries and the extraction plan for ``clips`` (only clips with at least one item).
+
+    ``frame_ends`` (clip to the end of its last decodable frame) drops planned times past it, and the plan lists every
+    dropped time under ``clamped``. Without it the plan is unchanged (the RA1 plan of 2026-11-02).
+    """
     items = items_for(gt_index, clips)
     with_items = [clip for clip in clips if any(item["clip"] == clip for item in items)]
-    times = {clip: {"generator": boxes.frame_plan(durations[clip]),
-                    "validator": boxes.frame_plan(durations[clip], offset_s=boxes.VALIDATOR_OFFSET_S)}
-             for clip in with_items}
+    times: dict[str, dict[str, list[float]]] = {}
+    clamped: dict[str, list[float]] = {}
+    for clip in with_items:
+        end = None if frame_ends is None else frame_ends[clip]
+        gen, gen_dropped = clamp_times(boxes.frame_plan(durations[clip]), end)
+        val, val_dropped = clamp_times(boxes.frame_plan(durations[clip], offset_s=boxes.VALIDATOR_OFFSET_S), end)
+        times[clip] = {"generator": gen, "validator": val}
+        if gen_dropped or val_dropped:
+            clamped[clip] = sorted(gen_dropped + val_dropped)
     queries = {clip: sorted({item["query"] for item in items if item["clip"] == clip}) for clip in with_items}
     extraction = {"clips": [{"clip": clip, "video": str(videos[clip]),
                              "times": sorted(set(times[clip]["generator"]) | set(times[clip]["validator"]))}
                             for clip in with_items]}
     return {"items": items, "clips": with_items, "times": times, "queries": queries, "extraction": extraction,
-            "durations": {clip: durations[clip] for clip in with_items}}
+            "durations": {clip: durations[clip] for clip in with_items}, "clamped": clamped}
 
 
 def _proposals(clip: str, times: Mapping[str, Sequence[float]], queries: Sequence[str], detector: Detector | None,
@@ -226,6 +248,7 @@ def run(planned: Mapping[str, Any], *, detector: Detector | None, generator: Pas
         "drawn_images": {"paths": len(images), "frames_in_packets": counts["generator_frames"]
                          + counts["validator_frames"]},
         "detectors": list(detectors.values()),
+        "clamped_frames": {clip: list(ts) for clip, ts in planned.get("clamped", {}).items()},
         "counts": dict(counts),
         "records": len(records),
         "tiers": {tier: tiers.get(tier, 0) for tier in ("ai_proposed", "ai_validated", "human_verified")},

@@ -1,0 +1,58 @@
+{
+ "0.2": {
+  "nano-direct": 0.609,
+  "gemma4-31b-openrouter": 0.705,
+  "qwen35-9b-openrouter": 0.728,
+  "omni-direct": 0.572,
+  "super-direct": 0.488
+ },
+ "0.25": {
+  "nano-direct": 0.593,
+  "gemma4-31b-openrouter": 0.705,
+  "qwen35-9b-openrouter": 0.71,
+  "omni-direct": 0.566,
+  "super-direct": 0.474
+ },
+ "0.3": {
+  "nano-direct": 0.57,
+  "gemma4-31b-openrouter": 0.699,
+  "qwen35-9b-openrouter": 0.697,
+  "omni-direct": 0.542,
+  "super-direct": 0.44
+ },
+ "0.35": {
+  "nano-direct": 0.531,
+  "gemma4-31b-openrouter": 0.677,
+  "qwen35-9b-openrouter": 0.638,
+  "omni-direct": 0.489,
+  "super-direct": 0.418
+ },
+ "0.4": {
+  "nano-direct": 0.46,
+  "gemma4-31b-openrouter": 0.627,
+  "qwen35-9b-openrouter": 0.588,
+  "omni-direct": 0.448,
+  "super-direct": 0.348
+ },
+ "0.45": {
+  "nano-direct": 0.376,
+  "gemma4-31b-openrouter": 0.549,
+  "qwen35-9b-openrouter": 0.481,
+  "omni-direct": 0.376,
+  "super-direct": 0.272
+ },
+ "0.5": {
+  "nano-direct": 0.301,
+  "gemma4-31b-openrouter": 0.496,
+  "qwen35-9b-openrouter": 0.327,
+  "omni-direct": 0.299,
+  "super-direct": 0.199
+ },
+ "0.6": {
+  "nano-direct": 0.164,
+  "gemma4-31b-openrouter": 0.291,
+  "qwen35-9b-openrouter": 0.169,
+  "omni-direct": 0.15,
+  "super-direct": 0.102
+ }
+}

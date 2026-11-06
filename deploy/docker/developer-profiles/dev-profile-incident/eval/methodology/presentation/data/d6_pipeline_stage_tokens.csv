@@ -1,0 +1,9 @@
+run,subject,stage,answered_items,tokens_median,tokens_total,calls_total
+c3-track-b-contingency-nano-grounding,nano-pipeline-nanoground,caption,30,9506,386723,151
+c3-track-b-contingency-nano-grounding,nano-pipeline-nanoground,grounding,50,1690,114805,367
+c3-track-b-contingency-nano-grounding,nano-pipeline-nanoground,inference,50,11255,575966,50
+c3-track-b-contingency-nano-grounding,nano-pipeline-nanoground,zoom,50,4859,330549,973
+c3-track-b-historical,super-pipeline,caption,2,145007,189390,18
+c3-track-b-historical,super-pipeline,grounding,2,1270,2125,10
+c3-track-b-historical,super-pipeline,inference,2,7181,14262,2
+c3-track-b-historical,super-pipeline,zoom,2,16000,23939,21

@@ -61,6 +61,56 @@
       "parent": null,
       "created": "2026-11-01",
       "notes": "Blind re-derivation of the spec from the request and the allowlist; never shown the expected spec."
+    },
+    {
+      "id": "gen-visibility-v1",
+      "purpose": "visibility_reference",
+      "role": "generator",
+      "file": "visibility_reference/gen-visibility-v1.txt",
+      "sha256": "58f2dc7c238e734105b9e4eca3c2ed58c3982277e2c80d75c3650f4c41cef482",
+      "parent": null,
+      "created": "2026-11-04",
+      "notes": "C3-E: per tile and item, visible yes/no/unclear on 3x3 contact sheets of the even seconds."
+    },
+    {
+      "id": "gen-visibility-validate-v1",
+      "purpose": "visibility_reference",
+      "role": "validator",
+      "file": "visibility_reference/gen-visibility-validate-v1.txt",
+      "sha256": "097959b7ef41bafc22ba7d30e75aaafcaac245c0727f562c3ad86517a81e16bd",
+      "parent": null,
+      "created": "2026-11-04",
+      "notes": "C3-E: blind second pass on the odd seconds; never shown the first pass."
+    },
+    {
+      "id": "gen-box-adjudicate-v1",
+      "purpose": "box_reference",
+      "role": "adjudicator",
+      "file": "adjudication/gen-box-adjudicate-v1.txt",
+      "sha256": "a5a6b6c292a6bc83cb75abc9d78ae5d5f90e57739e0a57b97cb23fce3eb7db42",
+      "parent": null,
+      "created": "2026-11-04",
+      "notes": "C3-E v0.2: blind adjudication of a contested box second; asked twice with candidate order reversed."
+    },
+    {
+      "id": "gen-visibility-adjudicate-v1",
+      "purpose": "visibility_reference",
+      "role": "adjudicator",
+      "file": "adjudication/gen-visibility-adjudicate-v1.txt",
+      "sha256": "ee6c74a51df2cf46474e3503f38baba4d768f6960277b09d212cfb7ba214320a",
+      "parent": null,
+      "created": "2026-11-04",
+      "notes": "C3-E v0.2: blind adjudication of non-consensus visibility seconds; asked twice with tile order shuffled."
+    },
+    {
+      "id": "gen-gt-discrepancy-check-v1",
+      "purpose": "gt_discrepancy",
+      "role": "adjudicator",
+      "file": "adjudication/gen-gt-discrepancy-check-v1.txt",
+      "sha256": "ca2bf1c82b4e3fbf3eb26e899da033ac26f18745a64c7f8746d4eebd8b780542",
+      "parent": null,
+      "created": "2026-11-04",
+      "notes": "C3-E v0.2: checks a suspected GT v1.0 wording problem against frames; the outcome is a note, never a GT edit."
     }
   ]
 }

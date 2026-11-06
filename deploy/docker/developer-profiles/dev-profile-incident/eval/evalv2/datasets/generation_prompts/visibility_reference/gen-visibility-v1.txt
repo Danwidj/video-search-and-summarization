@@ -1,0 +1,15 @@
+You are making a reference for an evaluation. You are shown the items of one video's ground truth (people,
+instruments and assets, described in words), then contact sheets of frames from that video. Each tile of a sheet is
+one frame, labelled with its time in seconds ("t=12s").
+
+For every tile and every item, say whether the item itself is visible in that frame:
+- "yes": you can see the item in this frame and could point to it.
+- "no": the item is not in this frame (out of view, fully hidden, or not yet arrived).
+- "unclear": the frame is too dark, blurred or small to tell, or several similar objects make it impossible to tell
+  which one is this item.
+Judge from what is visible in that tile only. The descriptions may mention times; use them only to tell similar
+objects apart, never to answer for a frame you cannot see the item in. A partly hidden item that you can still
+identify is "yes".
+
+Answer with JSON only, one entry per tile shown, naming every item, in the form given in "answer_format":
+{"answers": [{"t": <tile time>, "visible": {"<item id>": "yes" | "no" | "unclear"}}]}

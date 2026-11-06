@@ -35,8 +35,8 @@ from evalv2.core.hashing import sha256_bytes
 REGISTRY_DIR = Path(__file__).with_name("generation_prompts")
 REGISTRY_PATH = REGISTRY_DIR / "registry.json"
 ID_PATTERN = re.compile(r"^gen-[a-z0-9]+(?:-[a-z0-9]+)*-v\d+$")
-PURPOSES = ("box_reference", "chat_reference", "dashboard_reference", "matching_label")
-ROLES = ("generator", "validator")
+PURPOSES = ("box_reference", "visibility_reference", "gt_discrepancy", "chat_reference", "dashboard_reference", "matching_label")
+ROLES = ("generator", "validator", "adjudicator")
 ENTRY_KEYS = ("id", "purpose", "role", "file", "sha256", "parent", "created", "notes")
 
 

@@ -1,0 +1,172 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C3-E Box Review</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1b; --muted:#666; --line:#d6d6d6; --card:#f6f6f4; --ok:#1f7a3a; --warn:#a15c00; --bad:#b42318; --sel:#0b5cad; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141414; --fg:#eee; --muted:#aaa; --line:#333; --card:#1d1d1d; --ok:#5fc27e; --warn:#e0a040; --bad:#f07b6f; --sel:#6aa8ff; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, sans-serif; }
+  header { position:sticky; top:0; z-index:2; display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 16px; background:var(--card); border-bottom:1px solid var(--line); }
+  main { padding:12px 16px; max-width:1400px; margin:0 auto; }
+  select, button, input { font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:4px 8px; }
+  button.on { outline:2px solid var(--sel); }
+  .layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:16px; }
+  @media (max-width: 900px) { .layout { grid-template-columns:minmax(0,1fr); } }
+  video { width:100%; background:#000; border-radius:6px; }
+  .item { border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:14px; background:var(--card); }
+  .flags span { display:inline-block; font-size:12px; padding:0 6px; margin-right:4px; border-radius:10px; border:1px solid var(--warn); color:var(--warn); }
+  .boxes { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:10px; margin-top:8px; }
+  .frame { border:1px solid var(--line); border-radius:6px; padding:6px; background:var(--bg); min-width:0; }
+  .frame canvas { width:100%; height:auto; cursor:crosshair; display:block; }
+  .frame .row { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .done { border-color:var(--ok); }
+  .muted { color:var(--muted); }
+  .status { font-size:12px; }
+  code { word-break:break-all; }
+</style>
+</head>
+<body>
+<header>
+  <strong>C3-E review</strong>
+  <label>Reviewer <select id="reviewer"></select></label>
+  <label>Mode <select id="mode"><option value="primary">primary</option><option value="second">second review</option></select></label>
+  <label>Clip <select id="clip"></select></label>
+  <button id="export">Export decisions (JSON)</button>
+  <span id="progress" class="muted"></span>
+</header>
+<main>
+  <p class="muted">Check every item: set its visible intervals from the video (whole seconds, several intervals allowed), then decide each frame: accept the box, redraw it (drag on the frame), or reject it. Flags show where the two AI passes disagreed or were unsure; review those first. Decisions autosave in this browser; export the JSON and hand it to the evaluation lead.</p>
+  <div class="layout">
+    <div><video id="video" controls preload="metadata"></video>
+      <p class="muted">Current time: <span id="now">0.0</span> s. Use the item buttons to copy it into an interval.</p></div>
+    <div id="items"></div>
+  </div>
+</main>
+<script>
+"use strict";
+let DATA = null, CONFIG = null, state = {};
+const $ = (id) => document.getElementById(id);
+const store = { get(k) { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } },
+                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+const key = () => `c3e:${$("mode").value}:${$("reviewer").value}:${$("clip").value}`;
+
+function spansToText(spans) { return spans.map(s => s[0] === s[1] ? `${s[0]}` : `${s[0]}-${s[1]}`).join(", "); }
+function textToSpans(text) {
+  const out = [];
+  for (const part of text.split(",").map(p => p.trim()).filter(Boolean)) {
+    const m = part.match(/^(\d+)\s*(?:-\s*(\d+))?$/);
+    if (!m) return null;
+    const a = +m[1], b = m[2] === undefined ? a : +m[2];
+    if (b < a) return null;
+    out.push([a, b]);
+  }
+  return out.sort((x, y) => x[0] - y[0]);
+}
+
+function myClips() {
+  const me = $("reviewer").value, mode = $("mode").value;
+  if (mode === "primary") return Object.keys(CONFIG.primary).filter(c => CONFIG.primary[c] === me).sort();
+  const keys = Object.keys(CONFIG.second).filter(k => CONFIG.second[k] === me);
+  return [...new Set(keys.map(k => DATA.items[k].clip))].sort();
+}
+function myItems(clip) {
+  const mode = $("mode").value, me = $("reviewer").value;
+  return Object.values(DATA.items).filter(i => i.clip === clip && (mode === "primary" || CONFIG.second[i.key] === me))
+    .sort((a, b) => b.priority - a.priority || a.key.localeCompare(b.key));
+}
+
+function draw(canvas, img, box, pending) {
+  const ctx = canvas.getContext("2d");
+  canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+  ctx.drawImage(img, 0, 0);
+  const rect = (b, colour, dash) => { if (!b) return; const [y1, x1, y2, x2] = b;
+    ctx.setLineDash(dash ? [10, 6] : []); ctx.lineWidth = Math.max(2, canvas.width / 320); ctx.strokeStyle = colour;
+    ctx.strokeRect(x1 / 1000 * canvas.width, y1 / 1000 * canvas.height, (x2 - x1) / 1000 * canvas.width, (y2 - y1) / 1000 * canvas.height); };
+  rect(box, "#00e05a", false); rect(pending, "#ffd000", true);
+}
+
+function renderClip() {
+  const clip = $("clip").value, holder = $("items"); holder.innerHTML = "";
+  if (!clip) { $("progress").textContent = "No clips assigned to this reviewer in this mode."; return; }
+  $("video").src = `videos/${clip}.mp4`;
+  state = store.get(key()) || {};
+  for (const item of myItems(clip)) {
+    const s = state[item.key] = state[item.key] || { visible_spans: item.visible_spans.map(x => x.slice()), boxes: {} };
+    const div = document.createElement("div"); div.className = "item";
+    div.innerHTML = `<div><strong>${item.item_id}</strong> <span class="muted">${item.kind}</span> — ${escapeHtml(item.text)}</div>
+      <div class="flags">${item.flags.map(f => `<span>${f}</span>`).join("")}</div>
+      <div class="row" style="margin-top:6px">Visible intervals (s): <input size="28" value="${spansToText(s.visible_spans)}">
+      <button data-a="start">start = now</button><button data-a="end">end = now</button>
+      <span class="muted">AI proposal: ${spansToText(item.visible_spans) || "never visible"}</span></div>
+      <div class="boxes"></div>`;
+    const input = div.querySelector("input");
+    input.addEventListener("change", () => { const v = textToSpans(input.value);
+      input.style.borderColor = v ? "" : "var(--bad)"; if (v) { s.visible_spans = v; save(); } });
+    div.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => {
+      const t = Math.floor($("video").currentTime);
+      if (b.dataset.a === "start") s.visible_spans.push([t, t]); else if (s.visible_spans.length) s.visible_spans[s.visible_spans.length - 1][1] = Math.max(t, s.visible_spans[s.visible_spans.length - 1][0]);
+      s.visible_spans.sort((x, y) => x[0] - y[0]); input.value = spansToText(s.visible_spans); save(); }));
+    const grid = div.querySelector(".boxes");
+    for (const row of item.boxes) grid.appendChild(frameCard(item, row, s));
+    holder.appendChild(div);
+  }
+  progress();
+}
+
+function frameCard(item, row, s) {
+  const card = document.createElement("div"); card.className = "frame";
+  const d = s.boxes[row.second] || {};
+  card.innerHTML = `<canvas></canvas><div class="status muted">t = ${row.second} s · ${row.status.replace("_", " ")}</div>
+    <div class="row"><button data-d="accept">Accept</button><button data-d="redraw">Redraw (drag)</button>
+    <button data-d="reject_not_visible">Not visible</button><button data-d="reject_not_identifiable">Not identifiable</button></div>`;
+  const canvas = card.querySelector("canvas"), img = new Image();
+  img.onload = () => draw(canvas, img, row.box, d.box); img.src = `frames/${item.clip}/t${row.second.toFixed(3).padStart(8, "0")}.jpg`;
+  const mark = () => { card.querySelectorAll("button[data-d]").forEach(b => b.classList.toggle("on", b.dataset.d === (s.boxes[row.second] || {}).decision));
+    card.classList.toggle("done", !!(s.boxes[row.second] || {}).decision); };
+  card.querySelectorAll("button[data-d]").forEach(b => b.addEventListener("click", () => {
+    if (b.dataset.d === "accept" && !row.box) { alert("There is no proposed box at this second: redraw it or reject it."); return; }
+    if (b.dataset.d === "redraw") { canvas.dataset.drawing = "1"; return; }
+    s.boxes[row.second] = { second: row.second, decision: b.dataset.d }; draw(canvas, img, row.box, null); mark(); save(); }));
+  let start = null;
+  const pos = (e) => { const r = canvas.getBoundingClientRect(); return [Math.min(1000, Math.max(0, (e.clientY - r.top) / r.height * 1000)), Math.min(1000, Math.max(0, (e.clientX - r.left) / r.width * 1000))]; };
+  canvas.addEventListener("pointerdown", (e) => { if (canvas.dataset.drawing === "1") start = pos(e); });
+  canvas.addEventListener("pointermove", (e) => { if (start) { const p = pos(e); draw(canvas, img, row.box, box(start, p)); } });
+  canvas.addEventListener("pointerup", (e) => { if (!start) return; const b = box(start, pos(e)); start = null; canvas.dataset.drawing = "";
+    if (b[2] - b[0] < 5 || b[3] - b[1] < 5) { draw(canvas, img, row.box, null); return; }
+    s.boxes[row.second] = { second: row.second, decision: "redraw", box: b }; draw(canvas, img, row.box, b); mark(); save(); });
+  mark();
+  return card;
+}
+const box = (a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])].map(v => Math.round(v * 10) / 10);
+function escapeHtml(t) { const d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
+function save() { store.set(key(), state); progress(); }
+function progress() {
+  const items = myItems($("clip").value); let done = 0, total = 0;
+  for (const i of items) { total += i.boxes.length; done += i.boxes.filter(r => ((state[i.key] || {}).boxes || {})[r.second]).length; }
+  $("progress").textContent = `${done}/${total} frames decided in this clip`;
+}
+function exportJson() {
+  const clip = $("clip").value, items = {};
+  for (const i of myItems(clip)) { const s = state[i.key] || { visible_spans: [], boxes: {} };
+    items[i.key] = { visible_spans: s.visible_spans, boxes: Object.values(s.boxes) }; }
+  const body = { version: "c3e-review-v1", reviewer: $("reviewer").value, mode: $("mode").value, clip, at: new Date().toISOString(), items };
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(body, null, 1)], { type: "application/json" }));
+  a.download = `c3e-review-${body.mode}-${body.reviewer}-${clip}.json`; a.click();
+}
+function fillClips() { const c = $("clip"); c.innerHTML = ""; for (const clip of myClips()) c.add(new Option(clip, clip)); renderClip(); }
+
+Promise.all([fetch("review-data.json").then(r => r.json()), fetch("review-config.json").then(r => r.json())]).then(([d, c]) => {
+  DATA = d; CONFIG = c;
+  for (const r of CONFIG.reviewers) $("reviewer").add(new Option(r, r));
+  ["reviewer", "mode"].forEach(id => $(id).addEventListener("change", fillClips));
+  $("clip").addEventListener("change", renderClip); $("export").addEventListener("click", exportJson);
+  $("video").addEventListener("timeupdate", () => { $("now").textContent = $("video").currentTime.toFixed(1); });
+  fillClips();
+}).catch(e => { $("items").textContent = "Could not load review-data.json / review-config.json: " + e; });
+</script>
+</body>
+</html>

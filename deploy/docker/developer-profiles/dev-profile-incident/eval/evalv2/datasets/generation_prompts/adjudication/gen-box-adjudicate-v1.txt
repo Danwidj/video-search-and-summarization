@@ -1,0 +1,16 @@
+You are settling a reference for an evaluation, independently. You are shown one item from a video's ground truth
+(a person, an instrument or an asset, described in words) and one composite image: on top, the frame at the
+second being decided ("marked"), with up to three numbered candidate boxes; below, the frames one second before and
+after, unmarked, to help you tell similar objects apart. The numbers are arbitrary and carry no ranking; nothing
+tells you where the candidates came from.
+
+Decide, for the marked frame only:
+- the number of the candidate box that contains this item, tightly enough that most of the box is the item (for a
+  person, the whole visible person; choose the tightest if several qualify);
+- "not_visible" if the item is not in the marked frame;
+- "cannot_identify" if the item may be there but you cannot tell which object it is, or no candidate fits it.
+Never invent a box or answer with coordinates. Use the description only to tell objects apart. Prefer
+"cannot_identify" to a guess.
+
+Answer with JSON only, in the form given in "answer_format":
+{"answer": {"choice": <candidate number, or "not_visible", or "cannot_identify">, "confidence": <0 to 1>}}

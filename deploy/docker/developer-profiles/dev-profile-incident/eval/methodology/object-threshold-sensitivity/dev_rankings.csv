@@ -1,0 +1,9 @@
+split,tau,order,same_as_040,swaps_vs_040,first_share_nano-direct,first_share_gemma4-31b-openrouter,first_share_qwen35-9b-openrouter,first_share_omni-direct,super_object_score_incomplete_or_dev
+dev,0.2,qwen35-9b-openrouter > gemma4-31b-openrouter > nano-direct > omni-direct,False,2,0.0395,0.116,0.844,0.0005,0.603
+dev,0.25,qwen35-9b-openrouter > gemma4-31b-openrouter > omni-direct > nano-direct,False,1,0.032,0.1385,0.829,0.0005,0.58
+dev,0.3,qwen35-9b-openrouter > gemma4-31b-openrouter > omni-direct > nano-direct,False,1,0.031,0.25,0.718,0.001,0.5678
+dev,0.35,qwen35-9b-openrouter > gemma4-31b-openrouter > nano-direct > omni-direct,False,2,0.0415,0.4055,0.55,0.003,0.5476
+dev,0.4,gemma4-31b-openrouter > qwen35-9b-openrouter > omni-direct > nano-direct,True,0,0.0395,0.5815,0.3555,0.0235,0.4851
+dev,0.45,gemma4-31b-openrouter > qwen35-9b-openrouter > omni-direct > nano-direct,True,0,0.0305,0.7655,0.1705,0.0335,0.3785
+dev,0.5,gemma4-31b-openrouter > qwen35-9b-openrouter > nano-direct > omni-direct,False,1,0.0335,0.901,0.0525,0.013,0.3101
+dev,0.6,gemma4-31b-openrouter > qwen35-9b-openrouter > omni-direct > nano-direct,True,0,0.0055,0.897,0.082,0.0155,0.156

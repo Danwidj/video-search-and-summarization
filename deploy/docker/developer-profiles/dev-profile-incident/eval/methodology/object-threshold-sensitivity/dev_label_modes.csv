@@ -1,0 +1,17 @@
+side_of_040,label,mode,pairs
+above,cannot_tell,distinct_similar,1
+above,cannot_tell,general_vs_specific,1
+above,cannot_tell,too_generic,15
+above,different,distinct_similar,8
+above,different,role_confusion,2
+above,same,same_exact,9
+above,same,synonym,14
+below,cannot_tell,distinct_similar,3
+below,cannot_tell,general_vs_specific,7
+below,cannot_tell,too_generic,23
+below,different,distinct_similar,19
+below,different,role_confusion,13
+below,same,general_vs_specific,6
+below,same,role_confusion,2
+below,same,same_exact,7
+below,same,synonym,10

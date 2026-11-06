@@ -1,0 +1,6 @@
+model,judged,fail_to_pass_050_to_040,of_which_type_correct,scores_035_to_055,scores_exactly_040,scores_045_to_049,scores_050_to_055,mean,median
+Cosmos 3 Nano,95,3,3,3,3,0,0,0.302,0.2
+Nemotron 3 Nano Omni,63,4,4,5,4,0,1,0.456,0.55
+Gemma 4 31B,65,3,3,3,3,0,0,0.556,0.8
+Qwen3.5-9B,64,4,4,6,4,0,2,0.367,0.3
+Cosmos 3 Super (INCOMPLETE snapshot),26,0,0,0,0,0,0,0.371,0.25

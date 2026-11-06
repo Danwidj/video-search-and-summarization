@@ -190,3 +190,28 @@ def test_the_detector_timeout_grows_with_the_clip_so_long_clips_finish():
 
     d = SubprocessDetector(command=["x"])
     assert d.timeout_for(10) == 3600.0 and d.timeout_for(393) == 393 * 30.0 and d.timeout_for(666) == 666 * 30.0
+
+
+def test_clamp_drops_frame_times_past_the_last_decodable_frame():
+    from evalv2.references import ra1
+
+    kept, dropped = ra1.clamp_times([11.0, 11.5, 12.0, 12.5], 12.0333)
+    assert kept == [11.0, 11.5, 12.0] and dropped == [12.5]
+    assert ra1.clamp_times([1.0, 2.0], None) == ([1.0, 2.0], [])
+    # A time exactly at the end of the last frame is past it (Explosion019: last frame 11.9333 + 0.0333).
+    assert ra1.clamp_times([11.5, 12.0], 11.9667)[1] == [12.0]
+
+
+def test_plan_with_frame_ends_lists_clamped_times_and_keeps_other_clips_unchanged():
+    from evalv2.references import ra1
+
+    gt = {"by_incident_id": {
+        c: {"category": "Assault", "p1_shaped": {"entities": [{"entity_id": "E1", "type": "human", "description": "x"}],
+                                                 "instruments": [], "assets": []}} for c in ("A", "B")}}
+    durations = {"A": 13.0, "B": 5.5}
+    base = ra1.plan(gt, ["A", "B"], durations, videos={"A": "a.mp4", "B": "b.mp4"})
+    fixed = ra1.plan(gt, ["A", "B"], durations, videos={"A": "a.mp4", "B": "b.mp4"}, frame_ends={"A": 12.0333, "B": 6.0})
+    assert base["clamped"] == {} and fixed["clamped"] == {"A": [12.5]}
+    assert fixed["times"]["B"] == base["times"]["B"]
+    assert 12.5 not in fixed["times"]["A"]["validator"] and fixed["times"]["A"]["generator"][-1] == 12.0
+    assert fixed["extraction"]["clips"][1] == base["extraction"]["clips"][1]

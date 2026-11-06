@@ -1,0 +1,26 @@
+model,category,judged,pass_050,pass_040,rate_050,rate_040,small_sample
+Cosmos 3 Nano,Animal,20,8,8,0.4,0.4,False
+Cosmos 3 Nano,Assault,15,2,3,0.133,0.2,True
+Cosmos 3 Nano,Burglary,20,6,7,0.3,0.35,False
+Cosmos 3 Nano,Explosion,20,9,10,0.45,0.5,False
+Cosmos 3 Nano,RoadAccidents,20,3,3,0.15,0.15,False
+Nemotron 3 Nano Omni,Animal,9,3,5,0.333,0.556,True
+Nemotron 3 Nano Omni,Assault,12,7,8,0.583,0.667,True
+Nemotron 3 Nano Omni,Burglary,20,8,8,0.4,0.4,False
+Nemotron 3 Nano Omni,Explosion,13,10,10,0.769,0.769,True
+Nemotron 3 Nano Omni,RoadAccidents,9,4,5,0.444,0.556,True
+Gemma 4 31B,Animal,11,2,2,0.182,0.182,True
+Gemma 4 31B,Assault,13,12,12,0.923,0.923,True
+Gemma 4 31B,Burglary,20,15,18,0.75,0.9,False
+Gemma 4 31B,Explosion,12,10,10,0.833,0.833,True
+Gemma 4 31B,RoadAccidents,9,3,3,0.333,0.333,True
+Qwen3.5-9B,Animal,12,5,5,0.417,0.417,True
+Qwen3.5-9B,Assault,11,4,4,0.364,0.364,True
+Qwen3.5-9B,Burglary,9,3,4,0.333,0.444,True
+Qwen3.5-9B,Explosion,15,10,11,0.667,0.733,True
+Qwen3.5-9B,RoadAccidents,17,4,6,0.235,0.353,True
+Cosmos 3 Super (INCOMPLETE snapshot),Animal,5,3,3,0.6,0.6,True
+Cosmos 3 Super (INCOMPLETE snapshot),Assault,4,1,1,0.25,0.25,True
+Cosmos 3 Super (INCOMPLETE snapshot),Burglary,5,3,3,0.6,0.6,True
+Cosmos 3 Super (INCOMPLETE snapshot),Explosion,5,1,1,0.2,0.2,True
+Cosmos 3 Super (INCOMPLETE snapshot),RoadAccidents,7,3,3,0.429,0.429,True

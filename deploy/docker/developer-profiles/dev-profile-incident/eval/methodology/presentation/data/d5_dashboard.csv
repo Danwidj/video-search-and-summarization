@@ -1,0 +1,11 @@
+subject,provenance,tier,source,metric,value,numerator,denominator,ci_low,ci_high
+ultra-chart,original C3,ai_proposed,c3-dashboard/scoring/evalv2-dashboard-score-v1/primary/dashboard-summary.json,exact_spec_accuracy,0.95,57,60,0.8889,1.0
+ultra-chart,original C3,ai_proposed,c3-dashboard/scoring/evalv2-dashboard-score-v1/primary/dashboard-summary.json,figure_accuracy,0.96,72,75,0.9067,1.0
+ultra-chart,original C3,ai_proposed,c3-dashboard/scoring/evalv2-dashboard-score-v1/primary/dashboard-summary.json,invalid_reply_rate,0.0,0,75,0.0,0.0
+ultra-chart,original C3,ai_proposed,c3-dashboard/scoring/evalv2-dashboard-score-v1/primary/dashboard-summary.json,overall_accuracy,0.96,72,75,0.9067,1.0
+ultra-chart,original C3,ai_proposed,c3-dashboard/scoring/evalv2-dashboard-score-v1/primary/dashboard-summary.json,refusal_precision,0.8333,15,18,0.6364,1.0
+ultra-chart,original C3,ai_proposed,c3-dashboard/scoring/evalv2-dashboard-score-v1/primary/dashboard-summary.json,refusal_recall,1.0,15,15,1.0,1.0
+ultra-chart,original C3,ai_proposed,c3-dashboard/scoring/evalv2-dashboard-score-v1/primary/dashboard-summary.json,errors_false_accept,0,,75,,
+ultra-chart,original C3,ai_proposed,c3-dashboard/scoring/evalv2-dashboard-score-v1/primary/dashboard-summary.json,errors_false_refusal,3,,75,,
+ultra-chart,original C3,ai_proposed,c3-dashboard/scoring/evalv2-dashboard-score-v1/primary/dashboard-summary.json,errors_invalid_reply,0,,75,,
+ultra-chart,original C3,ai_proposed,c3-dashboard/scoring/evalv2-dashboard-score-v1/primary/dashboard-summary.json,errors_wrong_spec,0,,75,,

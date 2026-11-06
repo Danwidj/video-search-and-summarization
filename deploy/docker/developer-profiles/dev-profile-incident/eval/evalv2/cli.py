@@ -376,6 +376,9 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument("--detector-command", help="the offline detector (JSON protocol; weights are X5)")
             command.add_argument("--frames-root", type=Path, help="extracted frames (default <out>/frames)")
             command.add_argument("--frame-error", type=float, default=0.01, help="dry run: scripted error per frame")
+            command.add_argument("--frame-limits", type=Path,
+                                 help="JSON from scripts/v2_frame_limits.py: drop planned times past each clip's "
+                                      "last decodable frame (C3-E)")
             command.add_argument("--plan-only", action="store_true",
                                  help="write the extraction plan and the plan's counts, then stop (no detector)")
         if name == "ra2":
@@ -462,7 +465,11 @@ def _references(args: argparse.Namespace) -> int:
     videos = {clip["incident_id"]: root / Path(clip["local_path"]).relative_to("eval_data")
               for clip in manifest["clips"]}
     chosen = [clip for name in halves for clip in clips[name]]
-    planned = ra1.plan(gt, chosen, durations, videos=videos)
+    frame_ends = None
+    if args.frame_limits:
+        limits = json.loads(args.frame_limits.read_text(encoding="utf-8"))
+        frame_ends = {clip: float(row["end_s"]) for clip, row in limits["clips"].items()}
+    planned = ra1.plan(gt, chosen, durations, videos=videos, frame_ends=frame_ends)
     frames_root = args.frames_root or args.out / "frames"
     ensure_private(args.out)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -471,7 +478,8 @@ def _references(args: argparse.Namespace) -> int:
     if args.plan_only:
         frames = sum(len(c["times"]) for c in planned["extraction"]["clips"])
         print(json.dumps({"run": "RA1", "plan_only": True, "clips": len(planned["clips"]),
-                          "items": len(planned["items"]), "frames": frames, "extraction_plan": str(extraction)},
+                          "items": len(planned["items"]), "frames": frames, "extraction_plan": str(extraction),
+                          "clamped": planned["clamped"]},
                          indent=2))
         return 0
     generator, validator, dataset = _passes(args, ra1.GENERATOR_PROMPT, ra1.VALIDATOR_PROMPT)

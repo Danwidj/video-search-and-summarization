@@ -1,0 +1,228 @@
+{
+ "dev": {
+  "runs": [
+   "c1a",
+   "c1a-recovery",
+   "c1e-openrouter-gemma4-31b",
+   "c1f-openrouter-qwen35-9b"
+  ],
+  "rows": 250,
+  "clips": 25,
+  "all_clips_in_half": true,
+  "outcomes": {
+   "gemma4-31b-openrouter|contract_invalid": 26,
+   "gemma4-31b-openrouter|scored": 24,
+   "nano-direct|parse_failure": 2,
+   "nano-direct|scored": 48,
+   "omni-direct|contract_invalid": 20,
+   "omni-direct|parse_failure": 4,
+   "omni-direct|scored": 26,
+   "qwen35-9b-openrouter|contract_invalid": 2,
+   "qwen35-9b-openrouter|http_error": 1,
+   "qwen35-9b-openrouter|parse_failure": 9,
+   "qwen35-9b-openrouter|scored": 38,
+   "super-direct|contract_invalid": 1,
+   "super-direct|scored": 49
+  },
+  "audit": {
+   "rows_with_model_output": 249,
+   "rows_without_model_output": 1
+  },
+  "replay": {
+   "blocks_compared": 747,
+   "stored_pairs": 377,
+   "blocks_with_a_different_pairing": 2,
+   "differences": []
+  },
+  "totals_at_040": {
+   "gemma4-31b-openrouter|assets": [
+    25,
+    11,
+    35
+   ],
+   "gemma4-31b-openrouter|entities": [
+    30,
+    12,
+    70
+   ],
+   "gemma4-31b-openrouter|instruments": [
+    3,
+    0,
+    33
+   ],
+   "nano-direct|assets": [
+    40,
+    96,
+    20
+   ],
+   "nano-direct|entities": [
+    49,
+    464,
+    51
+   ],
+   "nano-direct|instruments": [
+    6,
+    9,
+    30
+   ],
+   "omni-direct|assets": [
+    13,
+    11,
+    47
+   ],
+   "omni-direct|entities": [
+    24,
+    24,
+    76
+   ],
+   "omni-direct|instruments": [
+    3,
+    7,
+    33
+   ],
+   "qwen35-9b-openrouter|assets": [
+    22,
+    43,
+    36
+   ],
+   "qwen35-9b-openrouter|entities": [
+    34,
+    28,
+    60
+   ],
+   "qwen35-9b-openrouter|instruments": [
+    7,
+    7,
+    25
+   ],
+   "super-direct|assets": [
+    44,
+    113,
+    16
+   ],
+   "super-direct|entities": [
+    69,
+    62,
+    31
+   ],
+   "super-direct|instruments": [
+    8,
+    18,
+    28
+   ]
+  }
+ },
+ "evaluation": {
+  "runs": [
+   "c3-track-a-switchyard",
+   "c3-track-a-switchyard-recovery",
+   "c3-track-a-switchyard-recovery-a5a",
+   "c3-track-a-openrouter"
+  ],
+  "rows": 466,
+  "clips": 55,
+  "all_clips_in_half": true,
+  "outcomes": {
+   "gemma4-31b-openrouter|contract_invalid": 42,
+   "gemma4-31b-openrouter|http_error": 3,
+   "gemma4-31b-openrouter|scored": 65,
+   "nano-direct|parse_failure": 15,
+   "nano-direct|scored": 95,
+   "omni-direct|contract_invalid": 23,
+   "omni-direct|parse_failure": 24,
+   "omni-direct|scored": 63,
+   "qwen35-9b-openrouter|http_error": 5,
+   "qwen35-9b-openrouter|parse_failure": 40,
+   "qwen35-9b-openrouter|scored": 65,
+   "super-direct|scored": 26
+  },
+  "audit": {
+   "rows_with_model_output": 458,
+   "rows_without_model_output": 8
+  },
+  "replay": {
+   "blocks_compared": 1371,
+   "stored_pairs": 625,
+   "blocks_without_stored_counts": 3,
+   "blocks_with_a_different_pairing": 2,
+   "differences": []
+  },
+  "totals_at_040": {
+   "gemma4-31b-openrouter|assets": [
+    44,
+    33,
+    86
+   ],
+   "gemma4-31b-openrouter|entities": [
+    84,
+    17,
+    147
+   ],
+   "gemma4-31b-openrouter|instruments": [
+    4,
+    9,
+    24
+   ],
+   "nano-direct|assets": [
+    78,
+    136,
+    56
+   ],
+   "nano-direct|entities": [
+    119,
+    195,
+    119
+   ],
+   "nano-direct|instruments": [
+    9,
+    26,
+    19
+   ],
+   "omni-direct|assets": [
+    27,
+    38,
+    107
+   ],
+   "omni-direct|entities": [
+    72,
+    36,
+    166
+   ],
+   "omni-direct|instruments": [
+    3,
+    18,
+    25
+   ],
+   "qwen35-9b-openrouter|assets": [
+    55,
+    52,
+    73
+   ],
+   "qwen35-9b-openrouter|entities": [
+    72,
+    34,
+    157
+   ],
+   "qwen35-9b-openrouter|instruments": [
+    3,
+    10,
+    25
+   ],
+   "super-direct|assets": [
+    21,
+    138,
+    14
+   ],
+   "super-direct|entities": [
+    33,
+    46,
+    26
+   ],
+   "super-direct|instruments": [
+    1,
+    2,
+    5
+   ]
+  }
+ }
+}

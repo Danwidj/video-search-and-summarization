@@ -1,0 +1,41 @@
+model,subject,status,threshold,frozen_threshold,valid_outputs,judged,unjudged_valid,planned,passing,pass_rate_valid,ci95_low,ci95_high,change_pp_vs_050,pass_rate_of_planned,rank_complete_models,bootstrap_share_ranked_first
+Cosmos 3 Nano,nano-direct,complete,0.3,False,95,95,0,110,37,0.3895,0.2553,0.5269,9.5,0.3364,4,0.0
+Cosmos 3 Nano,nano-direct,complete,0.35,False,95,95,0,110,31,0.3263,0.1979,0.4565,3.2,0.2818,4,0.0
+Cosmos 3 Nano,nano-direct,complete,0.4,False,95,95,0,110,31,0.3263,0.1979,0.4565,3.2,0.2818,4,0.0
+Cosmos 3 Nano,nano-direct,complete,0.45,False,95,95,0,110,28,0.2947,0.1758,0.4184,0.0,0.2545,4,0.0
+Cosmos 3 Nano,nano-direct,complete,0.5,True,95,95,0,110,28,0.2947,0.1758,0.4184,0.0,0.2545,4,0.0
+Cosmos 3 Nano,nano-direct,complete,0.55,False,95,95,0,110,28,0.2947,0.1758,0.4184,0.0,0.2545,4,0.0
+Cosmos 3 Nano,nano-direct,complete,0.6,False,95,95,0,110,28,0.2947,0.1758,0.4184,0.0,0.2545,4,0.0
+Cosmos 3 Nano,nano-direct,complete,0.7,False,95,95,0,110,23,0.2421,0.134,0.3579,-5.3,0.2091,4,0.0
+Nemotron 3 Nano Omni,omni-direct,complete,0.3,False,63,63,0,110,39,0.619,0.4828,0.7536,11.1,0.3545,2,0.151
+Nemotron 3 Nano Omni,omni-direct,complete,0.35,False,63,63,0,110,36,0.5714,0.431,0.7143,6.3,0.3273,2,0.092
+Nemotron 3 Nano Omni,omni-direct,complete,0.4,False,63,63,0,110,36,0.5714,0.431,0.7143,6.3,0.3273,2,0.092
+Nemotron 3 Nano Omni,omni-direct,complete,0.45,False,63,63,0,110,32,0.5079,0.3607,0.6452,0.0,0.2909,2,0.038
+Nemotron 3 Nano Omni,omni-direct,complete,0.5,True,63,63,0,110,32,0.5079,0.3607,0.6452,0.0,0.2909,2,0.038
+Nemotron 3 Nano Omni,omni-direct,complete,0.55,False,63,63,0,110,32,0.5079,0.3607,0.6452,0.0,0.2909,2,0.039
+Nemotron 3 Nano Omni,omni-direct,complete,0.6,False,63,63,0,110,31,0.4921,0.3462,0.6269,-1.6,0.2818,2,0.025
+Nemotron 3 Nano Omni,omni-direct,complete,0.7,False,63,63,0,110,23,0.3651,0.2281,0.5,-14.3,0.2091,2,0.01
+Gemma 4 31B,gemma4-31b-openrouter,complete,0.3,False,65,65,0,110,46,0.7077,0.5538,0.8438,6.2,0.4182,1,0.828
+Gemma 4 31B,gemma4-31b-openrouter,complete,0.35,False,65,65,0,110,45,0.6923,0.5323,0.8333,4.6,0.4091,1,0.902
+Gemma 4 31B,gemma4-31b-openrouter,complete,0.4,False,65,65,0,110,45,0.6923,0.5323,0.8333,4.6,0.4091,1,0.902
+Gemma 4 31B,gemma4-31b-openrouter,complete,0.45,False,65,65,0,110,42,0.6462,0.4833,0.7937,0.0,0.3818,1,0.955
+Gemma 4 31B,gemma4-31b-openrouter,complete,0.5,True,65,65,0,110,42,0.6462,0.4833,0.7937,0.0,0.3818,1,0.955
+Gemma 4 31B,gemma4-31b-openrouter,complete,0.55,False,65,65,0,110,42,0.6462,0.4833,0.7937,0.0,0.3818,1,0.957
+Gemma 4 31B,gemma4-31b-openrouter,complete,0.6,False,65,65,0,110,42,0.6462,0.4833,0.7937,0.0,0.3818,1,0.973
+Gemma 4 31B,gemma4-31b-openrouter,complete,0.7,False,65,65,0,110,37,0.5692,0.4062,0.7231,-7.7,0.3364,1,0.986
+Qwen3.5-9B,qwen35-9b-openrouter,complete,0.3,False,65,64,1,110,34,0.5312,0.3833,0.6769,12.5,0.3091,3,0.02
+Qwen3.5-9B,qwen35-9b-openrouter,complete,0.35,False,65,64,1,110,30,0.4688,0.3235,0.6143,6.2,0.2727,3,0.006
+Qwen3.5-9B,qwen35-9b-openrouter,complete,0.4,False,65,64,1,110,30,0.4688,0.3235,0.6143,6.2,0.2727,3,0.006
+Qwen3.5-9B,qwen35-9b-openrouter,complete,0.45,False,65,64,1,110,26,0.4062,0.2676,0.5472,0.0,0.2364,3,0.007
+Qwen3.5-9B,qwen35-9b-openrouter,complete,0.5,True,65,64,1,110,26,0.4062,0.2676,0.5472,0.0,0.2364,3,0.007
+Qwen3.5-9B,qwen35-9b-openrouter,complete,0.55,False,65,64,1,110,25,0.3906,0.25,0.5357,-1.6,0.2273,3,0.004
+Qwen3.5-9B,qwen35-9b-openrouter,complete,0.6,False,65,64,1,110,24,0.375,0.2414,0.5172,-3.1,0.2182,3,0.003
+Qwen3.5-9B,qwen35-9b-openrouter,complete,0.7,False,65,64,1,110,19,0.2969,0.1791,0.4242,-10.9,0.1727,3,0.004
+Cosmos 3 Super (INCOMPLETE snapshot),super-direct,incomplete snapshot,0.3,False,26,26,0,110,13,0.5,0.3043,0.7,7.7,0.1182,,
+Cosmos 3 Super (INCOMPLETE snapshot),super-direct,incomplete snapshot,0.35,False,26,26,0,110,11,0.4231,0.2308,0.625,0.0,0.1,,
+Cosmos 3 Super (INCOMPLETE snapshot),super-direct,incomplete snapshot,0.4,False,26,26,0,110,11,0.4231,0.2308,0.625,0.0,0.1,,
+Cosmos 3 Super (INCOMPLETE snapshot),super-direct,incomplete snapshot,0.45,False,26,26,0,110,11,0.4231,0.2308,0.625,0.0,0.1,,
+Cosmos 3 Super (INCOMPLETE snapshot),super-direct,incomplete snapshot,0.5,True,26,26,0,110,11,0.4231,0.2308,0.625,0.0,0.1,,
+Cosmos 3 Super (INCOMPLETE snapshot),super-direct,incomplete snapshot,0.55,False,26,26,0,110,11,0.4231,0.2308,0.625,0.0,0.1,,
+Cosmos 3 Super (INCOMPLETE snapshot),super-direct,incomplete snapshot,0.6,False,26,26,0,110,11,0.4231,0.2308,0.625,0.0,0.1,,
+Cosmos 3 Super (INCOMPLETE snapshot),super-direct,incomplete snapshot,0.7,False,26,26,0,110,9,0.3462,0.1667,0.5417,-7.7,0.0818,,

@@ -1,0 +1,6 @@
+stage,tokens_total,calls_total,runs_with_stage,tokens_per_answered_run
+caption,784274,306,61,7765.1
+grounding,274477,690,101,2717.6
+inference,1154697,101,101,11432.6
+object_tracking,478746,1324,83,4740.1
+zoom,692779,1890,101,6859.2

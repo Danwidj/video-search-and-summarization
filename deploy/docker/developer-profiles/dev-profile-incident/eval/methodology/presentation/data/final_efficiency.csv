@@ -1,0 +1,3 @@
+config,attempts,outcome_answered,outcome_contract_rejected,answered,tokens_median,tokens_p95,tokens_total_answered,latency_p50_answered_s,latency_p95_answered_s,latency_p50_all_s,latency_p95_all_s,outcome_budget_exceeded,outcome_ok,outcome_rate_limited,outcome_timeout
+"VSS final (Nano-only, no person tracking)",110,101,9,101,28500,77555,3384973,69.13,153.44,69.85,188.68,,,,
+Direct Nano (stored C3),185,,,110,9922,29712,1412923,7.85,104.2,8.82,125.26,16,110,18,41

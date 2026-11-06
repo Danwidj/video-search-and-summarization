@@ -1,0 +1,59 @@
+{
+ "code_sha256": {
+  "evalv2/datasets/generation_prompts/registry.json": "ab394d86cdec838d8188a3aa54211c29e75ced97eef136d00a098fa7624f6b36",
+  "evalv2/references/boxes.py": "81c821d57896f3fd9a076041bde60929493339d1cef91566695ff165873640da",
+  "evalv2/references/c3e.py": "921c8ae616c77cd5e46f070e41a82a055b4c7b28d2651d7ed1c621917ec70718",
+  "evalv2/references/c3e_review.py": "9d320c2e330bcc118754a5ef462aeaddf578c0513c6ee01a5352f0ba681e541a",
+  "evalv2/references/c3e_score.py": "acc8b25c7ed4248e9ff91cda60139df1b8107c94d90aab0a3cd1e8f63b1450d8",
+  "evalv2/references/c3e_v2.py": "578c326bebc2a60e7c0553a26d72bb96a447e944d79136d1e621387b73b0e98c",
+  "evalv2/tasks/crops/scoring.py": "c91634c459c654ce1244936904260cbb99a10e201a48c4b1d396d1ac2314a09a",
+  "evalv2/tasks/pipeline/crops.py": "6108eb5b3b5d479d0aebf74a8af11d1dc09f0bea2a0fc2246ba1fa7f1149b2bb",
+  "methodology/c3e-preregistration-v0.2.md": "f3033d23ebad82aaa5244656391013ff7b84fdcb83ff3f123f686e72ad7d1fa7",
+  "scripts/v2_c3e.py": "7c8b6788a3eade3205eceb3db8da1f93941a4d28b36893e3eade18a1f68751f8",
+  "scripts/v2_c3e_dev_report.py": "9c50f8e5c28db9566a5613775c4bb8dd1698bcbbb9ad04907e0655b24ca559fb"
+ },
+ "data_sha256": {
+  "dev_box_tiers": "751815ff64199c854546408416f381abda19b93f2f1506be3c4579254b667854",
+  "dev_sampling": "fc49ac65311ea8f0b9b1ccb802dd6bcd492f1306ec9b4dea71b43e71e0c9530c",
+  "dev_visibility_tiers": "866551c080000d4bb0211f37a7597a070173edae648c17237541ade92743e93f",
+  "frame_limits": "72f38c2127ea5d5a064f65582285ba5e631bbdf95abe9bd2a259023b76aa2bd3",
+  "gt_notes_v1": "0fb8925324588e26e4d83068b3cffa8e2a0d456d27abeed500466416fb6cf8cc",
+  "test_visibility_tiers_first_pass": "c5a51edd3edd829f03af9b1e9ee09eaf70d2fdab4a9a871a2a000909291a06a2"
+ },
+ "manifest_version": "c3e-freeze-manifest-v1",
+ "prompts_sha256": {
+  "gen-box-adjudicate-v1": "a5a6b6c292a6bc83cb75abc9d78ae5d5f90e57739e0a57b97cb23fce3eb7db42",
+  "gen-box-select-v1": "489e194fa6d18b2a812f856d516b4aeea85c79986b22b769896f67f2182117a6",
+  "gen-box-validate-v1": "8cfa761953c6b3029a94f8a5614e30c7762a1aacca2c7d7cf6a882f544433ca5",
+  "gen-gt-discrepancy-check-v1": "ca2bf1c82b4e3fbf3eb26e899da033ac26f18745a64c7f8746d4eebd8b780542",
+  "gen-visibility-adjudicate-v1": "ee6c74a51df2cf46474e3503f38baba4d768f6960277b09d212cfb7ba214320a",
+  "gen-visibility-v1": "58f2dc7c238e734105b9e4eca3c2ed58c3982277e2c80d75c3650f4c41cef482",
+  "gen-visibility-validate-v1": "097959b7ef41bafc22ba7d30e75aaafcaac245c0727f562c3ad86517a81e16bd"
+ },
+ "rules": {
+  "adjudication_confidence": 0.6,
+  "agree_iou": 0.5,
+  "bootstrap": {
+   "resamples": 10000,
+   "seed": 20261027,
+   "unit": "clip"
+  },
+  "correct_evidence_iou": 0.5,
+  "decoy_near_s": 3,
+  "decoy_ratio": 4,
+  "decoy_seed": 20261104,
+  "map_iou": 0.3,
+  "min_cell": 20,
+  "same_candidate_iou": 0.7,
+  "sampler_version": "c3e-sampler-v1",
+  "sensitivity_iou": [
+   0.3,
+   0.5,
+   0.7
+  ],
+  "visibility_adjudication_max_seconds": 12,
+  "visibility_step_s": 2
+ },
+ "statement": "Frozen before the evaluation half's anchors are drawn. Development results (C1b) were scored earlier under the same rules; no rule, threshold or reference was changed after them.",
+ "study": "C3-E v0.2, AI-referenced evidence-crop evaluation (not human-verified)"
+}

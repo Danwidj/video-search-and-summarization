@@ -1,0 +1,123 @@
+{
+ "bootstrap": {
+  "resamples": 2000,
+  "seed": 20261027,
+  "unit": "clip"
+ },
+ "checks": {
+  "a5s_read": false,
+  "dev": {
+   "blocks_compared": 747,
+   "blocks_pairing_differently_ties": 2,
+   "chart_cell_mismatches": 0,
+   "chart_cells": 15,
+   "count_mismatches": 0,
+   "invalid_blocks_with_predictions": 0,
+   "lowest_stored_similarity": 0.401543,
+   "stored_pairs": 377,
+   "stored_pairs_at_or_above_075": 11,
+   "sweep_cell_mismatches": 0,
+   "sweep_cells": 120
+  },
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "evaluation": {
+   "blocks_compared": 1371,
+   "blocks_pairing_differently_ties": 2,
+   "chart_cell_mismatches": 0,
+   "chart_cells": 15,
+   "count_mismatches": 0,
+   "invalid_blocks_with_predictions": 0,
+   "lowest_stored_similarity": 0.400143,
+   "stored_pairs": 625,
+   "stored_pairs_at_or_above_075": 38,
+   "sweep_cell_mismatches": 0,
+   "sweep_cells": 120
+  },
+  "match_threshold": 0.4,
+  "methodology_version": "evaluation-methodology-v1.2"
+ },
+ "common_valid_items": {
+  "dev": 6,
+  "evaluation": 23
+ },
+ "inputs_sha256": {
+  "split-v2.json": "1625d5753fde1fab",
+  "track-a-report.json": "d5f7e439706a6685"
+ },
+ "rejected_replies": {
+  "dev": {
+   "Gemma": {
+    "WINDOW_BEYOND_VIDEO": 26,
+    "parsed": 26
+   },
+   "Nano": {
+    "INVALID_JSON": 2,
+    "unparseable": 2
+   },
+   "Omni": {
+    "ID_NOT_SEQUENTIAL_ENTITY": 10,
+    "INSTRUMENT_HOLDER_UNKNOWN": 5,
+    "INVALID_JSON": 4,
+    "WINDOW_BEYOND_VIDEO": 10,
+    "parsed": 20,
+    "unparseable": 4
+   },
+   "Qwen": {
+    "EMPTY_CONTENT": 9,
+    "WINDOW_BEYOND_VIDEO": 2,
+    "parsed": 2,
+    "unparseable": 9
+   },
+   "Super": {
+    "INSTRUMENT_HOLDER_UNKNOWN": 1,
+    "parsed": 1
+   }
+  },
+  "evaluation": {
+   "Gemma": {
+    "WINDOW_BEYOND_VIDEO": 41,
+    "WINDOW_END_BEFORE_START": 1,
+    "parsed": 42
+   },
+   "Nano": {
+    "INVALID_JSON": 15,
+    "unparseable": 15
+   },
+   "Omni": {
+    "EMPTY_CONTENT": 12,
+    "ID_NOT_SEQUENTIAL_ENTITY": 7,
+    "INVALID_JSON": 11,
+    "WINDOW_BEYOND_VIDEO": 16,
+    "parsed": 23,
+    "unparseable": 24
+   },
+   "Qwen": {
+    "EMPTY_CONTENT": 40,
+    "unparseable": 40
+   },
+   "Super": {}
+  }
+ },
+ "row_audit": {
+  "dev": {
+   "rows_with_model_output": 249,
+   "rows_without_model_output": 1
+  },
+  "evaluation": {
+   "rows_with_model_output": 458,
+   "rows_without_model_output": 8
+  }
+ },
+ "split": {
+  "dev": 25,
+  "evaluation": 55,
+  "overlap": 0
+ },
+ "super_before_recovery": {
+  "super_c1a_only_rows": 36,
+  "super_c1a_only_valid_f1": {
+   "assets": 0.402516,
+   "instruments": 0.146341
+  }
+ }
+}

@@ -1,0 +1,210 @@
+{
+ "common_clips": 16,
+ "common_pairs": 22,
+ "ranks": {
+  "0.30": [
+   "Gemma 4 31B",
+   "Nemotron 3 Nano Omni",
+   "Qwen3.5-9B",
+   "Cosmos 3 Nano"
+  ],
+  "0.35": [
+   "Gemma 4 31B",
+   "Nemotron 3 Nano Omni",
+   "Qwen3.5-9B",
+   "Cosmos 3 Nano"
+  ],
+  "0.40": [
+   "Gemma 4 31B",
+   "Nemotron 3 Nano Omni",
+   "Qwen3.5-9B",
+   "Cosmos 3 Nano"
+  ],
+  "0.45": [
+   "Gemma 4 31B",
+   "Nemotron 3 Nano Omni",
+   "Qwen3.5-9B",
+   "Cosmos 3 Nano"
+  ],
+  "0.50": [
+   "Gemma 4 31B",
+   "Nemotron 3 Nano Omni",
+   "Qwen3.5-9B",
+   "Cosmos 3 Nano"
+  ],
+  "0.55": [
+   "Gemma 4 31B",
+   "Nemotron 3 Nano Omni",
+   "Qwen3.5-9B",
+   "Cosmos 3 Nano"
+  ],
+  "0.60": [
+   "Gemma 4 31B",
+   "Nemotron 3 Nano Omni",
+   "Qwen3.5-9B",
+   "Cosmos 3 Nano"
+  ],
+  "0.70": [
+   "Gemma 4 31B",
+   "Nemotron 3 Nano Omni",
+   "Qwen3.5-9B",
+   "Cosmos 3 Nano"
+  ]
+ },
+ "repeatability": {
+  "all_kinds_flip_050": 15,
+  "all_kinds_pairs_multi": 138,
+  "flip_rate_by_threshold": {
+   "0.30": {
+    "flips": 2,
+    "rate": 0.065
+   },
+   "0.35": {
+    "flips": 2,
+    "rate": 0.065
+   },
+   "0.40": {
+    "flips": 2,
+    "rate": 0.065
+   },
+   "0.45": {
+    "flips": 4,
+    "rate": 0.129
+   },
+   "0.50": {
+    "flips": 4,
+    "rate": 0.129
+   },
+   "0.55": {
+    "flips": 4,
+    "rate": 0.129
+   },
+   "0.60": {
+    "flips": 5,
+    "rate": 0.161
+   },
+   "0.70": {
+    "flips": 5,
+    "rate": 0.161
+   }
+  },
+  "pairs_with_repeat_verdicts": 31,
+  "range_max": 0.6,
+  "range_mean": 0.103,
+  "score_differs": 14,
+  "unique_description_pairs": 259
+ },
+ "review_sample": {
+  "categories": [
+   [
+    "Burglary",
+    24
+   ],
+   [
+    "Explosion",
+    15
+   ],
+   [
+    "RoadAccidents",
+    15
+   ],
+   [
+    "Assault",
+    14
+   ],
+   [
+    "Animal",
+    9
+   ]
+  ],
+  "n": 77,
+  "score_bands": [
+   [
+    "0.6",
+    14
+   ],
+   [
+    "0.4",
+    12
+   ],
+   [
+    "0.3",
+    12
+   ],
+   [
+    "0.0",
+    10
+   ],
+   [
+    "0.2",
+    6
+   ],
+   [
+    "0.8",
+    5
+   ],
+   [
+    "0.7",
+    5
+   ],
+   [
+    "0.9",
+    4
+   ],
+   [
+    "0.85",
+    3
+   ],
+   [
+    "0.1",
+    2
+   ],
+   [
+    "0.75",
+    1
+   ],
+   [
+    "0.95",
+    1
+   ],
+   [
+    "0.5",
+    1
+   ],
+   [
+    "0.55",
+    1
+   ]
+  ],
+  "subjects": [
+   [
+    "qwen35-9b-openrouter",
+    19
+   ],
+   [
+    "nano-direct",
+    17
+   ],
+   [
+    "omni-direct",
+    17
+   ],
+   [
+    "gemma4-31b-openrouter",
+    12
+   ],
+   [
+    "super-direct",
+    12
+   ]
+  ]
+ },
+ "unjudged": [
+  [
+   "qwen35-9b-openrouter",
+   "Animal004",
+   2,
+   "judge reply truncated at max_tokens=1500 (finish_reason=length)"
+  ]
+ ]
+}

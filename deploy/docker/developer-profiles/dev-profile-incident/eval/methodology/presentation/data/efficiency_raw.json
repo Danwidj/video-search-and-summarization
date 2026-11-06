@@ -1,0 +1,318 @@
+{
+ "contingency_track_b_nano_grounding": {
+  "runs": [
+   "/home/hengz/evalv2-data/v2/runs/c3-track-b-contingency-nano-grounding"
+  ],
+  "subjects": {
+   "nano-pipeline-nanoground": {
+    "attempts": {
+     "answered": 50,
+     "contract_rejected": 4,
+     "request_failed": 1
+    },
+    "attempts_per_item": 1.0,
+    "attempts_total": 55,
+    "calls_with_cost": 0,
+    "final_rows_by_outcome": {
+     "contract_invalid": 2,
+     "http_error": 1,
+     "parse_failure": 2,
+     "scored": 50
+    },
+    "items_with_a_checkpoint_row": 55,
+    "latency_s_all_attempts": {
+     "n": 55,
+     "p50": 43.75,
+     "p95": 184.38
+    },
+    "latency_s_answered": {
+     "n": 50,
+     "p50": 41.64,
+     "p95": 94.46
+    },
+    "measured_cost_usd": 0.0,
+    "models": [
+     "nvidia/cosmos-3-nano-reasoner"
+    ],
+    "tokens_answered_total": 1408043,
+    "tokens_per_answered_attempt_median": 23813.0
+   }
+  }
+ },
+ "original_dashboard": {
+  "runs": [
+   "/home/hengz/evalv2-data/v2/runs/c3-dashboard"
+  ],
+  "subjects": {
+   "ultra-chart": {
+    "attempts": {
+     "ok": 75
+    },
+    "attempts_per_item": 1.0,
+    "attempts_total": 75,
+    "calls_with_cost": 0,
+    "final_rows_by_outcome": {
+     "ok": 75
+    },
+    "items_with_a_checkpoint_row": 75,
+    "latency_s_all_attempts": {
+     "n": 75,
+     "p50": 1.19,
+     "p95": 5.89
+    },
+    "latency_s_answered": {
+     "n": 75,
+     "p50": 1.19,
+     "p95": 5.89
+    },
+    "measured_cost_usd": 0.0,
+    "models": [
+     "nvidia/nemotron-3-ultra"
+    ],
+    "tokens_answered_total": 70135,
+    "tokens_per_answered_attempt_median": 942.0
+   }
+  }
+ },
+ "original_track_a_openrouter": {
+  "runs": [
+   "/home/hengz/evalv2-data/v2/runs/c3-track-a-openrouter"
+  ],
+  "subjects": {
+   "gemma4-31b-openrouter": {
+    "attempts": {
+     "http_error": 3,
+     "ok": 107
+    },
+    "attempts_per_item": 1.0,
+    "attempts_total": 110,
+    "calls_with_cost": 107,
+    "final_rows_by_outcome": {
+     "contract_invalid": 42,
+     "http_error": 3,
+     "scored": 65
+    },
+    "items_with_a_checkpoint_row": 110,
+    "latency_s_all_attempts": {
+     "n": 110,
+     "p50": 14.78,
+     "p95": 37.42
+    },
+    "latency_s_answered": {
+     "n": 107,
+     "p50": 15.17,
+     "p95": 37.88
+    },
+    "measured_cost_usd": 0.119693,
+    "models": [
+     "google/gemma-4-31b-it"
+    ],
+    "tokens_answered_total": 722031,
+    "tokens_per_answered_attempt_median": 6727.0
+   },
+   "qwen35-9b-openrouter": {
+    "attempts": {
+     "http_error": 5,
+     "ok": 105
+    },
+    "attempts_per_item": 1.0,
+    "attempts_total": 110,
+    "calls_with_cost": 105,
+    "final_rows_by_outcome": {
+     "http_error": 5,
+     "parse_failure": 40,
+     "scored": 65
+    },
+    "items_with_a_checkpoint_row": 110,
+    "latency_s_all_attempts": {
+     "n": 110,
+     "p50": 59.42,
+     "p95": 336.82
+    },
+    "latency_s_answered": {
+     "n": 105,
+     "p50": 63.05,
+     "p95": 341.21
+    },
+    "measured_cost_usd": 0.255476,
+    "models": [
+     "qwen/qwen3.5-9b"
+    ],
+    "tokens_answered_total": 1699825,
+    "tokens_per_answered_attempt_median": 13319.0
+   }
+  }
+ },
+ "original_track_a_switchyard": {
+  "runs": [
+   "/home/hengz/evalv2-data/v2/runs/c3-track-a-switchyard",
+   "/home/hengz/evalv2-data/v2/runs/c3-track-a-switchyard-recovery",
+   "/home/hengz/evalv2-data/v2/runs/c3-track-a-switchyard-recovery-a5a",
+   "/home/hengz/evalv2-data/v2/runs/c3-track-a-switchyard-recovery-a5s"
+  ],
+  "subjects": {
+   "nano-direct": {
+    "attempts": {
+     "budget_exceeded": 16,
+     "ok": 110,
+     "rate_limited": 18,
+     "timeout": 41
+    },
+    "attempts_per_item": 1.682,
+    "attempts_total": 185,
+    "calls_with_cost": 0,
+    "final_rows_by_outcome": {
+     "parse_failure": 15,
+     "scored": 95
+    },
+    "items_with_a_checkpoint_row": 110,
+    "latency_s_all_attempts": {
+     "n": 169,
+     "p50": 8.82,
+     "p95": 125.25
+    },
+    "latency_s_answered": {
+     "n": 110,
+     "p50": 7.82,
+     "p95": 103.59
+    },
+    "measured_cost_usd": 0.0,
+    "models": [
+     "nvidia/cosmos-3-nano-reasoner"
+    ],
+    "tokens_answered_total": 1412923,
+    "tokens_per_answered_attempt_median": 9922.0
+   },
+   "omni-direct": {
+    "attempts": {
+     "budget_exceeded": 1,
+     "ok": 109,
+     "rate_limited": 104
+    },
+    "attempts_per_item": 1.963,
+    "attempts_total": 214,
+    "calls_with_cost": 0,
+    "final_rows_by_outcome": {
+     "contract_invalid": 23,
+     "parse_failure": 23,
+     "scored": 63
+    },
+    "items_with_a_checkpoint_row": 109,
+    "latency_s_all_attempts": {
+     "n": 213,
+     "p50": 13.03,
+     "p95": 67.13
+    },
+    "latency_s_answered": {
+     "n": 109,
+     "p50": 23.96,
+     "p95": 67.95
+    },
+    "measured_cost_usd": 0.0,
+    "models": [
+     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+    ],
+    "tokens_answered_total": 2211479,
+    "tokens_per_answered_attempt_median": 18398.0
+   },
+   "super-direct": {
+    "attempts": {
+     "ok": 50,
+     "rate_limited": 37,
+     "timeout": 83
+    },
+    "attempts_per_item": 3.148,
+    "attempts_total": 170,
+    "calls_with_cost": 0,
+    "final_rows_by_outcome": {
+     "scored": 50,
+     "timeout": 4
+    },
+    "items_with_a_checkpoint_row": 54,
+    "latency_s_all_attempts": {
+     "n": 170,
+     "p50": 115.7,
+     "p95": 125.32
+    },
+    "latency_s_answered": {
+     "n": 50,
+     "p50": 40.15,
+     "p95": 114.5
+    },
+    "measured_cost_usd": 0.0,
+    "models": [
+     "nvidia/cosmos-3-super-reasoner"
+    ],
+    "tokens_answered_total": 456664,
+    "tokens_per_answered_attempt_median": 7216.5
+   }
+  }
+ },
+ "original_track_b_historical": {
+  "runs": [
+   "/home/hengz/evalv2-data/v2/runs/c3-track-b-historical"
+  ],
+  "subjects": {
+   "nano-pipeline": {
+    "attempts": {
+     "budget_exceeded": 4,
+     "request_failed": 1
+    },
+    "attempts_per_item": 1.0,
+    "attempts_total": 5,
+    "calls_with_cost": 0,
+    "final_rows_by_outcome": {
+     "budget_exceeded": 4,
+     "http_error": 1
+    },
+    "items_with_a_checkpoint_row": 5,
+    "latency_s_all_attempts": {
+     "n": 1,
+     "p50": 125.56,
+     "p95": 125.56
+    },
+    "latency_s_answered": {
+     "n": 0,
+     "p50": null,
+     "p95": null
+    },
+    "measured_cost_usd": 0.0,
+    "models": [
+     "nvidia/cosmos-3-nano-reasoner"
+    ],
+    "tokens_answered_total": 0,
+    "tokens_per_answered_attempt_median": null
+   },
+   "super-pipeline": {
+    "attempts": {
+     "answered": 2,
+     "request_failed": 2
+    },
+    "attempts_per_item": 1.0,
+    "attempts_total": 4,
+    "calls_with_cost": 0,
+    "final_rows_by_outcome": {
+     "http_error": 2,
+     "scored": 2
+    },
+    "items_with_a_checkpoint_row": 4,
+    "latency_s_all_attempts": {
+     "n": 4,
+     "p50": 241.51,
+     "p95": 525.0
+    },
+    "latency_s_answered": {
+     "n": 2,
+     "p50": 365.24,
+     "p95": 542.43
+    },
+    "measured_cost_usd": 0.0,
+    "models": [
+     "nvidia/cosmos-3-super-reasoner"
+    ],
+    "tokens_answered_total": 229716,
+    "tokens_per_answered_attempt_median": 114858.0
+   }
+  }
+ }
+}

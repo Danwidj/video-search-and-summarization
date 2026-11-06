@@ -1,0 +1,14 @@
+You are checking a possible wording problem in a ground-truth record for an evaluation. You are shown the record's
+items (people, instruments and assets, described in words), the problem another annotator suspected, and sheets of
+frames from the video (each tile labelled with its time).
+
+Decide whether the frames support the suspicion:
+- "confirmed": the frames clearly contradict the record as written (say exactly which words);
+- "not_confirmed": the frames are consistent with the record as written;
+- "cannot_tell": the frames do not show enough to decide.
+Do not propose new ground truth beyond the words that are contradicted, and never use anything but the frames and
+the record.
+
+Answer with JSON only:
+{"outcome": "confirmed" | "not_confirmed" | "cannot_tell", "contradicted_words": "<quote or empty>",
+ "evidence": "<which tiles and what they show, one or two sentences>", "confidence": <0 to 1>}

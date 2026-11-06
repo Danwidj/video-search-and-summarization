@@ -1,0 +1,9 @@
+kind,half,view,models,order,scores
+assets,dev,valid,four complete models,Gemma > Omni > Qwen > Nano,Gemma=0.704 Omni=0.500 Qwen=0.423 Nano=0.408
+assets,dev,outputs,four complete models,Gemma > Nano > Qwen > Omni,Gemma=0.521 Nano=0.408 Qwen=0.358 Omni=0.310
+assets,evaluation,valid,four complete models,Gemma > Qwen > Nano > Omni,Gemma=0.591 Qwen=0.573 Nano=0.463 Omni=0.391
+assets,evaluation,outputs,four complete models,Qwen > Nano > Gemma > Omni,Qwen=0.468 Nano=0.448 Gemma=0.425 Omni=0.271
+instruments,dev,valid,four complete models,Qwen > Nano > Omni > Gemma,Qwen=0.350 Nano=0.235 Omni=0.214 Gemma=0.207
+instruments,dev,outputs,four complete models,Qwen > Nano > Gemma > Omni,Qwen=0.304 Nano=0.235 Gemma=0.154 Omni=0.130
+instruments,evaluation,valid,four complete models,Nano > Gemma > Qwen > Omni,Nano=0.321 Gemma=0.276 Qwen=0.261 Omni=0.140
+instruments,evaluation,outputs,four complete models,Nano > Gemma > Qwen > Omni,Nano=0.286 Gemma=0.195 Qwen=0.146 Omni=0.122

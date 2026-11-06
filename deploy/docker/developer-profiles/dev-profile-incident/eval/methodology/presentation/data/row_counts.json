@@ -1,0 +1,14 @@
+{
+ "track_a": {
+  "nano-direct": 110,
+  "omni-direct": 110,
+  "super-direct": 50,
+  "gemma4-31b-openrouter": 110,
+  "qwen35-9b-openrouter": 110
+ },
+ "v1": 55,
+ "contingency_final": 50,
+ "original_track_b_final": 2,
+ "dev_a": 250,
+ "dev_b_final": 47
+}

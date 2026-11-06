@@ -1,0 +1,69 @@
+config,provenance,split,subject,stage,kind,tp,fp,fn,precision,recall,f1
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,nano-direct,p1,entities,119,195,119,0.379,0.5,0.4312
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,nano-direct,p1,instruments,9,26,19,0.2571,0.3214,0.2857
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,nano-direct,p1,assets,78,136,56,0.3645,0.5821,0.4483
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,nano-direct,p1,object_score (mean of entity F1 and pooled instrument+asset F1),206,357,194,,,0.4273
+"Track A direct VLM, frozen P1 v4",original-C3 (INCOMPLETE: Super outage),test-55,super-direct,p1,entities,63,68,43,0.4809,0.5943,0.5316
+"Track A direct VLM, frozen P1 v4",original-C3 (INCOMPLETE: Super outage),test-55,super-direct,p1,instruments,2,9,9,0.1818,0.1818,0.1818
+"Track A direct VLM, frozen P1 v4",original-C3 (INCOMPLETE: Super outage),test-55,super-direct,p1,assets,39,187,24,0.1726,0.619,0.2699
+"Track A direct VLM, frozen P1 v4",original-C3 (INCOMPLETE: Super outage),test-55,super-direct,p1,object_score (mean of entity F1 and pooled instrument+asset F1),104,264,76,,,0.3977
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,omni-direct,p1,entities,72,36,166,0.6667,0.3025,0.4162
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,omni-direct,p1,instruments,3,18,25,0.1429,0.1071,0.1224
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,omni-direct,p1,assets,27,38,107,0.4154,0.2015,0.2714
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,omni-direct,p1,object_score (mean of entity F1 and pooled instrument+asset F1),102,92,298,,,0.3291
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,gemma4-31b-openrouter,p1,entities,84,17,147,0.8317,0.3636,0.506
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,gemma4-31b-openrouter,p1,instruments,4,9,24,0.3077,0.1429,0.1951
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,gemma4-31b-openrouter,p1,assets,44,33,86,0.5714,0.3385,0.4251
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,gemma4-31b-openrouter,p1,object_score (mean of entity F1 and pooled instrument+asset F1),132,59,257,,,0.4466
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,qwen35-9b-openrouter,p1,entities,72,34,157,0.6792,0.3144,0.4299
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,qwen35-9b-openrouter,p1,instruments,3,10,25,0.2308,0.1071,0.1463
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,qwen35-9b-openrouter,p1,assets,55,52,73,0.514,0.4297,0.4681
+"Track A direct VLM, frozen P1 v4",original-C3,test-55,qwen35-9b-openrouter,p1,object_score (mean of entity F1 and pooled instrument+asset F1),130,96,255,,,0.4251
+"V1 Stage 3 C1 direct Super, re-scored",historical-V1 (A5-b): NOT C3,test-55,super-direct-v1-historical,p1,entities,80,133,39,0.3756,0.6723,0.4819
+"V1 Stage 3 C1 direct Super, re-scored",historical-V1 (A5-b): NOT C3,test-55,super-direct-v1-historical,p1,instruments,1,16,13,0.0588,0.0714,0.0645
+"V1 Stage 3 C1 direct Super, re-scored",historical-V1 (A5-b): NOT C3,test-55,super-direct-v1-historical,p1,assets,42,186,25,0.1842,0.6269,0.2847
+"V1 Stage 3 C1 direct Super, re-scored",historical-V1 (A5-b): NOT C3,test-55,super-direct-v1-historical,p1,object_score (mean of entity F1 and pooled instrument+asset F1),123,335,77,,,0.3729
+"Track B CONTINGENCY: historical agent, Nano grounding, tracking off",contingency (A5-B): NOT pre-registered Track B,test-55,nano-pipeline-nanoground,p1,entities,76,126,42,0.3762,0.6441,0.475
+"Track B CONTINGENCY: historical agent, Nano grounding, tracking off",contingency (A5-B): NOT pre-registered Track B,test-55,nano-pipeline-nanoground,p1,instruments,3,21,11,0.125,0.2143,0.1579
+"Track B CONTINGENCY: historical agent, Nano grounding, tracking off",contingency (A5-B): NOT pre-registered Track B,test-55,nano-pipeline-nanoground,p1,assets,39,102,26,0.2766,0.6,0.3786
+"Track B CONTINGENCY: historical agent, Nano grounding, tracking off",contingency (A5-B): NOT pre-registered Track B,test-55,nano-pipeline-nanoground,p1,object_score (mean of entity F1 and pooled instrument+asset F1),118,249,79,,,0.4096
+"Track B CONTINGENCY: historical agent, Nano grounding, tracking off",contingency (A5-B): NOT pre-registered Track B,test-55,nano-pipeline-nanoground,final,entities,74,128,31,0.3663,0.7048,0.4821
+"Track B CONTINGENCY: historical agent, Nano grounding, tracking off",contingency (A5-B): NOT pre-registered Track B,test-55,nano-pipeline-nanoground,final,instruments,2,22,11,0.0833,0.1538,0.1081
+"Track B CONTINGENCY: historical agent, Nano grounding, tracking off",contingency (A5-B): NOT pre-registered Track B,test-55,nano-pipeline-nanoground,final,assets,40,101,18,0.2837,0.6897,0.402
+"Track B CONTINGENCY: historical agent, Nano grounding, tracking off",contingency (A5-B): NOT pre-registered Track B,test-55,nano-pipeline-nanoground,final,object_score (mean of entity F1 and pooled instrument+asset F1),116,251,60,,,0.419
+Track A pilot,development,dev-25,nano-direct,p1,entities,49,464,51,0.0955,0.49,0.1599
+Track A pilot,development,dev-25,nano-direct,p1,instruments,6,9,30,0.4,0.1667,0.2353
+Track A pilot,development,dev-25,nano-direct,p1,assets,40,96,20,0.2941,0.6667,0.4082
+Track A pilot,development,dev-25,nano-direct,p1,object_score (mean of entity F1 and pooled instrument+asset F1),95,569,101,,,0.2662
+Track A pilot,development,dev-25,super-direct,p1,entities,69,62,31,0.5267,0.69,0.5974
+Track A pilot,development,dev-25,super-direct,p1,instruments,8,18,28,0.3077,0.2222,0.2581
+Track A pilot,development,dev-25,super-direct,p1,assets,44,113,16,0.2803,0.7333,0.4055
+Track A pilot,development,dev-25,super-direct,p1,object_score (mean of entity F1 and pooled instrument+asset F1),121,193,75,,,0.4851
+Track A pilot,development,dev-25,omni-direct,p1,entities,24,24,76,0.5,0.24,0.3243
+Track A pilot,development,dev-25,omni-direct,p1,instruments,3,7,33,0.3,0.0833,0.1304
+Track A pilot,development,dev-25,omni-direct,p1,assets,13,11,47,0.5417,0.2167,0.3095
+Track A pilot,development,dev-25,omni-direct,p1,object_score (mean of entity F1 and pooled instrument+asset F1),40,42,156,,,0.2852
+Track A pilot,development,dev-25,gemma4-31b-openrouter,p1,entities,30,12,70,0.7143,0.3,0.4225
+Track A pilot,development,dev-25,gemma4-31b-openrouter,p1,instruments,3,0,33,1.0,0.0833,0.1538
+Track A pilot,development,dev-25,gemma4-31b-openrouter,p1,assets,25,11,35,0.6944,0.4167,0.5208
+Track A pilot,development,dev-25,gemma4-31b-openrouter,p1,object_score (mean of entity F1 and pooled instrument+asset F1),58,23,138,,,0.4187
+Track A pilot,development,dev-25,qwen35-9b-openrouter,p1,entities,34,28,60,0.5484,0.3617,0.4359
+Track A pilot,development,dev-25,qwen35-9b-openrouter,p1,instruments,7,7,25,0.5,0.2188,0.3043
+Track A pilot,development,dev-25,qwen35-9b-openrouter,p1,assets,22,43,36,0.3385,0.3793,0.3577
+Track A pilot,development,dev-25,qwen35-9b-openrouter,p1,object_score (mean of entity F1 and pooled instrument+asset F1),63,78,121,,,0.3895
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,nano-pipeline,p1,entities,29,223,21,0.1151,0.58,0.1921
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,nano-pipeline,p1,instruments,4,7,14,0.3636,0.2222,0.2759
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,nano-pipeline,p1,assets,22,61,8,0.2651,0.7333,0.3894
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,nano-pipeline,p1,object_score (mean of entity F1 and pooled instrument+asset F1),55,291,43,,,0.2791
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,nano-pipeline,final,entities,34,218,12,0.1349,0.7391,0.2282
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,nano-pipeline,final,instruments,4,7,14,0.3636,0.2222,0.2759
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,nano-pipeline,final,assets,21,62,9,0.253,0.7,0.3717
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,nano-pipeline,final,object_score (mean of entity F1 and pooled instrument+asset F1),59,287,35,,,0.2902
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,super-pipeline,p1,entities,28,37,16,0.4308,0.6364,0.5138
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,super-pipeline,p1,instruments,1,3,13,0.25,0.0714,0.1111
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,super-pipeline,p1,assets,23,58,5,0.284,0.8214,0.422
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,super-pipeline,p1,object_score (mean of entity F1 and pooled instrument+asset F1),52,98,34,,,0.4459
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,super-pipeline,final,entities,31,34,13,0.4769,0.7045,0.5688
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,super-pipeline,final,instruments,1,3,13,0.25,0.0714,0.1111
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,super-pipeline,final,assets,22,59,6,0.2716,0.7857,0.4037
+"Track B pilot C1b (historical profile, Super grounding)",development,dev-25,super-pipeline,final,object_score (mean of entity F1 and pooled instrument+asset F1),54,96,32,,,0.4655
