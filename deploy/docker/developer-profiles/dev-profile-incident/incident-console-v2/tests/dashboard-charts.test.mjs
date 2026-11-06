@@ -6,10 +6,16 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   assetRows,
+  customWindow,
   dashboardView,
   delta,
+  entityTypeRows,
+  evidenceRows,
+  formatCalendarDay,
   formatDay,
+  instrumentRows,
   severityRows,
+  TOP_INSTRUMENT_ROWS,
   typeRows,
   unratedReports,
 } from '../src/modules/dashboard/domain/charts.ts';
@@ -68,3 +74,30 @@ function contrastWithWhite(hex) {
   const luminance = 0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2);
   return 1.05 / (luminance + 0.05);
 }
+
+test('evidence, entity and instrument rows keep the RPC order and add up to their totals', () => {
+  const evidence = evidenceRows(analytics);
+  assert.deepEqual(
+    evidence.map((row) => row.label),
+    ['Entities', 'Instruments', 'Assets'],
+  );
+  for (const row of [...evidence, ...entityTypeRows(analytics), ...instrumentRows(analytics)]) {
+    assert.equal(row.official + row.notOfficial, row.total, row.label);
+  }
+  assert.deepEqual(entityTypeRows(analytics)[0], { key: 'human', label: 'human', total: 3, official: 1, notOfficial: 2 });
+  const many = {
+    ...analytics,
+    topInstruments: Array.from({ length: 8 }, (_, i) => ({ label: `i${i}`, count: 1, official: 0, notOfficial: 1 })),
+  };
+  assert.equal(instrumentRows(many).length, TOP_INSTRUMENT_ROWS, 'the panel shows the top rows only');
+});
+
+test('a calendar range is a zoneless UTC window from the first day to the day after the last', () => {
+  const day = customWindow({ from: new Date(2026, 9, 1), to: new Date(2026, 9, 8) });
+  assert.match(day.after, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/, 'zoneless, like every stored timestamp');
+  assert.equal(day.after, new Date(2026, 9, 1).toISOString().replace('Z', ''));
+  assert.equal(day.before, new Date(2026, 9, 9).toISOString().replace('Z', ''), 'the last day is included');
+  const single = customWindow({ from: new Date(2026, 9, 5) });
+  assert.equal(single.before, new Date(2026, 9, 6).toISOString().replace('Z', ''), 'one picked day is a one-day range');
+  assert.equal(formatCalendarDay(new Date(2026, 9, 28)), 'Oct 28, 2026');
+});

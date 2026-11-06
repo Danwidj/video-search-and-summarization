@@ -7,6 +7,8 @@
 
 import type {
   DashboardAnalytics,
+  EvidenceKind,
+  EvidenceTotal,
   ModelCoverage,
   OfficialSplit,
   RankedValue,
@@ -24,6 +26,10 @@ const count = (value: unknown): number => (typeof value === 'number' && Number.i
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 const ranked = (value: unknown): RankedValue[] => asRows(value).map((item) => ({ label: text(item.label), count: count(item.count) }));
+
+const EVIDENCE_KINDS: readonly EvidenceKind[] = ['entities', 'instruments', 'assets'];
+/** The kinds the RPC returns; anything else is a malformed result and is read as the first kind with no count. */
+const evidenceKind = (value: unknown): EvidenceKind => EVIDENCE_KINDS.find((kind) => kind === value) ?? 'entities';
 
 const split = (item: Row): OfficialSplit => ({ official: count(item.official), notOfficial: count(item.notOfficial) });
 const splitRanked = (value: unknown): SplitRankedValue[] =>
@@ -60,6 +66,7 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
   return {
     total: count(result.total),
     ...split(result),
+    multipleVersions: count(result.multipleVersions),
     videos: {
       uploaded: count(videos.uploaded),
       withOfficial: count(videos.withOfficial),
@@ -96,8 +103,11 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
       ...split(item),
     })),
     confidence: asRows(result.confidence).map((item) => ({ bucket: count(item.bucket), count: count(item.count) })),
-    entityTypes: ranked(result.entityTypes),
-    topInstruments: ranked(result.topInstruments),
+    evidence: asRows(result.evidence).map(
+      (item): EvidenceTotal => ({ kind: evidenceKind(item.kind), count: count(item.count), ...split(item) }),
+    ),
+    entityTypes: splitRanked(result.entityTypes),
+    topInstruments: splitRanked(result.topInstruments),
     topAssets: splitRanked(result.topAssets),
     threatLevels: asRows(result.threatLevels).map((item) => ({ level: count(item.level), count: count(item.count) })),
     modelCoverage: asRows(result.modelCoverage).map(

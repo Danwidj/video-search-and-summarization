@@ -123,20 +123,46 @@
       "count": 2
     }
   ],
+  "evidence": [
+    {
+      "kind": "entities",
+      "count": 4,
+      "official": 1,
+      "notOfficial": 3
+    },
+    {
+      "kind": "instruments",
+      "count": 1,
+      "official": 0,
+      "notOfficial": 1
+    },
+    {
+      "kind": "assets",
+      "count": 1,
+      "official": 0,
+      "notOfficial": 1
+    }
+  ],
   "entityTypes": [
     {
       "label": "human",
-      "count": 3
+      "count": 3,
+      "official": 1,
+      "notOfficial": 2
     },
     {
       "label": "unknown",
-      "count": 1
+      "count": 1,
+      "official": 0,
+      "notOfficial": 1
     }
   ],
   "topInstruments": [
     {
       "label": "machete",
-      "count": 1
+      "count": 1,
+      "official": 0,
+      "notOfficial": 1
     }
   ],
   "topAssets": [
@@ -175,6 +201,7 @@
   ],
   "official": 1,
   "notOfficial": 2,
+  "multipleVersions": 1,
   "severityByScope": {
     "official": {
       "low": 0,

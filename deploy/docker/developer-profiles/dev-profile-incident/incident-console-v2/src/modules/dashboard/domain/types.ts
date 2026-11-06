@@ -35,6 +35,15 @@ export interface TypeDetail extends OfficialSplit {
   assets: RankedValue[];
 }
 
+/** The three kinds of evidence item the dashboard counts; each item is one entry of a counted report's payload. */
+export type EvidenceKind = 'entities' | 'instruments' | 'assets';
+
+/** Evidence items of the counted reports of one kind, split by whether the counted revision is official. */
+export interface EvidenceTotal extends OfficialSplit {
+  kind: EvidenceKind;
+  count: number;
+}
+
 export interface ModelCoverage {
   model: string;
   withReport: number;
@@ -51,6 +60,8 @@ export interface DashboardAnalytics {
   /** total, split by whether the counted revision is official. */
   official: number;
   notOfficial: number;
+  /** Counted reports whose video has more than one report version (AI and human alike); not part of the split. */
+  multipleVersions: number;
   /** All-time video counts, whatever the period and filters. */
   videos: { uploaded: number; withOfficial: number; awaitingSelection: number; withoutReport: number };
   previous: { total: number; human: number; ai: number; high: number } | null;
@@ -67,8 +78,10 @@ export interface DashboardAnalytics {
   /** day and hour are null only for a report without generated_datetime. */
   heatmap: Array<{ day: number | null; hour: number | null; count: number } & OfficialSplit>;
   confidence: Array<{ bucket: number; count: number }>;
-  entityTypes: RankedValue[];
-  topInstruments: RankedValue[];
+  /** Evidence items of the counted reports, one entry per kind, in the order entities, instruments, assets. */
+  evidence: EvidenceTotal[];
+  entityTypes: SplitRankedValue[];
+  topInstruments: SplitRankedValue[];
   topAssets: SplitRankedValue[];
   threatLevels: Array<{ level: number; count: number }>;
   modelCoverage: ModelCoverage[];

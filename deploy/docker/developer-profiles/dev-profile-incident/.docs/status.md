@@ -54,6 +54,7 @@ Finals is the live database; the laptop console and the VM agent both point at i
 | `20261106090000_one_searchable_version.sql` | **Applied to finals on 2026-11-06** (firstmate task `vss-evidence-fixes`, DSN over ssh stdin). Revision search covers only each video's searchable version; human saves take a summary vector; the embedding guard exception, `set_revision_embedding`, `list_revisions_missing_embeddings`, `repair_revision_crops`. 13 searchable versions, all already had a vector (the backfill had 0 to fill); `security_check.sql` returned 0 rows. The live agent needs a restart from this branch for the new route. |
 | `20261106120000_refresh_revision_embedding.sql` | **Applied to finals on 2026-11-06** (DSN from the laptop `.env.local` through the ssh tunnel to the pooler). Adds `refresh_revision_embedding` (replaces `embedding` on the searchable version only) and gives `list_revisions_missing_embeddings` an `incident_type` column. All 13 searchable vectors were re-embedded with the type in the text (`scripts/refresh_revision_embeddings.py`; old vectors saved outside the repo). The live agent and console need a restart for the type in new summaries and for the merged search. |
 | `20261101120000_dashboard_byte_order_ties.sql` | **Not applied** as far as recorded. On main since #437 (2026-11-01); it pins tie order only, and applying it to finals is ask-first |
+| `20261106140000_dashboard_versions_and_evidence.sql` | **Not applied.** Ask first (awaits the captain's approval). Redefines `get_incident_dashboard` with the byte-order ties of `20261101120000` (so applying it supersedes that file), adds `multipleVersions`, `evidence` and the split on `entityTypes` and `topInstruments`. Until it is applied, the several-versions line reads 0 and the evidence panel shows its empty state. |
 
 Data state (as of 2026-10-28):
 - The library shows 17 videos.
@@ -104,6 +105,8 @@ All open. Finished items move to the [archive](#7-archive).
     - One check still fails against v5: `last_handled_by` must be strict-mode compatible ([analysis-schema](analysis-schema.md#3-validation-id-only-repair-and-outcomes)).
     - Evaluation V2 runs on v4 and freezes on a pinned `main` SHA. A later v5 merge means a separate V2 re-run.
 18. **Open: cancel the agent request when the console aborts.** The console's 300 s abort does not stop the agent, so it keeps spending calls and tokens after the abort (job 51: 10 s and 77 s past it). The time budget keeps a run inside the limit but does not remove this ([decision](decisions.md#2026-11-05-a-detector-stops-after-three-errors-in-a-row-and-an-analysis-has-a-240-s-time-budget)). The new budget and stop need the shared agent restarted on this code.
+
+19. **Open: apply `20261106140000_dashboard_versions_and_evidence.sql` to finals (ask first).** The Total card's several-versions line and the evidence panels read fields it adds. The SQL harness passes. Applying it also applies the byte-order ties of `20261101120000`, so that file need not be applied separately. Known issue 11's six duplicated AI revision 2 rows count as multiple versions until item 11 is resolved.
 
 ## 6. Live VM configuration (`kwanz-ws`)
 

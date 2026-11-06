@@ -4,13 +4,20 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Area, AreaChart, Bar, BarChart, Cell, CartesianGrid, LabelList, Pie, PieChart, XAxis, YAxis } from 'recharts';
+import type { DateRange } from 'react-day-picker';
+import { CalendarIcon } from 'lucide-react';
 import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
 import { href, type Filters, type LinkFilters, type Range } from '@/modules/dashboard/domain/links';
 import {
   assetRows,
+  customWindow,
   dashboardView,
   delta,
+  entityTypeRows,
+  evidenceRows,
+  formatCalendarDay,
   formatDay,
+  instrumentRows,
   SEVERITY_LABELS,
   severityRows,
   type SplitRow,
@@ -24,6 +31,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
@@ -59,7 +68,11 @@ export function Dashboard() {
   const [data, setData] = useState<DashboardAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [attempt, setAttempt] = useState(0);
+  // days is a preset ('7', '30', 'all') or 'custom', the calendar range in custom (applied, never a draft).
   const [days, setDays] = useState('30');
+  const [custom, setCustom] = useState<DateRange | undefined>(undefined);
+  const [draft, setDraft] = useState<DateRange | undefined>(undefined);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [compare, setCompare] = useState(true);
   const [filters, setFilters] = useState<Filters>(NONE);
   const [error, setError] = useState('');
@@ -74,12 +87,30 @@ export function Dashboard() {
       setRange(null);
       return;
     }
+    if (days === 'custom') {
+      if (custom?.from) setRange(customWindow(custom));
+      return;
+    }
     const end = new Date();
     setRange({
       after: new Date(end.getTime() - Number(days) * 86_400_000).toISOString().replace('Z', ''),
       before: end.toISOString().replace('Z', ''),
     });
-  }, [days]);
+  }, [days, custom]);
+  const openPicker = () => {
+    setDraft(custom);
+    setPickerOpen(true);
+  };
+  const applyRange = () => {
+    if (!draft?.from) return;
+    setCustom({ from: draft.from, to: draft.to ?? draft.from });
+    setDays('custom');
+    setPickerOpen(false);
+  };
+  const startOfToday = (() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  })();
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt re-runs the fetch for Try again.
   useEffect(() => {
     if (range === undefined) return;
@@ -138,16 +169,47 @@ export function Dashboard() {
               vs. previous period
             </Label>
           </div>
-          <Select value={days} onValueChange={(val) => setDays(val)}>
-            <SelectTrigger className="w-[140px] border-ink/10 bg-white text-ink">
-              <SelectValue placeholder="Select period" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7">Last 7 days</SelectItem>
-              <SelectItem value="30">Last 30 days</SelectItem>
-              <SelectItem value="all">All time</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={days} onValueChange={(val) => (val === 'custom' ? openPicker() : setDays(val))}>
+              <SelectTrigger className="w-[140px] border-ink/10 bg-white text-ink">
+                <SelectValue placeholder="Select period" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7">Last 7 days</SelectItem>
+                <SelectItem value="30">Last 30 days</SelectItem>
+                <SelectItem value="all">All time</SelectItem>
+                <SelectItem value="custom">Custom range</SelectItem>
+              </SelectContent>
+            </Select>
+            <Popover onOpenChange={(open) => (open ? openPicker() : setPickerOpen(false))} open={pickerOpen}>
+              <PopoverTrigger asChild>
+                <Button className="border-ink/10 bg-white font-normal text-ink" variant="outline">
+                  <CalendarIcon data-icon="inline-start" />
+                  {days === 'custom' && custom?.from
+                    ? `${formatCalendarDay(custom.from)} – ${formatCalendarDay(custom.to ?? custom.from)}`
+                    : 'Choose dates'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-auto p-3">
+                <Calendar
+                  defaultMonth={draft?.from ?? custom?.from ?? startOfToday}
+                  disabled={{ after: startOfToday }}
+                  mode="range"
+                  numberOfMonths={1}
+                  onSelect={setDraft}
+                  selected={draft}
+                />
+                <div className="flex justify-end gap-2 border-t border-ink/10 pt-3">
+                  <Button onClick={() => setPickerOpen(false)} size="sm" variant="outline">
+                    Cancel
+                  </Button>
+                  <Button disabled={!draft?.from} onClick={applyRange} size="sm">
+                    Apply
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
       </div>
       {active && (
@@ -207,7 +269,7 @@ export function Dashboard() {
           </Panel>
           <Panel
             className="lg:col-span-2 xl:col-span-8"
-            title="Incidents over time"
+            title="Reports generated over time"
             subtitle={`Reports per day by report date (${timeZone}), official and not yet official`}
           >
             {panel(
@@ -243,6 +305,30 @@ export function Dashboard() {
             {panel(
               (d) => (
                 <SplitBars emptyText={emptyText} hrefFor={(row) => link({ asset: row.key })} rows={assetRows(d)} />
+              ),
+              'h-40',
+            )}
+          </Panel>
+          <Panel className="xl:col-span-4" title="Evidence by kind" subtitle="Entities, instruments and assets in the counted reports">
+            {panel(
+              (d) => (
+                <SplitBars emptyText={emptyText} rows={evidenceRows(d)} />
+              ),
+              'h-40',
+            )}
+          </Panel>
+          <Panel className="xl:col-span-4" title="Top instruments" subtitle="Reports per instrument (exact name)">
+            {panel(
+              (d) => (
+                <SplitBars emptyText={emptyText} rows={instrumentRows(d)} />
+              ),
+              'h-40',
+            )}
+          </Panel>
+          <Panel className="lg:col-span-2 xl:col-span-4" title="Entity types" subtitle="Reports per entity type">
+            {panel(
+              (d) => (
+                <SplitBars emptyText={emptyText} rows={entityTypeRows(d)} />
               ),
               'h-40',
             )}
@@ -339,6 +425,9 @@ function Total({ data, change, link }: { data: DashboardAnalytics; change: numbe
           </div>
         ))}
       </dl>
+      <p className="border-t border-ink/10 pt-3 text-sm text-ink/70">
+        <span className="font-semibold text-ink tabular-nums">{data.multipleVersions}</span> with more than one version
+      </p>
       <p className="text-xs text-ink-caption">
         All time: {data.videos.uploaded} videos uploaded, {data.videos.withoutReport} without a report.
       </p>
@@ -383,14 +472,18 @@ function Trend({ points, emptyText }: { points: DashboardAnalytics['trend']; emp
 
 const MAX_TICK_LENGTH = 18;
 
-function RowTick({ x = 0, y = 0, row, href: url }: { x?: number; y?: number; row: SplitRow; href: string }) {
+function RowTick({ x = 0, y = 0, row, href: url }: { x?: number; y?: number; row: SplitRow; href?: string }) {
   const shown = row.label.length > MAX_TICK_LENGTH ? `${row.label.slice(0, MAX_TICK_LENGTH - 1)}…` : row.label;
+  const label = (
+    <text className="fill-ink text-xs capitalize" dy={4} textAnchor="end" x={x} y={y}>
+      <title>{row.label}</title>
+      {shown}
+    </text>
+  );
+  if (!url) return label;
   return (
     <Link aria-label={`${row.label}: ${row.total} reports`} className="hover:underline" href={url}>
-      <text className="fill-ink text-xs capitalize" dy={4} textAnchor="end" x={x} y={y}>
-        <title>{row.label}</title>
-        {shown}
-      </text>
+      {label}
     </Link>
   );
 }
@@ -399,26 +492,27 @@ const ROW_HEIGHT = 40;
 const LEGEND_HEIGHT = 36;
 const LABEL_ANCHOR = 1e-6;
 
-/** Rows of official and not-yet-official bars. Each row opens its reports. */
-function SplitBars({ rows, emptyText, hrefFor }: { rows: SplitRow[]; emptyText: string; hrefFor: (row: SplitRow) => string }) {
+/** Rows of official and not-yet-official bars. With hrefFor, each row opens its reports; without it, the rows are read only. */
+function SplitBars({ rows, emptyText, hrefFor }: { rows: SplitRow[]; emptyText: string; hrefFor?: (row: SplitRow) => string }) {
   const router = useRouter();
   if (!rows.length) return <NoData text={emptyText} />;
   const byLabel = new Map(rows.map((row) => [row.label, row]));
   const activate = (index: number) => {
     const row = rows[index];
-    if (row) router.push(hrefFor(row));
+    if (row && hrefFor) router.push(hrefFor(row));
   };
   return (
     <ChartContainer config={splitConfig} className="aspect-auto w-full" style={{ height: rows.length * ROW_HEIGHT + LEGEND_HEIGHT }}>
       <BarChart accessibilityLayer barCategoryGap="30%" data={rows} layout="vertical" margin={{ top: 0, right: 28, left: 0, bottom: 0 }}>
-        <XAxis allowDecimals={false} domain={[0, 'dataMax']} hide type="number" />
+        {/* Headroom past the longest bar, so its total label is not clipped at the chart's edge. */}
+        <XAxis allowDecimals={false} domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.12)]} hide type="number" />
         <YAxis
           axisLine={false}
           dataKey="label"
           tick={(props) => {
             const row = byLabel.get(String(props.payload?.value));
             if (!row) return <g />;
-            return <RowTick href={hrefFor(row)} row={row} x={Number(props.x)} y={Number(props.y)} />;
+            return <RowTick href={hrefFor?.(row)} row={row} x={Number(props.x)} y={Number(props.y)} />;
           }}
           tickLine={false}
           type="category"
@@ -427,7 +521,7 @@ function SplitBars({ rows, emptyText, hrefFor }: { rows: SplitRow[]; emptyText: 
         <ChartTooltip content={<ChartTooltipContent />} cursor={false} />
         <ChartLegend content={<ChartLegendContent />} itemSorter={null} />
         <Bar
-          className="cursor-pointer"
+          className={hrefFor ? 'cursor-pointer' : undefined}
           dataKey="official"
           fill="var(--color-official)"
           onClick={(_entry, index) => activate(index)}
@@ -435,7 +529,7 @@ function SplitBars({ rows, emptyText, hrefFor }: { rows: SplitRow[]; emptyText: 
           stackId="split"
         />
         <Bar
-          className="cursor-pointer"
+          className={hrefFor ? 'cursor-pointer' : undefined}
           dataKey="notOfficial"
           fill="var(--color-notOfficial)"
           isAnimationActive={false}

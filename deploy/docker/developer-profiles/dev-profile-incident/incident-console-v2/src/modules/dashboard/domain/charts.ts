@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { DashboardAnalytics, OfficialSplit } from '@/modules/dashboard/domain/types';
+import type { DashboardAnalytics, EvidenceKind, OfficialSplit } from '@/modules/dashboard/domain/types';
+import type { Range } from '@/modules/dashboard/domain/links';
 
 export type DashboardView = 'loading' | 'failed' | 'ready';
 
@@ -40,6 +41,57 @@ export function typeRows(data: DashboardAnalytics): SplitRow[] {
 
 export function assetRows(data: DashboardAnalytics): SplitRow[] {
   return data.topAssets.map(({ label, count, official, notOfficial }) => ({ key: label, label, total: count, official, notOfficial }));
+}
+
+/** How many instrument rows the Top instruments panel shows; the RPC returns eight. */
+export const TOP_INSTRUMENT_ROWS = 5;
+
+const EVIDENCE_LABELS: Record<EvidenceKind, string> = { entities: 'Entities', instruments: 'Instruments', assets: 'Assets' };
+
+/** Evidence items of the counted reports by kind (one row each, always in the RPC's order). */
+export function evidenceRows(data: DashboardAnalytics): SplitRow[] {
+  return data.evidence.map(({ kind, count, official, notOfficial }) => ({
+    key: kind,
+    label: EVIDENCE_LABELS[kind],
+    total: count,
+    official,
+    notOfficial,
+  }));
+}
+
+/** Canonical entity types (human, animal, unknown), counted per report. */
+export function entityTypeRows(data: DashboardAnalytics): SplitRow[] {
+  return data.entityTypes.map(({ label, count, official, notOfficial }) => ({ key: label, label, total: count, official, notOfficial }));
+}
+
+/** The most-used instrument names, exact and normalised, counted per report. */
+export function instrumentRows(data: DashboardAnalytics): SplitRow[] {
+  return data.topInstruments
+    .slice(0, TOP_INSTRUMENT_ROWS)
+    .map(({ label, count, official, notOfficial }) => ({ key: label, label, total: count, official, notOfficial }));
+}
+
+/** A calendar selection in the viewer's zone: a day, or the first and last day of a range. */
+export interface CalendarSelection {
+  from?: Date;
+  to?: Date;
+}
+
+/**
+ * A calendar range as the dashboard's window: local midnight of the first day up to local midnight after the last, written as
+ * zoneless UTC (the API reads it as UTC). A single day is a range of one day.
+ */
+export function customWindow(selection: CalendarSelection): Range {
+  const first = selection.from ?? new Date();
+  const last = selection.to ?? first;
+  const start = new Date(first.getFullYear(), first.getMonth(), first.getDate());
+  const end = new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1);
+  return { after: start.toISOString().replace('Z', ''), before: end.toISOString().replace('Z', '') };
+}
+
+/** "Oct 28, 2026" for a calendar day, read from the picker's local date; no time zone conversion. */
+export function formatCalendarDay(date: Date): string {
+  return `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
 }
 
 /** Percent change against the previous period; null when there is nothing to compare with. */
