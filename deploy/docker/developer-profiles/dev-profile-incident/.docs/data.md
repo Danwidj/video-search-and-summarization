@@ -50,6 +50,7 @@ Primary registry of ingested video assets.
 | `duration` | `INTEGER` | NULLABLE | Video duration in integer seconds |
 | `source` | `VARCHAR(512)` | NULLABLE | Ingestion source or camera stream name. NULL for console uploads since 2026-10-31 (uploads no longer go through VST); older upload rows keep the VST sensor id they were given. |
 | `official_revision_id` | `BIGINT` | NULLABLE; composite FK `(id, official_revision_id)` → `report_revisions(video_id, id)` | The video's official report revision. NULL = awaiting selection. Set/cleared only by `set_official_revision`. The old `selected_model_run_id`, `selected_by` and `selected_at` columns are gone. |
+| `content_sha256` | `CHAR(64)` | NULLABLE; CHECK lower-case hex; UNIQUE where not NULL (`videos_content_sha256_key`) | SHA-256 of the file as uploaded, before conversion; a repeat upload is refused before anything is stored. Older videos were backfilled from their stored R2 object (`supabase/r2/backfill_content_hash.py`), so for a converted one it is the hash of the converted bytes. NULL for a seeded clip or a video not yet backfilled. |
 | `official_since` | `TIMESTAMP` | NULLABLE | Naive UTC time the current official revision was marked; NULL when there is none. Set when the pointer moves to a different revision, kept when the same one is marked again, cleared with the pointer. Rows marked before the column existed were backfilled with the official revision's `created_at` (the real time was never recorded). |
 
 #### `queries`
@@ -187,6 +188,7 @@ The console's background analysis queue: one row per uploaded video waiting for,
 | `finished_at` | `TIMESTAMP` | NULLABLE | Naive UTC time it was done, failed or cancelled |
 | `heartbeat_at` | `TIMESTAMP` | NULLABLE | Naive UTC time of the running claim's latest heartbeat (every 15 s); NULL when not running |
 | `video_id` | `VARCHAR(20)` | NULLABLE; FK → `videos.id` ON DELETE SET NULL | The analysed video, once done |
+| `content_sha256` | `CHAR(64)` | NULLABLE; CHECK lower-case hex; UNIQUE where not NULL and `status IN ('queued','running')` (`analysis_jobs_active_content_sha256_key`) | The uploaded file's SHA-256 (as on `videos`). Stops two simultaneous uploads of one file queueing twice, before the video row exists; a failed, cancelled or done job releases the hash. |
 | `revision_id` | `BIGINT` | NULLABLE; FK → `report_revisions.id` ON DELETE SET NULL | The new AI revision, once done |
 
 Deleting a video keeps its upload job rows as history with `video_id` and `revision_id` set to NULL. Indexes: `(status, created_at, id)` for the claim, `(created_at DESC)` for the list. RLS is on; only `service_role` can read or write.

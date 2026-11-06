@@ -19,6 +19,7 @@ import { otherJobs } from '@/sections/analysis/batch-upload';
 import { BatchFileRow } from '@/sections/analysis/components/BatchFileRow';
 import { JobsList } from '@/sections/analysis/components/JobsList';
 import { useAnalysisJobs } from '@/sections/analysis/hooks/use-analysis-jobs';
+import { type DuplicateUpload, DuplicateUploadError, duplicateReportPath } from '@/modules/uploads/domain/duplicate';
 import { useBatchUpload } from '@/sections/analysis/hooks/use-batch-upload';
 import { checkUploadName, type UploadNameReport, useVideoUpload } from '@/sections/analysis/hooks/use-video-upload';
 
@@ -76,6 +77,8 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
   );
   const [uploadProgress, setUploadProgress] = useState(initialUploadProgress ?? 0);
   const [error, setError] = useState<string | null>(initialError ?? null);
+  // Set when the chosen file's content is already in the library or queued; nothing was stored.
+  const [duplicate, setDuplicate] = useState<DuplicateUpload | null>(null);
   const [nameNotice, setNameNotice] = useState<string | null>(null);
   const [storedName, setStoredName] = useState<string | null>(null);
   const [convertingSeconds, setConvertingSeconds] = useState(0);
@@ -206,6 +209,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
     setNameNotice(null);
     setStoredName(null);
     setError(null);
+    setDuplicate(null);
     setConversion(null);
     setStage('idle');
     setLastActiveStage('idle');
@@ -225,6 +229,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
     setStage('idle');
     setNameNotice(null);
     setError(null);
+    setDuplicate(null);
     batch.add(selected, model);
   }
 
@@ -240,6 +245,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
     const controller = new AbortController();
     abortRef.current = controller;
     setError(null);
+    setDuplicate(null);
     setNameNotice(null);
     setConversion(null);
     setUploadProgress(0);
@@ -248,7 +254,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
 
     try {
       changeStage('uploading');
-      const { filePath, filename, converted } = await upload(file, controller.signal, setUploadProgress, () => {
+      const { filePath, filename, converted, contentSha256 } = await upload(file, controller.signal, setUploadProgress, () => {
         convertingStartRef.current = Date.now();
         changeStage('converting');
       });
@@ -257,9 +263,10 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
 
       changeStage('analyzing');
       // The analysis runs as a background job; the effect above opens the report when it is done.
-      const job = await jobs.enqueue({ filePath, filename, model });
+      const job = await jobs.enqueue({ filePath, filename, model, contentSha256 });
       setWatchedJobId(job.id);
     } catch (caught) {
+      if (caught instanceof DuplicateUploadError) setDuplicate(caught.duplicate);
       const message = caught instanceof Error ? caught.message : 'Analysis failed';
       setError(message === 'Upload was cancelled' ? 'Analysis cancelled.' : message);
       setStage('error');
@@ -572,14 +579,32 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
               <AlertDescription>{nameNotice}</AlertDescription>
             </Alert>
           )}
-          {error && (
+          {error && !duplicate && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
+          {duplicate && (
+            <Alert data-duplicate={duplicate.kind}>
+              <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+                <span>{error}</span>
+                {duplicateReportPath(duplicate) && (
+                  <Link className="font-semibold text-primary hover:underline" href={duplicateReportPath(duplicate) as string}>
+                    Open the existing report →
+                  </Link>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
 
           <div className="flex gap-3">
-            <Button size="lg" className="flex-1 rounded-full text-sm font-semibold" disabled={busy} onClick={analyze} type="button">
+            <Button
+              size="lg"
+              className="flex-1 rounded-full text-sm font-semibold"
+              disabled={busy || duplicate !== null}
+              onClick={analyze}
+              type="button"
+            >
               {busy
                 ? stageLabels[stageOrder[stage]]?.label
                 : stage === 'error'

@@ -17,12 +17,33 @@ import {
   RECENT_FINISHED,
   STALE_SECONDS,
 } from '@/modules/jobs/domain/job';
+import { type DuplicateUpload, DuplicateUploadError, isSha256 } from '@/modules/uploads/domain/duplicate';
+import type { VideoRepository } from '@/modules/videos/domain/VideoRepository';
 import { StoreRejection } from '@/modules/shared/domain/common';
 
 export interface EnqueueInput {
   filePath?: unknown;
   filename?: unknown;
   model?: unknown;
+  /** SHA-256 of the file as uploaded (the upload route's answer); absent only for a client from before the hash existed. */
+  contentSha256?: unknown;
+}
+
+/**
+ * Where this content already is, or null: a video in the library (its report page
+ * opens), else a job queued or running that has not produced a video yet.
+ */
+export async function findDuplicateUpload(
+  jobs: Pick<AnalysisJobRepository, 'findActiveByContentHash'>,
+  videos: Pick<VideoRepository, 'findByContentHash'>,
+  contentSha256: string,
+): Promise<DuplicateUpload | null> {
+  const video = await videos.findByContentHash(contentSha256);
+  if (video) {
+    return { kind: 'video', name: video.storageKey?.split('/').pop() || video.videoId, videoId: video.videoId, jobId: null };
+  }
+  const job = await jobs.findActiveByContentHash(contentSha256);
+  return job ? { kind: 'job', name: job.filename, videoId: null, jobId: job.id } : null;
 }
 
 /**
@@ -35,13 +56,25 @@ export async function enqueueAnalysisJob(
   catalog: ContractCatalog,
   input: EnqueueInput,
   defaultModel: string,
+  videos?: Pick<VideoRepository, 'findByContentHash'>,
 ): Promise<AnalysisJob> {
   const filePath = typeof input.filePath === 'string' ? input.filePath.trim() : '';
   const filename = typeof input.filename === 'string' ? input.filename.trim() : '';
   if (!filePath || !filename) throw new StoreRejection('invalid', 'filepath and filename are required');
   const chosen = typeof input.model === 'string' && input.model.trim() ? input.model.trim() : defaultModel;
   const model = resolveAllowedModel(chosen, catalog).id;
-  return jobs.enqueue({ filePath, filename, model });
+  const hash = input.contentSha256;
+  if (hash !== undefined && hash !== null && !isSha256(hash)) {
+    throw new StoreRejection('invalid', 'contentSha256 must be a lower-case SHA-256 hex digest');
+  }
+  const contentSha256 = hash ?? null;
+  if (contentSha256 && videos) {
+    // The common case is answered here; a race between two requests is decided by the database's
+    // unique indexes, whose violation the repository reports as the same DuplicateUploadError.
+    const duplicate = await findDuplicateUpload(jobs, videos, contentSha256);
+    if (duplicate) throw new DuplicateUploadError(duplicate);
+  }
+  return jobs.enqueue({ filePath, filename, model, contentSha256 });
 }
 
 /**

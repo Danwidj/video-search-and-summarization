@@ -58,7 +58,7 @@ test('the video is uploaded once, straight to R2 through the console, and nothin
   const progress = [];
   const uploaded = await uploadVideo(clip(), new AbortController().signal, (value) => progress.push(value));
 
-  assert.deepEqual(uploaded, { filePath: 'uploads/clip.mp4', filename: 'clip.mp4', converted: false });
+  assert.deepEqual(uploaded, { filePath: 'uploads/clip.mp4', filename: 'clip.mp4', converted: false, contentSha256: null });
   // Node has no <video> to capture a thumbnail from, so the R2 upload is the only request.
   assert.deepEqual(
     requests.map(({ method, url }) => `${method} ${url}`),
@@ -80,7 +80,7 @@ test('a .MOV is sent under its .mp4 name, the converting callback fires once the
     (value) => events.push(`progress ${value}`),
     () => events.push('uploaded'),
   );
-  assert.deepEqual(uploaded, { filePath: 'uploads/IMG_9170.mp4', filename: 'IMG_9170.mp4', converted: true });
+  assert.deepEqual(uploaded, { filePath: 'uploads/IMG_9170.mp4', filename: 'IMG_9170.mp4', converted: true, contentSha256: null });
   assert.equal(requests[0].body.get('filename'), 'IMG_9170.mp4');
   assert.deepEqual(events, ['progress 50', 'uploaded', 'progress 100']);
 });

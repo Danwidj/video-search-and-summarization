@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { register } from 'node:module';
 import { mock, test } from 'node:test';
@@ -161,7 +162,13 @@ test('a phone HEVC .MOV is converted to H.264 and stored under its .mp4 name', a
   const response = await POST(multipartRequest({ file: mov, filename: 'IMG_9170.MOV' }));
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.deepEqual(payload, { filePath: 'uploads/IMG_9170.mp4', name: 'IMG_9170.mp4', converted: true });
+  // The hash is of the file as uploaded ("hevc"), not of the converted bytes ("converted!").
+  assert.deepEqual(payload, {
+    filePath: 'uploads/IMG_9170.mp4',
+    name: 'IMG_9170.mp4',
+    converted: true,
+    contentSha256: createHash('sha256').update('hevc').digest('hex'),
+  });
   assert.deepEqual(commands, ['ffprobe', 'ffmpeg']);
   assert.equal(puts[0].ContentLength, 'converted!'.length, 'the converted file is what is stored and verified');
   assert.equal(puts[0].ContentType, 'video/mp4');

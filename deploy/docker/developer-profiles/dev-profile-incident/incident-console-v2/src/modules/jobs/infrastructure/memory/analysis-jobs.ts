@@ -3,6 +3,7 @@
 // In-memory AnalysisJobRepository for use-case tests: the same rules as the
 // database functions, from modules/jobs/domain/job.ts, on a clock the test sets.
 
+import { DuplicateUploadError } from '@/modules/uploads/domain/duplicate';
 import type { AnalysisJobRepository, NewAnalysisJob } from '@/modules/jobs/domain/AnalysisJobRepository';
 import {
   type AnalysisJob,
@@ -38,10 +39,25 @@ export class InMemoryAnalysisJobRepository implements AnalysisJobRepository {
     return { ...job };
   }
 
+  private active(contentSha256: string): AnalysisJob | null {
+    const found = [...this.jobs.values()].find(
+      (job) => job.contentSha256 === contentSha256 && (job.status === 'queued' || job.status === 'running'),
+    );
+    return found ? { ...found } : null;
+  }
+
+  async findActiveByContentHash(contentSha256: string): Promise<AnalysisJob | null> {
+    return this.active(contentSha256);
+  }
+
   async enqueue(job: NewAnalysisJob): Promise<AnalysisJob> {
+    // The database's unique index on queued and running jobs, applied the same way.
+    const active = job.contentSha256 ? this.active(job.contentSha256) : null;
+    if (active) throw new DuplicateUploadError({ kind: 'job', name: active.filename, videoId: null, jobId: active.id });
     return this.put({
       id: this.nextId++,
       ...job,
+      contentSha256: job.contentSha256 ?? null,
       status: 'queued',
       attempts: 0,
       error: null,

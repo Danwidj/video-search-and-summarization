@@ -40,6 +40,7 @@ Natural-language search queries evidence items through the service-role-only `/r
 - **Migrations are the schema authority.** Finals is built by `supabase/migrations/20261020000000_finals_baseline.sql`; every change is a new timestamped file `supabase/migrations/YYYYMMDDHHMMSS_<what>.sql` after it. Never edit the baseline once finals has it, never add to `supabase/midterm/`, and never hand-edit the live DB without a matching migration file.
 - **Test before applying:** extend and run the SQL harness (below) in the same PR. It applies every file in `supabase/migrations/` in order.
 - **Dry-run first, then ask** before applying for real. Applying is live and shared.
+- **Videos carry `content_sha256`** (unique where set); `supabase/r2/backfill_content_hash.py` (dry run unless `--apply`, stops on two videos with the same content, deletes nothing) fills it from R2 for rows without one.
 - **After applying, run `supabase/tests/security_check.sql`** against finals: 0 rows expected.
 - **Security on every new object:** RLS on every new table; `SET search_path = ''` and no `SECURITY DEFINER` on every function; nothing for `PUBLIC`/`anon`/`authenticated`. The harness and the security check fail otherwise. Default privileges only cover objects created by `postgres`.
 - **Cascades are real.** Deleting a `videos` row cascades through its revisions, their `evidence_crops` and the `query_results` that name those revisions. `model_runs` and `report_revisions` are linked by a required foreign key, so a revision needs its run row first. The append-only trigger permits only the video cascade, so delete a video rather than a revision.
@@ -67,6 +68,8 @@ psql "$FINALS_DSN" -v ON_ERROR_STOP=1 -f $W/supabase/migrations/<version>_<name>
 supabase migration repair --status applied <version> --workdir $W --db-url "$FINALS_DSN"  # 3. record it
 psql "$FINALS_DSN" -f $W/supabase/tests/security_check.sql                           # 4. expect 0 rows
 ```
+
+In an agent run the CLI refuses `migration repair` without `--yes`; add it only when the repair for this one version is authorised. `psql` is not installed on the laptop or the VM: apply the file with `uvx --with "psycopg[binary]" python -I` (read the DSN into the environment, never print it).
 
 Target state, once the history is repaired: `supabase db push --workdir $W --db-url "$FINALS_DSN" --dry-run`, then without `--dry-run`.
 

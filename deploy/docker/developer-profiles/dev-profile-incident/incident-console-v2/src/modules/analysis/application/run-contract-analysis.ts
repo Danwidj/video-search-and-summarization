@@ -83,7 +83,7 @@ export interface ContractAnalysisInput {
   /** The reviewer prompt typed on re-generation: appended to the gateway request, or sent to the agent as reviewer_prompt. */
   additionalInstruction?: unknown;
   /** Present only for a newly uploaded video; its row is created once and never reset. */
-  newVideo?: { uploadedAt: string };
+  newVideo?: { uploadedAt: string; contentSha256?: string | null };
 }
 
 export interface ContractAnalysisResult {
@@ -254,6 +254,7 @@ export async function runContractAnalysis(
         videoId: input.videoId,
         r2Key: input.r2Key,
         uploadedAt: input.newVideo.uploadedAt,
+        contentSha256: input.newVideo.contentSha256 ?? null,
       });
     }
     operation = 'creating the signed R2 video URL';

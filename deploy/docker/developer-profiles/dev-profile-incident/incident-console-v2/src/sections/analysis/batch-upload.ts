@@ -14,6 +14,7 @@
  */
 
 import type { AnalysisJob } from '@/modules/jobs/domain/job';
+import type { DuplicateUpload } from '@/modules/uploads/domain/duplicate';
 
 /** The steps a file runs through, in order. */
 export const BATCH_STAGES = ['uploading', 'converting', 'analysing'] as const;
@@ -52,6 +53,8 @@ export interface BatchItem {
   jobId: number | null;
   /** When the job's analysis started (naive UTC, from the server), so a reopened page shows the real elapsed time. */
   analysingSince?: string | null;
+  /** Set when the file's content is already in the library or queued: nothing was stored or queued, and the row links to the existing video. */
+  duplicate?: DuplicateUpload | null;
 }
 
 export interface BatchDeps {
@@ -63,9 +66,9 @@ export interface BatchDeps {
     file: File,
     onProgress: (progress: number) => void,
     onUploaded: () => void,
-  ): Promise<{ filePath: string; filename: string; converted: boolean }>;
+  ): Promise<{ filePath: string; filename: string; converted: boolean; contentSha256?: string | null }>;
   /** Queues the uploaded file's analysis as a background job. */
-  enqueue(input: { filePath: string; filename: string; model: string }): Promise<AnalysisJob>;
+  enqueue(input: { filePath: string; filename: string; model: string; contentSha256?: string | null }): Promise<AnalysisJob>;
 }
 
 /** The message a single upload rejects with when it is cancelled (hooks/use-video-upload.ts). */
@@ -135,7 +138,7 @@ export const waitingJobIds = (items: readonly BatchItem[]): number[] =>
 
 /** Whether Retry on the row re-sends the file itself: an upload or conversion that failed, before any job existed. */
 export const canRetryUpload = (item: BatchItem): boolean =>
-  item.status === 'failed' && item.jobId === null && item.failedAt !== 'analysing';
+  item.status === 'failed' && item.jobId === null && item.failedAt !== 'analysing' && !item.duplicate;
 
 /** Puts a file whose upload failed back in the queue, as if just added. */
 export function requeue(items: readonly BatchItem[], key: string): BatchItem[] {
@@ -192,6 +195,10 @@ export function jobItem(job: AnalysisJob): BatchItem {
 /** Whether cancelling now should abort the running file: only while its bytes are still uploading. */
 export const shouldAbortRunning = (items: readonly BatchItem[]): boolean => items.some((item) => item.status === 'uploading');
 
+/** A DuplicateUploadError from the upload or job request (matched by shape: this module is imported without the path aliases in tests). */
+const isDuplicateError = (error: unknown): error is Error & { duplicate: DuplicateUpload } =>
+  error instanceof Error && error.name === 'DuplicateUploadError' && typeof (error as { duplicate?: unknown }).duplicate === 'object';
+
 const failureMessage = (error: unknown, fallback: string): string =>
   error instanceof Error && error.message.trim() ? error.message : fallback;
 
@@ -220,9 +227,19 @@ export async function runBatchItem(
     );
     stage = 'analysing';
     update({ status: 'waiting', name: uploaded.filename, converted: uploaded.converted });
-    const job = await deps.enqueue({ filePath: uploaded.filePath, filename: uploaded.filename, model });
+    const job = await deps.enqueue({
+      filePath: uploaded.filePath,
+      filename: uploaded.filename,
+      model,
+      contentSha256: uploaded.contentSha256 ?? null,
+    });
     update({ jobId: job.id, ...jobState(job) });
   } catch (error) {
+    if (isDuplicateError(error)) {
+      // Not a failure to retry: the same content is already there, so the row says so and links to it.
+      update({ status: 'failed', failedAt: stage, error: error.message, duplicate: error.duplicate });
+      return;
+    }
     if (stage !== 'analysing' && error instanceof Error && error.message === UPLOAD_CANCELLED_MESSAGE) {
       update({ status: 'cancelled', error: null });
       return;
