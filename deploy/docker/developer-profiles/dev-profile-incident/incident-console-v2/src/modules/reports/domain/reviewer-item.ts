@@ -152,22 +152,39 @@ export function reviewerPayload(item: ReviewerDraftItem): ReviewerPayload {
   };
 }
 
-/** The fields a reviewer item adds to its evidence entry, apart from the image keys the server cuts. */
+/** The frame second and box a reviewer picked as an item's evidence image (Set image); the track and text are not part of it. */
+export interface ImagePick {
+  seconds: number;
+  box: Box;
+}
+
+/** The fields of an evidence entry that name its image: the crop and frame keys, the box, and the exact second they were cut at. */
+export function imageEntryFields(seen: ImagePick, keys: { image: string; frame: string }): Record<string, unknown> {
+  return {
+    image: keys.image,
+    frame: keys.frame,
+    bounding_box: seen.box,
+    timestamp_seconds: Math.round(seen.seconds),
+    box_seconds: seen.seconds,
+    located: true,
+  };
+}
+
+/**
+ * The fields a reviewer item adds to its evidence entry, apart from the image keys the server cuts. `pick` is the frame and
+ * box the reviewer chose for the image: it replaces the track's first sample (or the still image) as where the image is cut.
+ */
 export function reviewerEntryFields(
   payload: ReviewerPayload,
   keys: { image: string; frame: string; track: string | null },
+  pick: ImagePick | null = null,
 ): Record<string, unknown> {
   const first = payload.track?.samples[0];
   const seconds = first ? first.t : (payload.still_seconds ?? 0);
-  const box = first ? first.box : payload.still_box;
+  const box = (first ? first.box : payload.still_box) as Box;
   return {
     source: 'reviewer',
-    image: keys.image,
-    frame: keys.frame,
-    bounding_box: box,
-    timestamp_seconds: Math.round(seconds),
-    box_seconds: seconds,
-    located: true,
+    ...imageEntryFields(pick ?? { seconds, box }, keys),
     ...(payload.track && keys.track
       ? {
           track: keys.track,

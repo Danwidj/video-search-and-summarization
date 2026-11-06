@@ -142,6 +142,7 @@ function draftEntityFor(draft: EditDraft, savedEntityId: string | null): DraftEn
 export function rowDiffers(row: PairRow, draft: EditDraft): boolean {
   if (!row.a || !row.b) return true;
   const { a, b } = row;
+  if (b.imagePick) return true;
   if ((a.evidence?.image ?? null) !== (b.image ?? null)) return true;
   if (a.timestampSeconds !== b.timestampSeconds || a.label !== b.label) return true;
   if (isSavedEntity(a) && isDraftEntity(b)) return a.type !== b.type || a.description !== b.description;
@@ -206,6 +207,7 @@ function entityFromSaved(item: StructuredEntity, key: string): DraftEntity {
     imageTimestampSeconds: null,
     imageBox: null,
     reviewer: null,
+    imagePick: null,
     type: editableEntityType(item.type),
     description: item.description,
     firstSeenSeconds: item.firstSeenSeconds ?? item.timestampSeconds,
@@ -225,6 +227,7 @@ function instrumentFromSaved(item: StructuredInstrument, key: string, holderKey:
     imageTimestampSeconds: null,
     imageBox: null,
     reviewer: null,
+    imagePick: null,
     holderKey,
     name: item.name,
     description: item.description,
@@ -244,6 +247,7 @@ function assetFromSaved(item: StructuredAsset, key: string): DraftAsset {
     imageTimestampSeconds: null,
     imageBox: null,
     reviewer: null,
+    imagePick: null,
     name: item.name,
     description: item.description,
   };

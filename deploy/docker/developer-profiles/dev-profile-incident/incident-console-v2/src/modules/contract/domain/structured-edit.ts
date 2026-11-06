@@ -84,6 +84,15 @@ const REVIEWER_SCHEMA = {
   },
 };
 
+// Set image: the frame second and box the reviewer chose for an item's evidence image. The server cuts the crop and frame
+// there (the reviewer's own box, nothing detected); the item's track and text are not part of it.
+const IMAGE_PICK_SCHEMA = {
+  type: ['object', 'null'],
+  additionalProperties: false,
+  required: ['seconds', 'box'],
+  properties: { seconds: { type: 'number', minimum: 0 }, box: BOX_SCHEMA },
+};
+
 export class StructuredEditError extends Error {
   status: 400 | 422;
   violations: ContractViolation[];
@@ -127,6 +136,7 @@ function editValidator(catalog?: ContractCatalog): ValidateFunction {
         image_timestamp_seconds: IMAGE_TIMESTAMP_SCHEMA,
         image_box: IMAGE_BOX_SCHEMA,
         reviewer: REVIEWER_SCHEMA,
+        image_pick: IMAGE_PICK_SCHEMA,
       },
     },
   });
