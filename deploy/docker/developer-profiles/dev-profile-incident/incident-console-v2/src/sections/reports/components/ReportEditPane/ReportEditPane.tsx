@@ -251,9 +251,13 @@ export function ReportEditPane({
               label="Title"
               left={title}
               right={
-                <span className="text-ink/60">
-                  {title} <span className="text-[11px] text-ink-caption">(model-generated)</span>
-                </span>
+                <Input
+                  aria-label="Draft title"
+                  className="h-9 text-xs"
+                  onChange={(event) => patchIncident({ title: event.target.value })}
+                  placeholder={title}
+                  value={draft.incident.title}
+                />
               }
             />
             <PairField

@@ -142,7 +142,7 @@ export function isEvidenceKeyOfVideo(key: string, videoKey: string): boolean {
  * each item from the parent item it came from (source_id). An item whose
  * image the reviewer replaced gets an upload entry instead, carrying the
  * second and box the reviewer drew it from when the edit has them; an item without
- * an image gets none. Model-only fields (title, severity rationale,
+ * an image gets none. Model-only fields (severity rationale,
  * confidence, location, timeline, uncertainties) are kept from the parent.
  */
 export function humanRevisionContent(

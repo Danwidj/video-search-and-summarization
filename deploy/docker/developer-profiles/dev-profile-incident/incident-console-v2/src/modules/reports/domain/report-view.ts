@@ -8,6 +8,7 @@
 // - Class A (structured): the revision's payload (incident, entities,
 //   instruments, assets) with each item's evidence. A human revision holds the
 //   reviewer's values; an AI revision the model's.
+// - Class A also holds the version's own title; `modelOutput.title` stays the model's.
 // - Class B (modelOutput): read-only fields from the immutable original model
 //   report in model_runs.notes (title, severity rationale, location, timeline,
 //   uncertainties), plus the model's original structured values so edits can
@@ -19,6 +20,8 @@ import type { ContractRunRequest, ContractRunResponse } from '@/modules/reports/
 
 export interface StructuredIncident {
   type: string | null;
+  /** The version's own title: the model's on an AI version, the reviewer's once they change it. */
+  title: string | null;
   startSeconds: number | null;
   endSeconds: number | null;
   duration: number | null;
@@ -152,9 +155,10 @@ export interface ReportView {
   differences: { type?: { model: string; current: string }; severity?: { model: number; current: number }; fields: string[] };
 }
 
-/** Heading: the model's title when it gave one, else "<Type> report". */
+/** Heading: this version's title, else the model's when an older record stored none, else "<Type> report". */
 export function reportHeading(view: ReportView): string {
   return (
+    view.structured.incident.title ||
     view.modelOutput?.title ||
     `${view.structured.incident.type ? view.structured.incident.type[0].toUpperCase() + view.structured.incident.type.slice(1) : 'Incident'} report`
   );

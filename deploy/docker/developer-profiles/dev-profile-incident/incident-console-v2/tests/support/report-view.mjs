@@ -49,6 +49,7 @@ export function unchangedEdit(rows) {
   return {
     incident: {
       type: incident.type,
+      title: incident.title,
       start_timestamp: incident.startSeconds,
       end_timestamp: incident.endSeconds,
       description: incident.description,

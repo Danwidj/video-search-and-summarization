@@ -74,6 +74,7 @@ function smokeEdit() {
   return {
     incident: {
       type: 'assault',
+      title: 'Reviewer title',
       start_timestamp: 1,
       end_timestamp: 9,
       description: 'Reviewer: one person pushes the other over.',
@@ -189,6 +190,7 @@ for (const [name, make] of Object.entries(implementations)) {
       const record = await repo.getRevision(VIDEO_ID, 2);
       assert.deepEqual(record.incident, {
         type: 'assault',
+        title: 'Reviewer title',
         startSeconds: 1,
         endSeconds: 9,
         duration: 8,

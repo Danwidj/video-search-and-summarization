@@ -42,7 +42,7 @@ interface EditEntitySpan {
 }
 
 export interface StructuredEdit {
-  incident: { type: string; start_timestamp: number; end_timestamp: number; description: string; severity_level: number };
+  incident: { type: string; title: string; start_timestamp: number; end_timestamp: number; description: string; severity_level: number };
   entities: Array<{ entity_id: string; type: string; description: string } & EditEntitySpan & EditItemDetails>;
   instruments: Array<
     { instrument_id: string; entity_id: string | null; name: string; description: string; threat_level: number } & EditItemDetails
@@ -76,6 +76,7 @@ interface DraftItemDetails {
 export interface EditDraft {
   incident: {
     type: string | null;
+    title: string;
     start_timestamp: number | null;
     end_timestamp: number | null;
     description: string;
@@ -178,6 +179,7 @@ export function draftFromView(view: ReportView): EditDraft {
   return {
     incident: {
       type: allowedType,
+      title: incident.title ?? '',
       start_timestamp: incident.startSeconds,
       end_timestamp: incident.endSeconds,
       description: incident.description ?? '',
@@ -230,6 +232,7 @@ export function draftProblems(draft: EditDraft): string[] {
   const problems: string[] = [];
   const { incident } = draft;
   if (!incident.type) problems.push('Choose an incident type.');
+  if (!incident.title.trim()) problems.push('Enter a title.');
   if (incident.start_timestamp === null || incident.end_timestamp === null) problems.push('Enter the incident start and end in seconds.');
   else if (incident.end_timestamp < incident.start_timestamp) problems.push('The incident end must not be before its start.');
   if (incident.severity_level === null) problems.push('Choose a severity level.');
@@ -267,6 +270,7 @@ export function editFromDraft(draft: EditDraft): StructuredEdit {
   return {
     incident: {
       type: draft.incident.type ?? '',
+      title: draft.incident.title.trim(),
       start_timestamp: draft.incident.start_timestamp ?? 0,
       end_timestamp: draft.incident.end_timestamp ?? 0,
       description: draft.incident.description,

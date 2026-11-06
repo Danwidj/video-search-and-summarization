@@ -25,7 +25,7 @@ const track = (ts, extra = {}) => ({
   ...extra,
 });
 const emptyDraft = () => ({
-  incident: { type: 'assault', start_timestamp: 2, end_timestamp: 9, description: '', severity_level: 3 },
+  incident: { type: 'assault', title: 'An incident', start_timestamp: 2, end_timestamp: 9, description: '', severity_level: 3 },
   entities: [],
   instruments: [],
   assets: [],

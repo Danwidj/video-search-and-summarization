@@ -161,6 +161,7 @@ export function draftChangeCount(base: Structured, draft: EditDraft): number {
   const { incident } = base;
   const fields: Array<[unknown, unknown]> = [
     [incident.type, draft.incident.type],
+    [incident.title ?? '', draft.incident.title],
     [incident.startSeconds, draft.incident.start_timestamp],
     [incident.endSeconds, draft.incident.end_timestamp],
     [incident.description ?? '', draft.incident.description],
@@ -296,6 +297,7 @@ export function revertDraftItem(draft: EditDraft, a: Structured, row: PairRow): 
 export function draftToStructured(draft: EditDraft): Structured {
   const incident: StructuredIncident = {
     type: editableIncidentType(draft.incident.type),
+    title: draft.incident.title,
     startSeconds: draft.incident.start_timestamp,
     endSeconds: draft.incident.end_timestamp,
     duration:
