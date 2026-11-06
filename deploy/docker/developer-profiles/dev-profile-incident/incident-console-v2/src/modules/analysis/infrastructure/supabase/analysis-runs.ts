@@ -7,6 +7,7 @@
 // (modules/analysis/domain/AnalysisRunRepository.ts).
 
 import type { PostgrestClient } from '@/lib/postgrest/client';
+import { isMissingHashColumn } from '@/modules/uploads/domain/duplicate';
 import type {
   AgentStoredRevision,
   AnalysisAttemptRecord,
@@ -49,7 +50,18 @@ export class SupabaseAnalysisRunAdapter implements AnalysisRunRepository {
    * the original upload timestamp.
    */
   async recordUploadedVideo(video: UploadedVideo): Promise<void> {
-    await this.db.insertIfAbsent('videos', { id: video.videoId, filepath: video.r2Key, uploaded_datetime: video.uploadedAt }, 'id');
+    const row = { id: video.videoId, filepath: video.r2Key, uploaded_datetime: video.uploadedAt };
+    if (!video.contentSha256) {
+      await this.db.insertIfAbsent('videos', row, 'id');
+      return;
+    }
+    try {
+      await this.db.insertIfAbsent('videos', { ...row, content_sha256: video.contentSha256 }, 'id');
+    } catch (error) {
+      // Before the migration the column does not exist: record the video without it, as the console did before.
+      if (!isMissingHashColumn(error)) throw error;
+      await this.db.insertIfAbsent('videos', row, 'id');
+    }
   }
 
   async saveFailedAttempt(attempt: AnalysisAttemptRecord): Promise<void> {

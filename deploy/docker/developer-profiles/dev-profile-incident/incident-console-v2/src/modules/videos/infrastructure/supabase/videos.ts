@@ -15,6 +15,7 @@ import type {
 } from '@/modules/videos/domain/VideoRepository';
 import type { OfficialCrop } from '@/modules/reports/domain/revision';
 import type { PostgrestClient } from '@/lib/postgrest/client';
+import { isMissingHashColumn } from '@/modules/uploads/domain/duplicate';
 import { explicitVideoId } from '@/modules/reports/domain/run-notes';
 
 type Row = Record<string, unknown>;
@@ -90,6 +91,16 @@ export class SupabaseVideoAdapter implements VideoRepository {
     if (filter === 'awaiting-selection') query.official_revision_id = 'is.null';
     const { rows, total } = await this.db.selectPage('videos', query, pageSize, (page - 1) * pageSize);
     return { items: rows.map(videoListItem), totalItems: total };
+  }
+
+  async findByContentHash(contentSha256: string): Promise<VideoRecord | null> {
+    try {
+      const row = await this.db.selectOne('videos', { content_sha256: contentSha256 });
+      return row ? videoRecord(String(row.id), row) : null;
+    } catch (error) {
+      if (isMissingHashColumn(error)) return null;
+      throw error;
+    }
   }
 
   async getVideo(videoId: string): Promise<VideoRecord | null> {

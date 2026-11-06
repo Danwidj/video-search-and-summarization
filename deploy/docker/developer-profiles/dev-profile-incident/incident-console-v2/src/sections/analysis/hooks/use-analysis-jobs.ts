@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { DuplicateUploadError, type DuplicateUpload } from '@/modules/uploads/domain/duplicate';
 import type { AnalysisJob } from '@/modules/jobs/domain/job';
 
 /** How often the upload page reads the jobs list. */
@@ -9,6 +10,7 @@ export const JOBS_POLL_MS = 3000;
 
 interface ApiError {
   error?: string;
+  duplicate?: DuplicateUpload;
 }
 
 export async function jobsRequest<T>(url: string, init?: RequestInit): Promise<T> {
@@ -18,6 +20,7 @@ export async function jobsRequest<T>(url: string, init?: RequestInit): Promise<T
     headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
   });
   const payload = (await response.json().catch(() => ({}))) as T & ApiError;
+  if (response.status === 409 && payload.duplicate) throw new DuplicateUploadError(payload.duplicate);
   if (!response.ok) throw new Error(payload.error || `Request failed with HTTP ${response.status}`);
   return payload;
 }
@@ -69,10 +72,15 @@ export function useAnalysisJobs() {
   );
 
   const enqueue = useCallback(
-    async (input: { filePath: string; filename: string; model: string }) => {
+    async (input: { filePath: string; filename: string; model: string; contentSha256?: string | null }) => {
       const { job } = await jobsRequest<{ job: AnalysisJob }>('/api/jobs', {
         method: 'POST',
-        body: JSON.stringify({ filepath: input.filePath, filename: input.filename, ...(input.model ? { model: input.model } : {}) }),
+        body: JSON.stringify({
+          filepath: input.filePath,
+          filename: input.filename,
+          ...(input.contentSha256 ? { contentSha256: input.contentSha256 } : {}),
+          ...(input.model ? { model: input.model } : {}),
+        }),
       });
       void refresh();
       return job;

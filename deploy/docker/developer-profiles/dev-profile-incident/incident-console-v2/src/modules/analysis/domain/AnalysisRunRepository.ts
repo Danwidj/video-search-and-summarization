@@ -84,6 +84,8 @@ export interface UploadedVideo {
   videoId: string;
   r2Key: string;
   uploadedAt: string;
+  /** SHA-256 of the file as uploaded; omitted for a video analysed without one. */
+  contentSha256?: string | null;
 }
 
 /** What the agent stored or cropped itself (agent mode); the revision is stored by the repository when the agent did not. */

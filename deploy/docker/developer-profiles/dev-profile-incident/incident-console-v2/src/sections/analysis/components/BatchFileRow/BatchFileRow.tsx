@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { type BatchItem, type BatchStage, type BatchStatus, batchStageLabels, itemProgress } from '@/sections/analysis/batch-upload';
+import { duplicateReportPath } from '@/modules/uploads/domain/duplicate';
 import { formatElapsed } from '@/sections/analysis/stage-progress';
 
 /** The steps a row shows: converting is part of the first, as in the analysis strip. */
@@ -110,9 +111,9 @@ export function BatchFileRow({ item, onRemove, onRetry, onCancel }: BatchFileRow
             className={cn(item.status === 'failed' && 'border-destructive/30 bg-destructive/10 text-destructive')}
             variant={item.status === 'done' ? 'default' : 'secondary'}
           >
-            {statusLabel[item.status]}
+            {item.duplicate ? 'Already uploaded' : statusLabel[item.status]}
           </Badge>
-          {item.status === 'failed' && onRetry && (
+          {item.status === 'failed' && onRetry && !item.duplicate && (
             <Button aria-label={`Retry ${item.name}`} onClick={() => onRetry(item.key)} size="sm" type="button" variant="outline">
               <RotateCcw data-icon="inline-start" />
               Retry
@@ -194,7 +195,20 @@ export function BatchFileRow({ item, onRemove, onRetry, onCancel }: BatchFileRow
         })}
       </ol>
 
-      {item.status === 'failed' && (
+      {item.status === 'failed' && item.duplicate && (
+        <Alert className="mt-3" data-duplicate={item.duplicate.kind}>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>{item.error}</span>
+            {duplicateReportPath(item.duplicate) && (
+              <Link className="font-semibold text-primary hover:underline" href={duplicateReportPath(item.duplicate) as string}>
+                Open {item.duplicate.name} →
+              </Link>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {item.status === 'failed' && !item.duplicate && (
         <Alert className="mt-3" variant="destructive">
           <AlertDescription>
             <strong className="font-semibold">Stopped at {stepLabel(item.failedAt)}.</strong> {sentence(item.error)}{' '}

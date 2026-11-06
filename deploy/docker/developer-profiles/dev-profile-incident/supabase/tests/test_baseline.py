@@ -1052,6 +1052,25 @@ with tempfile.TemporaryDirectory() as tmp:
         assert one(conn, "SELECT has_function_privilege('service_role', 'public.claim_analysis_job(integer)', 'EXECUTE')")[0]
         conn.execute("SET ROLE service_role")
 
+    @test("content hash: one video per file content, one active job per file content, failed jobs release it")
+    def _():
+        a, b = "a" * 64, "b" * 64
+        conn.execute("INSERT INTO public.videos (id, filepath, content_sha256) VALUES ('hv1', 'uploads/h1.mp4', %s)", (a,))
+        refused(conn, "INSERT INTO public.videos (id, filepath, content_sha256) VALUES ('hv2', 'uploads/h1-2.mp4', %s)", (a,),
+                kind=errors.UniqueViolation, contains="videos_content_sha256_key")
+        refused(conn, "INSERT INTO public.videos (id, filepath, content_sha256) VALUES ('hv3', 'uploads/h3.mp4', 'NOT-A-HASH')",
+                contains="videos_content_sha256_check")
+        # Videos without a hash (older rows before the backfill, seeded clips) are never constrained.
+        conn.execute("INSERT INTO public.videos (id, filepath) VALUES ('hn1', 'uploads/n1.mp4'), ('hn2', 'uploads/n2.mp4')")
+        add = "INSERT INTO public.analysis_jobs (file_path, filename, content_sha256) VALUES (%s, %s, %s) RETURNING id"
+        first = one(conn, add, ("uploads/j.mp4", "j.mp4", b))[0]
+        refused(conn, add, ("uploads/j-2.mp4", "j-2.mp4", b), kind=errors.UniqueViolation,
+                contains="analysis_jobs_active_content_sha256_key")
+        conn.execute("UPDATE public.analysis_jobs SET status = 'failed' WHERE id = %s", (first,))
+        second = one(conn, add, ("uploads/j-3.mp4", "j-3.mp4", b))[0]
+        conn.execute("DELETE FROM public.analysis_jobs WHERE id IN (%s, %s)", (first, second))
+        conn.execute("DELETE FROM public.videos WHERE id IN ('hv1', 'hn1', 'hn2')")
+
     @test("deleting a video removes its revisions, crops and query results")
     def _():
         conn.execute("INSERT INTO public.queries (id, query_text) VALUES ('q1', 'man')")

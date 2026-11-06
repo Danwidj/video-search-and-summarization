@@ -5,6 +5,7 @@
 // is a function, so it runs on the database clock and is atomic.
 
 import type { PostgrestClient } from '@/lib/postgrest/client';
+import { DuplicateUploadError, isMissingHashColumn, isUniqueViolation } from '@/modules/uploads/domain/duplicate';
 import type { AnalysisJobRepository, NewAnalysisJob } from '@/modules/jobs/domain/AnalysisJobRepository';
 import { type AnalysisJob, JOB_STATUSES, type JobOutcome, type JobStatus, jobsList } from '@/modules/jobs/domain/job';
 
@@ -28,6 +29,7 @@ export function jobFromRow(row: Record<string, unknown>): AnalysisJob {
     heartbeatAt: text(row.heartbeat_at),
     videoId: text(row.video_id),
     revisionId: integer(row.revision_id),
+    contentSha256: text(row.content_sha256)?.trim() || null,
   };
 }
 
@@ -44,14 +46,35 @@ export class SupabaseAnalysisJobAdapter implements AnalysisJobRepository {
     this.db = db;
   }
 
+  async findActiveByContentHash(contentSha256: string): Promise<AnalysisJob | null> {
+    try {
+      const rows = await this.db.selectWhere('analysis_jobs', {
+        select: '*',
+        content_sha256: `eq.${contentSha256}`,
+        status: 'in.(queued,running)',
+        limit: '1',
+      });
+      return rows.length ? jobFromRow(rows[0]) : null;
+    } catch (error) {
+      if (isMissingHashColumn(error)) return null;
+      throw error;
+    }
+  }
+
   async enqueue(job: NewAnalysisJob): Promise<AnalysisJob> {
-    return jobFromRow(
-      await this.db.insertRow('analysis_jobs', {
-        file_path: job.filePath,
-        filename: job.filename,
-        model: job.model,
-      }),
-    );
+    const row = { file_path: job.filePath, filename: job.filename, model: job.model };
+    if (!job.contentSha256) return jobFromRow(await this.db.insertRow('analysis_jobs', row));
+    try {
+      return jobFromRow(await this.db.insertRow('analysis_jobs', { ...row, content_sha256: job.contentSha256 }));
+    } catch (error) {
+      // Before the migration the column does not exist: queue without it, as the console did before.
+      if (isMissingHashColumn(error)) return jobFromRow(await this.db.insertRow('analysis_jobs', row));
+      if (!isUniqueViolation(error)) throw error;
+      // The database's unique index on queued and running jobs decided the race: report the winner.
+      const active = await this.findActiveByContentHash(job.contentSha256);
+      if (!active) throw error;
+      throw new DuplicateUploadError({ kind: 'job', name: active.filename, videoId: null, jobId: active.id });
+    }
   }
 
   async list(recent: number): Promise<AnalysisJob[]> {

@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 
+import { DuplicateUploadError, type DuplicateUpload } from '@/modules/uploads/domain/duplicate';
 import { inspectUploadName } from '@/lib/r2/names';
 import { isValidR2Key } from '@/lib/r2/key';
 import { thumbnailCaptureTime } from '@/lib/ui/thumbnail';
@@ -12,11 +13,15 @@ export interface UploadedVideo {
   filename: string;
   /** True when the console converted the file to H.264; false when it was stored byte for byte. */
   converted: boolean;
+  /** SHA-256 of the file as uploaded; the job carries it to the video. */
+  contentSha256: string | null;
 }
 
 interface UploadAnswer extends ApiError {
   filePath?: string;
   converted?: boolean;
+  contentSha256?: string;
+  duplicate?: DuplicateUpload;
 }
 
 interface ApiError {
@@ -58,7 +63,7 @@ function uploadToR2(
   signal: AbortSignal,
   onProgress: (progress: number) => void,
   onUploaded?: () => void,
-): Promise<{ filePath: string; converted: boolean }> {
+): Promise<{ filePath: string; converted: boolean; contentSha256: string | null }> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
       reject(new Error('Upload was cancelled'));
@@ -84,7 +89,9 @@ function uploadToR2(
       }
       if (request.status >= 200 && request.status < 300 && isValidR2Key(payload.filePath)) {
         onProgress(100);
-        resolve({ filePath: payload.filePath, converted: payload.converted === true });
+        resolve({ filePath: payload.filePath, converted: payload.converted === true, contentSha256: payload.contentSha256 ?? null });
+      } else if (request.status === 409 && payload.duplicate) {
+        reject(new DuplicateUploadError(payload.duplicate));
       } else {
         reject(new Error(payload.error || `Could not upload the video to R2 (HTTP ${request.status})`));
       }
@@ -191,12 +198,12 @@ export async function uploadVideo(
 ): Promise<UploadedVideo> {
   const thumbnail = captureThumbnail(file).catch(() => null);
   const filename = inspectUploadName(file.name).name;
-  const { filePath, converted } = await uploadToR2(file, filename, signal, onProgress, onUploaded);
+  const { filePath, converted, contentSha256 } = await uploadToR2(file, filename, signal, onProgress, onUploaded);
 
   const thumbnailBlob = await thumbnail;
   if (thumbnailBlob) await uploadThumbnail(thumbnailBlob, filePath, signal).catch(() => undefined);
 
-  return { filePath, filename: filePath.split('/').pop() || filename, converted };
+  return { filePath, filename: filePath.split('/').pop() || filename, converted, contentSha256 };
 }
 
 export function useVideoUpload() {

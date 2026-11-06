@@ -10,10 +10,14 @@ export interface NewAnalysisJob {
   filePath: string;
   filename: string;
   model: string | null;
+  /** SHA-256 of the file as uploaded. At most one queued or running job holds a given hash; enqueue throws DuplicateUploadError otherwise. */
+  contentSha256?: string | null;
 }
 
 export interface AnalysisJobRepository {
   enqueue(job: NewAnalysisJob): Promise<AnalysisJob>;
+  /** The queued or running job for this content, or null. */
+  findActiveByContentHash(contentSha256: string): Promise<AnalysisJob | null>;
   /** Every queued and running job plus the latest `recent` finished ones (see jobsList). */
   list(recent: number): Promise<AnalysisJob[]>;
   /**
