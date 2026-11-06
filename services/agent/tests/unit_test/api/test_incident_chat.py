@@ -15,6 +15,7 @@ from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 import pytest
 
+from vss_agents.api.incident_chat import NEEDS_NAME
 from vss_agents.api.incident_chat import NOT_SEARCHED
 from vss_agents.api.incident_chat import AssistantMessage
 from vss_agents.api.incident_chat import ChatRequest
@@ -754,6 +755,19 @@ def _citation_seconds(entry: dict[str, Any]) -> float:
         json={"messages": [{"role": "user", "content": "Who is involved?"}], "version_id": 7},
     )
     return next(c for c in resp.json()["message"]["citations"] if c["item_id"] == "E1")["timestamp_seconds"]
+
+
+def test_a_follow_up_that_needs_the_conversation_says_so_in_template_mode():
+    store = FakeRevisionStore(revisions={7: _robbery_revision()})
+    messages = [
+        {"role": "user", "content": "Who is involved?"},
+        {"role": "assistant", "content": "Three people."},
+        {"role": "user", "content": "What did he do next?"},
+    ]
+    resp = _make_client(revision_store=store).post(
+        "/api/v1/incidents/chat", json={"messages": messages, "version_id": 7}
+    )
+    assert resp.json()["message"] == {"role": "assistant", "content": NEEDS_NAME, "citations": []}
 
 
 def _animal_revision(revision_id: int, *, vase_image: str | None = "evidence/rev/A1.jpg") -> dict[str, Any]:
