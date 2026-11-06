@@ -245,6 +245,11 @@ def test_an_invented_citation_gets_no_card_and_a_real_one_keeps_its_stored_secon
     assert body["grounding"]["dropped_citations"] == ["E9"]
 
 
+def test_an_item_the_answer_names_gets_a_card_even_if_the_model_forgot_to_cite_it() -> None:
+    body = _ask("Who pushed him?", FakeModel(answer="The man in the white shirt pushed him to the wall.")).json()
+    assert [c["item_id"] for c in body["message"]["citations"]] == ["E2", "A1"]
+
+
 def test_with_no_citation_the_cards_come_from_what_the_text_names() -> None:
     body = _ask("Where did he end up?", FakeModel(answer="He was pushed to the wall.", citations=[])).json()
     assert [c["item_id"] for c in body["message"]["citations"]] == ["A1"]

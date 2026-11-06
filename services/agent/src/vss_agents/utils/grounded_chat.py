@@ -306,7 +306,8 @@ def check_routed(
     """The model's answer with its parts labelled by code and its citations and times checked against the report.
 
     An interpretation and a missing detail are written under their own labels, so a reading cannot pass as a recorded
-    fact. With no valid citation, the items the text itself names are cited (:func:`report_answers.text_items`).
+    fact. The cards are the valid citations plus any item the answer names without citing it
+    (:func:`report_answers.text_items`), so navigation does not depend on the model remembering to cite.
     """
     for key in ("interpretation", "not_established"):
         if not isinstance(reply.get(key), str):
@@ -325,8 +326,9 @@ def check_routed(
             parts.append(f"{label}: {report_answers.resolve_references(text, mentions)}")
     content = "\n\n".join(parts)
     cited = checked.item_ids
-    if not cited and not checked.insufficient_evidence:
-        cited = tuple(report_answers.text_items([checked.content], view))
+    if not checked.insufficient_evidence:
+        named = report_answers.text_items([checked.content], view)
+        cited = (*cited, *(item_id for item_id in named if item_id not in cited))
     return RoutedAnswer(
         content=content,
         item_ids=cited,
