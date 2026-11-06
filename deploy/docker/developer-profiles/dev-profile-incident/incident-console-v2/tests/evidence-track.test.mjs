@@ -21,6 +21,7 @@ const {
   trackBoxAt,
   trackColour,
   trackedReportItems,
+  TRACK_COLOURS,
   TRACK_TOLERANCE_SECONDS,
 } = await import('../src/modules/reports/domain/track.ts');
 const { structuredFromPayload } = await import('../src/modules/reports/domain/payload-view.ts');
@@ -208,6 +209,16 @@ test('only tracked items are drawn, each with its own colour in id order', () =>
     ],
   );
   assert.notEqual(trackColour(0), trackColour(1));
+});
+
+test('the colour pool has ten distinct colours and the eleventh item reuses the first', () => {
+  assert.equal(TRACK_COLOURS.length, 10);
+  assert.equal(new Set(TRACK_COLOURS).size, 10);
+  assert.deepEqual(
+    Array.from({ length: 10 }, (_, i) => trackColour(i)),
+    [...TRACK_COLOURS],
+  );
+  assert.equal(trackColour(10), trackColour(0));
 });
 
 test('a track label is the item name, falling back to its id only when it has no name', () => {

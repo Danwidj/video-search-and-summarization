@@ -170,8 +170,23 @@ export const STILL_BOX_TOLERANCE_SECONDS = 0.25;
 export const stillBoxHolds = (still: StillBox, playheadSeconds: number): boolean =>
   Math.abs(playheadSeconds - still.seconds) <= STILL_BOX_TOLERANCE_SECONDS;
 
-/** One stable colour per tracked item, by its position among the report's tracked items (sorted by id). */
-const TRACK_COLOURS = ['#22c55e', '#3b82f6', '#f97316', '#e11d48', '#a855f7', '#14b8a6', '#eab308', '#ec4899'] as const;
+/**
+ * One stable colour per tracked item, by its position among the report's tracked items (entities, then instruments,
+ * then assets, each by id), so the first ten items of any type never share one. Ten hues far apart in CIELAB (the closest
+ * pair is about 21 apart) and each dark enough for white label text on video.
+ */
+export const TRACK_COLOURS = [
+  '#15803d', // green
+  '#2563eb', // blue
+  '#ea580c', // orange
+  '#dc2626', // red
+  '#9333ea', // purple
+  '#0e7490', // cyan
+  '#a16207', // gold
+  '#db2777', // pink
+  '#78350f', // brown
+  '#475569', // slate
+] as const;
 export const trackColour = (index: number): string =>
   TRACK_COLOURS[((index % TRACK_COLOURS.length) + TRACK_COLOURS.length) % TRACK_COLOURS.length];
 
