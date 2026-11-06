@@ -41,19 +41,20 @@
 ## 4. Disagreement and adjudication
 
 - **Disputed:** 10 records went to the adjudicator: 8 judge-calibration pairs and 2 chat records.
-- **Position bias:** the adjudicator supported the opinion shown first in 9 of 10 cases (two-sided binomial p = 0.02), although the order was randomised (A first in 6). Its rulings are therefore treated as **low reliability**, and those records stay **AI-disputed**.
+- **Position bias:** the adjudicator supported the opinion shown first in 9 of 10 cases (two-sided binomial p = 0.02), although the order was randomised (A first in 6). Its rulings are therefore **not authoritative**.
+- **The 10 disputes stay unresolved:** 8 judge-calibration pairs and 2 chat records (owner decision, 2026-11-03). They carry no result in any analysis. The adjudicator's opinions and both reviewers' raw verdicts are kept with their provenance in the private AI-reviewed sets.
+- **Adjudication method:** a debiased protocol is proposed in [v2-next-run-proposals.md](v2-next-run-proposals.md).
 - **Recommended reference changes:** recorded in the private AI-reviewed sets but **not applied**:
   - one chat library question, where the reference list may miss an incident;
   - one judge-calibration GT wording, which cannot change because GT v1.0 is frozen.
 
 ## 5. Judge calibration: AI-consensus agreement analysis (not human calibration)
 
-This analysis compares the primary judge (gpt-oss-20b) with the AI-consensus verdicts, counting a judge score ≥ 0.5 as a pass. It **does not satisfy** the pre-registered human criterion (judge–human κ ≥ 0.60).
+This analysis compares the primary judge (gpt-oss-20b) with the AI-consensus verdicts only, counting a judge score ≥ 0.5 as a pass; the 8 unresolved disputes are excluded. It is reported **separately from human calibration**, which was not done, and it **does not satisfy** the pre-registered human criterion (judge–human κ ≥ 0.60).
 
 | Comparison | n | Agreement | κ (95% CI) | Judge pass rate | AI pass rate |
 |---|---|---|---|---|---|
 | Primary vs AI-consensus | 72 | 0.82 | 0.63 (0.43–0.80) | 0.44 | 0.35 |
-| Primary vs all 80 (with low-reliability adjudications) | 80 | 0.79 | 0.56 (0.37–0.73) | 0.45 | 0.34 |
 | Mistral (sensitivity) vs AI-consensus | 36 | 0.86 | 0.73 (0.51–0.94) | 0.56 | 0.42 |
 
 **What this shows:**
