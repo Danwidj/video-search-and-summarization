@@ -25,6 +25,9 @@ const { POST } = await import('../src/app/api/dashboard/chart/route.ts');
 const { requestChart } = await import('../src/sections/dashboard/hooks/use-chart-request.ts');
 
 const NOW = new Date('2026-10-31T12:00:00.000Z');
+/** The viewer's day at NOW in the UTC zone the chart tests use. */
+const TODAY = '2026-10-31';
+const CONTEXT = { today: TODAY, timezone: 'UTC' };
 const IMAGE = 'data:image/png;base64,aW1hZ2U=';
 const rpc = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'dashboard-rpc.json'), 'utf8'));
 const analytics = dashboardFromRpc(rpc);
@@ -94,7 +97,7 @@ const counts = (chart, key = 'count') => Object.fromEntries(chart.rows.map((row)
 describe('the allowlist', () => {
   test('every dimension accepts its own metric', () => {
     for (const [dimension, rule] of Object.entries(CHART_DIMENSIONS)) {
-      assert.ok(parseChartSpec(spec({ dimension, metric: rule.metric })), dimension);
+      assert.ok(parseChartSpec(spec({ dimension, metric: rule.metric }), TODAY), dimension);
     }
   });
 
@@ -120,7 +123,7 @@ describe('the allowlist', () => {
   };
   for (const [name, reply] of Object.entries(refused)) {
     test(`refuses ${name}, without reaching the database or the chart service`, async () => {
-      assert.equal(parseChartSpec(reply), null);
+      assert.equal(parseChartSpec(reply, TODAY), null);
       const { answer, queries, drawings } = await chartFor(reply);
       assert.deepEqual(answer, { kind: 'unsupported' });
       assert.equal(queries.length, 0);
@@ -347,6 +350,83 @@ describe('figures come from the dashboard data', () => {
     assert.deepEqual(chart.scope, ['Last 30 days', 'Assault', 'High severity']);
   });
 
+  test('a month is its whole calendar month in the viewer time zone, titled with its name', async () => {
+    const { chart, queries } = await chartFor(spec({ dimension: 'incident_type', period: { month: '2026-10' } }));
+    assert.deepEqual(queries[0].periodStart, new Date('2026-10-01T00:00:00Z'));
+    assert.deepEqual(queries[0].periodEnd, new Date('2026-11-01T00:00:00Z'));
+    assert.equal(chart.title, 'Reports by incident type, October 2026');
+    assert.deepEqual(chart.scope, ['October 2026']);
+  });
+
+  test('a day is one half-open day, and a from and to pair is inclusive of its last day', async () => {
+    const day = await chartFor(spec({ dimension: 'severity', period: { day: '2026-10-28' } }));
+    assert.deepEqual(
+      [day.queries[0].periodStart, day.queries[0].periodEnd],
+      [new Date('2026-10-28T00:00:00Z'), new Date('2026-10-29T00:00:00Z')],
+    );
+    assert.equal(day.chart.title, 'Reports by severity, 28 October 2026');
+
+    const range = await chartFor(spec({ dimension: 'report_day', period: { from: '2026-10-01', to: '2026-10-15' } }));
+    assert.deepEqual(
+      [range.queries[0].periodStart, range.queries[0].periodEnd],
+      [new Date('2026-10-01T00:00:00Z'), new Date('2026-10-16T00:00:00Z')],
+    );
+    assert.equal(range.chart.title, 'Reports per day, 1 to 15 October 2026');
+    assert.deepEqual(range.chart.scope, ['1 to 15 October 2026']);
+  });
+
+  test('a calendar period is read in the viewer time zone, as the fixed ranges are', async () => {
+    const dashboard = statusDashboard(analytics);
+    const reply = spec({ dimension: 'severity', period: { day: '2026-10-28' } });
+    await generateChart(
+      { interpreter: { interpret: async () => reply }, dashboard, renderer: renderer() },
+      { request: 'severity on 28 October', chartType: 'bar', timezone: 'Asia/Singapore', now: NOW },
+    );
+    assert.deepEqual(dashboard.queries[0].periodStart, new Date('2026-10-27T16:00:00Z'));
+    assert.deepEqual(dashboard.queries[0].periodEnd, new Date('2026-10-28T16:00:00Z'));
+  });
+
+  test('a month still running counts up to today, and says so in its title', async () => {
+    const dashboard = statusDashboard(analytics);
+    const answer = await generateChart(
+      {
+        interpreter: { interpret: async () => spec({ dimension: 'report_day', period: { month: '2026-10' } }) },
+        dashboard,
+        renderer: renderer(),
+      },
+      { request: 'reports per day in October so far', chartType: 'bar', timezone: 'UTC', now: new Date('2026-10-06T12:00:00Z') },
+    );
+    assert.deepEqual(
+      [dashboard.queries[0].periodStart, dashboard.queries[0].periodEnd],
+      [new Date('2026-10-01T00:00:00Z'), new Date('2026-10-07T00:00:00Z')],
+    );
+    assert.equal(answer.chart.title, 'Reports per day, 1 to 6 October 2026');
+  });
+
+  test('the interpreter is told today and the time zone, and a future month is refused before any query', async () => {
+    const seen = [];
+    const dashboard = statusDashboard(analytics);
+    const interpreter = {
+      interpret: async (_request, context) => {
+        seen.push(context);
+        return spec({ period: { month: '2026-12' } });
+      },
+    };
+    const answer = await generateChart(
+      { interpreter, dashboard, renderer: renderer() },
+      // 20:00 UTC on 31 October is already 1 November in Singapore, so "today" there is 1 November.
+      {
+        request: 'number of incident types in December',
+        chartType: 'bar',
+        timezone: 'Asia/Singapore',
+        now: new Date('2026-10-31T20:00:00Z'),
+      },
+    );
+    assert.deepEqual(seen, [{ today: '2026-11-01', timezone: 'Asia/Singapore' }]);
+    assert.deepEqual(answer, { kind: 'unsupported' });
+    assert.equal(dashboard.queries.length, 0);
+  });
+
   test('all time sends open bounds', async () => {
     const { queries } = await chartFor(spec());
     assert.equal(queries[0].periodStart, null);
@@ -478,39 +558,39 @@ describe('the model call', () => {
       sent = { url: String(url), body: JSON.parse(String(init?.body)) };
       return Response.json({ reply: spec() });
     };
-    const reply = await new AgentChartInterpreter('http://agent.test/').interpret('incident distribution');
+    const reply = await new AgentChartInterpreter('http://agent.test/').interpret('incident distribution', CONTEXT);
     assert.deepEqual(reply, spec());
     assert.equal(sent.url, 'http://agent.test/api/v1/incidents/chart-requests');
     assert.deepEqual(sent.body, {
       messages: [
         { role: 'system', content: CHART_SYSTEM_PROMPT },
-        { role: 'user', content: 'incident distribution' },
+        { role: 'user', content: 'Today is 2026-10-31 (time zone UTC).\nRequest: incident distribution' },
       ],
     });
   });
 
   test('passes the reply on unvalidated: null when the agent found no object', async () => {
     globalThis.fetch = async () => Response.json({ reply: null });
-    assert.equal(await new AgentChartInterpreter('http://agent.test').interpret('x'), null);
+    assert.equal(await new AgentChartInterpreter('http://agent.test').interpret('x', CONTEXT), null);
     globalThis.fetch = async () => Response.json({ reply: { unsupported: true, extra: 1 } });
-    assert.deepEqual(await new AgentChartInterpreter('http://agent.test').interpret('x'), { unsupported: true, extra: 1 });
+    assert.deepEqual(await new AgentChartInterpreter('http://agent.test').interpret('x', CONTEXT), { unsupported: true, extra: 1 });
   });
 
   test('a failed call or a malformed answer throws ChartInterpreterError and never echoes the body', async () => {
     const interpreter = new AgentChartInterpreter('http://agent.test');
     globalThis.fetch = async () => new Response('upstream secret detail', { status: 502 });
     await assert.rejects(
-      () => interpreter.interpret('x'),
+      () => interpreter.interpret('x', CONTEXT),
       (error) => error instanceof ChartInterpreterError && !error.message.includes('secret'),
     );
     globalThis.fetch = async () => Response.json({ other: 1 });
-    await assert.rejects(() => interpreter.interpret('x'), ChartInterpreterError);
+    await assert.rejects(() => interpreter.interpret('x', CONTEXT), ChartInterpreterError);
     globalThis.fetch = async () => new Response('not json', { status: 200 });
-    await assert.rejects(() => interpreter.interpret('x'), ChartInterpreterError);
+    await assert.rejects(() => interpreter.interpret('x', CONTEXT), ChartInterpreterError);
     globalThis.fetch = async () => {
       throw new TypeError('fetch failed');
     };
-    await assert.rejects(() => interpreter.interpret('x'), ChartInterpreterError);
+    await assert.rejects(() => interpreter.interpret('x', CONTEXT), ChartInterpreterError);
   });
 });
 
@@ -571,7 +651,11 @@ describe('POST /api/dashboard/chart', () => {
       modelCalls[0].messages.map((message) => message.role),
       ['system', 'user'],
     );
-    assert.equal(modelCalls[0].messages[1].content, 'severity breakdown');
+    // The model is told today's date in the viewer's time zone, then the request, which is the only thing it classifies.
+    assert.match(
+      modelCalls[0].messages[1].content,
+      /^Today is \d{4}-\d{2}-\d{2} \(time zone Asia\/Singapore\)\.\nRequest: severity breakdown$/,
+    );
     // The chart service is asked for a configuration first; with none back, the PNG fallback is the last request.
     assert.equal(chartBodies[0].charts_data[0].output, 'chartjs');
     assert.deepEqual(chartBodies.at(-1).charts_data[0].sizes, [rpc.severity.low, rpc.severity.medium, rpc.severity.high].filter(Boolean));

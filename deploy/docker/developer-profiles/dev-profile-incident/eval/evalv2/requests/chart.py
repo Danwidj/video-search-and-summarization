@@ -30,10 +30,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from evalv2.core.hashing import sha256_bytes, sha256_json
+from evalv2.references.dashboard_calendar import REFERENCE_TIMEZONE, REFERENCE_TODAY
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[3] / "contracts"
 PROMPT_ID = "chart/system"
@@ -54,9 +56,16 @@ AGENT_SETTINGS: dict[str, Any] = {"stream": False, "temperature": 0.0, "max_comp
 # ``agent-route-v3`` is ``agent-route-v2`` after the console's severity-word normalisation
 # (``chart-severity-words-v1``, domain/severity-words.ts): the same upstream settings, but the user message is the
 # normalised request. The chart prompt bytes are unchanged.
+# ``agent-route-v4`` is what the console sends now: ``agent-route-v3`` with today's date and the viewer's time zone at the
+# start of the user message ("Today is ..."), so the model can read "October" as a year. Calendar periods need it. The
+# earlier shapes are kept byte for byte: the sealed pilots were sent with them. The golden is this shape.
 REQUEST_SHAPES: dict[str, dict[str, Any]] = {"console-gateway-v1": SETTINGS, "agent-route-v2": AGENT_SETTINGS,
-                                             "agent-route-v3": AGENT_SETTINGS}
-NORMALISING_SHAPES = frozenset({"agent-route-v3"})
+                                             "agent-route-v3": AGENT_SETTINGS, "agent-route-v4": AGENT_SETTINGS}
+NORMALISING_SHAPES = frozenset({"agent-route-v3", "agent-route-v4"})
+DATED_SHAPES = frozenset({"agent-route-v4"})
+GOLDEN_SHAPE = "agent-route-v4"
+# The day and time zone every dated request is scored against (dashboard_calendar.py): the benchmark does not read the clock.
+REFERENCE_CONTEXT: dict[str, str] = {"today": REFERENCE_TODAY, "timezone": REFERENCE_TIMEZONE}
 SEVERITY_WORDS_ID = "chart/severity-words"
 DEFAULT_SHAPE = "console-gateway-v1"  # the sealed C1c pilot's shape; new runs name ``agent-route-v2``
 # ECMAScript's String.prototype.trim: WhiteSpace and LineTerminator code points (zod's .trim() calls it).
@@ -132,20 +141,28 @@ def normalize_severity_words(request: str) -> str:
     return request if _utf16_len(out) > table["max_length"] else out
 
 
-def chart_messages(request: str, *, normalize: bool = False) -> list[dict[str, str]]:
+def chart_messages(request: str, *, normalize: bool = False, context: Mapping[str, str] | None = None
+                   ) -> list[dict[str, str]]:
     """The two messages the console sends (to the agent since #459; to the gateway before): the golden's body.
-    With ``normalize`` the user message is the request after the severity-word normalisation (agent-route-v3)."""
+    With ``normalize`` the user message is the request after the severity-word normalisation (agent-route-v3). With a
+    ``context`` (``today`` and ``timezone``) it starts with the date line the console adds (agent-route-v4)."""
     text = request_text(request)
-    return [{"role": "system", "content": system_prompt()},
-            {"role": "user", "content": normalize_severity_words(text) if normalize else text}]
+    user = normalize_severity_words(text) if normalize else text
+    if context is not None:
+        user = f"Today is {context['today']} (time zone {context['timezone']}).\nRequest: {user}"
+    return [{"role": "system", "content": system_prompt()}, {"role": "user", "content": user}]
 
 
-def build_chart_request(model: str, request: str, shape: str = DEFAULT_SHAPE) -> dict[str, Any]:
-    """The upstream body for ``shape`` (``model``, ``messages``, then that shape's settings)."""
+def build_chart_request(model: str, request: str, shape: str = DEFAULT_SHAPE,
+                        context: Mapping[str, str] | None = None) -> dict[str, Any]:
+    """The upstream body for ``shape`` (``model``, ``messages``, then that shape's settings). A dated shape takes
+    ``context`` and defaults to :data:`REFERENCE_CONTEXT`; the other shapes ignore it."""
     if shape not in REQUEST_SHAPES:
         raise ChartRequestError(f"unknown chart request shape {shape!r}; known: {sorted(REQUEST_SHAPES)}")
-    return {"model": model, "messages": chart_messages(request, normalize=shape in NORMALISING_SHAPES),
-            **json.loads(json.dumps(REQUEST_SHAPES[shape]))}
+    dated = shape in DATED_SHAPES
+    messages = chart_messages(request, normalize=shape in NORMALISING_SHAPES,
+                              context=(context or REFERENCE_CONTEXT) if dated else None)
+    return {"model": model, "messages": messages, **json.loads(json.dumps(REQUEST_SHAPES[shape]))}
 
 
 def chart_provenance(shape: str = DEFAULT_SHAPE) -> dict[str, Any]:
@@ -153,7 +170,8 @@ def chart_provenance(shape: str = DEFAULT_SHAPE) -> dict[str, Any]:
     return {"stage": "chart", "prompt_id": PROMPT_ID, "prompt_sha256": sha256_bytes(_registered_bytes(PROMPT_ID)),
             "allowlist_sha256": sha256_bytes(_registered_bytes(ALLOWLIST_ID)), "request_shape": shape,
             "settings_sha256": sha256_json(REQUEST_SHAPES[shape]), "golden": GOLDEN,
-            **({"severity_words_sha256": sha256_bytes(_registered_bytes(SEVERITY_WORDS_ID))} if shape in NORMALISING_SHAPES else {})}
+            **({"severity_words_sha256": sha256_bytes(_registered_bytes(SEVERITY_WORDS_ID))} if shape in NORMALISING_SHAPES else {}),
+            **({"date_context": dict(REFERENCE_CONTEXT)} if shape in DATED_SHAPES else {})}
 
 
 def _no_constant(name: str) -> Any:

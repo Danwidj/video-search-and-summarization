@@ -43,7 +43,7 @@ test('a chart request equals the golden', async () => {
     return Response.json({ reply: { unsupported: true } });
   };
   try {
-    await new AgentChartInterpreter('http://agent.test').interpret(inputs.request);
+    await new AgentChartInterpreter('http://agent.test').interpret(inputs.request, { today: inputs.today, timezone: inputs.timezone });
   } finally {
     globalThis.fetch = originalFetch;
   }

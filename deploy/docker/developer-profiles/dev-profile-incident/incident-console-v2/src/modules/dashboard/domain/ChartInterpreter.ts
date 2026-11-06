@@ -4,9 +4,15 @@
 // only the request text, never any data, and each call stands alone. The reply
 // is untrusted until parseChartSpec accepts it.
 
+/** What the model needs beside the request: today's date (YYYY-MM-DD) and the viewer's time zone, to read "October" as a year. */
+export interface ChartRequestContext {
+  today: string;
+  timezone: string;
+}
+
 export interface ChartInterpreter {
   /** The model's reply as the JSON object it wrote; null when it wrote none. Throws ChartInterpreterError when no model answered. */
-  interpret(request: string): Promise<unknown>;
+  interpret(request: string, context: ChartRequestContext): Promise<unknown>;
 }
 
 /**

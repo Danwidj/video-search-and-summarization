@@ -10,5 +10,7 @@ export function chartSummary(chart: Pick<GeneratedChart, 'title' | 'scope' | 'se
     const total = chart.rows.reduce((sum, row) => sum + (row.values[key] ?? 0), 0);
     return `${label} ${total}`;
   });
-  return `${chart.title}, ${chart.scope.join(', ')}. ${totals.join('; ')}.`;
+  // A calendar period is named in the title already, so its scope is not read out a second time.
+  const scope = chart.scope.filter((item) => !chart.title.includes(item));
+  return `${chart.title}${scope.length ? `, ${scope.join(', ')}` : ''}. ${totals.join('; ')}.`;
 }

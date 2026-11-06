@@ -16,6 +16,14 @@
     "last_365_days": 365,
     "all_time": null
   },
+  "calendarPeriods": {
+    "forms": [
+      "month",
+      "day",
+      "from-to"
+    ],
+    "maxRangeDays": 366
+  },
   "incidentTypes": [
     "road accident",
     "burglary",

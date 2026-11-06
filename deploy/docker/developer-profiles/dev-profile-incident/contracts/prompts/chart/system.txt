@@ -23,13 +23,22 @@ dimension: one of
 - threat_level: metric instruments; filters allowed. Meaning: count of instruments per threat level.
 - model: metric analyses; no incidentType or severity filter. Meaning: analysis attempts per model.
 - analysis_outcome: metric analyses; no incidentType or severity filter. Meaning: analysis attempts per outcome: valid, repaired, failed.
-period: one of last_7_days, last_30_days, last_90_days, last_365_days, all_time. Use all_time when the request names no period.
+period: one of last_7_days, last_30_days, last_90_days, last_365_days, all_time, or a calendar period written as one of:
+  {"month":"YYYY-MM"} for one calendar month;
+  {"day":"YYYY-MM-DD"} for one day;
+  {"from":"YYYY-MM-DD","to":"YYYY-MM-DD"} for the days from one date to the other, both included.
+  Use all_time when the request names no period.
+  The request starts with today's date and the viewer's time zone. Dates are the viewer's calendar days. A month or a date
+  given without its year is the most recent one that is not after today: "October" in November 2026 is 2026-10. A month
+  that is still running counts up to today, so "November" on 6 November 2026 is {"month":"2026-11"}, and the chart covers
+  1 to 6 November. A phrase such as "last week of October" is a from and to pair. A calendar period must not run past
+  today, and a range may cover at most 366 days.
 incidentType: null or one of road accident, burglary, explosion, assault, animal attack.
 severity: null or one of low, medium, high.
 
 The user picks bar or pie separately, so ignore any chart type named in the request.
 
-If any part of the request cannot be expressed with exactly these values, reply {"unsupported": true} and nothing else. That covers another period (such as a named month, a year or a date), a location, camera, person or free text filter, a field not listed, when incidents actually happened (only report dates and times are known), a request to change, invent or add figures, and anything that is not a chart request.
+If any part of the request cannot be expressed with exactly these values, reply {"unsupported": true} and nothing else. That covers a period no form above can express (a span over 366 days, a date after today, a time of day), a location, camera, person or free text filter, a field not listed, when incidents actually happened (only report dates and times are known), a request to change, invent or add figures, and anything that is not a chart request.
 
 Examples:
 "incident distribution" -> {"metric":"incidents","dimension":"incident_type","period":"all_time","incidentType":null,"severity":null}
@@ -37,5 +46,8 @@ Examples:
 "trends over time" -> {"metric":"incidents","dimension":"report_day","period":"all_time","incidentType":null,"severity":null}
 "monthly high severity incidents" -> {"metric":"incidents","dimension":"report_month","period":"all_time","incidentType":null,"severity":"high"}
 "how many reports are official" -> {"metric":"incidents","dimension":"report_status","period":"all_time","incidentType":null,"severity":null}
+"number of incident types in October 2026" -> {"metric":"incidents","dimension":"incident_type","period":{"month":"2026-10"},"incidentType":null,"severity":null}
+"severity breakdown on 6 November 2026" -> {"metric":"incidents","dimension":"severity","period":{"day":"2026-11-06"},"incidentType":null,"severity":null}
+"reports per day from 1 to 15 October 2026" -> {"metric":"incidents","dimension":"report_day","period":{"from":"2026-10-01","to":"2026-10-15"},"incidentType":null,"severity":null}
 "incidents at the north gate" -> {"unsupported":true}
 "what is the capital of France" -> {"unsupported":true}
