@@ -15,7 +15,7 @@
 
 """Stopping an analysis when its caller gives up.
 
-The console aborts ``POST /analyze`` after 300 s. Without this module the agent kept working for another minute or
+The console aborts ``POST /analyze`` after 600 s. Without this module the agent kept working for another minute or
 more: it made hosted model calls nobody would read and then wrote a report revision the console had already marked
 failed. :func:`run_until_disconnect` runs the analysis as a task and, when the client has gone, cancels it and sets
 the run's cancel flag (a :class:`threading.Event` in a context variable, so it reaches the ``asyncio.to_thread``
@@ -38,10 +38,40 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable
     from collections.abc import Callable
 
+    from starlette.requests import Request
+
 _CANCEL: ContextVar[threading.Event | None] = ContextVar("incident_run_cancel", default=None)
 _T = TypeVar("_T")
 
 DISCONNECT_POLL_SECONDS = 1.0
+
+
+async def run_until_request_disconnect(  # noqa: UP047 - the project's mypy target predates PEP 695
+    start: Callable[[], Awaitable[_T]], request: Request
+) -> _T:
+    """:func:`run_until_disconnect` for a request, whatever middleware sits in front of the route.
+
+    ``request.is_disconnected()`` cannot be polled here: it cancels its own ``receive()`` before it can yield, which
+    only works when ``receive`` answers at once (raw uvicorn). Behind a ``BaseHTTPMiddleware`` (NAT installs one on
+    every app) the wrapped ``receive`` waits on the real one, so the poll always said "connected" and a run whose
+    caller had gone still saved a report (job 59, 6 Nov 2026). A watcher task that awaits ``receive()`` until
+    ``http.disconnect`` arrives works in both cases. The route's body has been read by now, so the only message
+    left is the disconnect.
+    """
+
+    async def wait_for_disconnect() -> None:
+        while (await request.receive())["type"] != "http.disconnect":
+            pass
+
+    watcher = asyncio.ensure_future(wait_for_disconnect())
+
+    async def is_disconnected() -> bool:
+        return watcher.done()
+
+    try:
+        return await run_until_disconnect(start, is_disconnected)
+    finally:
+        watcher.cancel()
 
 
 class AnalysisCancelledError(RuntimeError):

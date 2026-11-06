@@ -16,6 +16,7 @@ The console opens on `http://127.0.0.1:3200`; `GET /api/health` should report `r
 - **Settings:** `.env.local` is a symlink to the profile's shared `../.env.local`. Edit that file, not the symlink.
 - **ffmpeg:** every upload is probed and, unless it is already an H.264 MP4, converted to one at its original resolution; evidence frames and crops also need `ffmpeg`. `npm install` fetches both binaries. The console uses `FFMPEG_PATH` or `FFPROBE_PATH` first, then the bundled copy, then `PATH` ([host-binaries.ts](src/lib/video/host-binaries.ts)).
 - **Evidence image (Edit mode):** clicking an evidence card's image opens a picker: choose a frame of the report's video, drag a crop with the mouse, **Use this image**. Save as new version cuts it on the server (`image_pick`, with `ffmpeg`) and stores it as that item's image; the text and track stay ([console reference](../.docs/console-reference.md#report-versions-view-edit-and-history)).
+- **Analysis time limit:** in agent mode the console waits up to 600 s for the agent (`INCIDENT_ANALYSIS_TIMEOUT_SECONDS` overrides it; optional, nothing needs adding to `.env.local`). Gateway mode keeps each model's `timeout_seconds`.
 - **Background jobs:** a loop in this console's server process runs queued analyses one at a time. Every console pointed at finals takes jobs from the same queue; set `ANALYSIS_JOB_LOOP=off` to keep this one out.
 
 ## Check it

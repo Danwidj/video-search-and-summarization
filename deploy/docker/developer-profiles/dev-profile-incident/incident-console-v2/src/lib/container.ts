@@ -62,6 +62,7 @@ export function getAnalysisPorts(config: ServiceConfiguration = getServiceConfig
     videos: new R2VideoObjectStore(config),
     gateway: config.gatewayUrl ? new GatewayClient(config.gatewayUrl) : null,
     agent: config.agentUrl ? new HttpIncidentAgent(config.agentUrl) : null,
+    agentTimeoutSeconds: config.analysisTimeoutSeconds,
     catalog: defaultContractCatalog,
     randomUUID,
   };

@@ -272,7 +272,9 @@ class ExperimentRefusedError(RuntimeError):
 
 
 ANALYSIS_BUDGET_ENV = "INCIDENT_ANALYSIS_BUDGET_SECONDS"
-DEFAULT_ANALYSIS_BUDGET_SECONDS = 240.0  # the console gives up at 300 s (contracts/inference.json)
+# The console gives up at 600 s (its own analysis limit, not contracts/inference.json). Once this much has gone, the
+# evidence stages are skipped and the report is saved, which leaves the last 60 s for the save.
+DEFAULT_ANALYSIS_BUDGET_SECONDS = 540.0
 EXPERIMENT_EVIDENCE_STORE = "temporary in-memory store, discarded after the request (no disk, no R2)"
 # The owner-approved R2 root of experimental caption windows (blocker X16): the one shared-storage write an
 # experiment may make, and only when this is set. Never production's scratch/analyze.
@@ -1355,6 +1357,20 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 image_gap="evidence cropping skipped (skip_crops)",
                 zoom_gap="zoomed second look skipped (skip_crops)",
             )
+        elif deadline is not None and time.monotonic() >= deadline:
+            # The main call (or the caption pass before it) used the whole budget: save the report as it is.
+            logger.warning(
+                "incident_report_gen: analysis time budget spent before the evidence step for %s; saving the report "
+                "without evidence images",
+                tool_input.incident_id,
+            )
+            evidence = crop_evidence.blank_evidence_entries(
+                report, image_gap=crop_evidence.TIME_BUDGET_GAP, zoom_gap=crop_evidence.TIME_BUDGET_GAP
+            )
+            if tracking is not None:
+                tracking.summary.skipped = crop_evidence.TIME_BUDGET_GAP
+            if objects is not None:
+                objects.summary.skipped = crop_evidence.TIME_BUDGET_GAP
         elif experiment is not None:
             # An experimental crop run uses its own temporary in-memory store: isolated from every other
             # request, holding no production data, never written to disk or R2, and discarded on return.

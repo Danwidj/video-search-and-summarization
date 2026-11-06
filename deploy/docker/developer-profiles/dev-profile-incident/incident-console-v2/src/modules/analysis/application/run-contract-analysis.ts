@@ -60,6 +60,14 @@ export class AnalysisRequestError extends Error {
   }
 }
 
+/**
+ * How long an agent-mode analysis may run before the console gives up. Not the model's timeout_seconds in
+ * contracts/inference.json (eval reads that, and gateway mode keeps it): the agent spends up to 540 s on the
+ * model call and the evidence, then saves the report, so this leaves it 60 s to do so.
+ * INCIDENT_ANALYSIS_TIMEOUT_SECONDS overrides it (lib/env.ts).
+ */
+export const DEFAULT_AGENT_ANALYSIS_TIMEOUT_SECONDS = 600;
+
 /** The outbound ports one analysis uses. A null model port means its URL is not configured. */
 export interface AnalysisPorts {
   runs: AnalysisRunRepository;
@@ -68,6 +76,8 @@ export interface AnalysisPorts {
   gateway: ModelGateway | null;
   /** Agent mode's model call. */
   agent: IncidentAgent | null;
+  /** Seconds the agent-mode call may run before it is abandoned; DEFAULT_AGENT_ANALYSIS_TIMEOUT_SECONDS when unset. */
+  agentTimeoutSeconds?: number;
   /** Contract catalog port providing prompts, schemas, version, and model configurations. */
   catalog: ContractCatalog;
   /** Port for generating random UUIDs. */
@@ -288,6 +298,7 @@ export async function runContractAnalysis(
     if (mode === 'agent') {
       operation = 'calling the incident agent';
       if (!ports.agent) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
+      const agentTimeoutSeconds = ports.agentTimeoutSeconds ?? DEFAULT_AGENT_ANALYSIS_TIMEOUT_SECONDS;
       let agentResponse: AgentHttpResponse;
       try {
         agentResponse = await ports.agent.analyze(
@@ -300,11 +311,16 @@ export async function runContractAnalysis(
             additionalInstruction,
             videoDurationSeconds,
           },
-          AbortSignal.timeout(model.timeout_seconds * 1000),
+          AbortSignal.timeout(agentTimeoutSeconds * 1000),
         );
       } catch (error) {
         if (!(error instanceof AgentRequestError)) throw error;
-        const { code, message } = error;
+        const { code } = error;
+        // The agent stops its evidence stages at 540 s and saves, so what is still running at the limit is the main call.
+        const message =
+          code === 'AGENT_TIMEOUT'
+            ? `The analysis did not finish within ${agentTimeoutSeconds} s: the model's main call was still running, so no report was saved`
+            : error.message;
         const attempt: AnalysisAttemptRecord = {
           ...base,
           status: 'request_failed',

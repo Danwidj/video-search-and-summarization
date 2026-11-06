@@ -16,8 +16,8 @@ import { buildRunHistory } from '@/modules/videos/application/run-history';
 import type { VideoRunHistory } from '@/modules/videos/domain/run-types';
 
 export const dynamic = 'force-dynamic';
-// The slowest allowlisted model's timeout (contracts/inference.json) plus persistence.
-export const maxDuration = 360;
+// The agent-mode analysis limit (600 s by default, run-contract-analysis.ts) plus persistence.
+export const maxDuration = 660;
 
 function database(): ServiceConfiguration {
   const config = getServiceConfiguration();

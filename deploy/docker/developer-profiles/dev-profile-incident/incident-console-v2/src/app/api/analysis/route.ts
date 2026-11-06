@@ -7,9 +7,9 @@ import { analysisErrorResponse } from '@/lib/http/analysis-responses';
 import { analyseUpload } from '@/modules/analysis/application/analyse-upload';
 import { requireAnalysisConfiguration, type ServiceConfiguration } from '@/lib/env';
 
-// The slowest allowlisted model's timeout (contracts/inference.json) plus persistence.
+// The agent-mode analysis limit (600 s by default, run-contract-analysis.ts) plus persistence.
 // The upload page runs analyses as background jobs (lib/jobs/loop.ts), which this limit does not bind.
-export const maxDuration = 360;
+export const maxDuration = 660;
 
 interface AnalysisRequest {
   filepath?: string;

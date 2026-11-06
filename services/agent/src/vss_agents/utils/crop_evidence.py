@@ -570,7 +570,7 @@ DEFAULT_GROUNDING_MODEL = "nvidia/cosmos-3-super-reasoner"
 GROUNDING_MAX_EDGE_PIXELS = 1280
 GROUNDING_MAX_ATTEMPTS = 4
 # A healthy grounding call answers in 2-4 s (the stored run provenance); a stalled one used to hold an item, and a
-# slot of the 240 s analysis budget, for the old 120 s timeout. A call that times out is tried once more.
+# slot of the 540 s analysis budget, for the old 120 s timeout. A call that times out is tried once more.
 GROUNDING_TIMEOUT_SECONDS = 20.0
 GROUNDING_TIMEOUT_RETRIES = 1
 # The most boxes one whole-frame search (``DefaultDetector.detect_all``) returns.
@@ -1848,7 +1848,10 @@ class CropEvidenceService:
 
         Time budget (``deadline``, a ``time.monotonic()`` value; None means unlimited): an item not yet located when it
         passes is left with an ``image_gap``, object tracking is shortened to leave
-        :data:`TRACKING_BUDGET_RESERVE_SECONDS` (or skipped), and an unchecked second look gets a ``zoom_gap``.
+        :data:`TRACKING_BUDGET_RESERVE_SECONDS` (or skipped), and an unchecked second look gets a ``zoom_gap``. Person
+        tracking is not started with :data:`TRACKING_BUDGET_RESERVE_SECONDS` or less left, and is stopped (cancelled, its
+        stream removed) when the budget ends while it is still following the clip; both leave ``TIME_BUDGET_GAP`` as
+        its ``skipped`` reason.
         """
         active_detector = detector if detector is not None else self.detector
         if isinstance(active_detector, DefaultDetector) and deadline is not None:
@@ -1881,6 +1884,8 @@ class CropEvidenceService:
                 tracking.summary.skipped = "no evidence image store is configured (R2 settings missing)"
             elif isinstance(video_ref, np.ndarray):
                 tracking.summary.skipped = "tracking needs a video file or URL"
+            elif (left := time_left()) is not None and left <= TRACKING_BUDGET_RESERVE_SECONDS:
+                tracking.summary.skipped = TIME_BUDGET_GAP  # too little time to follow the clip and still save
             else:
                 # Runs beside the locate step; the images are uploaded only once both are done, because a stored
                 # key is never overwritten and a matched entity's image is re-cut at its first-seen second.
@@ -2299,7 +2304,12 @@ class CropEvidenceService:
         time_gaps: dict[str, str] = {}
         if tracking is not None and tracking_task is not None:
             try:
-                outcome = await tracking_task
+                # The wait ends with the analysis budget: a cancelled run still removes its stream in its own ``finally``.
+                left = time_left()
+                outcome = await asyncio.wait_for(tracking_task, timeout=None if left is None else max(0.0, left))
+            except TimeoutError:
+                logger.warning("Tracking for %s stopped: the analysis time budget is spent", video_id)
+                outcome = track_evidence.TrackingOutcome(skipped=TIME_BUDGET_GAP)
             except Exception as exc:  # run_tracking never raises; a custom runner might
                 logger.warning("Tracking failed for %s: %s", video_id, type(exc).__name__)
                 outcome = track_evidence.TrackingOutcome(skipped=f"tracking failed: {type(exc).__name__}")
