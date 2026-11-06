@@ -170,6 +170,8 @@ test('a grounded (chat-contract-v2) answer carries the insufficient-evidence fla
     candidates: [],
     answeredBy: null,
     countExact: null,
+    route: null,
+    unknownTimes: [],
   });
 });
 

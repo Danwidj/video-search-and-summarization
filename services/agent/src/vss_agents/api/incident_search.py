@@ -154,7 +154,13 @@ class ItemHit(BaseModel):
     threat_level: int | None = None
     holder_entity_id: str | None = None
     crop_image_url: str
-    timestamp_seconds: int = Field(..., ge=0)
+    # Seconds from video start of the frame the box was found in (milliseconds kept).
+    timestamp_seconds: float = Field(..., ge=0)
+    # The item's slice: a time range of the existing video to play. None from rows stored before slices existed.
+    slice_start_seconds: float | None = Field(default=None, ge=0)
+    slice_end_seconds: float | None = Field(default=None, ge=0)
+    # Signed URL of the stored whole frame the box was found in; None when none is stored.
+    frame_image_url: str | None = None
     bounding_box: list[int] | None = None
 
     @field_validator("bounding_box")
@@ -236,7 +242,10 @@ class EvidenceCandidate(BaseModel):
     threat_level: int | None = None
     holder_entity_id: str | None = None
     crop_image_url: str
-    timestamp_seconds: int
+    timestamp_seconds: float
+    slice_start_seconds: float | None = None
+    slice_end_seconds: float | None = None
+    frame_image_url: str | None = None
     bounding_box: list[int] | None = None
     similarity_score: float
 
@@ -466,6 +475,14 @@ class InMemorySearchStore(SearchStore):
             self.query_results.append({"query_id": query_id, **row})
 
 
+def _optional_float(value: Any) -> float | None:
+    """A number from a PostgREST row (NUMERIC arrives as a number or a numeric string), else None."""
+    try:
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _parse_timestamp_seconds(ts: Any) -> float:
     """Parse a timestamp into seconds offset as float."""
     if ts is None:
@@ -548,6 +565,9 @@ class SupabaseSearchStore(SearchStore):
             image_ref = row.get("image") or row.get("crop_image_url") or ""
             crop_image_url = self._r2_resolver(image_ref)
 
+            frame_ref = row.get("frame") or row.get("frame_image_url") or ""
+            frame_image_url = self._r2_resolver(frame_ref) if frame_ref else None
+
             video_ref = row.get("video_filepath") or row.get("playback_url") or ""
             playback_url = self._r2_resolver(video_ref)
 
@@ -583,7 +603,10 @@ class SupabaseSearchStore(SearchStore):
                 threat_level=int(row["threat_level"]) if row.get("threat_level") is not None else None,
                 holder_entity_id=row.get("holder_entity_id"),
                 crop_image_url=crop_image_url,
-                timestamp_seconds=int(row.get("timestamp_seconds", 0)),
+                timestamp_seconds=float(row.get("timestamp_seconds") or 0),
+                slice_start_seconds=_optional_float(row.get("slice_start_seconds")),
+                slice_end_seconds=_optional_float(row.get("slice_end_seconds")),
+                frame_image_url=frame_image_url,
                 bounding_box=row.get("bounding_box"),
                 similarity_score=float(row.get("similarity_score", 0.0)),
             )
@@ -988,6 +1011,9 @@ def create_incident_search_router(
                 holder_entity_id=cand.holder_entity_id,
                 crop_image_url=cand.crop_image_url,
                 timestamp_seconds=cand.timestamp_seconds,
+                slice_start_seconds=cand.slice_start_seconds,
+                slice_end_seconds=cand.slice_end_seconds,
+                frame_image_url=cand.frame_image_url,
                 bounding_box=cand.bounding_box,
             )
             incident = IncidentHit(

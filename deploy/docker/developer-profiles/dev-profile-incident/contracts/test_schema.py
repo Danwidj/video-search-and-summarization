@@ -246,6 +246,21 @@ def test_chat_v2_response_fixtures():
         assert list(validator.iter_errors(json.loads(path.read_text()))), path.name
 
 
+def test_chat_v3_response_fixtures():
+    v3 = CHAT_V2.parent / "chat-contract-v3"
+    validator = jsonschema.Draft202012Validator(json.loads((v3 / "chat_response.schema.json").read_text()))
+    for path in sorted((v3 / "fixtures" / "valid").glob("response_*.json")):
+        validator.validate(json.loads(path.read_text()))
+    for path in sorted((v3 / "fixtures" / "invalid").glob("response_*.json")):
+        assert list(validator.iter_errors(json.loads(path.read_text()))), path.name
+
+
+def test_chat_v3_request_schema_matches_v1_apart_from_its_id():
+    v1 = json.loads((CHAT_V2.parent / "chat-contract-v1" / "chat_request.schema.json").read_text())
+    v3 = json.loads((CHAT_V2.parent / "chat-contract-v3" / "chat_request.schema.json").read_text())
+    assert {k: v for k, v in v1.items() if k != "$id"} == {k: v for k, v in v3.items() if k != "$id"}
+
+
 def test_chat_v2_request_schema_matches_v1_apart_from_its_id():
     v1 = json.loads((CHAT_V2.parent / "chat-contract-v1" / "chat_request.schema.json").read_text())
     v2 = json.loads((CHAT_V2 / "chat_request.schema.json").read_text())

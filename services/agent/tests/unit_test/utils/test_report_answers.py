@@ -133,8 +133,9 @@ def test_a_revision_saved_without_its_report_falls_back_to_its_evidence():
         (
             "What happened, in order?",
             "chronology",
-            "The report describes a burglary from 0:05 to 1:05. In order: At 0:05, "
-            "the hooded person walks to the shop door.",
+            "The report describes a burglary from 0:05 to 1:05.\n\n"
+            "\u2022 0:05 The hooded person walks to the shop door.\n"
+            "\u2022 0:12\u20130:20 The hooded person forces the shop door open with the crowbar.",
         ),
         ("When did it start?", "time", "The incident runs from 0:05 to 1:05 in the video (60 seconds)."),
         ("Who is involved?", "people", "One person is involved: a person in a dark hood (seen from 0:05 to 1:00)."),
@@ -165,11 +166,350 @@ def test_without_a_timeline_the_description_answers_and_without_either_the_repor
     assert bare.insufficient_evidence and bare.item_ids == ()
 
 
-def test_a_long_timeline_is_told_up_to_eight_events():
-    events = [{"start_seconds": s, "description": f"Step {s}."} for s in range(10)]
+def test_a_long_timeline_is_told_up_to_twelve_events():
+    events = [{"start_seconds": 5 + s, "description": f"Step {s}."} for s in range(14)]
     answer = ra.compose("What happened?", ra.report_view(_report(timeline=events)))
-    assert "At 0:07, step 7." in answer.text and "Step 8" not in answer.text
+    assert "0:16 Step 11." in answer.text and "Step 12" not in answer.text
     assert answer.text.endswith("The timeline records two more events.")
+
+
+def _chronology(**overrides):
+    return ra.compose("What happened, in order?", ra.report_view(_report(**overrides)))
+
+
+def _asset(asset_id, name, label=""):
+    return {"asset_id": asset_id, "name": name, "description": "", "label": label, "timestamp_seconds": 0}
+
+
+def _entity(entity_id, label, kind="human"):
+    return {"entity_id": entity_id, "type": kind, "description": "", "label": label, "timestamp_seconds": 0}
+
+
+def _cited(*events, entities=(), assets=(), instruments=()):
+    report = _report(
+        entities=list(entities),
+        assets=list(assets),
+        instruments=list(instruments),
+        timeline=[_event(10 + n, None, text) for n, text in enumerate(events)],
+    )
+    return list(ra.compose("What happened?", ra.report_view(report)).item_ids)
+
+
+def _moments():
+    events = [
+        _event(5, 8, "He walks to the door."),
+        _event(10, 12, "He falls to the ground."),
+        _event(20, 25, "He stands up."),
+        _event(30, 32, "He leaves."),
+    ]
+    return ra.report_view(_report(timeline=events))
+
+
+def test_describe_and_event_do_not_turn_a_field_question_into_a_chronology():
+    view = ra.report_view(_report())
+    assert ra.compose("What kind of incident does this report describe?", view).kind == "type"
+    assert ra.compose("What property was involved in this event?", view).kind == "objects"
+    assert ra.compose("Describe what happened", view).kind == "chronology"
+
+
+def test_a_question_about_one_moment_is_not_the_whole_timeline():
+    answer = ra.compose("What happened after the man fell?", _moments())
+    assert answer.text.startswith("The report puts that moment at 0:10. After it:")
+    assert "0:20" in answer.text and "0:30" in answer.text and "0:05" not in answer.text
+
+
+def test_before_and_immediately_look_the_right_way():
+    assert "0:05\u20130:08 He walks" in ra.compose("What happened before he fell?", _moments()).text
+    assert "0:20" not in ra.compose("What happened before he fell?", _moments()).text
+    right_after = ra.compose("What happened immediately after he fell?", _moments()).text
+    assert "0:20" in right_after and "0:30" not in right_after
+
+
+def test_a_moment_the_report_does_not_record_is_said_to_be_missing():
+    answer = ra.compose("What happened after the explosion?", _moments())
+    assert answer.insufficient_evidence and answer.item_ids == ()
+    assert "doesn't record that moment" in answer.text
+
+
+def test_a_past_tense_finds_the_event_in_the_present_tense():
+    view = ra.report_view(_report(timeline=[_event(5, 8, "The dog continues to attack him."), _event(9, 10, "He runs.")]))
+    assert "0:09" in ra.compose("What happened after the dog attacked him?", view).text
+
+
+def test_the_last_event_has_nothing_after_it():
+    answer = ra.compose("What happened after he left?", _moments())
+    assert "records nothing after that" in answer.text and answer.insufficient_evidence
+
+
+def test_after_the_incident_is_the_context_after_its_window():
+    view = ra.report_view(_report(timeline=[_event(10, 12, "Inside."), _event(70, 72, "He drives off.")]))
+    text = ra.compose("What happened after the incident ended?", view).text
+    assert "1:10\u20131:12 He drives off." in text and "Inside" not in text
+    empty = ra.compose("What happened after the incident?", ra.report_view(_report()))
+    assert empty.insufficient_evidence and empty.text == "The report records nothing after the incident ends."
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Show the timeline of events",
+        "What happened?",
+        "What happened, in order?",
+        "Who appears?",
+        "How serious was it?",
+    ],
+)
+def test_a_plain_question_needs_no_reading(question):
+    assert ra.is_plain(question, ra.report_view(_report()))
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Why was it so bad?",
+        "How did it begin?",
+        "What did he do?",
+        "What happened next?",
+        "What happened after he fell?",
+    ],
+)
+def test_a_question_that_reasons_or_leans_on_the_conversation_is_not_plain(question):
+    assert not ra.is_plain(question, ra.report_view(_report()))
+
+
+def test_a_pronoun_needs_the_conversation_unless_the_question_names_someone():
+    view = ra.report_view(_report())
+    assert ra.needs_context("What did he do next?", view)
+    assert not ra.needs_context("What did the hooded person do after he left?", view)
+    assert not ra.needs_context("Who is involved?", view)
+
+
+def test_a_chronology_cites_the_items_its_events_name_and_not_the_others():
+    assert _cited(
+        "The dog approaches the coffee table and knocks over the vase of sunflowers.",
+        "The vase shatters on the floor, spilling the sunflowers.",
+        "The dog jumps onto the coffee table and then jumps down.",
+        entities=[_entity("E1", "black and tan dog", "animal")],
+        assets=[
+            _asset("A1", "vase", "broken vase with sunflowers"),
+            _asset("A2", "coffee table", "wooden coffee table"),
+            _asset("A3", "sofa", "white sectional sofa"),
+        ],
+    ) == ["E1", "A2", "A1"], "each once, in the order the events name them; the sofa is never mentioned"
+
+
+def test_an_event_id_is_a_citation_even_when_the_item_is_not_named():
+    assert _cited("E2 strikes.", "A1 falls.", entities=[_entity("E2", "man")], assets=[_asset("A1", "vase")]) == [
+        "E2",
+        "A1",
+    ]
+
+
+def test_ids_and_names_combine_in_one_answer():
+    assert _cited("E2 lifts the vase.", entities=[_entity("E2", "man in blue")], assets=[_asset("A1", "vase")]) == [
+        "E2",
+        "A1",
+    ]
+
+
+def test_no_named_item_means_no_citations_and_never_every_person():
+    assert (
+        _cited(
+            "Smoke fills the road.",
+            entities=[_entity("E1", "person near billboard"), _entity("E2", "person near car")],
+            assets=[_asset("A1", "billboard")],
+        )
+        == []
+    )
+
+
+def test_a_person_is_matched_by_label_or_outfit_whatever_the_articles():
+    assert _cited(
+        "The man in dark shorts attacks the man in the dark pants.",
+        entities=[
+            _entity("E1", "man in white shirt and dark pants"),
+            _entity("E2", "man in white shirt and dark shorts"),
+            _entity("E3", "pedestrian with large bag"),
+        ],
+    ) == ["E2", "E1"]
+    assert _cited("A person wearing a dark jacket enters.", entities=[_entity("E1", "person in dark jacket")]) == ["E1"]
+
+
+def test_a_head_word_counts_only_when_one_entity_has_it():
+    assert _cited("The child opens the door.", entities=[_entity("E1", "child in white shirt")]) == ["E1"]
+    assert _cited("The bear runs.", entities=[_entity("E1", "black bear", "animal")]) == ["E1"]
+    two_men = [_entity("E1", "man in light shirt"), _entity("E2", "man in dark shirt")]
+    assert _cited("The man walks away.", entities=two_men) == []
+
+
+def test_text_that_could_mean_several_items_cites_none_of_them():
+    cars = [_asset("A1", "car", "silver hatchback"), _asset("A2", "car", "white sedan")]
+    assert _cited("The car stops.", assets=cars) == []
+    same_label = [_entity("E1", "man in light shirt"), _entity("E2", "man in light shirt")]
+    assert _cited("A man in a light shirt runs.", entities=same_label) == []
+
+
+def test_the_longest_name_decides_which_item_the_text_means():
+    vans = [_asset("A1", "van", "white van"), _asset("A2", "van", "blue van")]
+    assert _cited("The white van stops.", assets=vans) == ["A1"]
+
+
+def test_one_object_filed_twice_gets_one_citation():
+    instrument = {"instrument_id": "I1", "name": "till", "label": "till", "description": "", "timestamp_seconds": 3}
+    assert _cited(
+        "He empties the till.", "He closes the till.", instruments=[instrument], assets=[_asset("A1", "till", "till")]
+    ) == ["I1"]
+
+
+def test_a_label_after_its_connector_names_nothing():
+    backpack = _asset("A1", "backpack", "backpack on ground")
+    assert _cited("He remains on the ground.", assets=[backpack]) == [], "'on ground' is not the backpack"
+    assert _cited("He sits at the table.", assets=[_asset("A1", "chair", "chairs and table")]) == []
+
+
+def test_a_name_inside_a_longer_word_or_a_vague_label_does_not_match():
+    assert _cited("He enters the bathroom.", assets=[_asset("A1", "bat")]) == []
+    assert _cited("He holds an object.", assets=[_asset("A1", "", "object")]) == []
+
+
+def test_plural_and_label_tail_forms_match():
+    assert _cited("Two vases fall.", assets=[_asset("A1", "vase")]) == ["A1"]
+    assert _cited("He leans on the display rack.", assets=[_asset("A1", "toy display", "aisle display rack")]) == ["A1"]
+
+
+def test_a_typed_and_a_suggested_chronology_cite_the_same_items():
+    view = ra.report_view(_report())
+    answers = [
+        ra.compose(q, view) for q in ("What happened?", "What happened, in order?", "Show the timeline of events")
+    ]
+    assert {a.item_ids for a in answers} == {("E1", "A1", "I1")}
+    assert {a.text for a in answers} == {answers[0].text}
+
+
+def test_the_description_fallback_and_a_taking_cite_by_name_too():
+    assets = [_asset("A1", "safe"), _asset("A2", "sofa")]
+    no_timeline = _report(
+        incident={"type": "burglary", "description": "The safe is forced."}, assets=assets, timeline=[], instruments=[]
+    )
+    assert ra.compose("What happened?", ra.report_view(no_timeline)).item_ids == ("A1",)
+    taking = _report(assets=assets, instruments=[], timeline=[_event(10, None, "He steals the safe.")])
+    assert ra.compose("Was anything taken?", ra.report_view(taking)).item_ids == ("A1",)
+
+
+def test_an_item_removed_in_a_draft_is_not_cited_by_its_old_name():
+    base = _report(assets=[_asset("A1", "vase")], instruments=[], timeline=[_event(10, None, "The vase falls.")])
+    draft = {"incident": {"description": "x"}, "entities": base["entities"], "instruments": [], "assets": []}
+    report = ra.overlay_draft(base, draft)
+    view = ra.report_view(report, retired=ra.item_ids(base) - ra.item_ids(report))
+    assert "A1" not in ra.compose("What happened?", view).item_ids
+
+
+def _event(start, end, description):
+    return {"start_seconds": start, "end_seconds": end, "description": description}
+
+
+def test_every_event_is_told_once_in_time_order_with_its_report_time():
+    events = [_event(30, 31, "Third."), _event(10, 10, "First."), _event(20, None, "Second."), _event(10, 40, "Tied.")]
+    lines = [line for line in _chronology(timeline=events).text.split("\n") if line.startswith("\u2022")]
+    assert lines == [
+        "\u2022 0:10 First.",
+        "\u2022 0:10\u20130:40 Tied.",
+        "\u2022 0:20 Second.",
+        "\u2022 0:30\u20130:31 Third.",
+    ]
+
+
+def test_an_overlapping_last_event_is_not_called_final():
+    events = [_event(5, 60, "The fight goes on."), _event(12, 20, "A bystander shouts.")]
+    assert "Finally" not in _chronology(timeline=events).text
+
+
+def test_events_outside_the_incident_window_are_context_not_dropped():
+    events = [_event(2, 4, "He enters."), _event(10, 20, "He strikes."), _event(70, 75, "He leaves the area.")]
+    text = _chronology(timeline=events).text
+    assert text.index("Before the incident:\n\u2022 0:02\u20130:04 He enters.") < text.index("During the incident:")
+    assert text.index("During the incident:\n\u2022 0:10\u20130:20 He strikes.") < text.index("After the incident:")
+    assert "After the incident:\n\u2022 1:10\u20131:15 He leaves the area." in text
+    assert text.startswith("The report describes a burglary from 0:05 to 1:05.\n\n")
+
+
+def test_an_event_running_into_the_window_belongs_to_the_incident():
+    assert (
+        "incident:" not in _chronology(timeline=[_event(2, 8, "He forces the door."), _event(60, 70, "He runs.")]).text
+    )
+
+
+def test_with_all_events_inside_the_window_there_are_no_headings():
+    assert "incident:" not in _chronology().text
+
+
+def test_with_no_window_or_no_event_time_nothing_is_placed_outside():
+    incident = {"type": "burglary", "description": "A break-in."}
+    assert "incident:" not in _chronology(incident=incident, timeline=[_event(2, 4, "He enters.")]).text
+    untimed = _chronology(timeline=[{"description": "He enters."}, _event(10, 20, "He strikes.")]).text
+    assert "incident:" not in untimed
+    assert "\u2022 He enters." in untimed, "no time is invented for an event without one"
+
+
+def test_a_chronology_adds_only_uncertainties_about_what_it_tells():
+    text = _chronology(
+        uncertainties=[
+            "It is unclear whether the crowbar was brought to the scene.",
+            "The weather outside cannot be determined.",
+            "The identities of the people are not clear.",
+        ]
+    ).text
+    assert text.endswith(
+        "What the report could not establish:\n\u2022 It is unclear whether the crowbar was brought to the scene."
+    )
+    assert "weather" not in text and "identities" not in text
+
+
+def test_uncertainties_read_without_ids_are_shown_once_and_are_capped():
+    same = "It is unclear what I1 is."
+    text = _chronology(
+        uncertainties=[
+            same,
+            "It is unclear what I1 is",
+            "The door may be locked.",
+            "The shop door lock is unclear.",
+            "The door handle is unclear.",
+            "The door frame is unclear.",
+        ]
+    ).text
+    block = text.split("What the report could not establish:\n")[1]
+    assert block.split("\n")[0] == "\u2022 It is unclear what the crowbar is."
+    assert block.count("\u2022") == 3
+    assert not ra._ID.search(text)
+
+
+def test_an_uncertainty_can_relate_through_the_incident_description():
+    report = {"title": "Altercation at the door", "description": "Two men argue."}
+    text = _chronology(
+        incident={**_report()["incident"], **report}, uncertainties=["The cause of the altercation is not clear."]
+    ).text
+    assert "The cause of the altercation is not clear." in text
+
+
+def test_a_chronology_with_no_uncertainties_has_no_block():
+    assert "could not establish" not in _chronology(uncertainties=[]).text
+    assert "could not establish" not in _chronology().text
+    assert "could not establish" not in _chronology(uncertainties=["", 3, None]).text
+
+
+def test_the_description_fallback_keeps_its_relevant_uncertainty_and_invents_no_time():
+    text = _chronology(timeline=[], uncertainties=["It is unclear who forces the door."]).text
+    assert text.startswith("The report has no event-by-event timeline.")
+    assert text.endswith("What the report could not establish:\n\u2022 It is unclear who forces the door.")
+
+
+def test_a_question_about_one_item_keeps_its_lead_and_stays_short():
+    answer = ra.compose(
+        "What happened to the crowbar?",
+        ra.report_view(_report(uncertainties=["It is unclear whether the crowbar was brought."])),
+    )
+    assert answer.text.startswith("Here is what the report records about the crowbar, in order:\n\u2022 0:12")
+    assert "could not establish" not in answer.text
 
 
 def test_search_hits_are_grouped_by_incident_without_ids():
@@ -213,8 +553,8 @@ def test_a_draft_is_overlaid_on_its_base_version():
     assert retired == {"I1", "A1"}
     view = ra.report_view(report, retired=retired)
     answer = ra.compose("What happened, in order?", view)
-    assert "At 0:05, the person in a dark hood walks to an item." in answer.text
-    assert "the person in a dark hood forces an item open with an object" in answer.text
+    assert "0:05 The person in a dark hood walks to an item." in answer.text
+    assert "The person in a dark hood forces an item open with an object" in answer.text
     assert not ra._ID.search(answer.text)
 
 

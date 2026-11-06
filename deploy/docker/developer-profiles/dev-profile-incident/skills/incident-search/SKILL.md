@@ -25,11 +25,11 @@ Canonical facts:
    - `./start.sh --mode mock` uses the mock backend on `127.0.0.1:7777` and needs no GPU or SSH.
    - `./start.sh --mode vm` uses the native `vss-agent` through the tunnel on `127.0.0.1:8000`.
 2. For live search or embeddings, the environment must point at the finals Supabase project. Never write to the frozen midterm project.
-3. A search needs populated `evidence_crops`. An empty result set can be a healthy response, but it does not prove the crop corpus is loaded.
+3. A search needs populated `evidence_crops`. An empty result set can be a healthy response, but it does not prove the crop corpus is loaded: check `list_revisions_missing_crops()` and repair with `POST /api/videos/repair-crops` (a running console with the job loop also repairs by itself every 2 minutes). Revision search returns at most one version per video: the searchable one ([`incident-manage-database`](../incident-manage-database/SKILL.md)).
 
 ## Search saved report revisions
 
-Finds whole incident reports by meaning, using one summary embedding per saved revision (the title and description). Revisions saved without a vector, including human revisions, do not appear. Run it against the VM agent (`localhost:8000`); the mocks answer it from their finals snapshot, so their results say nothing about relevance.
+Finds whole incident reports by meaning, using one summary embedding per saved revision (the type, title and description). Revisions saved without a vector, including human revisions, do not appear. Run it against the VM agent (`localhost:8000`); the mocks answer it from their finals snapshot, so their results say nothing about relevance.
 
 ```bash
 curl -sS -X POST http://localhost:8000/api/v1/incidents/revisions/search \
@@ -55,7 +55,7 @@ curl -sS -X POST http://localhost:7777/api/v1/incidents/search \
 
 The request accepts `query`, `top_k` (1–50), `min_similarity`, `hide_rejected`, and optional `filters` for `item_types`, `incident_types`, `min_severity`, `max_severity` and `video_id` (one incident only; `query` may then be empty and lists that incident's evidence in video time order). Each hit includes:
 
-- `item`: entity, instrument or asset metadata, `timestamp_seconds`, optional normalized `bounding_box`, and `crop_image_url`;
+- `item`: entity, instrument or asset metadata, `timestamp_seconds` (a number, to the millisecond), optional `slice_start_seconds`, `slice_end_seconds` and `frame_image_url` (the whole frame with the box), optional normalized `bounding_box`, and `crop_image_url`;
 - `incident`: the parent incident, model run, playback URL and incident window; and
 - `critic`: `unverified` unless the critic is on, then `confirmed`, `rejected` or `unverified`, with confidence and rationale.
 
@@ -69,10 +69,11 @@ Use chat for a follow-up question rather than treating a free-form answer as an 
 
 The console's report page does this through its `/api/chat` route, with `context.scope: "incident"` and the report's video ID as `incident_id`. Its "Ask about this incident" panel also sends `version_id` (the version on screen, or the version being edited) and, while editing, the unsaved draft as `draft_report` (requires `version_id`); citations then come from that version or draft.
 - In template mode (no model) the answer is composed from that version's report: the timeline in order for "what happened", the people, objects, what was taken, what could cause harm, times, severity or type. Items are named by their descriptions, and the ids appear only in `citations`.
-- A question about the official version with no draft is not searched, by decision ([`.docs/decisions.md`](../../.docs/decisions.md#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2)), and neither is a library question. Both answers say so; the canned demo hits are no longer returned.
+- `INCIDENT_CHAT_MODE=routed` (off) answers report-field questions by code and the rest with the chat model, and can offer a confirmed video check (`INCIDENT_VIDEO_CHECK_ENABLED`, off). Check `message.source` and `grounding.route` ([routes](../../.docs/mvp2/chat-routing.md)).
+- Any version, official or not, is answered from its own report. A library question is not searched in template mode, and the answer says so; the canned demo hits are no longer returned.
 - In grounded mode (`INCIDENT_CHAT_MODE=grounded`, off until Gate M2) a question with no incident is a library question: code counts and composes every count and breakdown ("how many assaults involved a knife?", "what happened most often?") and refuses one the filters cannot capture; the model answers other questions from the best matching reports. Check `grounding.answered_by`, `count_exact` and `versions` ([contract](../../.docs/vm-api-contracts.md#post-apiv1incidentschat)).
 
-The console's library (`/library`, Find evidence tab) runs search through its `POST /api/search` route (`{"query", "videoId"?}`), which calls the agent with `top_k` 20 (50 when `videoId` is set, passed as `filters.video_id`) and `min_similarity` 0, then adds each video's searched version to the hits. "See evidence" on a library card sends `videoId` with an empty query to list that incident's evidence.
+The console's library (`/library`, Find evidence tab) runs search through its `POST /api/search` route (`{"query", "videoId"?}`), which calls the agent with `top_k` 20 (50 when `videoId` is set, passed as `filters.video_id`) and `min_similarity` 0.35 (`MIN_SIMILARITY`; 0 for a listing), then adds each video's searched version to the hits. "See evidence" on a library card sends `videoId` with an empty query to list that incident's evidence.
 
 ```bash
 curl -sS -X POST http://localhost:8000/api/v1/incidents/chat \

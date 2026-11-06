@@ -1,0 +1,689 @@
+{
+ "config_version": "evalv2-config-v1",
+ "experiment": "v2-c3-track-b-historical-recovery",
+ "split": {
+  "version": "split-v2",
+  "half": "test"
+ },
+ "freeze_manifest": "eb316f37c53a2405120eb06fe3c0ce886d286eca42e89e7bf8b9f894b1f62252",
+ "purpose": "final",
+ "budget_mode": "hard_stop",
+ "seed": 20261101,
+ "retry_policy": "retry-v2",
+ "notes": "C3 AMENDMENT A2/A3 (owner, 2026-11-03): recovery of c3-track-b-historical after a harness crash (A1) and Switchyard overload. Re-sends only items without model output (infrastructure failures and never-attempted items), never a model output; 108 items {'nano-pipeline': 55, 'super-pipeline': 53}. Switchyard caps x2.5 (free); $2.00 USD cap unchanged. Run one item at a time (--parallel 1) with pacing.",
+ "datasets": {
+  "incident_gt": "ground-truth-v1.0"
+ },
+ "subjects": [
+  {
+   "id": "nano-pipeline",
+   "adapter": "vss",
+   "endpoint": "experiment-agent",
+   "model": "nvidia/cosmos-3-nano-reasoner",
+   "profile": "production-v4-captions"
+  },
+  {
+   "id": "super-pipeline",
+   "adapter": "vss",
+   "endpoint": "experiment-agent",
+   "model": "nvidia/cosmos-3-super-reasoner",
+   "profile": "production-v4-captions"
+  }
+ ],
+ "tasks": {
+  "pipeline": {
+   "subjects": "all",
+   "scorers": [
+    "pipeline.score_stage@1",
+    "pipeline.paired_effect@1",
+    "pipeline.crops@1",
+    "pipeline.caption_effect@1"
+   ],
+   "options": {
+    "judges": {
+     "primary": "openrouter-gpt-oss-20b-c3-v1"
+    }
+   }
+  }
+ },
+ "repeats": 1,
+ "caps": [
+  {
+   "ledger": "caption",
+   "subject": "nano-pipeline",
+   "task": "pipeline",
+   "max_attempts": 638,
+   "max_tokens": 2581138
+  },
+  {
+   "ledger": "grounding",
+   "subject": "nano-pipeline",
+   "task": "pipeline",
+   "max_attempts": 1883,
+   "max_tokens": 993653
+  },
+  {
+   "ledger": "inference",
+   "subject": "nano-pipeline",
+   "task": "pipeline",
+   "max_attempts": 195,
+   "max_tokens": 2752250
+  },
+  {
+   "ledger": "zoom",
+   "subject": "nano-pipeline",
+   "task": "pipeline",
+   "max_attempts": 4105,
+   "max_tokens": 1868850
+  },
+  {
+   "ledger": "caption",
+   "subject": "super-pipeline",
+   "task": "pipeline",
+   "max_attempts": 753,
+   "max_tokens": 4292875
+  },
+  {
+   "ledger": "grounding",
+   "subject": "super-pipeline",
+   "task": "pipeline",
+   "max_attempts": 1403,
+   "max_tokens": 2256545
+  },
+  {
+   "ledger": "inference",
+   "subject": "super-pipeline",
+   "task": "pipeline",
+   "max_attempts": 188,
+   "max_tokens": 2163985
+  },
+  {
+   "ledger": "zoom",
+   "subject": "super-pipeline",
+   "task": "pipeline",
+   "max_attempts": 3613,
+   "max_tokens": 3487078
+  },
+  {
+   "ledger": "caption",
+   "subject": "*",
+   "task": "*",
+   "max_attempts": 1390,
+   "max_tokens": 6874013
+  },
+  {
+   "ledger": "grounding",
+   "subject": "*",
+   "task": "*",
+   "max_attempts": 3285,
+   "max_tokens": 3250198
+  },
+  {
+   "ledger": "inference",
+   "subject": "*",
+   "task": "*",
+   "max_attempts": 383,
+   "max_tokens": 4916235
+  },
+  {
+   "ledger": "zoom",
+   "subject": "*",
+   "task": "*",
+   "max_attempts": 7718,
+   "max_tokens": 5355928
+  },
+  {
+   "ledger": "judge",
+   "subject": "*",
+   "task": "*",
+   "max_attempts": 0,
+   "max_tokens": 0
+  }
+ ],
+ "recovery": {
+  "of_experiment": "v2-c3-track-b-historical",
+  "of_manifest": "manifest.start.json config d6fb86dfcd1defa2",
+  "items": [
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Animal003",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Animal003",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Animal004",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Animal004",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Animal006",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Animal006",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Animal007",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Animal007",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Animal008",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Animal008",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Animal009",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Animal009",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Animal010",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Animal010",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Animal013",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Animal013",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Animal014",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Animal014",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Animal015",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Animal015",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Assault012",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Assault012",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Assault013",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Assault013",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Assault018",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Assault018",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Assault019",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Assault019",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Assault020",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Assault020",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Assault026",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Assault026",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Assault027",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Assault027",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Assault034",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Assault034",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Assault036",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Assault036",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Assault050",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Assault050",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary005",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary005",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary009",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary009",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary013",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary013",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary020",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary020",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary021",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary021",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary026",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary026",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary036",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary036",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary041",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary042",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary042",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary052",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary052",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary053",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary053",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary066",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary066",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Burglary071",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Burglary071",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Explosion004",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Explosion004",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Explosion009",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Explosion009",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Explosion014",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Explosion014",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Explosion016",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Explosion016",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Explosion017",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Explosion017",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Explosion019",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Explosion019",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Explosion027",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Explosion027",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Explosion041",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Explosion041",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Explosion047",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Explosion047",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "Explosion051",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "Explosion051",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents008",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "RoadAccidents008",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents010",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "RoadAccidents010",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents024",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "RoadAccidents024",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents029",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "RoadAccidents029",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents030",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "RoadAccidents030",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents037",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents039",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "RoadAccidents039",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents047",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "RoadAccidents047",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents052",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "RoadAccidents052",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents054",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "RoadAccidents054",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents060",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "RoadAccidents060",
+    "repeat": 1
+   },
+   {
+    "subject": "nano-pipeline",
+    "item_id": "RoadAccidents069",
+    "repeat": 1
+   },
+   {
+    "subject": "super-pipeline",
+    "item_id": "RoadAccidents069",
+    "repeat": 1
+   }
+  ]
+ }
+}

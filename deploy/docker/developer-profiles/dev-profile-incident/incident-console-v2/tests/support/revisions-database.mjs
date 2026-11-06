@@ -77,6 +77,18 @@ export const revisionRpcs = {
     return { videoId: args.p_video_id, officialRevisionId: args.p_revision_id, crops: store.evidence_crops.length };
   },
 
+  list_revisions_missing_crops: (args, store) =>
+    store.videos
+      .filter((video) => !args.p_video_id || video.id === args.p_video_id)
+      .flatMap((video) => {
+        const mine = revisionsOf(store, video.id);
+        const searchable = video.official_revision_id ?? Math.max(0, ...mine.map((row) => row.id));
+        const revision = mine.find((row) => row.id === searchable);
+        const hasImage = (revision?.evidence ?? []).some((entry) => entry.image);
+        const stored = store.evidence_crops.some((crop) => crop.revision_id === searchable);
+        return revision && hasImage && !stored ? [{ video_id: video.id, revision_id: searchable }] : [];
+      }),
+
   set_revision_crops: (args, store) => {
     const video = store.videos.find((row) => row.id === args.p_video_id);
     if (!video) throw new Error(`Video not found: ${args.p_video_id}`);

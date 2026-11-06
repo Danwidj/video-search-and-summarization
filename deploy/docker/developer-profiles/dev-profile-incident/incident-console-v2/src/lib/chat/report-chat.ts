@@ -80,6 +80,26 @@ export function draftReport(draft: EditDraft): Record<string, unknown> {
   };
 }
 
+export type AnswerSource = 'report' | 'report_llm' | 'video';
+
+/** Where an answer came from, under the answer. With no stated source it is the stored report, as composed answers are. */
+export function answerSourceLine(source: AnswerSource | undefined, label: string): string {
+  if (source === 'video') return 'Fresh video check: not part of the report, and not saved';
+  if (source === 'report_llm') return `AI reading of the stored report: ${label}`;
+  return `Answered from the stored report: ${label}`;
+}
+
+/** The turns the report chat sends: a fresh video check stays out, so a report answer never reads it as the report. */
+export function chatHistory<T extends { source?: AnswerSource }>(messages: T[]): T[] {
+  return messages.filter((message) => message.source !== 'video');
+}
+
+/** Whether a check can be offered: an offer about what came after a moment needs footage after it. */
+export function offersVideoCheck(offer: { fromSeconds?: number } | undefined, durationSeconds: number | null): boolean {
+  if (!offer) return false;
+  return offer.fromSeconds === undefined || durationSeconds === null || offer.fromSeconds < durationSeconds - 1;
+}
+
 /** The body of POST /api/chat for one question. */
 export function chatRequestBody({
   messages,

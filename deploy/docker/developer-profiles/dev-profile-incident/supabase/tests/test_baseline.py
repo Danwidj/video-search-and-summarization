@@ -17,6 +17,7 @@ import json
 import re
 import sys
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 
 import pgserver
@@ -96,6 +97,8 @@ EVIDENCE = [
 def crop(item_type: str, item_id: str, image: str, embedding: list[float] | None, **fields) -> dict:
     return {"item_type": item_type, "item_id": item_id, "image": image, "bounding_box": fields.get("bounding_box"),
             "timestamp_seconds": fields.get("timestamp_seconds"), "item_name": fields.get("item_name"),
+            "slice_start_seconds": fields.get("slice_start_seconds"), "slice_end_seconds": fields.get("slice_end_seconds"),
+            "frame": fields.get("frame"),
             "description": fields.get("description"), "threat_level": fields.get("threat_level"),
             "holder_entity_id": fields.get("holder_entity_id"), "embedding": embedding}
 
@@ -129,7 +132,9 @@ with tempfile.TemporaryDirectory() as tmp:
             assert gone not in names, gone
         for present in ("save_human_revision", "set_official_revision", "search_evidence_items",
                         "list_incident_report_summaries", "get_incident_dashboard", "report_revisions_append_only",
-                        "set_revision_crops", "searchable_revision_id", "claim_analysis_job", "touch_analysis_job",
+                        "set_revision_crops", "searchable_revision_id", "evidence_slice", "list_revisions_missing_crops",
+                        "set_revision_embedding", "list_revisions_missing_embeddings", "repair_revision_crops",
+                        "refresh_revision_embedding", "claim_analysis_job", "touch_analysis_job",
                         "finish_analysis_job", "retry_analysis_job", "cancel_analysis_job"):
             assert present in names, present
         assert one(conn, "SELECT extnamespace::regnamespace::TEXT FROM pg_extension WHERE extname = 'vector'")[0] == "extensions"
@@ -344,7 +349,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert dashboard["revisions"] == {"ai": 2, "human": 1}, dashboard
         assert dashboard["videos"] == {"uploaded": 4, "withOfficial": 1, "awaitingSelection": 2, "withoutReport": 1}, dashboard["videos"]
         assert {t["type"]: (t["count"], t["official"], t["notOfficial"]) for t in dashboard["types"]} == {"assault": (2, 1, 1), "burglary": (1, 0, 1)}, dashboard["types"]
-        assert dashboard["topInstruments"] == [{"label": "bottle", "count": 3}], dashboard["topInstruments"]
+        assert dashboard["topInstruments"] == [{"label": "bottle", "count": 3, "official": 1, "notOfficial": 2}], dashboard["topInstruments"]
         assert dashboard["threatLevels"] == [{"level": 3, "count": 3}] and abs(dashboard["averageConfidence"] - 0.8) < 1e-9, dashboard
         by_scope = dashboard["severityByScope"]
         for band in ("low", "medium", "high"):
@@ -377,6 +382,27 @@ with tempfile.TemporaryDirectory() as tmp:
             assert summaries(p_assets=[asset["label"]], p_evidence_match="exact")["totalItems"] == asset["count"], asset
         for kind, count in dashboard["revisions"].items():
             assert summaries(p_kind=kind)["totalItems"] == count, kind
+
+    @test("the dashboard counts the counted reports whose video has several versions, with the same filters")
+    def _():
+        # v1 has an AI and a human version, v3 three, v2 one: two counted reports have several versions.
+        assert dashboard_of()["multipleVersions"] == 2, dashboard_of()["multipleVersions"]
+        assert dashboard_of(p_scope="official")["multipleVersions"] == 1, "v1 only"
+        assert dashboard_of(p_scope="not_official")["multipleVersions"] == 1, "v3 only; v2 has one version"
+        assert dashboard_of(p_type="burglary")["multipleVersions"] == 0, "v2 has one version"
+        assert dashboard_of(p_type="assault")["multipleVersions"] == 2
+
+    @test("the dashboard counts evidence items by kind, split by official, for the counted reports")
+    def _():
+        # Each counted report carries one entity, one instrument and one asset: official v1, not yet official v2 and v3.
+        everything = {row["kind"]: row for row in dashboard_of()["evidence"]}
+        assert everything == {kind: {"kind": kind, "count": 3, "official": 1, "notOfficial": 2}
+                              for kind in ("entities", "instruments", "assets")}, everything
+        official = {row["kind"]: row["count"] for row in dashboard_of(p_scope="official")["evidence"]}
+        assert official == {"entities": 1, "instruments": 1, "assets": 1}, official
+        assert dashboard_of()["entityTypes"] == [{"label": "human", "count": 3, "official": 1, "notOfficial": 2}], dashboard_of()["entityTypes"]
+        none = dashboard_of(p_type="burglary", p_severity="high")
+        assert none["total"] == 0 and [row["count"] for row in none["evidence"]] == [0, 0, 0], none["evidence"]
 
     @test("the dashboard filters by report status, and leaves the video and model counts alone")
     def _():
@@ -579,6 +605,95 @@ with tempfile.TemporaryDirectory() as tmp:
     @test("the revisions of other videos are never touched by a crop write")
     def _():
         assert crop_count("v1") == 2 and crop_count("v3") == 0 and crop_count("v4") == 0
+    @test("evidence_crops keep the second the box was found at, with its fraction, and a slice and a frame")
+    def _():
+        conn.execute("INSERT INTO public.videos (id, filepath, source) VALUES ('v11', 'uploads/v11.mp4', 'cam')")
+        rev = ai_revision("v11", 1, "m1", report(), [])
+        result = set_crops("v11", rev, [
+            crop("entity", "E1", "evidence/v11/E1.jpg", vector(7), timestamp_seconds=15.333, slice_start_seconds=15.333,
+                 slice_end_seconds=18.8, frame="evidence/v11/E1-frame.jpg", item_name="human", description="Man"),
+            crop("asset", "A1", "evidence/v11/A1.jpg", vector(8), timestamp_seconds=2.27, slice_start_seconds=-1,
+                 slice_end_seconds=5.27, item_name="shelf", description="Shelf"),
+            crop("instrument", "I1", "evidence/v11/I1.jpg", vector(9), timestamp_seconds=4, item_name="bottle", description="Old crop list"),
+        ])
+        assert result["crops"] == 3, result
+        rows = conn.execute("""SELECT item_id, timestamp_seconds, slice_start_seconds, slice_end_seconds, frame
+            FROM public.evidence_crops WHERE revision_id = %s ORDER BY item_id""", (rev,)).fetchall()
+        assert rows == [
+            ("A1", Decimal("2.270"), Decimal("0.000"), Decimal("5.270"), None),
+            ("E1", Decimal("15.333"), Decimal("15.333"), Decimal("18.800"), "evidence/v11/E1-frame.jpg"),
+            ("I1", Decimal("4.000"), None, None, None),
+        ], rows
+        hits = conn.execute("""SELECT item_id, timestamp_seconds, slice_start_seconds, slice_end_seconds, frame
+            FROM public.search_evidence_items(%s::extensions.vector, 5, 0.5, p_video_id => 'v11')""", (vector_literal(7),)).fetchall()
+        assert hits == [("E1", Decimal("15.333"), Decimal("15.333"), Decimal("18.800"), "evidence/v11/E1-frame.jpg")], hits
+        conn.execute("DELETE FROM public.videos WHERE id = 'v11'")
+
+    @test("evidence_slice: box second wins over the item's second; a track gives first to last seen, else 3 s either side")
+    def _():
+        slice_of = lambda entry: one(conn, "SELECT box_second, slice_start, slice_end FROM public.evidence_slice(%s::jsonb)",
+                                     (json.dumps(entry),))
+        D = Decimal
+        # the audit's cases: a fractional box second beside a different whole-second item time
+        assert slice_of({"box_seconds": 15.33, "timestamp_seconds": 18}) == (D("15.33"), D("12.33"), D("18.33"))
+        assert slice_of({"box_seconds": 2.27, "timestamp_seconds": 22}) == (D("2.27"), D("0"), D("5.27"))
+        assert slice_of({"box_seconds": 10.67, "timestamp_seconds": 0}) == (D("10.67"), D("7.67"), D("13.67"))
+        track = {"box_seconds": 15.33, "track": "evidence/x/E1-track.json",
+                 "track_first_seen_seconds": 15.33, "track_last_seen_seconds": 18.8}
+        assert slice_of(track) == (D("15.33"), D("15.33"), D("18.8"))
+        # a track key without a usable window, or a window without a key, is not a track
+        assert slice_of({**track, "track_last_seen_seconds": 10}) == (D("15.33"), D("12.33"), D("18.33"))
+        assert slice_of({**track, "track": None}) == (D("15.33"), D("12.33"), D("18.33"))
+        assert slice_of({"timestamp_seconds": 5}) == (D("5"), D("2"), D("8"))
+        assert slice_of({}) == (D("0"), D("0"), D("3"))
+
+    @test("backfill: a row with a wrong second and no slice is rewritten from its revision's evidence, embedding kept")
+    def _():
+        conn.execute("INSERT INTO public.videos (id, filepath, source) VALUES ('v12', 'uploads/v12.mp4', 'cam')")
+        evidence = [
+            {"item_type": "entity", "item_id": "E1", "image": "evidence/v12/E1.jpg", "box_seconds": 15.33, "timestamp_seconds": 18,
+             "frame": "evidence/v12/E1-frame.jpg", "track": "evidence/v12/E1-track.json",
+             "track_first_seen_seconds": 15.33, "track_last_seen_seconds": 18.8},
+            {"item_type": "asset", "item_id": "A1", "image": "evidence/v12/A1.jpg", "box_seconds": 2.27, "timestamp_seconds": 22},
+        ]
+        rev = ai_revision("v12", 1, "m1", report(), evidence)
+        for item_type, item_id, wrong in (("entity", "E1", 18), ("asset", "A1", 22)):
+            conn.execute("""INSERT INTO public.evidence_crops (revision_id, item_type, item_id, item_name, description,
+                                timestamp_seconds, bounding_box, image, embedding)
+                            VALUES (%s, %s, %s, 'n', 'd', %s, '{1,2,3,4}', %s, %s::extensions.vector)""",
+                         (rev, item_type, item_id, wrong, f"evidence/v12/{item_id}.jpg", vector_literal(11)))
+        before = one(conn, "SELECT embedding::TEXT FROM public.evidence_crops WHERE revision_id = %s AND item_id = 'E1'", (rev,))[0]
+        conn.execute("RESET ROLE")
+        with conn.transaction():
+            conn.execute(next(m for m in MIGRATIONS if m.name.startswith("20261105090000")).read_text())
+        conn.execute("SET ROLE service_role")
+        rows = conn.execute("""SELECT item_id, timestamp_seconds, slice_start_seconds, slice_end_seconds, frame, embedding::TEXT
+            FROM public.evidence_crops WHERE revision_id = %s ORDER BY item_id""", (rev,)).fetchall()
+        assert [r[:5] for r in rows] == [
+            ("A1", Decimal("2.270"), Decimal("0.000"), Decimal("5.270"), None),
+            ("E1", Decimal("15.330"), Decimal("15.330"), Decimal("18.800"), "evidence/v12/E1-frame.jpg"),
+        ], rows
+        assert rows[1][5] == before, "the embedding is not re-written"
+        conn.execute("DELETE FROM public.videos WHERE id = 'v12'")
+
+    @test("list_revisions_missing_crops: a searchable revision with images and no crop rows, nothing else")
+    def _():
+        missing = lambda video=None: conn.execute("SELECT video_id, revision_id FROM public.list_revisions_missing_crops(%s)",
+                                                  (video,)).fetchall()
+        image = {"item_type": "entity", "item_id": "E1", "image": "evidence/v13/E1.jpg"}
+        conn.execute("INSERT INTO public.videos (id, filepath, source) VALUES ('v13', 'uploads/v13.mp4', 'cam'), ('v14', 'uploads/v14.mp4', 'cam')")
+        old = ai_revision("v13", 1, "m1", report(), [image])
+        assert missing("v13") == [("v13", old)], "newest revision has images and no rows"
+        set_crops("v13", old, [crop("entity", "E1", "evidence/v13/E1.jpg", vector(12), item_name="n", description="d")])
+        assert missing("v13") == []
+        newer = ai_revision("v13", 2, "m1", report(), [image])
+        assert missing("v13") == [("v13", newer)], "a newer revision takes over search with no rows"
+        ai_revision("v14", 1, "m1", report(), [{"item_type": "asset", "item_id": "A1", "image": None}])
+        assert missing("v14") == [], "no image-bearing evidence, nothing to store"
+        assert ("v13", newer) in missing()
+        refused(conn, "UPDATE public.report_revisions SET note = 'x' WHERE id = %s", (newer,), contains="append-only")
+        conn.execute("DELETE FROM public.videos WHERE id IN ('v13', 'v14')")
+
     @test("apply_r2_rename points a video, its evidence and its crops at renamed keys and nothing else")
     def _():
         conn.execute("INSERT INTO public.videos (id, filepath, source) VALUES ('v10', 'uploads/cam/0123.mp4', 'cam')")
@@ -646,6 +761,158 @@ with tempfile.TemporaryDirectory() as tmp:
                             (vector_literal(7),)).fetchone()[0] == 0
         refused(conn, "UPDATE public.report_revisions SET embedding = NULL WHERE id = %s", (embedded,), contains="append-only")
         assert one(conn, "SELECT count(*) FROM pg_indexes WHERE indexname = 'report_revisions_embedding_hnsw_idx'")[0] == 1
+
+    # One searchable version per incident (20261106090000_one_searchable_version.sql).
+    summary_hits = lambda index, floor=0.5: conn.execute(
+        "SELECT video_id, revision_id, similarity_score FROM public.search_report_revisions(%s::extensions.vector, 20, %s) ORDER BY video_id",
+        (vector_literal(index), floor)).fetchall()
+    embed_rev = lambda video, revision, index: one(
+        conn, "SELECT public.set_revision_embedding(%s, %s, %s::extensions.vector)", (video, revision, vector_literal(index)))[0]
+
+    @test("search_report_revisions returns only the searchable version, so a video never has two hits")
+    def _():
+        conn.execute("INSERT INTO public.videos (id) VALUES ('vs')")
+        old = one(conn, """INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, payload, evidence,
+                incident_type, severity_level, start_seconds, end_seconds, embedding)
+            VALUES ('vs', 1, 'ai', 'm1', %s, '[]', 'assault', 4, 2, 9, %s::extensions.vector) RETURNING id""",
+            (json.dumps(report(title="Old")), vector_literal(20)))[0]
+        newest = one(conn, """INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, parent_id, payload, evidence,
+                incident_type, severity_level, start_seconds, end_seconds, embedding, created_by)
+            VALUES ('vs', 2, 'human', 'm1', %s, %s, '[]', 'assault', 4, 2, 9, %s::extensions.vector, 'Dana') RETURNING id""",
+            (old, json.dumps(report(title="Newest")), vector_literal(20)))[0]
+        assert summary_hits(20) == [("vs", newest, 1.0)], summary_hits(20)  # the older twin vector is not a second hit
+        assert searchable("vs") == newest
+        # Marking the older one official moves the single hit to it; clearing moves it back to the newest.
+        conn.execute("SELECT public.set_official_revision('vs', %s, '[]')", (old,))
+        assert summary_hits(20) == [("vs", old, 1.0)], summary_hits(20)
+        conn.execute("SELECT public.set_official_revision('vs', NULL)")
+        assert summary_hits(20) == [("vs", newest, 1.0)], summary_hits(20)
+        assert summary_hits(20, 1.1) == [], "the minimum similarity still applies"
+
+    @test("marking official, clearing it and saving a new version each leave one searchable version for both searches")
+    def _():
+        conn.execute("INSERT INTO public.videos (id) VALUES ('vt')")
+        first = ai_revision("vt", 1, "m1", report(title="First"), [])
+        embed_rev("vt", first, 21)
+        set_crops("vt", first, [crop("entity", "E1", "evidence/vt/u1/E1.jpg", vector(21), item_name="human", description="One")])
+        second = save("vt", first, report(title="Second"), [])["revisionId"]
+        assert searchable("vt") == second
+        assert summary_hits(21) == [] and searched(21) == [], "nothing of the older version is found once a newer one exists"
+        assert embed_rev("vt", second, 22) is True
+        set_crops("vt", second, [crop("entity", "E1", "evidence/vt/u2/E1.jpg", vector(22), item_name="human", description="Two")])
+        assert [h[:2] for h in summary_hits(22)] == [("vt", second)] and searched(22) == [("vt", second, "E1")]
+        conn.execute("SELECT public.set_official_revision('vt', %s, %s)", (first, json.dumps([crop("entity", "E1", "evidence/vt/u1/E1.jpg", vector(21), item_name="human", description="One")])))
+        assert [h[:2] for h in summary_hits(21)] == [("vt", first)] and searched(21) == [("vt", first, "E1")]
+        assert summary_hits(22) == [] and searched(22) == []
+        conn.execute("SELECT public.set_official_revision('vt', NULL)")
+        assert searchable("vt") == second and [h[:2] for h in summary_hits(22)] == [("vt", second)]
+        assert summary_hits(21) == [], "clearing official hides the older version again"
+
+    @test("save_human_revision stores the summary vector it is given, and still saves without one")
+    def _():
+        conn.execute("INSERT INTO public.videos (id) VALUES ('vu')")
+        parent = ai_revision("vu", 1, "m1", report(), [])
+        args = ("vu", parent, "Dana", None, json.dumps(report(title="Edited")), "[]", "assault", 4, 2, 9)
+        saved = one(conn, "SELECT public.save_human_revision(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::extensions.vector)",
+                    args + (vector_literal(23),))[0]
+        assert [h[:2] for h in summary_hits(23)] == [("vu", saved["revisionId"])]
+        bare = one(conn, "SELECT public.save_human_revision(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", args)[0]
+        assert one(conn, "SELECT embedding IS NULL FROM public.report_revisions WHERE id = %s", (bare["revisionId"],))[0]
+        withcrops = one(conn, """SELECT public.save_human_revision_with_crops(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::extensions.vector)""",
+                        args + ("[]", vector_literal(24)))[0]
+        assert [h[:2] for h in summary_hits(24)] == [("vu", withcrops["revisionId"])]
+        refused(conn, "SELECT public.save_human_revision(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, '[1,2]'::extensions.vector)", args, contains="dimensions")
+
+    @test("set_revision_embedding fills only a missing vector on the searchable version, and the guard allows nothing else")
+    def _():
+        parent = searchable("vu")
+        searchable_id = save("vu", parent, report(title="Edited"), [])["revisionId"]  # saved without a vector
+        assert searchable("vu") == searchable_id
+        assert one(conn, "SELECT embedding IS NULL FROM public.report_revisions WHERE id = %s", (searchable_id,))[0]
+        listed = conn.execute("SELECT video_id, revision_id, title FROM public.list_revisions_missing_embeddings('vu')").fetchall()
+        assert conn.execute("SELECT incident_type FROM public.list_revisions_missing_embeddings('vu')").fetchall() is not None
+        assert listed == [("vu", searchable_id, "Edited")], listed
+        refused(conn, "SELECT public.set_revision_embedding('vu', %s, %s::extensions.vector)",
+                (one(conn, "SELECT min(id) FROM public.report_revisions WHERE video_id = 'vu'")[0], vector_literal(25)),
+                contains="not the searchable revision")
+        refused(conn, "SELECT public.set_revision_embedding('vu', %s, NULL)", (searchable_id,), contains="embedding is required")
+        assert one(conn, "SELECT public.set_revision_embedding('vu', %s, %s::extensions.vector)", (searchable_id, vector_literal(25)))[0] is True
+        assert [h[:2] for h in summary_hits(25)] == [("vu", searchable_id)]
+        assert conn.execute("SELECT * FROM public.list_revisions_missing_embeddings('vu')").fetchall() == []
+        assert one(conn, "SELECT public.set_revision_embedding('vu', %s, %s::extensions.vector)", (searchable_id, vector_literal(26)))[0] is False
+        assert summary_hits(26) == [], "a stored vector is never replaced"
+        assert one(conn, "SELECT current_setting('app.revision_embedding', true)")[0] in (None, "", "off")
+        for sql in ("UPDATE public.report_revisions SET embedding = NULL WHERE id = %s",
+                    "UPDATE public.report_revisions SET embedding = embedding WHERE id = %s",
+                    "UPDATE public.report_revisions SET note = 'x' WHERE id = %s"):
+            refused(conn, sql, (searchable_id,), contains="append-only")
+        # Even with the flag on, a change to another column, or a replacement of a stored vector, is refused.
+        with conn.transaction(force_rollback=True):
+            conn.execute("SELECT set_config('app.revision_embedding', 'on', true)")
+            for sql in ("UPDATE public.report_revisions SET note = 'x' WHERE id = %s",
+                        "UPDATE public.report_revisions SET embedding = NULL WHERE id = %s"):
+                try:
+                    with conn.transaction():
+                        conn.execute(sql, (searchable_id,))
+                except errors.Error as exc:
+                    assert "append-only" in str(exc)
+                else:
+                    raise AssertionError(sql)
+
+    @test("repair_revision_crops stores crops once, never over existing rows, and not for a version that is no longer searchable")
+    def _():
+        conn.execute("INSERT INTO public.videos (id) VALUES ('vw')")
+        base = ai_revision("vw", 1, "m1", report(), EVIDENCE)
+        rows = [crop("entity", "E1", "evidence/vw/u1/E1.jpg", vector(27), item_name="human", description="One")]
+        newer = ai_revision("vw", 2, "m1", report(), EVIDENCE)
+        assert one(conn, "SELECT public.repair_revision_crops('vw', %s, %s)", (base, json.dumps(rows)))[0] is None, "not searchable"
+        assert crop_count("vw") == 0
+        assert one(conn, "SELECT public.repair_revision_crops('vw', %s, %s)", (newer, json.dumps(rows)))[0] == 1
+        other = [crop("entity", "E1", "evidence/vw/u9/E1.jpg", vector(28), item_name="human", description="Other")]
+        assert one(conn, "SELECT public.repair_revision_crops('vw', %s, %s)", (newer, json.dumps(other)))[0] is None
+        assert one(conn, "SELECT image FROM public.evidence_crops WHERE revision_id = %s", (newer,))[0] == "evidence/vw/u1/E1.jpg"
+        assert one(conn, "SELECT public.repair_revision_crops('nope', 1, '[]')")[0] is None
+
+    @test("refresh_revision_embedding replaces a stored vector on the searchable version only, and the guard allows nothing else")
+    def _():
+        searchable_id = searchable("vu")
+        old_id = one(conn, "SELECT min(id) FROM public.report_revisions WHERE video_id = 'vu'")[0]
+        assert summary_hits(25) and summary_hits(25)[0][1] == searchable_id  # holds the vector set by the test above
+        refused(conn, "SELECT public.refresh_revision_embedding('vu', %s, %s::extensions.vector)", (old_id, vector_literal(30)),
+                contains="not the searchable revision")
+        refused(conn, "SELECT public.refresh_revision_embedding('vu', %s, NULL)", (searchable_id,), contains="embedding is required")
+        refused(conn, "SELECT public.refresh_revision_embedding('nope', 1, %s::extensions.vector)", (vector_literal(30),),
+                contains="Video not found")
+        assert one(conn, "SELECT public.refresh_revision_embedding('vu', %s, %s::extensions.vector)", (searchable_id, vector_literal(30)))[0] is True
+        assert [h[:2] for h in summary_hits(30)] == [("vu", searchable_id)], "the new vector is the one searched"
+        assert summary_hits(25) == [], "the old vector is gone"
+        assert one(conn, "SELECT current_setting('app.revision_embedding_refresh', true)")[0] in (None, "", "off")
+        for sql in ("UPDATE public.report_revisions SET embedding = %s::extensions.vector WHERE id = %s",):
+            refused(conn, sql, (vector_literal(31), searchable_id), contains="append-only")
+        with conn.transaction(force_rollback=True):
+            conn.execute("SELECT set_config('app.revision_embedding_refresh', 'on', true)")
+            for sql in ("UPDATE public.report_revisions SET note = 'x' WHERE id = %s",
+                        "UPDATE public.report_revisions SET embedding = NULL WHERE id = %s"):
+                try:
+                    with conn.transaction():
+                        conn.execute(sql, (searchable_id,))
+                except errors.Error as exc:
+                    assert "append-only" in str(exc), exc
+                else:
+                    raise AssertionError(f"allowed with the refresh flag on: {sql}")
+
+    @test("security: the 20261106 functions are for the service role only")
+    def _():
+        conn.execute("RESET ROLE")
+        for sig in ("public.set_revision_embedding(character varying, bigint, extensions.vector)",
+                    "public.list_revisions_missing_embeddings(character varying)",
+                    "public.refresh_revision_embedding(character varying, bigint, extensions.vector)",
+                    "public.repair_revision_crops(character varying, bigint, jsonb)"):
+            for role in ("anon", "authenticated"):
+                assert not one(conn, "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, sig))[0], (role, sig)
+            assert one(conn, "SELECT has_function_privilege('service_role', %s, 'EXECUTE')", (sig,))[0], sig
+        conn.execute("SET ROLE service_role")
+        conn.execute("DELETE FROM public.videos WHERE id IN ('vs', 'vt', 'vu', 'vw')")
 
     # Background analysis jobs (20261031120000_analysis_jobs.sql).
     def enqueue(name: str) -> int:

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { readStoredJson } from '@/lib/r2/stored-json';
 import { NextResponse } from 'next/server';
 
 import { getAnalysisPorts, getDbAdapters } from '@/lib/container';
@@ -99,7 +100,13 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
       getAnalysisPorts(config),
       config.analysisMode,
     );
-    const searchable = await storeSearchableCrops(getDbAdapters(config), videoId, revisionId, (id) => fetchEvidenceEmbeddings(config, id));
+    const searchable = await storeSearchableCrops(
+      getDbAdapters(config),
+      videoId,
+      revisionId,
+      (id) => fetchEvidenceEmbeddings(config, id),
+      readStoredJson(config),
+    );
     return NextResponse.json({
       run: {
         videoId: run.videoId,

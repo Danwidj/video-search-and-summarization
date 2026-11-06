@@ -1,4 +1,12 @@
-# Evaluation V2: proposed runs (prepared 2026-11-03, NOT APPROVED, NOT RUN)
+# Evaluation V2: proposed runs (prepared 2026-11-03)
+
+**Status (updated 2026-11-06). Historical planning record, not approved methodology.** The text below is unchanged from 2026-11-03, when none of these runs had been approved.
+
+| Run | Status |
+|---|---|
+| A. Box-reference AI review | Not run as proposed |
+| B. Chat judging | Approved by the owner and run: 221 calls, $0.0117 ([results](v2-chat-judged-results.md)) |
+| C. Adjudicator experiments | Not run. The 10 AI-review disputes stay **unresolved** ([results](v2-ai-review-results.md)) |
 
 **Scope and rules for every run:**
 - Development split only. No held-out clip, frame or ground-truth text is sent.

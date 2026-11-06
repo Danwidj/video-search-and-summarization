@@ -338,7 +338,7 @@ class TestPersistRevision:
 class TestRevisionEmbedding:
     """The summary vector saved with an AI revision; a failure leaves the row with NULL."""
 
-    REPORT: ClassVar[dict] = {"incident": {"title": "Fight", "description": "Two people fight."}}
+    REPORT: ClassVar[dict] = {"incident": {"type": "assault", "title": "Fight", "description": "Two people fight."}}
 
     @pytest.mark.asyncio
     async def test_embeds_the_title_and_description_as_a_passage(self):
@@ -347,7 +347,7 @@ class TestRevisionEmbedding:
         embedder.embed_passage = AsyncMock(return_value=[0.1] * 1024)
         with patch("vss_agents.tools.incident_report_gen.RemoteTextEmbedder", return_value=embedder):
             assert await revision_embedding(self.REPORT) == [0.1] * 1024
-        embedder.embed_passage.assert_awaited_once_with("Fight\nTwo people fight.")
+        embedder.embed_passage.assert_awaited_once_with("assault: Fight\nTwo people fight.")
 
     @pytest.mark.asyncio
     async def test_none_when_no_embedding_key_is_configured(self):
@@ -1043,6 +1043,13 @@ class TestChunkedCaptions(TestEndToEnd):
         caption_video.assert_not_awaited()
         assert len(requests) == 1 and len(requests[0]["messages"]) == 1
         assert not {"chunk_timeline", "chunking"} & set(result.model_dump())  # captions are never returned
+        chunking = result.provenance["flags"]["chunking"]
+        assert (chunking["enabled"], chunking["ran"], chunking["setting_enabled"], chunking["skipped"]) == (
+            False,
+            False,
+            False,
+            None,
+        )
 
     @pytest.mark.asyncio
     async def test_flag_on_appends_the_context_and_returns_no_captions(self, monkeypatch):
@@ -1062,6 +1069,13 @@ class TestChunkedCaptions(TestEndToEnd):
         assert messages[0]["content"][1]["text"] == incident_contract.extraction_prompt()  # prompt file untouched
         assert requests[0]["response_format"] == incident_contract.response_format()
         assert not {"chunk_timeline", "chunking"} & set(result.model_dump())  # context for P1 only
+        chunking = result.provenance["flags"]["chunking"]
+        assert (chunking["enabled"], chunking["ran"], chunking["setting_enabled"], chunking["skipped"]) == (
+            True,
+            True,
+            True,
+            None,
+        )
         assert persist.await_args.kwargs["report"] == result.report  # the revision is written as before
 
     @pytest.mark.asyncio
@@ -1117,6 +1131,13 @@ class TestChunkedCaptions(TestEndToEnd):
             )
         caption_video.assert_not_awaited()
         assert _logged(caplog, "caption pass skipped for v1: video length unknown")
+        chunking = result.provenance["flags"]["chunking"]
+        assert {k: chunking[k] for k in ("enabled", "ran", "setting_enabled", "skipped")} == {
+            "enabled": False,
+            "ran": False,
+            "setting_enabled": True,
+            "skipped": "video length unknown",
+        }
         assert result.video_bounds_checked is False
         assert len(requests) == 1
 

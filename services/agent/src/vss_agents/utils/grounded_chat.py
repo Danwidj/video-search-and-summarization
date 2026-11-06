@@ -38,6 +38,7 @@ from collections import Counter
 from dataclasses import dataclass
 from dataclasses import field
 import json
+import math
 import os
 import re
 import time
@@ -48,6 +49,7 @@ from typing import Protocol
 import httpx
 
 from vss_agents import incident_contract
+from vss_agents.utils import chat_attribution
 from vss_agents.utils import report_answers
 
 if TYPE_CHECKING:
@@ -136,8 +138,11 @@ class OpenAIChatModel:
                 )
         except httpx.HTTPError as exc:
             raise ChatModelError(f"chat model call failed: {type(exc).__name__}: {exc}") from exc
+        if response.status_code == 429:
+            raise ChatModelError("the chat model is busy (rate limited)")
         if response.status_code >= 400:
-            raise ChatModelError(f"chat model returned HTTP {response.status_code}: {response.text[:300]}")
+            # The provider's body can hold account details, and this message reaches the browser.
+            raise ChatModelError(f"chat model returned HTTP {response.status_code}")
         body = response.json()
         self.last_usage = {**(body.get("usage") or {}), "elapsed_ms": round((self.clock() - started) * 1000.0, 1)}
         try:
@@ -187,6 +192,164 @@ def _seconds(value: Any) -> float | None:
     return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
 
 
+# ---------------------------------------------------------------------------
+# Routed mode: the same report context with its uncertainties, and an answer whose parts are kept apart
+# ---------------------------------------------------------------------------
+#
+# Grounded mode keeps its prompt and context unchanged, so its evaluated results still describe it.
+
+ROUTED_PROMPT_ID = "chat/incident-routed"
+ROUTED_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "answer",
+        "interpretation",
+        "not_established",
+        "citations",
+        "insufficient_evidence",
+        "video_could_answer",
+    ],
+    "properties": {
+        **ANSWER_SCHEMA["properties"],
+        "interpretation": {"type": "string"},
+        "not_established": {"type": "string"},
+        "video_could_answer": {"type": "boolean"},
+    },
+}
+# A video time as the console reads one: m:ss or h:mm:ss, not inside a longer token.
+_TIME = re.compile(r"(?<![\w:./])(?:(\d{1,2}):([0-5]\d):([0-5]\d)|(\d{1,3}):([0-5]\d))(?:\.\d+)?(?![\w:])")
+
+
+_SECONDS_IN_TEXT = re.compile(r"(?<![\w.:])(\d+(?:\.\d+)?)(?:\s*[-\u2013]\s*(\d+(?:\.\d+)?))?\s*(?:s|secs?|seconds?)\b")
+
+
+def routed_context(report: Mapping[str, Any], evidence: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """:func:`report_context` with the report's uncertainties, and each item's evidence second as a card shows it."""
+    context = report_context(report, evidence)
+    entries = {str(e.get("item_id")): e for e in evidence}
+    for item in context["items"]:
+        entry = entries.get(item["item_id"], {})
+        item["evidence_second"] = next(
+            (
+                s
+                for s in (_seconds(entry.get("box_seconds")), _seconds(entry.get("timestamp_seconds")))
+                if s is not None
+            ),
+            None,
+        )
+    context["uncertainties"] = [u for u in report.get("uncertainties") or [] if isinstance(u, str) and u.strip()]
+    return context
+
+
+def routed_messages(context: Mapping[str, Any], history: Sequence[Mapping[str, str]]) -> list[dict[str, str]]:
+    messages = chat_messages(context, history)
+    messages[0] = {"role": "system", "content": incident_contract.prompt(ROUTED_PROMPT_ID)}
+    return messages
+
+
+def _whole_seconds(match: re.Match[str]) -> int:
+    hours, minutes, seconds, short_minutes, short_seconds = match.groups()
+    if hours is not None:
+        return int(hours) * 3600 + int(minutes) * 60 + int(seconds)
+    return int(short_minutes) * 60 + int(short_seconds)
+
+
+def known_seconds(context: Mapping[str, Any]) -> set[int]:
+    """Every whole second the report holds, which is every time an answer may give."""
+    incident = context.get("incident") or {}
+    raw = [incident.get("start_timestamp"), incident.get("end_timestamp")]
+    for event in context.get("timeline") or []:
+        raw += [event.get("start_seconds"), event.get("end_seconds")]
+    for item in context.get("items") or []:
+        raw += [item.get(key) for key in ("timestamp_seconds", "first_seen_seconds", "last_seen_seconds")]
+        raw.append(item.get("evidence_second"))
+    known = {int(value) for value in (_seconds(v) for v in raw) if value is not None}
+    # A report may also state times in its own words: the description, an event or an uncertainty.
+    texts = [str(incident.get("description") or ""), *(str(u) for u in context.get("uncertainties") or [])]
+    texts += [str(event.get("description") or "") for event in context.get("timeline") or []]
+    texts += [str(item.get("description") or "") for item in context.get("items") or []]
+    known |= {_whole_seconds(match) for text in texts for match in _TIME.finditer(text)}
+    for text in texts:  # "at about 4.5s", "7-8.5 seconds": an answer may round either way when it writes m:ss
+        for match in _SECONDS_IN_TEXT.finditer(text):
+            for value in filter(None, match.groups()):
+                known |= {math.floor(float(value)), math.ceil(float(value))}
+    return known
+
+
+def unknown_times(text: str, context: Mapping[str, Any]) -> list[str]:
+    """The times written in ``text`` that the report does not hold, as written, so a client can leave them unlinked."""
+    known = known_seconds(context)
+    out: list[str] = []
+    for match in _TIME.finditer(text):
+        if _whole_seconds(match) not in known and match.group(0) not in out:
+            out.append(match.group(0))
+    return out
+
+
+@dataclass(frozen=True)
+class RoutedAnswer:
+    content: str
+    item_ids: tuple[str, ...]
+    insufficient_evidence: bool
+    video_could_answer: bool
+    not_established: str = ""
+    dropped_citations: tuple[str, ...] = ()
+    ids_resolved: tuple[str, ...] = ()
+    unknown_times: tuple[str, ...] = ()
+
+
+def check_routed(
+    reply: Mapping[str, Any],
+    context: Mapping[str, Any],
+    view: report_answers.ReportView,
+    *,
+    question: str = "",
+    retired: Iterable[str] = (),
+) -> RoutedAnswer:
+    """The model's answer with its parts labelled by code and its citations and times checked against the report.
+
+    An interpretation and a missing detail are written under their own labels, so a reading cannot pass as a recorded
+    fact. The cards are the valid citations plus any item the answer names without citing it
+    (:func:`report_answers.text_items`), so navigation does not depend on the model remembering to cite, or on its
+    insufficient flag.
+    """
+    for key in ("interpretation", "not_established"):
+        if not isinstance(reply.get(key), str):
+            raise ChatModelError(f"chat model reply lacks {key}")
+    if not isinstance(reply.get("video_could_answer"), bool):
+        raise ChatModelError("chat model reply lacks video_could_answer")
+    # A question that writes an id ("who holds stick I2?") may be answered with that id: the reader used it first.
+    keep_ids = report_answers.names_an_id(question)
+    checked = check_answer(reply, context, question=question, retired=retired, keep_ids=keep_ids)
+    mentions = item_mentions(context, retired)
+    parts: list[str] = []
+    for label, key in (
+        ("Interpretation, not recorded in the report", "interpretation"),
+        ("Not established", "not_established"),
+    ):
+        text = reply[key].strip()
+        if text:
+            parts.append(f"{label}: {text if keep_ids else report_answers.resolve_references(text, mentions)}")
+    rest = "\n\n".join(parts)
+    timed = chat_attribution.attribute(checked.content, rest, context, view, mentions)
+    content = "\n\n".join([timed.content, *parts])
+    # The model often flags a useful partial answer as insufficient. Its citations are then not used, but what the
+    # answer affirms keeps its card. An item only denied ("no collar on the dog") is not evidence for anything.
+    named = report_answers.text_items([chat_attribution.affirmed(checked.content)], view)
+    cited = (*checked.item_ids, *(item_id for item_id in named if item_id not in checked.item_ids))
+    return RoutedAnswer(
+        content=content,
+        item_ids=cited,
+        insufficient_evidence=checked.insufficient_evidence,
+        video_could_answer=reply["video_could_answer"],
+        not_established=reply["not_established"].strip(),
+        dropped_citations=checked.dropped_citations,
+        ids_resolved=checked.ids_resolved,
+        unknown_times=tuple(dict.fromkeys([*unknown_times(content, context), *timed.unattributed])),
+    )
+
+
 def item_mentions(context: Mapping[str, Any], retired: Iterable[str] = ()) -> report_answers.Mentions:
     """How a person reading the answer knows each item: its label or name, else its description's first clause.
 
@@ -227,7 +390,12 @@ class GroundedAnswer:
 
 
 def check_answer(
-    reply: Mapping[str, Any], context: Mapping[str, Any], *, question: str = "", retired: Iterable[str] = ()
+    reply: Mapping[str, Any],
+    context: Mapping[str, Any],
+    *,
+    question: str = "",
+    retired: Iterable[str] = (),
+    keep_ids: bool = False,
 ) -> GroundedAnswer:
     """The model's answer with its citations checked against the context; unknown ids are dropped and counted.
 
@@ -251,7 +419,9 @@ def check_answer(
     insufficient = bool(reply["insufficient_evidence"])
     content = reply["answer"].strip()
     mentions = item_mentions(context, retired)
-    leaked: list[str] = [] if report_answers.asks_for_ids(question) else report_answers.replaced_ids(content, mentions)
+    leaked: list[str] = (
+        [] if keep_ids or report_answers.asks_for_ids(question) else report_answers.replaced_ids(content, mentions)
+    )
     if leaked:
         content = report_answers.resolve_references(content, mentions)
     return GroundedAnswer(

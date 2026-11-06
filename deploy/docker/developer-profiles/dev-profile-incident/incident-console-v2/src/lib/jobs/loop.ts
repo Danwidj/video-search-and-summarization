@@ -10,8 +10,11 @@
 // each model's own timeout (contracts/inference.json) still bounds an analysis.
 // ANALYSIS_JOB_LOOP=off leaves it stopped (jobs then wait for another console).
 
-import { getAnalysisJobs, getUploadAnalysis } from '@/lib/container';
-import { getServiceConfiguration, isSupabaseConfigured, requireAnalysisConfiguration } from '@/lib/env';
+import { getAnalysisJobs, getDbAdapters, getUploadAnalysis } from '@/lib/container';
+import { getServiceConfiguration, isR2Configured, isSupabaseConfigured, requireAnalysisConfiguration } from '@/lib/env';
+import { createSearchableRepair, REPAIR_INTERVAL_MS } from '@/lib/jobs/repair';
+import { readStoredJson } from '@/lib/r2/stored-json';
+import { fetchEvidenceEmbeddings, fetchSummaryEmbedding } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { analyseUpload } from '@/modules/analysis/application/analyse-upload';
 import { jobVideoId, runNextJob } from '@/modules/jobs/application';
 
@@ -52,17 +55,40 @@ export async function tick(): Promise<boolean> {
   return finished !== null;
 }
 
+/**
+ * The repair of searchable versions (lib/jobs/repair.ts): once at start, every REPAIR_INTERVAL_MS, and after each job.
+ * Never awaited by the job loop, so it cannot delay or fail a job. Skipped while the database or the agent is not configured.
+ */
+export const repairSearchable = createSearchableRepair({
+  log,
+  deps: () => {
+    const config = getServiceConfiguration();
+    if (!isSupabaseConfigured(config) || !config.agentUrl) return null;
+    return {
+      db: getDbAdapters(config),
+      embedCrops: (revisionId) => fetchEvidenceEmbeddings(config, revisionId),
+      embedSummary: (summary) => fetchSummaryEmbedding(config, summary),
+      readTrack: isR2Configured(config) ? readStoredJson(config) : undefined,
+    };
+  },
+});
+
 export function startAnalysisJobLoop(): void {
   const scope = globalThis as LoopGlobal;
   if (scope[STARTED] || process.env.ANALYSIS_JOB_LOOP?.trim().toLowerCase() === 'off') return;
   scope[STARTED] = true;
-  log(`loop started: one job at a time, polling every ${POLL_MS / 1000} s`);
+  log(
+    `loop started: one job at a time, polling every ${POLL_MS / 1000} s; repairing searchable versions every ${REPAIR_INTERVAL_MS / 1000} s`,
+  );
+  void repairSearchable();
+  setInterval(() => void repairSearchable(), REPAIR_INTERVAL_MS).unref();
   let lastError = '';
   const run = async () => {
     let busy = false;
     try {
       busy = await tick();
       lastError = '';
+      if (busy) void repairSearchable();
     } catch (error) {
       // The queue is unreachable (PostgREST down, table not migrated): say so once, keep polling.
       const message = error instanceof Error ? error.message : String(error);

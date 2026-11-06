@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { readStoredJson } from '@/lib/r2/stored-json';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
@@ -22,8 +23,12 @@ export async function PUT(request: Request, context: { params: Promise<{ videoId
     const parsed = selectSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'revisionId is required' }, { status: 400 });
     const config = getServiceConfiguration();
-    const result = await setOfficialRevision(getDbAdapters(config), videoId, parsed.data.revisionId, (revisionId) =>
-      fetchEvidenceEmbeddings(config, revisionId),
+    const result = await setOfficialRevision(
+      getDbAdapters(config),
+      videoId,
+      parsed.data.revisionId,
+      (revisionId) => fetchEvidenceEmbeddings(config, revisionId),
+      readStoredJson(config),
     );
     return NextResponse.json({ official: result });
   } catch (error) {

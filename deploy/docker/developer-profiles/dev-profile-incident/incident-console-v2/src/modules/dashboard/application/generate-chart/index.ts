@@ -5,7 +5,10 @@
 // exactly what the dashboard counts; and VSS chart_generator draws those figures.
 
 import type { ChartInterpreter } from '@/modules/dashboard/domain/ChartInterpreter';
-import type { ChartRenderer } from '@/modules/dashboard/domain/ChartRenderer';
+import { ChartRenderError, type ChartDrawing, type ChartRenderer } from '@/modules/dashboard/domain/ChartRenderer';
+import { configMatchesChart, isChartJsConfig } from '@/modules/dashboard/domain/chart-config';
+import { kindFitsDimension } from '@/modules/dashboard/domain/chart-kinds';
+import { NOT_OFFICIAL_SERIES, OFFICIAL_SERIES, sliceColors } from '@/modules/dashboard/domain/chart-palette';
 import {
   CHART_DIMENSIONS,
   CHART_PERIODS,
@@ -16,21 +19,22 @@ import {
   parseChartSpec,
 } from '@/modules/dashboard/domain/chart-spec';
 import type { DashboardQuery, DashboardRepository } from '@/modules/dashboard/domain/DashboardRepository';
-import type {
-  ChartAnswer,
-  ChartRow,
-  ChartSeries,
-  ChartType,
-  GeneratedChart,
-  ReportTotals,
+import { CHART_COLORS } from '@/lib/ui/chart-colors';
+import {
+  type ChartAnswer,
+  type ChartKind,
+  type ChartRow,
+  type ChartSeries,
+  type GeneratedChart,
+  normalizeChartKind,
+  type ReportTotals,
 } from '@/modules/dashboard/domain/generated-chart';
+import { normalizeSeverityWords } from '@/modules/dashboard/domain/severity-words';
 import type { DashboardAnalytics, RankedValue } from '@/modules/dashboard/domain/types';
 
 const COUNT = 'count';
-const STATUS_SERIES: ChartSeries[] = [
-  { key: 'official', label: 'Official' },
-  { key: 'not_official', label: 'Not official' },
-];
+const STATUS_SERIES: ChartSeries[] = [OFFICIAL_SERIES, NOT_OFFICIAL_SERIES];
+const TOTAL_SERIES = (label: string): ChartSeries[] => [{ key: COUNT, label, color: CHART_COLORS.total }];
 const VALUE_LABELS: Record<ChartMetric, string> = { incidents: 'Reports', instruments: 'Instruments', analyses: 'Analyses' };
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const PERIOD_LABELS: Record<ChartPeriod, string> = {
@@ -200,7 +204,7 @@ export interface GenerateChartPorts {
 
 export interface GenerateChartInput {
   request: string;
-  chartType: ChartType;
+  chartType: ChartKind | 'pie';
   timezone: string;
   now: Date;
 }
@@ -209,9 +213,11 @@ export async function generateChart(
   { interpreter, dashboard, renderer }: GenerateChartPorts,
   { request, chartType, timezone, now }: GenerateChartInput,
 ): Promise<ChartAnswer> {
-  const spec = parseChartSpec(await interpreter.interpret(request));
+  const kind = normalizeChartKind(chartType);
+  // Canonical severity words become their band in code (domain/severity-words.ts); the model reads the result.
+  const spec = parseChartSpec(await interpreter.interpret(normalizeSeverityWords(request)));
   if (!spec) return { kind: 'unsupported' };
-  if (chartType === 'pie' && !CHART_DIMENSIONS[spec.dimension].pie) return { kind: 'needs_bar' };
+  if (!kindFitsDimension(kind, spec.dimension)) return { kind: 'needs_bar' };
 
   const query = dashboardQuery(spec, timezone, now);
   const analytics = await dashboard.getDashboard(query);
@@ -220,10 +226,13 @@ export async function generateChart(
   const dimensionName = trendDimension(spec.dimension, analytics.trend);
   const dimension = CHART_DIMENSIONS[dimensionName];
   const rows = rowsFor(dimensionName, analytics, reports);
-  const split = chartType === 'bar' && dimension.splits;
+  // A donut has no split (its parts are the whole); every other kind shows official and not yet official where the dimension has them.
+  const split = kind !== 'donut' && dimension.splits;
   const valueLabel = VALUE_LABELS[spec.metric];
+  const series = split ? STATUS_SERIES : TOTAL_SERIES(valueLabel);
+  const chartRows = split ? await splitRows(dimensionName, rows, analytics, query, dashboard) : rows;
   const chart: GeneratedChart = {
-    chartType,
+    chartKind: kind,
     title: dimension.title,
     description: dimension.description,
     categoryLabel: dimension.categoryLabel,
@@ -233,11 +242,33 @@ export async function generateChart(
       ...(spec.incidentType ? [capitalize(spec.incidentType)] : []),
       ...(spec.severity ? [`${capitalize(spec.severity)} severity`] : []),
     ],
-    series: split ? STATUS_SERIES : [{ key: COUNT, label: valueLabel }],
-    rows: split ? await splitRows(dimensionName, rows, analytics, query, dashboard) : rows,
+    series,
+    rows: chartRows,
     reports,
+    config: null,
     image: null,
   };
   const hasData = chart.rows.some((row) => Object.values(row.values).some(Boolean));
-  return { kind: 'chart', chart: hasData ? { ...chart, image: await renderer.draw(chart) } : chart };
+  if (!hasData) return { kind: 'chart', chart };
+
+  const drawing: ChartDrawing = {
+    chartKind: kind,
+    title: chart.title,
+    categoryLabel: chart.categoryLabel,
+    valueLabel: chart.valueLabel,
+    series: chart.series,
+    rows: chart.rows,
+    sliceColors: sliceColors(kind, dimensionName, chart.rows),
+  };
+  // The agent places our figures in a Chart.js configuration. It is shown only if its figures are exactly ours.
+  const configured = await renderer.configure(drawing);
+  if (configured !== null) {
+    if (!isChartJsConfig(configured) || !configMatchesChart(configured, chart)) {
+      throw new ChartRenderError('The chart service returned figures that do not match the database');
+    }
+    return { kind: 'chart', chart: { ...chart, config: configured } };
+  }
+  // No configuration came back: the static picture stands in for it (a donut is drawn as a pie, everything else as bars).
+  const image = await renderer.draw({ ...drawing, chartKind: kind === 'donut' ? 'donut' : 'bar' });
+  return { kind: 'chart', chart: { ...chart, image } };
 }

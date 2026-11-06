@@ -25,9 +25,12 @@ export function coversWholeFrame(box: readonly number[] | null | undefined): boo
   return !!region && region.w >= WHOLE_FRAME && region.h >= WHOLE_FRAME;
 }
 
-/** The frame the console cuts from the video's stored file at a second (the route reads the video from R2). */
+/**
+ * The frame the console cuts from the video's stored file at a second (the route reads the video from R2). The second keeps
+ * up to three decimals, because Save cuts the stored frame at exactly the item's second and the preview must show that frame.
+ */
 export function videoFrameUrl(videoId: string, seconds: number): string {
-  return `/api/reports/${encodeURIComponent(videoId)}/frame?t=${Math.max(0, Math.round(seconds))}`;
+  return `/api/reports/${encodeURIComponent(videoId)}/frame?t=${+Math.max(0, seconds).toFixed(3)}`;
 }
 
 /**
@@ -45,15 +48,16 @@ export function evidenceDisplay(evidence: ItemEvidence | null | undefined, video
 }
 
 /**
- * The frame, box and note for an evidence search hit. A hit's crop row has no stored frame, so the frame is cut from the
- * video's stored file at the item's second; a box covering the whole frame is the old fallback, read as not located.
+ * The frame, box and note for an evidence search hit. The stored frame comes first (a signed URL, no per-view ffmpeg). A hit
+ * whose crop row has none (stored before frames were) has its frame cut from the video's stored file at the box second; a box
+ * covering the whole frame is the old fallback, read as not located.
  */
 export function hitDisplay(
-  item: { timestampSeconds: number; boundingBox: readonly number[] | null; cropImageUrl: string },
+  item: { timestampSeconds: number; boundingBox: readonly number[] | null; cropImageUrl: string; frameImageUrl?: string | null },
   videoId: string,
 ): EvidenceDisplay {
   const notLocated = coversWholeFrame(item.boundingBox);
   const box = notLocated || !boxRegion(item.boundingBox) ? null : item.boundingBox;
-  const frameSrc = videoId ? videoFrameUrl(videoId, item.timestampSeconds) : null;
+  const frameSrc = item.frameImageUrl || (videoId ? videoFrameUrl(videoId, item.timestampSeconds) : null);
   return { frameSrc, src: item.cropImageUrl || null, box, notLocated };
 }
