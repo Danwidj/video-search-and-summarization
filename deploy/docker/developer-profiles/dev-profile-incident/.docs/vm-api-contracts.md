@@ -141,7 +141,7 @@ Request: `{"session_id"?: <1-128 chars>, "messages": [{"role": "user"|"assistant
 
 How a question is answered (template mode: no model):
 - **A version that is not official, or a draft:** the answer is composed from that version's report (`utils/report_answers.py`), by the kind of question:
-  - what happened, or the order of events: the timeline in time order, one sentence per event with its `m:ss` time; the incident description when there is no timeline;
+  - what happened, or the order of events: the timeline in time order, one list line per event with its `m:ss` time, on separate lines. An event wholly outside the incident window is context, under "Before the incident" or "After the incident"; those headings appear only when such an event exists. Then "What the report could not establish": up to three of the report's `uncertainties` that share a word with the events, title or description. The incident description stands in when there is no timeline;
   - who: the people, with their descriptions and when they are seen;
   - objects, or a named object: the instruments (with who held them) and the assets;
   - what was taken: the timeline's events that describe a taking, in order; with none, that the report doesn't say anything (or the named object) was taken, and what it records about it;

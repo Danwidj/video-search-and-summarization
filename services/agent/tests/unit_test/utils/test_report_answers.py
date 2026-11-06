@@ -133,8 +133,9 @@ def test_a_revision_saved_without_its_report_falls_back_to_its_evidence():
         (
             "What happened, in order?",
             "chronology",
-            "The report describes a burglary from 0:05 to 1:05. In order: At 0:05, "
-            "the hooded person walks to the shop door.",
+            "The report describes a burglary from 0:05 to 1:05.\n\n"
+            "\u2022 0:05 The hooded person walks to the shop door.\n"
+            "\u2022 0:12\u20130:20 The hooded person forces the shop door open with the crowbar.",
         ),
         ("When did it start?", "time", "The incident runs from 0:05 to 1:05 in the video (60 seconds)."),
         ("Who is involved?", "people", "One person is involved: a person in a dark hood (seen from 0:05 to 1:00)."),
@@ -165,11 +166,123 @@ def test_without_a_timeline_the_description_answers_and_without_either_the_repor
     assert bare.insufficient_evidence and bare.item_ids == ()
 
 
-def test_a_long_timeline_is_told_up_to_eight_events():
-    events = [{"start_seconds": s, "description": f"Step {s}."} for s in range(10)]
+def test_a_long_timeline_is_told_up_to_twelve_events():
+    events = [{"start_seconds": 5 + s, "description": f"Step {s}."} for s in range(14)]
     answer = ra.compose("What happened?", ra.report_view(_report(timeline=events)))
-    assert "At 0:07, step 7." in answer.text and "Step 8" not in answer.text
+    assert "0:16 Step 11." in answer.text and "Step 12" not in answer.text
     assert answer.text.endswith("The timeline records two more events.")
+
+
+def _chronology(**overrides):
+    return ra.compose("What happened, in order?", ra.report_view(_report(**overrides)))
+
+
+def _event(start, end, description):
+    return {"start_seconds": start, "end_seconds": end, "description": description}
+
+
+def test_every_event_is_told_once_in_time_order_with_its_report_time():
+    events = [_event(30, 31, "Third."), _event(10, 10, "First."), _event(20, None, "Second."), _event(10, 40, "Tied.")]
+    lines = [line for line in _chronology(timeline=events).text.split("\n") if line.startswith("\u2022")]
+    assert lines == [
+        "\u2022 0:10 First.",
+        "\u2022 0:10\u20130:40 Tied.",
+        "\u2022 0:20 Second.",
+        "\u2022 0:30\u20130:31 Third.",
+    ]
+
+
+def test_an_overlapping_last_event_is_not_called_final():
+    events = [_event(5, 60, "The fight goes on."), _event(12, 20, "A bystander shouts.")]
+    assert "Finally" not in _chronology(timeline=events).text
+
+
+def test_events_outside_the_incident_window_are_context_not_dropped():
+    events = [_event(2, 4, "He enters."), _event(10, 20, "He strikes."), _event(70, 75, "He leaves the area.")]
+    text = _chronology(timeline=events).text
+    assert text.index("Before the incident:\n\u2022 0:02\u20130:04 He enters.") < text.index("During the incident:")
+    assert text.index("During the incident:\n\u2022 0:10\u20130:20 He strikes.") < text.index("After the incident:")
+    assert "After the incident:\n\u2022 1:10\u20131:15 He leaves the area." in text
+    assert text.startswith("The report describes a burglary from 0:05 to 1:05.\n\n")
+
+
+def test_an_event_running_into_the_window_belongs_to_the_incident():
+    assert (
+        "incident:" not in _chronology(timeline=[_event(2, 8, "He forces the door."), _event(60, 70, "He runs.")]).text
+    )
+
+
+def test_with_all_events_inside_the_window_there_are_no_headings():
+    assert "incident:" not in _chronology().text
+
+
+def test_with_no_window_or_no_event_time_nothing_is_placed_outside():
+    incident = {"type": "burglary", "description": "A break-in."}
+    assert "incident:" not in _chronology(incident=incident, timeline=[_event(2, 4, "He enters.")]).text
+    untimed = _chronology(timeline=[{"description": "He enters."}, _event(10, 20, "He strikes.")]).text
+    assert "incident:" not in untimed
+    assert "\u2022 He enters." in untimed, "no time is invented for an event without one"
+
+
+def test_a_chronology_adds_only_uncertainties_about_what_it_tells():
+    text = _chronology(
+        uncertainties=[
+            "It is unclear whether the crowbar was brought to the scene.",
+            "The weather outside cannot be determined.",
+            "The identities of the people are not clear.",
+        ]
+    ).text
+    assert text.endswith(
+        "What the report could not establish:\n\u2022 It is unclear whether the crowbar was brought to the scene."
+    )
+    assert "weather" not in text and "identities" not in text
+
+
+def test_uncertainties_read_without_ids_are_shown_once_and_are_capped():
+    same = "It is unclear what I1 is."
+    text = _chronology(
+        uncertainties=[
+            same,
+            "It is unclear what I1 is",
+            "The door may be locked.",
+            "The shop door lock is unclear.",
+            "The door handle is unclear.",
+            "The door frame is unclear.",
+        ]
+    ).text
+    block = text.split("What the report could not establish:\n")[1]
+    assert block.split("\n")[0] == "\u2022 It is unclear what the crowbar is."
+    assert block.count("\u2022") == 3
+    assert not ra._ID.search(text)
+
+
+def test_an_uncertainty_can_relate_through_the_incident_description():
+    report = {"title": "Altercation at the door", "description": "Two men argue."}
+    text = _chronology(
+        incident={**_report()["incident"], **report}, uncertainties=["The cause of the altercation is not clear."]
+    ).text
+    assert "The cause of the altercation is not clear." in text
+
+
+def test_a_chronology_with_no_uncertainties_has_no_block():
+    assert "could not establish" not in _chronology(uncertainties=[]).text
+    assert "could not establish" not in _chronology().text
+    assert "could not establish" not in _chronology(uncertainties=["", 3, None]).text
+
+
+def test_the_description_fallback_keeps_its_relevant_uncertainty_and_invents_no_time():
+    text = _chronology(timeline=[], uncertainties=["It is unclear who forces the door."]).text
+    assert text.startswith("The report has no event-by-event timeline.")
+    assert text.endswith("What the report could not establish:\n\u2022 It is unclear who forces the door.")
+
+
+def test_a_question_about_one_item_keeps_its_lead_and_stays_short():
+    answer = ra.compose(
+        "What happened to the crowbar?",
+        ra.report_view(_report(uncertainties=["It is unclear whether the crowbar was brought."])),
+    )
+    assert answer.text.startswith("Here is what the report records about the crowbar, in order:\n\u2022 0:12")
+    assert "could not establish" not in answer.text
 
 
 def test_search_hits_are_grouped_by_incident_without_ids():
@@ -213,8 +326,8 @@ def test_a_draft_is_overlaid_on_its_base_version():
     assert retired == {"I1", "A1"}
     view = ra.report_view(report, retired=retired)
     answer = ra.compose("What happened, in order?", view)
-    assert "At 0:05, the person in a dark hood walks to an item." in answer.text
-    assert "the person in a dark hood forces an item open with an object" in answer.text
+    assert "0:05 The person in a dark hood walks to an item." in answer.text
+    assert "The person in a dark hood forces an item open with an object" in answer.text
     assert not ra._ID.search(answer.text)
 
 

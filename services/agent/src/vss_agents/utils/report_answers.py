@@ -20,8 +20,10 @@ The template mode used to answer every question with the evidence items whose wo
 shares no words with any item, so it got the report's first five items. This module answers from the report itself
 (its incident fields, items and timeline), by the kind of question:
 
-- **what happened, or the order of events:** the timeline in time order, one sentence per event with its time; the
-  incident description when there is no timeline;
+- **what happened, or the order of events:** the timeline in time order, one line per event with its time, then what
+  the report could not establish about those events; the incident description when there is no timeline. An event
+  wholly outside the incident window is shown as context before or after the incident, not dropped: it may be real
+  lead-up or aftermath;
 - **who:** the people, with how they look and when they are seen;
 - **objects** (weapons, tools, what was used or taken, or a named object): the instruments, with who held them, and
   the assets. A named object the report does not record is said to be absent;
@@ -56,6 +58,8 @@ ITEM_KINDS = (
     ("assets", "asset_id", "asset"),
 )
 MAX_EVENTS = 8
+MAX_TIMELINE_EVENTS = 12
+MAX_UNCERTAINTIES = 3
 HUMAN_TYPES = frozenset({"human", "person", "people", "man", "woman", "child", "pedestrian"})
 NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
 
@@ -289,6 +293,12 @@ _STOP = frozenset(
         "really",
     ]
 )
+# Words every uncertainty uses whatever it is about: sharing one does not relate it to an event.
+_UNCERTAINTY_FILLER_TEXT = (
+    "unclear clear clearly exact exactly visible identifiable identified identify identity identities unknown certain "
+    "cannot determine determined whether nature reason established confirm confirmed individual individuals"
+)
+_UNCERTAINTY_FILLER = frozenset(_UNCERTAINTY_FILLER_TEXT.split())
 _TIME_FIRST = re.compile(r"^\s*(?:when|what time|how long|at what (?:second|point|time|moment))\b")
 
 
@@ -455,6 +465,7 @@ class ReportView:
     items: tuple[Item, ...]
     timeline: tuple[Mapping[str, Any], ...]
     retired: frozenset[str] = frozenset()
+    uncertainties: tuple[str, ...] = ()
 
     def item(self, item_id: str | None) -> Item | None:
         return next((i for i in self.items if i.item_id == item_id), None) if item_id else None
@@ -567,6 +578,7 @@ def report_view(
         items=tuple(items),
         timeline=tuple(events),
         retired=frozenset(str(i) for i in retired if str(i) not in held),
+        uncertainties=tuple(u.strip() for u in report.get("uncertainties") or [] if isinstance(u, str) and u.strip()),
     )
 
 
@@ -651,13 +663,70 @@ class ComposedAnswer:
     kind: str
 
 
-def _event_sentence(event: Mapping[str, Any], mentions: Mapping[str, str], *, last: bool) -> str:
+def _event_sentence(event: Mapping[str, Any], mentions: Mapping[str, str]) -> str:
     body = resolve_references(str(event.get("description") or "").strip().rstrip("."), mentions)
     start, end = clock(event.get("start_seconds")), clock(event.get("end_seconds"))
     if not start:
         return f"{_capitalize(body)}."
     when = f"from {start} to {end}" if end and end != start else f"at {start}"
-    return f"{'Finally, ' + when if last else _capitalize(when)}, {_lower_first(body)}."
+    return f"{_capitalize(when)}, {_lower_first(body)}."
+
+
+def _event_line(event: Mapping[str, Any], mentions: Mapping[str, str]) -> str:
+    """One timeline event as a list line: its time as the report gives it, then what happens."""
+    body = _capitalize(resolve_references(str(event.get("description") or "").strip().rstrip("."), mentions))
+    start, end = clock(event.get("start_seconds")), clock(event.get("end_seconds"))
+    when = f"{start}\u2013{end}" if start and end and end != start else start
+    return f"\u2022 {when} {body}." if when else f"\u2022 {body}."
+
+
+def _phase(event: Mapping[str, Any], incident: Mapping[str, Any]) -> str:
+    """Where an event falls around the incident window. Only an event wholly outside it is context: one that runs into
+    the window is part of the incident, and an event or window with no time cannot be placed outside."""
+    start = _num(event.get("start_seconds"))
+    first, final = _num(incident.get("start_timestamp")), _num(incident.get("end_timestamp"))
+    if start is None:
+        return "during"
+    end = _num(event.get("end_seconds"))
+    if first is not None and (start if end is None else end) < first:
+        return "before"
+    return "after" if final is not None and start > final else "during"
+
+
+def _timeline_lines(events: Sequence[Mapping[str, Any]], view: ReportView, mentions: Mapping[str, str]) -> list[str]:
+    """The events as list lines, under before, during and after headings only when some fall outside the window."""
+    phases: dict[str, list[str]] = {"before": [], "during": [], "after": []}
+    for event in events:
+        phases[_phase(event, view.incident)].append(_event_line(event, mentions))
+    if not phases["before"] and not phases["after"]:
+        return ["\n".join(phases["during"])]
+    return [
+        f"{heading}\n" + "\n".join(phases[phase])
+        for phase, heading in (
+            ("before", "Before the incident:"),
+            ("during", "During the incident:"),
+            ("after", "After the incident:"),
+        )
+        if phases[phase]
+    ]
+
+
+def _unknowns(view: ReportView, about: str, mentions: Mapping[str, str]) -> list[str]:
+    """What the report could not establish about ``about`` (the incident as an answer tells it), as a block, or nothing.
+
+    An uncertainty counts when it shares a word with that text beyond the words every uncertainty uses, so one about
+    something the answer does not tell stays out. Each is shown once, as the report words it.
+    """
+    told = _words(resolve_references(about, mentions)) - _UNCERTAINTY_FILLER
+    relevant: dict[str, str] = {}
+    for raw in view.uncertainties:
+        text = resolve_references(raw.rstrip("."), mentions)
+        if _words(text) & told:
+            relevant.setdefault(text.lower(), text)
+    if not relevant:
+        return []
+    lines = [f"\u2022 {text}." for text in list(relevant.values())[:MAX_UNCERTAINTIES]]
+    return ["What the report could not establish:\n" + "\n".join(lines)]
 
 
 def _window(view: ReportView) -> str:
@@ -686,25 +755,28 @@ def _chronology(view: ReportView, targets: Sequence[Item]) -> ComposedAnswer:
             lead_subject = _join(list(dict.fromkeys(mentions[t.item_id] for t in targets)))
     kind = str(view.incident.get("type") or "").strip()
     if events:
-        shown = events[:MAX_EVENTS]
-        sentences = [
-            _event_sentence(e, mentions, last=(n == len(shown) - 1 and len(shown) > 1 and len(events) <= MAX_EVENTS))
-            for n, e in enumerate(shown)
-        ]
-        if len(events) > MAX_EVENTS:
-            sentences.append(f"The timeline records {_count(len(events) - MAX_EVENTS, 'more event', 'more events')}.")
+        shown = events[:MAX_TIMELINE_EVENTS]
         if lead_subject:
             lead = f"Here is what the report records about {lead_subject}, in order:"
-        elif kind:
-            window = _window(view)
-            lead = f"The report describes {_article(kind, definite=False)}{' ' + window if window else ''}. In order:"
+            blocks = [lead + "\n" + "\n".join(_event_line(e, mentions) for e in shown)]
         else:
-            lead = "Here is what the report records, in order:"
+            window = _window(view)
+            lead = (
+                f"The report describes {_article(kind, definite=False)}{' ' + window if window else ''}."
+                if kind
+                else "Here is what the report records, in order:"
+            )
+            told = " ".join(str(e.get("description") or "") for e in shown)
+            told += f" {view.incident.get('title') or ''} {view.incident.get('description') or ''}"
+            blocks = [lead, *_timeline_lines(shown, view, mentions), *_unknowns(view, told, mentions)]
+        if len(events) > MAX_TIMELINE_EVENTS:
+            more = _count(len(events) - MAX_TIMELINE_EVENTS, "more event", "more events")
+            blocks.append(f"The timeline records {more}.")
         cited = []
         for event in shown:
             cited += [i for i in referenced_ids(str(event.get("description") or ""), known) if i not in cited]
         cited = cited or [i.item_id for i in view.items if i.is_person]
-        return ComposedAnswer(" ".join([lead, *sentences]), tuple(cited), False, "chronology")
+        return ComposedAnswer("\n\n".join(blocks), tuple(cited), False, "chronology")
     description = str(view.incident.get("description") or "").strip()
     if description:
         window = _window(view)
@@ -714,7 +786,9 @@ def _chronology(view: ReportView, targets: Sequence[Item]) -> ComposedAnswer:
             + (f" It runs {window} in the video." if window else "")
         )
         cited = referenced_ids(description, known) or [i.item_id for i in view.items if i.is_person]
-        return ComposedAnswer(text, tuple(cited), False, "chronology")
+        return ComposedAnswer(
+            "\n\n".join([text, *_unknowns(view, description, mentions)]), tuple(cited), False, "chronology"
+        )
     return ComposedAnswer("This report doesn't describe what happened.", (), True, "chronology")
 
 
@@ -856,7 +930,7 @@ def _taken(view: ReportView, targets: Sequence[Item]) -> ComposedAnswer:
     takings = _events_about(view, focus, _TAKING)
     if takings:
         shown = takings[:MAX_EVENTS]
-        sentences = [_event_sentence(e, mentions, last=False) for e in shown]
+        sentences = [_event_sentence(e, mentions) for e in shown]
         cited = list(dict.fromkeys(i for e in shown for i in referenced_ids(str(e.get("description") or ""), known)))
         lead = "The report records this taking:" if len(shown) == 1 else "The report records these takings, in order:"
         return ComposedAnswer(" ".join([lead, *sentences]), tuple(cited or [t.item_id for t in focus]), False, "taken")
@@ -869,7 +943,7 @@ def _taken(view: ReportView, targets: Sequence[Item]) -> ComposedAnswer:
         about = _events_about(view, focus)[:MAX_EVENTS]
         if about:
             text += f" What it records about {named}, in order: " + " ".join(
-                _event_sentence(e, mentions, last=False) for e in about
+                _event_sentence(e, mentions) for e in about
             )
         return ComposedAnswer(text, tuple(t.item_id for t in focus), True, "taken")
     text = "The report doesn't say anything was taken."
