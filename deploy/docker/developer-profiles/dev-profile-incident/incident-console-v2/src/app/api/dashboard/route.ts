@@ -9,7 +9,8 @@ import { isValidTimeZone, parseStoredTimestamp } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 
-const PERIODS = new Set(['7', '30', 'all']);
+// 'custom' is a calendar range: it needs both after and before (below).
+const PERIODS = new Set(['7', '30', 'all', 'custom']);
 const SEVERITIES = new Set(['low', 'medium', 'high']);
 const SCOPES = new Set(['all', 'official', 'not_official']);
 const isSeverity = (value: string): value is DashboardSeverity => SEVERITIES.has(value);
@@ -39,6 +40,9 @@ export async function GET(request: Request) {
     const { dashboard } = getDbAdapters();
     const requestedStart = params.get('after');
     const requestedEnd = params.get('before');
+    if (period === 'custom' && (!requestedStart || !requestedEnd)) {
+      return NextResponse.json({ error: 'Invalid dashboard date range' }, { status: 400 });
+    }
     // after/before are zoneless UTC (like every stored timestamp); read them as UTC, never as server-local time.
     const periodEnd = period === 'all' ? null : requestedEnd ? (parseStoredTimestamp(requestedEnd) ?? new Date(NaN)) : new Date();
     const periodStart = periodEnd
