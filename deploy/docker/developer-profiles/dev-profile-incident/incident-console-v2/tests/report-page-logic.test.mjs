@@ -8,7 +8,7 @@ import { test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { buildTimelineLanes, timelineDuration, axisPercent, axisTicks } = await import('../src/lib/reports/timeline-lanes.ts');
-const { layoutVersions } = await import('../src/lib/reports/version-graph.ts');
+const { layoutVersions, shortVersionNote, VERSION_NOTE_MAX_CHARS } = await import('../src/lib/reports/version-graph.ts');
 const { markOfficial, clearOfficial } = await import('../src/lib/reports/official-client.ts');
 const { structuredFromPayload } = await import('../src/modules/reports/domain/payload-view.ts');
 
@@ -74,6 +74,23 @@ const rev = (revisionId, revisionNo, parentId, kind = 'ai') => ({
   kind,
   parentId,
   isOfficial: false,
+});
+
+test("a version row shows at most 10 characters of a human version's note, and its hover title has the whole note", async () => {
+  assert.equal(VERSION_NOTE_MAX_CHARS, 10);
+  assert.equal(shortVersionNote('Test: set evidence image for E1'), 'Test: set …');
+  assert.equal(shortVersionNote('1234567890'), '1234567890', 'exactly 10 characters is shown whole, with no ellipsis');
+  assert.equal(shortVersionNote('12345678901'), '1234567890…', 'the eleventh character is cut');
+  assert.equal(shortVersionNote('short'), 'short');
+  assert.equal(shortVersionNote(''), '');
+  assert.equal(shortVersionNote('😀😀😀😀😀😀😀😀😀😀'), '😀😀😀😀😀😀😀😀😀😀', 'characters are counted, not UTF-16 units');
+  const versions = await readFile(new URL('../src/sections/reports/components/ReportVersions/ReportVersions.tsx', import.meta.url), 'utf8');
+  assert.match(
+    versions,
+    /revision\.model \?\? 'Unknown model'\) : shortVersionNote\(revision\.note \?\? ''\)/,
+    "an AI row's model name is left whole",
+  );
+  assert.match(versions, /title=\{revision\.kind === 'human' \? \(revision\.note \?\? undefined\) : undefined\}/);
 });
 
 test('version graph: each AI run starts a lane, human versions follow their parent', () => {

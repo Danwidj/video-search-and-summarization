@@ -22,7 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { clearOfficial, markOfficial } from '@/lib/reports/official-client';
 import { officialRevisionIdOf, shouldConfirmReplace } from '@/lib/reports/official-state';
-import { layoutVersions } from '@/lib/reports/version-graph';
+import { layoutVersions, shortVersionNote } from '@/lib/reports/version-graph';
 import { formatTimestamp } from '@/lib/time';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 
@@ -123,6 +123,7 @@ export function ReportVersions({
                     className={`relative flex items-stretch gap-2 rounded-xl px-1 py-1.5 text-xs ${current ? 'bg-primary/10' : mode === 'view' ? 'hover:bg-primary/5' : ''}`}
                     data-testid="revision-row"
                     key={revision.revisionId}
+                    title={revision.kind === 'human' ? (revision.note ?? undefined) : undefined}
                   >
                     <span aria-hidden className="relative shrink-0" style={{ width: layout.laneCount * LANE_WIDTH }}>
                       {segments.map((segment) => (
@@ -164,7 +165,7 @@ export function ReportVersions({
                           {revision.kind === 'human' ? 'Human' : 'AI'}
                         </Badge>
                         <span className="truncate">
-                          {revision.kind === 'ai' ? (revision.model ?? 'Unknown model') : (revision.note ?? '')}
+                          {revision.kind === 'ai' ? (revision.model ?? 'Unknown model') : shortVersionNote(revision.note ?? '')}
                         </span>
                       </span>
                     </span>
