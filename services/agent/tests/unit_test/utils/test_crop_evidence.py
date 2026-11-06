@@ -2239,6 +2239,24 @@ class TestPeopleWithNoBoxGetATrack:
         assert request.summary.matched == 1 and request.summary.matched_by_time == 1
 
     @pytest.mark.asyncio
+    async def test_an_animal_is_never_matched_to_a_person_track_by_time_alone(self, tiny_video_path: Path) -> None:
+        request = self._request(self._track("7", 0.0, 1.8))
+        report = self._report(("E1", 0, 1))
+        report["entities"][0]["type"] = "animal"
+        (animal,) = await self._run(tiny_video_path, report, request)
+        assert "track" not in animal and animal["track_gap"] == "person tracking does not follow animals"
+        assert request.summary.matched == 0 and request.summary.matched_by_time == 0
+
+    @pytest.mark.asyncio
+    async def test_an_animal_with_a_box_still_matches_a_track_by_overlap(self, tiny_video_path: Path) -> None:
+        located = FakeDetector(detections=[Detection(box=[300, 300, 700, 600], score=0.9, label="bear")])
+        request = self._request(self._track("7", 0.0, 1.8))
+        report = self._report(("E1", 0, 1))
+        report["entities"][0]["type"] = "animal"
+        (animal,) = await self._run(tiny_video_path, report, request, detector=located)
+        assert animal["track"] and "track_gap" not in animal and request.summary.matched_by_time == 0
+
+    @pytest.mark.asyncio
     async def test_it_works_when_the_breaker_has_tripped(
         self, tiny_video_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
