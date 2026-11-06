@@ -32,6 +32,9 @@ from vss_agents.utils import video_check
 MODEL_ROUTED_CLASSES = {"incident.unanswerable", "incident.false_premise", "incident.instrument_holder"}
 PACE_SECONDS = 2.0
 STOP_AFTER_ERRORS = 3
+# A rate limit is the shared key's load, not an answer: wait, then ask again, a bounded number of times per run.
+RATE_WAIT_SECONDS = 45.0
+MAX_RATE_WAITS = 20
 
 
 def load_key(env_file: Path) -> None:
@@ -69,6 +72,7 @@ class Metered:
         self.model = getattr(inner, "model", "none")
         self.calls: list[dict[str, Any]] = []
         self.last_usage: dict[str, Any] = {}
+        self.rate_waits = 0
 
     async def complete(self, messages: Any, schema: Any) -> dict[str, Any]:
         if not self.live:
@@ -91,7 +95,18 @@ def endpoint(store: Store, model: Metered) -> Any:
 
 
 async def ask(handler: Any, model: Metered, version: int, messages: list[dict[str, str]]) -> dict[str, Any]:
-    """One request through the real route; what happened, however it ended."""
+    """One request through the real route, waiting out a rate limit; what happened, however it ended."""
+    while True:
+        result = await _ask_once(handler, model, version, messages)
+        if "rate limited" not in str(result.get("detail")):
+            return result
+        model.rate_waits += 1
+        if model.rate_waits > MAX_RATE_WAITS:
+            raise Stopped(f"still rate limited after {MAX_RATE_WAITS} waits")
+        await asyncio.sleep(RATE_WAIT_SECONDS)
+
+
+async def _ask_once(handler: Any, model: Metered, version: int, messages: list[dict[str, str]]) -> dict[str, Any]:
     before = len(model.calls)
     started = time.perf_counter()
     body = incident_chat.ChatRequest.model_validate({"messages": messages, "version_id": version})
@@ -212,7 +227,7 @@ def main() -> None:
     model = Metered(inner, args.cap, used, args.live)
     prompt = grounded_chat.incident_contract.prompt_sha256(grounded_chat.ROUTED_PROMPT_ID)
     commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    meta = {"task": args.task, "commit": commit, "model": model.model, "prompt_sha256": prompt, "cap": args.cap, "live": args.live, "pace_seconds": PACE_SECONDS, "retries": 0, "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    meta = {"task": args.task, "commit": commit, "model": model.model, "prompt_sha256": prompt, "cap": args.cap, "live": args.live, "pace_seconds": PACE_SECONDS, "retries": "rate limits only", "max_rate_waits": MAX_RATE_WAITS, "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     if args.multi_turn:
         meta["multi_turn_sha256"] = hashlib.sha256(args.multi_turn.read_bytes()).hexdigest()
     with (args.out / "manifest.jsonl").open("a") as sink:
@@ -225,7 +240,7 @@ def main() -> None:
         print(f"stopped: {stop}")
     finally:
         ledger.write_text(str(model.used))
-        print(json.dumps({"calls_this_run": len(model.calls), "tokens_total": model.used}))
+        print(json.dumps({"calls_this_run": len(model.calls), "tokens_total": model.used, "rate_waits": model.rate_waits}))
 
 
 if __name__ == "__main__":

@@ -308,6 +308,75 @@ def test_a_model_reply_without_the_parts_is_an_error() -> None:
     assert _ask("How did it begin?", model).status_code == 502
 
 
+def _real_model(handler: Any) -> grounded_chat.OpenAIChatModel:
+    return grounded_chat.OpenAIChatModel(
+        model="m",
+        base_url="http://llm.test",
+        api_key="k",
+        client_factory=lambda **kw: httpx.AsyncClient(transport=httpx.MockTransport(handler), **kw),
+    )
+
+
+def test_a_rate_limit_is_a_plain_error_that_shows_no_account_details() -> None:
+    secret = '{"error":{"message":"Rate limit exceeded for api_key: abc123"}}'
+    resp = _ask("How did it begin?", _real_model(lambda request: httpx.Response(429, text=secret)))
+    assert resp.status_code == 502 and "rate limited" in resp.json()["detail"]
+    assert "abc123" not in resp.text
+
+
+def test_a_provider_error_body_never_reaches_the_client() -> None:
+    resp = _ask("How did it begin?", _real_model(lambda request: httpx.Response(500, text="internal key=abc123")))
+    assert resp.status_code == 502 and "abc123" not in resp.text
+
+
+def test_a_model_timeout_is_an_error_not_an_answer() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow")
+
+    assert _ask("How did it begin?", _real_model(handler)).status_code == 502
+
+
+@pytest.mark.parametrize("content", ["not json", "[]", '{"answer": ""}'])
+def test_an_invalid_model_reply_is_an_error_not_an_answer(content: str) -> None:
+    body = {"choices": [{"message": {"content": content}}]}
+    assert _ask("How did it begin?", _real_model(lambda request: httpx.Response(200, json=body))).status_code == 502
+
+
+def test_a_report_with_no_timeline_answers_and_invents_no_time() -> None:
+    store = Store({7: _revision(timeline=[])})
+    body = _ask("How did it begin?", FakeModel(answer="It began at 0:58.", citations=[]), store=store).json()
+    assert body["grounding"]["unknown_times"] == ["0:58"]
+    deterministic = _ask("Show the timeline of events", store=store).json()["message"]["content"]
+    assert deterministic.startswith("The report has no event-by-event timeline.")
+
+
+def test_a_report_with_no_evidence_gives_cards_only_for_items_with_a_stored_second() -> None:
+    revision = _revision()
+    revision["evidence"] = []
+    body = _ask(
+        "Who pushed?", FakeModel(answer="He pushes.", citations=[{"item_id": "E2"}]), store=Store({7: revision})
+    ).json()
+    card = body["message"]["citations"][0]
+    assert (card["item_id"], card["timestamp_seconds"], card["crop_image_url"]) == ("E2", 21, "")
+    del revision["payload"]["entities"][1]["timestamp_seconds"]
+    body = _ask(
+        "Who pushed?", FakeModel(answer="He pushes.", citations=[{"item_id": "E2"}]), store=Store({7: revision})
+    ).json()
+    assert body["message"]["citations"] == []
+
+
+def test_a_blank_question_is_refused_before_any_model_call() -> None:
+    model = FakeModel()
+    assert _ask("   ", model).status_code == 400 and model.calls == []
+
+
+def test_a_question_about_another_version_reads_that_version_only() -> None:
+    model = FakeModel()
+    store = Store({7: _revision(), 8: _revision(8, uncertainties=["Only in version eight."])})
+    _ask("What did he do?", model, version=8, store=store)
+    assert "Only in version eight." in model.calls[0][1]["content"]
+
+
 def test_with_checks_off_nothing_is_offered_whatever_the_model_says() -> None:
     body = _ask(
         "What colour was his shirt?", FakeModel(insufficient_evidence=True, video_could_answer=True, citations=[])
