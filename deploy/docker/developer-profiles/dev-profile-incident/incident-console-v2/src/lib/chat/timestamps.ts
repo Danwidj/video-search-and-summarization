@@ -30,9 +30,13 @@ function insideVideo(seconds: number, durationSeconds: number | null | undefined
 
 /**
  * An answer as plain text and video times. Each end of a range is its own time. A time past the video's end stays plain
- * text as written: it is shown, but is not offered as a place to jump to.
+ * text as written: it is shown, but is not offered as a place to jump to. So does a time in `unsupported`, one the agent
+ * found the report does not hold: it looks valid, but nothing backs it.
  */
-export function segmentChatText(content: string, { durationSeconds }: { durationSeconds?: number | null } = {}): ChatSegment[] {
+export function segmentChatText(
+  content: string,
+  { durationSeconds, unsupported = [] }: { durationSeconds?: number | null; unsupported?: readonly string[] } = {},
+): ChatSegment[] {
   const segments: ChatSegment[] = [];
   let textStart = 0;
   let lastTimeEnd = -1;
@@ -42,7 +46,7 @@ export function segmentChatText(content: string, { durationSeconds }: { duration
     const inRange = start === lastTimeEnd + 1 && content[lastTimeEnd] === '-';
     if (DATE_BEFORE.test(before) || (JOINED_BEFORE.test(before) && !inRange)) continue;
     const seconds = secondsOf(match);
-    if (!insideVideo(seconds, durationSeconds)) continue;
+    if (!insideVideo(seconds, durationSeconds) || unsupported.includes(match[0])) continue;
     if (start > textStart) segments.push({ kind: 'text', text: content.slice(textStart, start) });
     segments.push({ kind: 'time', text: match[0], seconds });
     textStart = start + match[0].length;
