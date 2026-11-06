@@ -116,5 +116,3 @@ export function formatCalendarDay(date: Date): string {
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** A trend date (YYYY-MM-DD, already the viewer's day) as "Oct 28"; never re-read through a Date, which would shift it. */
