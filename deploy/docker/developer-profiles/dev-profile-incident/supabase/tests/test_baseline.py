@@ -349,7 +349,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert dashboard["revisions"] == {"ai": 2, "human": 1}, dashboard
         assert dashboard["videos"] == {"uploaded": 4, "withOfficial": 1, "awaitingSelection": 2, "withoutReport": 1}, dashboard["videos"]
         assert {t["type"]: (t["count"], t["official"], t["notOfficial"]) for t in dashboard["types"]} == {"assault": (2, 1, 1), "burglary": (1, 0, 1)}, dashboard["types"]
-        assert dashboard["topInstruments"] == [{"label": "bottle", "count": 3}], dashboard["topInstruments"]
+        assert dashboard["topInstruments"] == [{"label": "bottle", "count": 3, "official": 1, "notOfficial": 2}], dashboard["topInstruments"]
         assert dashboard["threatLevels"] == [{"level": 3, "count": 3}] and abs(dashboard["averageConfidence"] - 0.8) < 1e-9, dashboard
         by_scope = dashboard["severityByScope"]
         for band in ("low", "medium", "high"):
@@ -382,6 +382,27 @@ with tempfile.TemporaryDirectory() as tmp:
             assert summaries(p_assets=[asset["label"]], p_evidence_match="exact")["totalItems"] == asset["count"], asset
         for kind, count in dashboard["revisions"].items():
             assert summaries(p_kind=kind)["totalItems"] == count, kind
+
+    @test("the dashboard counts the counted reports whose video has several versions, with the same filters")
+    def _():
+        # v1 has an AI and a human version, v3 three, v2 one: two counted reports have several versions.
+        assert dashboard_of()["multipleVersions"] == 2, dashboard_of()["multipleVersions"]
+        assert dashboard_of(p_scope="official")["multipleVersions"] == 1, "v1 only"
+        assert dashboard_of(p_scope="not_official")["multipleVersions"] == 1, "v3 only; v2 has one version"
+        assert dashboard_of(p_type="burglary")["multipleVersions"] == 0, "v2 has one version"
+        assert dashboard_of(p_type="assault")["multipleVersions"] == 2
+
+    @test("the dashboard counts evidence items by kind, split by official, for the counted reports")
+    def _():
+        # Each counted report carries one entity, one instrument and one asset: official v1, not yet official v2 and v3.
+        everything = {row["kind"]: row for row in dashboard_of()["evidence"]}
+        assert everything == {kind: {"kind": kind, "count": 3, "official": 1, "notOfficial": 2}
+                              for kind in ("entities", "instruments", "assets")}, everything
+        official = {row["kind"]: row["count"] for row in dashboard_of(p_scope="official")["evidence"]}
+        assert official == {"entities": 1, "instruments": 1, "assets": 1}, official
+        assert dashboard_of()["entityTypes"] == [{"label": "human", "count": 3, "official": 1, "notOfficial": 2}], dashboard_of()["entityTypes"]
+        none = dashboard_of(p_type="burglary", p_severity="high")
+        assert none["total"] == 0 and [row["count"] for row in none["evidence"]] == [0, 0, 0], none["evidence"]
 
     @test("the dashboard filters by report status, and leaves the video and model counts alone")
     def _():
