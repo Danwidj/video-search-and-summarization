@@ -7,22 +7,9 @@ This document defines the relational database schema (Supabase PostgreSQL), the 
 
 ## 1. Supabase PostgreSQL Schema
 
-There is one Supabase project per project phase ([decision](decisions.md)): **finals** is the live database and **midterm** (`rfevukimyftzbxlehwel`) is a frozen, read-only record. The finals schema is defined authoritatively by the baseline
-[`supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql) and the later finals migrations in the same folder (see [`../supabase/README.md`](../supabase/README.md) and the `incident-manage-database` skill for how they are applied to finals):
+There is one Supabase project per project phase ([decision](decisions.md#2026-10-20-one-supabase-project-per-phase-finals-built-from-one-baseline-midterm-frozen)): **finals** is the live database and **midterm** (`rfevukimyftzbxlehwel`) is a frozen, read-only record. The finals schema is the baseline [`supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql) plus the later migrations in the same folder. Each migration and what it adds is listed in [Supabase README: layout](../supabase/README.md#layout); which are applied to finals is in [Status: database](status.md#3-database-status); how they are applied is in the `incident-manage-database` skill. The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres. The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md).
 
-- `20261023000000_report_revisions_schema.sql` — drops the relational report tables and retires `videos.selected_*`; creates `report_revisions`, the revision-keyed `evidence_crops` and `query_results`, and `videos.official_revision_id`.
-- `20261023000100_report_revisions_functions.sql` — `save_human_revision`, `set_official_revision`, and the rewritten `search_evidence_items`, `list_incident_report_summaries` and `get_incident_dashboard`.
-- `20261023000200_searchable_latest_revision.sql` — adds `videos.official_since`; makes a video with no official revision searchable through its newest revision (`set_revision_crops`, `searchable_revision_id`, `replace_video_crops`); and adds `officialSince`, `versionCount`, `evidenceCount` and `thumbnail` to the library cards.
-- `20261023120000_report_revision_embeddings.sql` — adds `report_revisions.embedding` with its HNSW index, and `search_report_revisions`.
-- `20261024090000_save_human_revision_with_crops.sql` — adds `save_human_revision_with_crops`.
-- `20261028090000_r2_rename.sql` — adds `apply_r2_rename` (used once by [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py)) and lets it, and nothing else, change a revision's `evidence` column.
-- `20261031090000_dashboard_official_else_newest.sql` — rewrites `get_incident_dashboard` to count official, else newest, with the official split and `p_scope`, and adds `not_official` to `list_incident_report_summaries`.
-- `20261031120000_analysis_jobs.sql` — adds the background analysis queue: the `analysis_jobs` table and `claim_analysis_job`, `touch_analysis_job`, `finish_analysis_job`, `retry_analysis_job` and `cancel_analysis_job`.
-- `20261101090000_video_blur_faces.sql` — the privacy blur: added `videos.blur_faces`, `analysis_jobs.reanalyse_video_id` and `analysis_jobs.blur_faces`, and `claim_queued_analysis_job` (removed by the next file).
-- `20261102090000_drop_blur_faces.sql` — removes the privacy blur ([decision](decisions.md#2026-11-02-the-privacy-blur-is-removed-entirely)): cancels unfinished re-analysis jobs, restores the standalone `claim_analysis_job`, and drops the three blur columns and `claim_queued_analysis_job`. **Applied to finals on 2026-11-02** (see [status](status.md#3-database-status)). Evidence entries and run notes written earlier may still carry `blur_regions`, `heads`, `privacy` or `blurFaces`; nothing reads them.
-- `20261101120000_dashboard_byte_order_ties.sql` — the same `get_incident_dashboard`, with every tie between equal counts (types, entity, instrument and asset labels, models) broken in byte order (`COLLATE "C"`), whatever the database's collation; it also decides which tied labels make a top-3 or top-8 cut.
-
-Which of these are applied to finals is in [`status.md`](status.md#3-database-status). The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres.
+Evidence entries and run notes written before the privacy blur was removed ([decision](decisions.md#2026-11-02-the-privacy-blur-is-removed-entirely)) may still carry `blur_regions`, `heads`, `privacy` or `blurFaces`; nothing reads them.
 
 Finals holds seven tables: `videos`, `queries`, `model_runs`, `report_revisions`, `evidence_crops`,
 `query_results` and `analysis_jobs` (the console's analysis queue, not report data). Every report is a `report_revisions` snapshot; there are no relational report
@@ -32,12 +19,12 @@ tables (`incidents`, `reports`, `entities`, `instruments`, `assets`, `human_repo
 ### The report model
 
 - **An upload analysis appends one AI revision.** `kind='ai'`, a new `model_run_id`, the full
-  contract report as `payload` JSONB, the evidence list as `evidence` JSONB (one entry per item: `item_type`, `item_id`, `timestamp_seconds`, `frame` (R2 key of the whole video frame), `image` (R2 key of the crop, what evidence search embeds), `bounding_box` (the crop box in that frame), `detected_box` (the detector's own box before the 5% crop padding, for items located from 1 Nov 2026 on), `box_seconds` (the second the frame was read at), `located` (false when the detector found nothing: a frame, no crop, no box), `image_gap`; with `INCIDENT_TRACKING_ENABLED` on, a person left without a track also has `track_gap` (the run's skip reason, else `no person track overlapped this person's box` or `this person was not located, so no track could be matched`; the console shows it as "Not tracked: <reason>"); for a person matched to a track, with `INCIDENT_TRACKING_ENABLED` on, also `track` (R2 key of the track JSON), `track_first_seen_seconds` and `track_last_seen_seconds`, and `frame`, `image`, `bounding_box` and `box_seconds` are those of the track's first sample (the second the item is first seen) (an instrument or asset followed by the object tracker, with `INCIDENT_OBJECT_TRACKING_ENABLED` on, gets the same fields plus `track_source: "object-tracker"`; a person's entry has no `track_source`), and the zoomed second look's `zoom_checked` (true when the zoomed second look named the item from its close-up), `zoom_confidence` (the second look's 0-1 confidence, the lowest of its calls, null when unchecked), `zoom_seen` (what the two blind looks found: `{frame, close_up}`, names for objects and descriptions for people), `name_before` (the whole-clip name when the second look corrected it, else null; `description_before` beside it), `zoom_gap` (why the item was not checked or a correction was ignored: flag off, not located, below the 0.7 threshold, call failed); a correction also rewrites the item's name and description in `payload`, see [architecture.md](console-reference.md#report-versions-view-edit-and-history)), and `parent_id` NULL.
+  contract report as `payload` JSONB, the evidence list as `evidence` JSONB (one entry per item: `item_type`, `item_id`, `timestamp_seconds`, `frame` (R2 key of the whole video frame), `image` (R2 key of the crop, what evidence search embeds), `bounding_box` (the crop box in that frame), `detected_box` (the detector's own box before the 5% crop padding; absent on older entries), `box_seconds` (the second the frame was read at), `located` (false when the detector found nothing: a frame, no crop, no box), `image_gap`; with `INCIDENT_TRACKING_ENABLED` on, a person left without a track also has `track_gap` (the run's skip reason, else `no person track overlapped this person's box` or `this person was not located, so no track could be matched`); for a person matched to a track, with `INCIDENT_TRACKING_ENABLED` on, also `track` (R2 key of the track JSON), `track_first_seen_seconds` and `track_last_seen_seconds`, and `frame`, `image`, `bounding_box` and `box_seconds` are those of the track's first sample (the second the item is first seen) (an instrument or asset followed by the object tracker, with `INCIDENT_OBJECT_TRACKING_ENABLED` on, gets the same fields plus `track_source: "object-tracker"`; a person's entry has no `track_source`), and the zoomed second look's `zoom_checked` (true when the zoomed second look named the item from its close-up), `zoom_confidence` (the second look's 0-1 confidence, the lowest of its calls, null when unchecked), `zoom_seen` (what the two blind looks found: `{frame, close_up}`, names for objects and descriptions for people), `name_before` (the whole-clip name when the second look corrected it, else null; `description_before` beside it), `zoom_gap` (why the item was not checked or a correction was ignored: flag off, not located, below the 0.7 threshold, call failed); a correction also rewrites the item's name and description in `payload`, see [Console reference: report versions](console-reference.md#report-versions-view-edit-and-history)), and `parent_id` NULL.
   The agent writes it (`IncidentDB.insert_ai_revision`); the console never edits it.
 - **A human edit appends a human revision.** `save_human_revision` writes `kind='human'`,
   `parent_id` = the revision the reviewer opened, the full edited report as `payload`, and the
   evidence list that revision uses. It inherits the parent's `model_run_id`. Earlier revisions are
-  never changed.
+  never changed. Its summary vector is requested on a Save only when the video has no official revision (the new version is then searchable); a failed embedding saves with NULL and the repair step fills it in.
 - **Re-generation is a new AI branch.** A new AI revision has `parent_id` NULL and copies no earlier
   edits.
 - **One revision per video is official.** `videos.official_revision_id` (composite FK to
@@ -45,7 +32,7 @@ tables (`incidents`, `reports`, `entities`, `instruments`, `assets`, `human_repo
   `evidence_crops` rows belong to the video's **searchable revision**: the official revision when
   there is one, otherwise the newest (`searchable_revision_id(video_id)`). See `evidence_crops`.
 - **Revisions are append-only.** A trigger rejects `UPDATE` and `DELETE` (the exceptions are the
-  `ON DELETE CASCADE` of the video, see below, and `apply_r2_rename`, which may change only `evidence`).
+  `ON DELETE CASCADE` of the video, see below, `apply_r2_rename`, which may change only `evidence`, and `set_revision_embedding`, which may only set `embedding` while it is NULL).
 
 ---
 
@@ -109,7 +96,7 @@ Append-only report snapshots. This is the source of truth for every AI and human
 | `created_by` | `VARCHAR(256)` | NULLABLE; CHECK required when `kind='human'` | Reviewer name for a human revision; NULL for AI |
 | `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC creation time |
 | `note` | `TEXT` | NULLABLE | Free-text note attached to a human revision (empty/blank stored as NULL) |
-| `embedding` | `extensions.vector(1024)` | NULLABLE | Summary vector of `incident.title` and `incident.description`, written by the agent in the same insert as an AI revision. NULL for human revisions (`save_human_revision` computes none) and when the embedding endpoint was unavailable. Never updated. |
+| `embedding` | `extensions.vector(1024)` | NULLABLE | Summary vector of `incident.title` and `incident.description`, written by the agent in the same insert as an AI revision. The console writes it for a human revision at Save (same text and model as the agent's), when that version is searchable. NULL when the embedding endpoint was unavailable; `set_revision_embedding` then sets it once, only while it is NULL and only for the video's searchable version (the repair step calls it). Never overwritten. |
 
 Constraints and indexes:
 
@@ -125,6 +112,8 @@ Searchable evidence of each video's **searchable revision**: its official revisi
 video has none, its newest revision. A video has rows for at most that one revision. The primary
 key and FK are revision-scoped; there is no `incident_id`/`model_run_id` here — both come through
 `report_revisions`.
+
+The fractional `timestamp_seconds`, the slice columns and `frame` come from migration `20261105090000_evidence_crop_seconds_slices_frames.sql` (it also adds `evidence_slice` and `list_revisions_missing_crops`).
 
 What moves the rows (the database cannot embed, so a writer always supplies them):
 
@@ -143,12 +132,15 @@ What moves the rows (the database cannot embed, so a writer always supplies them
 | `revision_id` | `BIGINT` | PRIMARY KEY (part); FK → `report_revisions.id` ON DELETE CASCADE | The searchable revision (official, else newest) these crops belong to |
 | `item_type` | `VARCHAR(16)` | PRIMARY KEY (part); CHECK `IN ('entity','instrument','asset')` | Evidence category |
 | `item_id` | `VARCHAR(20)` | PRIMARY KEY (part) | Item identifier in the revision (`E1..`, `I1..`, `A1..`) |
-| `item_name` | `VARCHAR(256)` | NOT NULL | Item name or detector label |
+| `item_name` | `VARCHAR(256)` | NOT NULL | The report item's `label` as written ("black bear", "cash register"); the evidence card title. Falls back to the entry's name, then its type, when there is no label (`cropItemName`). The second look renames an item's `name`, never its `label`, so this value does not follow a rename. Not the embedding passage: that is built from the evidence entry's `item_name` and `description` |
 | `description` | `TEXT` | NOT NULL | Item visual description |
 | `threat_level` | `INTEGER` | NULLABLE | Threat rating (1-5; instruments only) |
 | `holder_entity_id` | `VARCHAR(20)` | NULLABLE | Identifier of the holding entity (instruments only) |
-| `timestamp_seconds` | `INTEGER` | NOT NULL | Whole-second offset from video start: the second the box was found at (the evidence entry's `box_seconds`, else its `timestamp_seconds`), so a search hit cuts the frame its box belongs to. An entity's first/last seen span (`incident-contract-v4`) is stored only in the revision payload and evidence, not here |
+| `timestamp_seconds` | `NUMERIC(8,3)` | NOT NULL | Offset in seconds from video start, to the millisecond (15.333 stays 15.333; it was an `INTEGER` that rounded it): the second the box was found at (the evidence entry's `box_seconds`, else its `timestamp_seconds`), so a search hit cuts the frame its box belongs to. An entity's first/last seen span (`incident-contract-v4`) is stored only in the revision payload and evidence, not here |
 | `bounding_box` | `INTEGER[4]` | NOT NULL | Normalised `[ymin, xmin, ymax, xmax]` (0-1000) |
+| `slice_start_seconds` | `NUMERIC(8,3)` | NULLABLE | Start of the evidence slice: an entity's first seen second; an instrument or asset's first detector-confirmed track sample (widened to 2 s around its middle when shorter, then extended to include the box second, so the stored evidence moment is always inside the slice); else the box second minus 3 s (not below 0). The player clamps the end to the video length. A slice is a played time range of the existing video, never a clip file |
+| `slice_end_seconds` | `NUMERIC(8,3)` | NULLABLE | End of the slice: last seen second (last confirmed sample for an object), else the box second plus 3 s. CHECK `slice_end_seconds >= slice_start_seconds` |
+| `frame` | `VARCHAR(1024)` | NULLABLE | R2 key of the whole video frame with the box drawn (`<crop key without .jpg>-frame.jpg`), stored at crop time: the search thumbnail. NULL means the console cuts the frame from the video at `timestamp_seconds` and the agent sends no `frame_image_url`. `scripts/backfill_evidence_frames.py` fills the gaps |
 | `image` | `VARCHAR(1024)` | NOT NULL | R2 object key (`evidence/<video key>/run-<N>/<itemId>.jpg` or `.../edit-<N>/<itemId>.jpg`, where `<video key>` is `videos.filepath`) |
 | `embedding` | `extensions.vector(1024)` | NULLABLE | 1024-dimensional embedding for cosine retrieval |
 | `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC insertion time |
@@ -234,7 +226,8 @@ are executable by `service_role` only. Helpers still available: `canonical_incid
 save_human_revision(
   p_video_id VARCHAR, p_parent_id BIGINT, p_created_by TEXT, p_note TEXT,
   p_payload JSONB, p_evidence JSONB,
-  p_incident_type TEXT, p_severity_level INTEGER, p_start_seconds INTEGER, p_end_seconds INTEGER
+  p_incident_type TEXT, p_severity_level INTEGER, p_start_seconds INTEGER, p_end_seconds INTEGER,
+  p_embedding extensions.vector(1024) DEFAULT NULL
 ) RETURNS JSONB
 ```
 
@@ -242,13 +235,13 @@ Appends a `kind='human'` revision with `revision_no = max + 1` for the video. Lo
 row so concurrent saves cannot take the same number. `p_parent_id` must be a revision of the same
 video; the new revision inherits its `model_run_id`. The four facet arguments are written as given
 (the caller derives them from the payload). `p_payload` must be an object with an `incident`; `p_evidence`
-must be an array; `p_created_by` must be 1-256 characters after trimming. Returns
+must be an array; `p_created_by` must be 1-256 characters after trimming. `p_embedding` is the summary vector of the new version (NULL when none). Returns
 `{revisionId, revisionNo, videoId, kind, parentId, modelRunId, createdBy, createdAt, note}`.
 
 #### `save_human_revision_with_crops`
 
 ```
-save_human_revision_with_crops(<the ten save_human_revision arguments>, p_crops JSONB DEFAULT '[]') RETURNS JSONB
+save_human_revision_with_crops(<the eleven save_human_revision arguments>, p_crops JSONB DEFAULT '[]') RETURNS JSONB
 ```
 
 The console's Save. In one transaction it calls `save_human_revision`, then, when the video has no official revision, replaces the video's `evidence_crops` with `p_crops` for the new revision (same row format as `set_official_revision`). With an official revision `p_crops` is ignored and the official rows stay. `p_crops` must be a list. Returns the `save_human_revision` result plus `crops`, the rows now stored (0 when the video has an official revision). The console embeds the crops before the call, so a failed embedding writes nothing.
@@ -270,12 +263,13 @@ selections.
 
 ```
 {item_type, item_id, image, bounding_box, timestamp_seconds,
+ slice_start_seconds, slice_end_seconds, frame,
  item_name, description, threat_level, holder_entity_id, embedding}
 ```
 
 Entries without an `item_type` of `entity`/`instrument`/`asset`, without an `item_id` or without an
 `image` are skipped. A missing/`null` `bounding_box` becomes `[0,0,1000,1000]`; a missing
-`timestamp_seconds` becomes 0; `embedding` is a 1024-number array or null. Returns
+`timestamp_seconds` becomes 0; a missing slice or `frame` is stored as NULL; `embedding` is a 1024-number array or null. Returns
 `{videoId, officialRevisionId, crops}` where `crops` is the number of rows now stored.
 
 The console obtains the embeddings (the agent's `POST /api/v1/incidents/evidence-embeddings`) and
@@ -318,7 +312,25 @@ The migration drops the old 7-argument overload first, because two overloads wou
 calls ambiguous. Returns the incident (video) id, the
 revision id, the revision's model run and facets, the crop, and `similarity_score`
 (`1.0 - distance`). `incident_start_timestamp`/`incident_end_timestamp` are the revision's seconds
-as text. Rows whose embedding is NULL are skipped.
+as text. The crop's `timestamp_seconds` (fractional), `slice_start_seconds`, `slice_end_seconds` and `frame` come back with it. Rows whose embedding is NULL are skipped. The console route passes `p_min_similarity` 0.35 for a text query ([decision](decisions.md#2026-11-05-evidence-search-keeps-the-exact-second-adds-a-0-35-score-floor-and-plays-a-slice)).
+
+#### `list_revisions_missing_crops`
+
+```
+list_revisions_missing_crops(p_video_id VARCHAR DEFAULT NULL) RETURNS TABLE(video_id, revision_id)
+```
+
+The videos whose searchable revision has an `evidence` list with images but no `evidence_crops` rows (service role only): the input of the repair step. It found the two videos that were missing from search on 5 Nov.
+
+```
+list_revisions_missing_embeddings(p_video_id VARCHAR DEFAULT NULL) RETURNS TABLE(video_id, revision_id, incident_type, title, description)
+set_revision_embedding(p_video_id, p_revision_id, p_embedding) RETURNS BOOLEAN
+repair_revision_crops(p_video_id, p_revision_id, p_crops JSONB) RETURNS INTEGER
+```
+
+The same for summary vectors: searchable revisions with a NULL `embedding`. `set_revision_embedding` fills one only while it is NULL and only for the video's searchable revision (false otherwise), through a transaction-local flag the append-only trigger accepts for the `embedding` column alone. `repair_revision_crops` inserts crop rows for a revision that is still the searchable one and has none; it never overwrites rows (NULL when the revision is not searchable, 0 when rows already exist), so several consoles can run it at once.
+
+**Automatic repair.** The console's analysis job loop runs the repair at start, every 2 minutes and after each job (see [`console-reference.md`](console-reference.md)): it heals a searchable version with no crop rows (for example an agent that saved its revision after the console gave up on the job) and one with a NULL summary vector. It only runs while a console with the job loop is up (`ANALYSIS_JOB_LOOP` not `off`); with none running, use `POST /api/videos/repair-crops`.
 
 #### `list_incident_report_summaries`
 
@@ -373,7 +385,7 @@ All `VOLATILE`, `SECURITY INVOKER`, `search_path = ''`, `service_role` only, and
 
 ### Revision search (`search_report_revisions`)
 
-Cosine search over `report_revisions.embedding`, across every revision that has a vector (AI revisions; human revisions have none today). It returns one row per revision, best first, with the title and description from the payload and the facet columns. It is `SECURITY INVOKER`, pins `search_path`, and is executable by `service_role` only. The agent calls it through `IncidentDB.search_revisions` for `POST /api/v1/incidents/revisions/search`. It is separate from `search_evidence_items`, which searches the crops of each video's searchable revision.
+Cosine search over `report_revisions.embedding`, restricted to each video's **searchable revision** (`r.id = searchable_revision_id(r.video_id)`: official, else newest; derived on every read, nothing stored), so one video returns at most one hit. Human versions have a vector when they were saved with one (see `save_human_revision`). The summary vector embeds "type: title", a newline, then the description (since 6 Nov; `refresh_revision_embedding(video_id, revision_id, vector)` replaces a stored vector on the searchable version only, behind the `app.revision_embedding_refresh` guard flag, and changes nothing else; migration `20261106120000_refresh_revision_embedding.sql`). It returns one row per video, best first, with the title and description from the payload and the facet columns. It is `SECURITY INVOKER`, pins `search_path`, and is executable by `service_role` only. The agent calls it through `IncidentDB.search_revisions` for `POST /api/v1/incidents/revisions/search`. It is separate from `search_evidence_items`, which searches the crops of each video's searchable revision.
 
 ### Agent report writes (`report_revisions`)
 
@@ -434,7 +446,7 @@ Database access is split across two client implementations according to operatio
 - **Default privileges:** objects that `postgres` creates in `public` later get nothing for `anon`/`authenticated` and everything for `service_role`; new functions get no `EXECUTE` for `PUBLIC` in any schema. Objects created by other roles are not covered, so a new function should still be checked by `supabase/tests/security_check.sql`.
 - **pgvector lives in `extensions`**, so none of its functions are REST RPCs.
 - **Self-check:** the baseline fails (and rolls back) if any table has RLS off, anything is reachable by `anon`/`authenticated`, or any function is `SECURITY DEFINER` or lacks a fixed `search_path`. Run `supabase/tests/security_check.sql` after every applied migration (expect 0 rows), and `supabase/tests/probe_api.sh` to confirm over REST that the public key is refused.
-- **Role bypass:** Application services (`incident-console-v2`, `vss-agent`, `mock-backend`) authenticate via HTTPS PostgREST using `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (`service_role`), or connect directly via the Postgres wire protocol using `INCIDENT_DB_DSN` (`postgres`). Both roles hold `BYPASSRLS`. On Supabase `postgres` is not a superuser; it skips RLS through `BYPASSRLS`, not superuser status. `FORCE ROW LEVEL SECURITY` is not applied: it only subjects table owners (here `postgres`) to RLS, and `BYPASSRLS` overrides it.
+- **Role bypass:** Application services (`incident-console-v2`, `vss-agent`, `mock-backend`) authenticate via HTTPS PostgREST using `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (`service_role`); laptop tooling (the copy and parity scripts) connects over the Postgres wire protocol using `INCIDENT_DB_DSN` (`postgres`). Both roles hold `BYPASSRLS`. On Supabase `postgres` is not a superuser; it skips RLS through `BYPASSRLS`, not superuser status. `FORCE ROW LEVEL SECURITY` is not applied: it only subjects table owners (here `postgres`) to RLS, and `BYPASSRLS` overrides it.
 - **Signups:** create the finals project with email signups turned off; nobody uses Supabase Auth, and an open signup would let anyone with the public key mint an `authenticated` user (who could still reach nothing).
 
 **Midterm** had RLS on only `evidence_crops` and `query_results` and gave `anon`/`authenticated` full access to the other tables. `supabase/midterm/freeze_midterm.sql` closes that at the cutover and makes midterm read-only ([`../supabase/midterm/README.md`](../supabase/midterm/README.md)).
@@ -464,7 +476,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 ├── scratch/analyze/<video-key>/     # agent scratch, deleted by the agent when the step ends (success or failure)
 │   ├── <run-id>/<index>.mp4         # caption pass windows (INCIDENT_CHUNKING_ENABLED)
 │   └── <run-id>-marks/marked.mp4    # set-of-marks copy P1 sees (INCIDENT_SOM_ENABLED), deleted right after P1
-├── scratch/<approved>/<video-key>/  # experiment caption windows (experiment_captions "r2"): only under the owner-approved INCIDENT_EXPERIMENT_SCRATCH_PREFIX (X16, pending), never scratch/analyze
+├── scratch/<approved>/<video-key>/  # experiment caption windows (experiment_captions "r2"): only under an owner-approved INCIDENT_EXPERIMENT_SCRATCH_PREFIX, never scratch/analyze
 │   └── exp-<id>/<index>.mp4         # each deleted right after its caption call; the rest when the pass ends
 └── evidence/                        # evidence images: agent crops and reviewer replacements
     └── <video-key>/run-<N>/<itemId>.jpg    # AI crops (what evidence search embeds), one run-<N> per analysis
@@ -475,20 +487,20 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 
 > [!NOTE]
 > The `anomaly/` subfolders are reserved for classified seed/evaluation data. New user uploads are classification-neutral and use `uploads/<original name>.mp4` in both modes (the console converts every upload to an H.264 MP4 at the original resolution unless it is one already, so the stored extension is always `.mp4`); the VLM's later incident classification does not move or rename the object.
-> In addition to the five fixture categories, live R2 storage includes `assault/` and `shooting/`.
 > The `Report/` prefix is a 0-byte directory marker and is unused by code.
 > The `evidence/` tree holds two writers' images, both under `evidence/<video key>/` where `<video key>` is `videos.filepath` (item ids `E#`, `I#` and `A#` are unique across types). No key holds a hash or UUID, and no key is ever overwritten: each write takes the next free number, and the put is conditional (`If-None-Match: *`):
 > - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, `run-<N>` with N one above the highest existing run of that video), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason; with `INCIDENT_TRACKING_ENABLED` a person matched to a track also has `<itemId>-track.json` in the same run (`score` -0.1 marks a sample the tracker carried without a detection; the console reads it on the server through `GET /api/reports/[videoId]/track`, taking the key from the revision's evidence entry, because R2 has no CORS rule for the console origin, and keeps only `t` and `box`) ([decision](decisions.md#2026-10-31-person-tracks-give-matched-evidence-its-best-moment-and-a-track-file));
 > - reviewer replacements uploaded through `POST /api/reports/<videoId>/evidence-image`, as `edit-<N>` with the smallest free N (the console has not called it since the frame picker was removed on 3 Nov 2026; new reviewer images come from the next writer);
+> - items on one box (IoU above 0.8 at the same second, never an instrument and its holder) share one stored `image` and `frame` key (the first item's); every item keeps its own evidence entry and report entry, so no new field records the sharing. An instrument or asset whose box is over 50% or under 0.3% of the frame, or whose second look names a different object, has `frame` only, `located=false` and an `image_gap`.
 > - reviewer items, cut by `PATCH /api/reports/<videoId>/edit` at Save from the stored video: `<itemId>.jpg` (the crop), `<itemId>-frame.jpg` and, when the item has a track, `<itemId>-track.json` under the first free `edit-<N>/`; the entry has `source: "reviewer"`, `track_source: "reviewer"`, `track_partial` (the track ended before its window, so the item is badged "Incomplete track") and `ai_proposal` (the model's reading of the box, kept for audit); a re-tracked or re-boxed item keeps what its source entry says apart from what the new image replaces: `image_gap`, `track_gap`, `detected_box`, `zoom_*`, `name_before`, `description_before` and the track fields are dropped, because they described the old crop; the track file is `{source, samples:[{t, box, conf}], span, partial, lost_at, reason}` and the console route reads it like an AI track ([decision](decisions.md#2026-11-03-a-reviewers-box-item-is-cut-and-stored-on-the-server-at-save));
 > - evidence clips (`<itemId>-clip.mp4`) from the removed Play clip feature: nothing writes or reads them now. Any left in R2 are unreferenced; the orphan sweep counts one older than `minAgeHours` as an orphan, and deleting the video removes it with the rest of `evidence/<video key>/`.
 > - Two analyses of one video that start at the same moment can pick the same `run-<N>`; the conditional put stops the overwrite, so one of them fails instead of replacing the other.
 >
-> Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video removes its video and thumbnail objects, then every object under `evidence/<video key>/`, then the video row; if a listing or a removal fails the row stays, so the delete can be repeated. Uploads create no VST camera, so the delete calls nothing on VST. Videos deleted before 2026-10-25 left their images behind ([status](status.md#7-archive)), and the sweep refuses an unknown video.
+> Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video removes its video and thumbnail objects, then every object under `evidence/<video key>/`, then the video row; if a listing or a removal fails the row stays, so the delete can be repeated. The sweep refuses an unknown video.
 
 ### Track files
 
-`evidence/<video key>/run-<N>/<itemId>-track.json` is an array of `{t, box, score}` (`t` video seconds, `box` `[ymin, xmin, ymax, xmax]` on 0-1000, `score` the detector's confidence, or -0.1 when the box was carried by a tracker and not confirmed). A person's track comes from the perception stack; an instrument's or asset's, with `INCIDENT_OBJECT_TRACKING_ENABLED` on, from the object tracker and its entry has `track_source: "object-tracker"`. The file is the same shape for both, so every reader of tracks reads either.
+`evidence/<video key>/run-<N>/<itemId>-track.json` is an array of `{t, box, score}` (`t` video seconds, `box` `[ymin, xmin, ymax, xmax]` on 0-1000, `score` is 1.0 for a box the detector or tracker confirmed and -0.1 for one carried by a tracker and not confirmed: the located box's detector score is a fixed 1.0, so it works as a confirmed flag, not a confidence). A person's track comes from the perception stack; an instrument's or asset's, with `INCIDENT_OBJECT_TRACKING_ENABLED` on, from the object tracker and its entry has `track_source: "object-tracker"`. The file is the same shape for both, so every reader of tracks reads either.
 
 ### Key Validation & Generation Rules
 
@@ -497,7 +509,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
    - Be a non-empty string.
    - Not start with `/` (absolute filesystem path).
    - Not start with `.` or contain `..` (relative filesystem path).
-   - Guard against VST/NvStreamer `filePath` outputs (which return `./streamer/media/...` or local file paths).
+   - Reject VST/NvStreamer `filePath` values (`./streamer/media/...` or local file paths), which rows written before 2026-10-31 may hold.
 2. **Upload & Evidence Key Patterns:**
    Direct uploads from `incident-console-v2/src/app/api/uploads/r2/route.ts` format keys as `uploads/<name>`
    (`src/lib/r2/names.ts`): the original file name is kept with its extension replaced by `.mp4` (every stored

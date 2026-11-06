@@ -20,7 +20,6 @@ import {
   parseFilters,
   presetAfter,
 } from '@/lib/library/filters';
-import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import type { LibrarySearchResponse } from '@/lib/library/search';
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { LIBRARY_STATE_KEY } from '@/lib/library/remembered-state';
@@ -217,14 +216,6 @@ export function Library() {
     void searchEvidence('', item.videoId);
   }
 
-  function showIncidentInIncidents(incident: EvidenceSearchHit['incident']) {
-    setTab('incidents');
-    clearScope();
-    const queryText = incident.title || incident.incidentType;
-    apply({ search: queryText });
-    setSearchText(queryText);
-  }
-
   const chips = activeFilters(filters);
   const datePreset: DatePreset | 'custom' =
     !filters.after && !filters.before
@@ -284,8 +275,7 @@ export function Library() {
             loading={searching}
             onQuery={setEvidenceQuery}
             onScope={(next) => (next ? setScope(next) : clearScope())}
-            onShowInIncidents={showIncidentInIncidents}
-            onSubmit={() => void searchEvidence(evidenceQuery, scope?.videoId ?? null)}
+            onSubmit={(text) => void searchEvidence(text ?? evidenceQuery, scope?.videoId ?? null)}
             query={evidenceQuery}
             result={result}
             scope={scope}
@@ -399,6 +389,11 @@ export function Library() {
             <div className="sr-only">
               {totalItems} {totalItems === 1 ? 'incident' : 'incidents'}
             </div>
+            {searchMode === 'semantic' && (
+              <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">
+                Best match first. The sort applies again when the search text is cleared.
+              </p>
+            )}
             {searchMode === 'text' && (
               <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">
                 Matched on incident text: meaning search is unavailable or found nothing.

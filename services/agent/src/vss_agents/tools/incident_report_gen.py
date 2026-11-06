@@ -73,9 +73,13 @@ belongs to the console, which owns the durable R2 key, so this tool never writes
 import asyncio
 from collections.abc import AsyncGenerator
 import copy
+from email.utils import parsedate_to_datetime
 import hashlib
+import json
 import logging
+import math
 import os
+import random
 import re
 import time
 from typing import Annotated
@@ -266,6 +270,8 @@ class ExperimentRefusedError(RuntimeError):
     """An experimental request would write to shared storage (HTTP 409 on ``/analyze``)."""
 
 
+ANALYSIS_BUDGET_ENV = "INCIDENT_ANALYSIS_BUDGET_SECONDS"
+DEFAULT_ANALYSIS_BUDGET_SECONDS = 240.0  # the console gives up at 300 s (contracts/inference.json)
 EXPERIMENT_EVIDENCE_STORE = "temporary in-memory store, discarded after the request (no disk, no R2)"
 # The owner-approved R2 root of experimental caption windows (blocker X16): the one shared-storage write an
 # experiment may make, and only when this is set. Never production's scratch/analyze.
@@ -441,6 +447,141 @@ async def resolve_video_length(video_url: str, supplied_seconds: float | None) -
         return VideoLength(seconds=None, source=None, unchecked_reason=f"video length unknown: {reason}")
 
 
+class P1RateLimitedError(RuntimeError):
+    """The P1 call was answered HTTP 429; ``retry_after`` is the service's ``retry-after`` in seconds, if sent."""
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class P1StreamError(RuntimeError):
+    """The P1 reply stream dropped or ended before the model finished; the attempt failed."""
+
+
+class _PostedReply:
+    """A POST answered either as a stream of server-sent events or as one JSON body.
+
+    ``body()`` returns the completion as the non-streamed API would have: ``choices[0].message.content``,
+    ``choices[0].finish_reason`` and ``usage``. A service that ignores ``stream`` and answers plain JSON is
+    read as before.
+    """
+
+    def __init__(self, status_code: int, text: str, retry_after: float | None, usage: Any, body: Any) -> None:
+        self.status_code = status_code
+        self.text = text
+        self.retry_after = retry_after
+        self.usage = usage
+        self._body = body
+
+    def body(self) -> Any:
+        if isinstance(self._body, _Undecoded):
+            return json.loads(self._body.text)
+        return self._body
+
+
+class _Undecoded:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+def parse_retry_after(value: str | None) -> float | None:
+    """Seconds from a ``retry-after`` header (delta-seconds or an HTTP date); ``None`` when absent or unreadable."""
+    if not value or not value.strip():
+        return None
+    value = value.strip()
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(value)
+            seconds = when.timestamp() - time.time()
+        except (TypeError, ValueError):
+            return None
+    return max(0.0, seconds) if math.isfinite(seconds) else None
+
+
+async def _assemble_stream(response: httpx.Response) -> dict[str, Any]:
+    """The completion body of a server-sent-events reply: all content deltas joined, the finish reason and usage."""
+    parts: list[str] = []
+    finish_reason: str | None = None
+    usage: Any = None
+    chunks = 0
+    done = False
+    try:
+        async for line in response.aiter_lines():
+            line = line.strip()
+            if not line.startswith("data:"):
+                continue  # comments, event names and blank separators
+            data = line[len("data:") :].strip()
+            if data == "[DONE]":
+                done = True
+                break
+            try:
+                chunk = json.loads(data)
+            except ValueError as exc:
+                raise P1StreamError(f"P1 stream sent an unreadable event: {data[:200]}") from exc
+            if not isinstance(chunk, dict):
+                continue
+            if isinstance(chunk.get("error"), dict | str):
+                raise P1StreamError(f"P1 stream reported an error: {str(chunk['error'])[:300]}")
+            if isinstance(chunk.get("usage"), dict):
+                usage = chunk["usage"]
+            for choice in chunk.get("choices") or []:
+                if not isinstance(choice, dict) or choice.get("index", 0) != 0:
+                    continue
+                delta = choice.get("delta") or {}
+                if isinstance(delta.get("content"), str):
+                    parts.append(delta["content"])
+                chunks += 1
+                if choice.get("finish_reason"):
+                    finish_reason = choice["finish_reason"]
+    except httpx.TimeoutException:
+        raise  # reported as a timeout, as for a non-streamed call
+    except httpx.TransportError as exc:
+        raise P1StreamError(
+            f"P1 stream dropped after {sum(map(len, parts))} characters: {type(exc).__name__}: {exc}"
+        ) from exc
+    if not done and finish_reason is None:
+        if not chunks:
+            return {}  # an empty stream is how the host answers a video it cannot decode
+        raise P1StreamError(f"P1 stream ended after {sum(map(len, parts))} characters with no finish reason")
+    if not chunks:
+        return {}
+    body: dict[str, Any] = {"choices": [{"message": {"content": "".join(parts)}, "finish_reason": finish_reason}]}
+    if usage is not None:
+        body["usage"] = usage
+    return body
+
+
+async def _post_streaming(client: httpx.AsyncClient, url: str, body: dict[str, Any]) -> _PostedReply:
+    """POST ``body`` and read the reply whole, as server-sent events when the service streams it."""
+    started = time.perf_counter()
+    async with client.stream("POST", url, json=body) as response:
+        retry_after = parse_retry_after(response.headers.get("retry-after"))
+        if not 200 <= response.status_code < 300:
+            text = (await response.aread()).decode("utf-8", errors="replace")
+            usage = None
+            try:
+                parsed = json.loads(text)
+                usage = (
+                    parsed.get("usage") if isinstance(parsed, dict) and isinstance(parsed.get("usage"), dict) else None
+                )
+            except ValueError:
+                pass
+            return _PostedReply(response.status_code, text, retry_after, usage, None)
+        if "text/event-stream" in response.headers.get("content-type", ""):
+            assembled = await _assemble_stream(response)
+            logger.info(
+                "incident_report_gen: P1 streamed %d characters in %.1f s",
+                len(((assembled.get("choices") or [{}])[0].get("message") or {}).get("content") or ""),
+                time.perf_counter() - started,
+            )
+            return _PostedReply(response.status_code, "", retry_after, None, assembled or None)
+        text = (await response.aread()).decode("utf-8", errors="replace")
+        return _PostedReply(response.status_code, text, retry_after, None, _Undecoded(text))
+
+
 async def run_p1(
     client: httpx.AsyncClient,
     config: IncidentReportGenConfig,
@@ -469,23 +610,32 @@ async def run_p1(
         run_provenance.record_call("p1", ok=ok, usage=usage, elapsed_ms=elapsed_ms, model=model_name)
 
     try:
-        response = await client.post(
+        # The body builder keeps the contract's "stream": false (eval and the golden parity); this call streams.
+        reply = await _post_streaming(
+            client,
             _chat_completions_url(config.vlm_base_url),
-            json=p1_request_body(model_name, video_url, reviewer_prompt, prompt_text, context_block, marks_block),
+            {
+                **p1_request_body(model_name, video_url, reviewer_prompt, prompt_text, context_block, marks_block),
+                "stream": True,
+                "stream_options": {"include_usage": True},  # without it a streamed reply carries no token counts
+            },
         )
     except Exception:
         count(False)
         raise
     if telemetry is not None:
         telemetry["p1_elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
-    if not 200 <= response.status_code < 300:
-        count(False, run_provenance.usage_of(response))
-        raise RuntimeError(f"P1 call returned HTTP {response.status_code}: {response.text[:500]}")
+    if not 200 <= reply.status_code < 300:
+        count(False, reply.usage)
+        message = f"P1 call returned HTTP {reply.status_code}: {reply.text[:500]}"
+        if reply.status_code == 429:
+            raise P1RateLimitedError(message, retry_after=reply.retry_after)
+        raise RuntimeError(message)
     # The attempt counts as successful only once its report passes the strict parse: a 200 with no answer, a
     # runaway (finish_reason=length) or a reply the contract rejects is a failed attempt in the run provenance.
     ok, usage = False, None
     try:
-        body = response.json()
+        body = reply.body()
         usage = body.get("usage") if isinstance(body, dict) else None
         if not isinstance(body, dict) or not body.get("choices"):
             # HTTP 200 with a null body is how the video host answers a video it cannot decode.
@@ -515,6 +665,13 @@ async def run_p1(
 # A valid report is a few KB; the P1 token cap (16384) is about 60k characters, which is what a runaway reaches.
 MAX_P1_OUTPUT_CHARS = 30_000
 P1_MAX_ATTEMPTS = 2
+# HTTP 429 from the hosted service: wait (its retry-after, else a jittered back-off) and call again, at most this many
+# calls in all, and only while the wait leaves the analysis budget this long for the call itself.
+P1_MAX_RATE_LIMIT_CALLS = 4
+P1_RATE_LIMIT_BACKOFF_SECONDS = 5.0
+P1_RATE_LIMIT_BACKOFF_CAP_SECONDS = 30.0
+P1_RATE_LIMIT_MIN_CALL_SECONDS = 60.0
+P1_RATE_LIMIT_MAX_UNBOUNDED_WAIT_SECONDS = 120.0  # with no deadline (a batch evaluation)
 
 
 def _runaway(exc: IncidentExtractionError) -> bool:
@@ -522,19 +679,81 @@ def _runaway(exc: IncidentExtractionError) -> bool:
     return exc.finish_reason == "length" or len(exc.raw_output) > MAX_P1_OUTPUT_CHARS
 
 
+async def _sleep(seconds: float) -> None:
+    await asyncio.sleep(seconds)
+
+
+def _rate_limit_wait(exc: P1RateLimitedError, calls_made: int) -> float:
+    """Seconds to wait after the ``calls_made``-th HTTP 429: its retry-after, else a jittered exponential back-off."""
+    if exc.retry_after is not None:
+        return exc.retry_after
+    ceiling = min(P1_RATE_LIMIT_BACKOFF_CAP_SECONDS, P1_RATE_LIMIT_BACKOFF_SECONDS * 2 ** (calls_made - 1))
+    return random.uniform(ceiling / 2, ceiling)
+
+
+async def _run_p1_waiting_out_429(
+    client: httpx.AsyncClient,
+    config: IncidentReportGenConfig,
+    video_url: str,
+    deadline: float | None,
+    **kwargs: Any,
+) -> tuple[dict[str, Any], str, str | None]:
+    """``run_p1``, repeated after an HTTP 429 once the service's wait is over; any other error is raised at once.
+
+    ``deadline`` is the analysis's ``time.monotonic()`` budget end. A wait is only taken when it leaves
+    ``P1_RATE_LIMIT_MIN_CALL_SECONDS`` before that end, so waiting can never carry an analysis past the console's
+    limit; otherwise the 429 is raised as it is.
+    """
+    for calls_made in range(1, P1_MAX_RATE_LIMIT_CALLS + 1):
+        try:
+            return await run_p1(client, config, video_url, **kwargs)
+        except P1RateLimitedError as exc:
+            wait = _rate_limit_wait(exc, calls_made)
+            if deadline is None:
+                affordable = wait <= P1_RATE_LIMIT_MAX_UNBOUNDED_WAIT_SECONDS
+            else:
+                affordable = wait + P1_RATE_LIMIT_MIN_CALL_SECONDS <= deadline - time.monotonic()
+            if calls_made == P1_MAX_RATE_LIMIT_CALLS or not affordable:
+                logger.warning(
+                    "incident_report_gen: P1 rate limited (HTTP 429, call %d of %d); giving up (%s)",
+                    calls_made,
+                    P1_MAX_RATE_LIMIT_CALLS,
+                    "attempts used"
+                    if calls_made == P1_MAX_RATE_LIMIT_CALLS
+                    else f"a {wait:.0f} s wait does not fit the budget",
+                )
+                raise
+            logger.warning(
+                "incident_report_gen: P1 rate limited (HTTP 429, call %d of %d); waiting %.1f s (%s)",
+                calls_made,
+                P1_MAX_RATE_LIMIT_CALLS,
+                wait,
+                "retry-after" if exc.retry_after is not None else "back-off",
+            )
+            await _sleep(wait)
+    raise AssertionError("unreachable: the last call returns or raises")  # pragma: no cover
+
+
 async def run_p1_with_retry(
-    client: httpx.AsyncClient, config: IncidentReportGenConfig, video_url: str, **kwargs: Any
+    client: httpx.AsyncClient,
+    config: IncidentReportGenConfig,
+    video_url: str,
+    deadline: float | None = None,
+    **kwargs: Any,
 ) -> tuple[dict[str, Any], str, str | None, list[dict[str, Any]]]:
     """``run_p1`` with one automatic retry after a runaway output; returns ``run_p1``'s result plus every attempt.
 
     The retry repeats the identical request: nothing in the rejected output is repaired or reused, so the
-    stored report is always a fresh, strictly validated answer. Any other failure is raised at once. On final
+    stored report is always a fresh, strictly validated answer. An HTTP 429 is waited out first (see
+    :func:`_run_p1_waiting_out_429`; ``deadline`` bounds it). Any other failure is raised at once. On final
     failure the error carries ``attempts`` and the last rejected output.
     """
     attempts: list[dict[str, Any]] = []
     for attempt in range(1, P1_MAX_ATTEMPTS + 1):
         try:
-            report, raw_output, finish_reason = await run_p1(client, config, video_url, **kwargs)
+            report, raw_output, finish_reason = await _run_p1_waiting_out_429(
+                client, config, video_url, deadline, **kwargs
+            )
         except IncidentExtractionError as exc:
             retry = attempt < P1_MAX_ATTEMPTS and _runaway(exc)
             attempts.append(
@@ -603,11 +822,13 @@ async def collect_evidence(
     namer: Any | None = None,
     tracking: track_evidence.TrackingRequest | None = None,
     object_tracking: track_evidence.ObjectTrackingRequest | None = None,
+    deadline: float | None = None,
 ) -> list[dict[str, Any]]:
     """Crop and upload every evidence item. Never raises: a failure becomes an ``image_gap`` reason.
 
     ``store`` and ``detector`` override the service's own (R2 and the shared detector in production) for this
-    call only. ``object_tracking`` receives the summary of the instrument and asset tracks.
+    call only. ``object_tracking`` receives the summary of the instrument and asset tracks. ``deadline`` is the
+    request's ``time.monotonic()`` budget end: past it, items are left with an ``image_gap`` or ``zoom_gap``.
     """
     try:
         return await crop_evidence.get_crop_evidence_service().process_incident_report(
@@ -620,6 +841,7 @@ async def collect_evidence(
             namer=namer,
             tracking=tracking,
             object_tracking=object_tracking,
+            deadline=deadline,
         )
     except Exception as exc:
         logger.warning("incident_report_gen: evidence cropping failed for %s: %s", incident_id, exc)
@@ -637,6 +859,15 @@ def tracking_request(tool_input: IncidentReportGenInput) -> track_evidence.Track
     return track_evidence.TrackingRequest(
         sensor_id=track_evidence.sensor_id_for(tool_input.video_key or tool_input.incident_id, run_id)
     )
+
+
+def analysis_budget_seconds() -> float:
+    """Seconds a production analysis may spend before the crop stages skip or shorten (under the console's limit)."""
+    try:
+        value = float((os.environ.get(ANALYSIS_BUDGET_ENV) or "").strip())
+    except ValueError:
+        return DEFAULT_ANALYSIS_BUDGET_SECONDS
+    return value if math.isfinite(value) and value > 0 else DEFAULT_ANALYSIS_BUDGET_SECONDS
 
 
 def object_tracking_request() -> track_evidence.ObjectTrackingRequest:
@@ -1016,6 +1247,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
     async def _analyze(
         tool_input: IncidentReportGenInput, provenance: run_provenance.RunProvenance
     ) -> IncidentReportGenOutput:
+        deadline: float | None = time.monotonic() + analysis_budget_seconds()
         model_name = tool_input.model or config.vlm_model_name
         if tool_input.model is not None and tool_input.model not in incident_contract.allowed_models():
             raise ValueError(f"Model {tool_input.model!r} is not in the incident contract allowlist")
@@ -1044,6 +1276,8 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             )
         api_key = os.environ.get(config.api_key_env, "")
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        if experiment is not None:  # a batch evaluation is not held to the console's limit
+            deadline = None
         # Only production requests track; experiments (skip_crops included) never do.
         tracking = tracking_request(tool_input) if experiment is None and track_evidence.tracking_enabled() else None
         # Object tracks (instruments and assets) are a production request's too, and need the crops.
@@ -1091,6 +1325,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                     client,
                     config,
                     SignedUrl(marked_url) if marked_url else tool_input.video_url,
+                    deadline=deadline,
                     model=model_name,
                     reviewer_prompt=reviewer_prompt,
                     video_duration_seconds=video_length.seconds,
@@ -1170,6 +1405,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 video_key=tool_input.video_key,
                 tracking=tracking,
                 object_tracking=objects,
+                deadline=deadline,
             )
         if objects is not None:
             logger.info(

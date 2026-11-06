@@ -119,8 +119,13 @@ test('an edit with an image is embedded first, and its crop is written with the 
   const db = database();
   process.env.INCIDENT_AGENT_BASE_URL = 'https://agent.test';
   const posted = [];
+  const summaries = [];
   globalThis.fetch = async (url, init) => {
     if (!String(url).startsWith('https://agent.test/')) return db.fetch(url, init);
+    if (String(url).endsWith('/revision-embedding')) {
+      summaries.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ embedding: Array(1024).fill(0.5) }), { status: 200 });
+    }
     posted.push(JSON.parse(init.body));
     return new Response(JSON.stringify([{ item_type: 'entity', item_id: 'E1', embedding: Array(1024).fill(0.25) }]), { status: 200 });
   };
@@ -146,6 +151,22 @@ test('an edit with an image is embedded first, and its crop is written with the 
     body.p_crops.map((crop) => [crop.item_type, crop.item_id, crop.image, crop.embedding.length]),
     [['entity', 'E1', key, 1024]],
   );
+  assert.equal(summaries.length, 1, 'the agent embeds the summary once');
+  assert.equal(summaries[0].description, edit.incident.description, 'from the saved description');
+  assert.equal(body.p_embedding, `[${Array(1024).fill(0.5).join(',')}]`, 'the vector is stored with the revision');
+});
+
+test('a Save whose summary cannot be embedded still succeeds, with no vector', async () => {
+  const db = database();
+  process.env.INCIDENT_AGENT_BASE_URL = 'https://agent.test';
+  globalThis.fetch = async (url, init) => {
+    if (!String(url).startsWith('https://agent.test/')) return db.fetch(url, init);
+    return new Response('embedding endpoint down', { status: 502 });
+  };
+  const response = await patch(request(baseEdit()));
+  assert.equal(response.status, 200);
+  const [{ body }] = writes(db);
+  assert.equal(body.p_embedding, null);
 });
 
 test('Class B/C fields are rejected with 400 before any database call', async () => {

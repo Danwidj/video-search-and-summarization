@@ -83,9 +83,24 @@
                 "description": "URL or Cloudflare R2 presigned URL referencing the evidence crop image."
               },
               "timestamp_seconds": {
-                "type": "integer",
+                "type": "number",
                 "minimum": 0,
-                "description": "Whole-second offset from video start where item is visible, used for jump-to-clip."
+                "description": "Offset in seconds from video start (milliseconds kept) of the frame the box was found in, used for jump-to-moment."
+              },
+              "slice_start_seconds": {
+                "type": ["number", "null"],
+                "minimum": 0,
+                "description": "Optional start of the item's slice: a time range of the existing video to play (first seen where the item has a track, else the box second minus 3 s). Absent or null from an agent that stores none."
+              },
+              "slice_end_seconds": {
+                "type": ["number", "null"],
+                "minimum": 0,
+                "description": "Optional end of the item's slice (last seen where the item has a track, else the box second plus 3 s)."
+              },
+              "frame_image_url": {
+                "type": ["string", "null"],
+                "format": "uri",
+                "description": "Optional signed URL of the stored whole frame the box was found in; null or absent when none is stored (the crop image stands in)."
               },
               "bounding_box": {
                 "type": ["array", "null"],

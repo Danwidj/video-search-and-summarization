@@ -22,6 +22,8 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import threading
+import time
 from typing import ClassVar
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -31,6 +33,8 @@ import httpx
 import numpy as np
 import pytest
 
+from vss_agents.utils.crop_evidence import DIFFERENT_OBJECT_GAP
+from vss_agents.utils.crop_evidence import TIME_BUDGET_GAP
 from vss_agents.utils.crop_evidence import BudgetedDetector
 from vss_agents.utils.crop_evidence import CropCallBudget
 from vss_agents.utils.crop_evidence import CropCallCapReachedError
@@ -38,23 +42,29 @@ from vss_agents.utils.crop_evidence import CropEvidenceService
 from vss_agents.utils.crop_evidence import CropResult
 from vss_agents.utils.crop_evidence import DefaultDetector
 from vss_agents.utils.crop_evidence import Detection
+from vss_agents.utils.crop_evidence import DetectorBreaker
+from vss_agents.utils.crop_evidence import DetectorStoppedError
 from vss_agents.utils.crop_evidence import FakeDetector
 from vss_agents.utils.crop_evidence import FakeZoomNamer
+from vss_agents.utils.crop_evidence import GuardedDetector
 from vss_agents.utils.crop_evidence import InMemoryEvidenceStore
 from vss_agents.utils.crop_evidence import R2EvidenceStore
 from vss_agents.utils.crop_evidence import ZoomLook
 from vss_agents.utils.crop_evidence import ZoomVerdict
 from vss_agents.utils.crop_evidence import apply_box_padding
 from vss_agents.utils.crop_evidence import crop_evidence_item
+from vss_agents.utils.crop_evidence import duplicate_images
 from vss_agents.utils.crop_evidence import encode_jpeg
 from vss_agents.utils.crop_evidence import evidence_items
 from vss_agents.utils.crop_evidence import evidence_key
 from vss_agents.utils.crop_evidence import extract_frame
 from vss_agents.utils.crop_evidence import get_crop_evidence_service
+from vss_agents.utils.crop_evidence import is_english_name
 from vss_agents.utils.crop_evidence import looks_agree
 from vss_agents.utils.crop_evidence import next_run_batch_id
 from vss_agents.utils.crop_evidence import normalize_box
 from vss_agents.utils.crop_evidence import parse_zoom_reply
+from vss_agents.utils.crop_evidence import refines_name
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
 from vss_agents.utils.crop_evidence import zoom_crop
 from vss_agents.utils.crop_evidence import zoom_names_enabled
@@ -526,12 +536,23 @@ class TestEvidenceItems:
         assert items[0]["timestamp_seconds"] == 3
 
 
+def _distinct_boxes() -> FakeDetector:
+    """A detector that boxes each of REPORT's three items somewhere else, so none is taken for a duplicate."""
+    return FakeDetector(
+        by_query={
+            "person": [Detection(box=[100, 100, 400, 400], score=0.95, label="person")],
+            "crowbar": [Detection(box=[500, 100, 800, 400], score=0.95, label="crowbar")],
+            "cash register": [Detection(box=[100, 600, 400, 900], score=0.95, label="cash register")],
+        }
+    )
+
+
 class TestCropEvidenceService:
     """Test CropEvidenceService report processing."""
 
     @pytest.mark.asyncio
     async def test_process_incident_report_uploads_a_unique_crop_per_item(self, tiny_video_path: Path) -> None:
-        detector = FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="person")])
+        detector = _distinct_boxes()
         store = InMemoryEvidenceStore()
         service = CropEvidenceService(detector=detector, store=store)
 
@@ -584,7 +605,7 @@ class TestCropEvidenceService:
 
     @pytest.mark.asyncio
     async def test_each_run_gets_the_next_run_number_so_keys_are_never_overwritten(self, tiny_video_path: Path) -> None:
-        detector = FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="person")])
+        detector = _distinct_boxes()
         service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
         first = await service.process_incident_report(video_ref=tiny_video_path, video_id="v", report=REPORT)
         second = await service.process_incident_report(video_ref=tiny_video_path, video_id="v", report=REPORT)
@@ -1091,16 +1112,14 @@ class TestZoomSecondLook:
 
     LOCATED: ClassVar[list[Detection]] = [Detection(box=[200, 200, 600, 600], score=0.95, label="x")]
     BAG_REPLY: ClassVar[dict] = {
-        "name": "plastic bag",
+        "name": "open cash register",
         "description": "A crumpled white plastic bag on the floor.",
         "confidence": 0.9,
         "changed": True,
     }
 
     def _service(self, namer: FakeZoomNamer) -> CropEvidenceService:
-        return CropEvidenceService(
-            detector=FakeDetector(detections=self.LOCATED), store=InMemoryEvidenceStore(), namer=namer
-        )
+        return CropEvidenceService(detector=_distinct_boxes(), store=InMemoryEvidenceStore(), namer=namer)
 
     async def _run(self, service: CropEvidenceService, video: Path, report: dict, **kwargs: object) -> dict[str, dict]:
         results = await service.process_incident_report(video_ref=video, video_id="v", report=report, **kwargs)
@@ -1168,14 +1187,14 @@ class TestZoomSecondLook:
         by_id = await self._run(self._service(namer), tiny_video_path, report, zoom_names=True)
 
         asset = by_id["A1"]
-        assert asset["item_name"] == "plastic bag" and asset["description"] == self.BAG_REPLY["description"]
+        assert asset["item_name"] == "open cash register" and asset["description"] == self.BAG_REPLY["description"]
         assert asset["name_before"] == "cash register" and asset["description_before"] == "Store register"
         assert asset["zoom_checked"] is True and asset["zoom_confidence"] == 0.9 and asset["zoom_gap"] is None
         # Never touched: id, label (the detector query), timestamps, image keys.
         assert asset["item_id"] == "A1" and asset["label"] == "cash register" and asset["timestamp_seconds"] == 1
         assert asset["image"] == "evidence/v/run-1/A1.jpg" and asset["located"] is True
         # The report payload agrees, so the title-level text the console shows matches the evidence card.
-        assert report["assets"][0]["name"] == "plastic bag"
+        assert report["assets"][0]["name"] == "open cash register"
         assert report["assets"][0]["description"] == self.BAG_REPLY["description"]
         assert report["assets"][0]["asset_id"] == "A1" and report["assets"][0]["label"] == "cash register"
         assert report["instruments"] == REPORT["instruments"] and report["entities"] == REPORT["entities"]
@@ -1221,7 +1240,7 @@ class TestZoomSecondLook:
         asset = by_id["A1"]
         assert asset["item_name"] == "cash register" and asset["name_before"] is None
         assert asset["zoom_checked"] is True and asset["zoom_confidence"] == 0.69
-        assert "plastic bag" in asset["zoom_gap"] and "below 0.7" in asset["zoom_gap"]
+        assert "open cash register" in asset["zoom_gap"] and "below 0.7" in asset["zoom_gap"]
         assert report == REPORT
 
     @pytest.mark.asyncio
@@ -1441,3 +1460,473 @@ class TestZoomSecondLook:
         reply.json.return_value = {"choices": [{"message": {"content": '{"bbox_2d": [1, 2, 3, 4]}'}}]}
         with patch("vss_agents.utils.crop_evidence.httpx.post", return_value=reply), pytest.raises(ValueError):
             detector.zoom_name(b"jpeg", item_type="asset", name="ball", description="")
+
+
+def _status_error(code: int = 429) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://gateway.test/v1/chat/completions")
+    return httpx.HTTPStatusError(f"{code}", request=request, response=httpx.Response(code, request=request))
+
+
+class _FailingDetector:
+    """A detector that answers every call with an error (a 429 by default)."""
+
+    def __init__(self, error: Exception | None = None, delay: float = 0.0) -> None:
+        self.error = error or _status_error(429)
+        self.delay = delay
+        self.calls = 0
+
+    def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+        self.calls += 1
+        time.sleep(self.delay)
+        raise self.error
+
+
+class _HangingDetector:
+    """A detector that does not answer until ``release`` is set (the tests set it when done)."""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.calls = 0
+
+    def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+        self.calls += 1
+        self.release.wait(10)
+        return []
+
+
+class _HangingNamer:
+    def __init__(self) -> None:
+        self.release = threading.Event()
+
+    def zoom_name(self, *args: object, **kwargs: object) -> ZoomVerdict:
+        self.release.wait(10)
+        raise RuntimeError("released")
+
+
+def _many_assets(count: int) -> dict:
+    return {
+        "incident": {"title": "x", "type": "burglary"},
+        "assets": [
+            {"asset_id": f"A{n}", "name": "box", "description": "d", "timestamp_seconds": 1, "label": "box"}
+            for n in range(1, count + 1)
+        ],
+    }
+
+
+class TestDetectorStopInTheLocateStep:
+    def test_the_breaker_trips_on_the_third_error_in_a_row_and_a_reply_resets_it(self) -> None:
+        breaker = DetectorBreaker("t")
+        breaker.record_error(RuntimeError())
+        breaker.record_error(RuntimeError())
+        breaker.record_success()
+        breaker.record_error(RuntimeError())
+        breaker.record_error(RuntimeError())
+        assert breaker.tripped is False
+        breaker.record_error(RuntimeError())
+        assert breaker.tripped is True
+
+    def test_a_guarded_detector_makes_no_call_once_the_breaker_has_tripped_or_the_deadline_has_passed(self) -> None:
+        detector = _FailingDetector()
+        frame = np.zeros((8, 8, 3), dtype=np.uint8)
+        guarded = GuardedDetector(detector, DetectorBreaker("t", limit=1))
+        with pytest.raises(httpx.HTTPStatusError):
+            guarded.detect(frame, "x")
+        with pytest.raises(DetectorStoppedError):
+            guarded.detect(frame, "x")
+        assert detector.calls == 1 and guarded.breaker.tripped
+        late = GuardedDetector(detector, DetectorBreaker("t"), deadline=time.monotonic() - 1)
+        with pytest.raises(DetectorStoppedError):
+            late.detect(frame, "x")
+        assert detector.calls == 1
+
+    @pytest.mark.asyncio
+    async def test_items_after_three_consecutive_errors_are_not_sent_to_the_detector(
+        self, tiny_video_path: Path
+    ) -> None:
+        detector = _FailingDetector(delay=0.05)
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=_many_assets(8), batch_id="run-1"
+        )
+        # An item already in flight when the third error lands still tries its other seconds (and ends on the stop);
+        # an item not yet started is never sent. Without the stop every one of the eight would make its full calls.
+        stopped = [r for r in results if "detector stopped after 3 consecutive errors" in (r["image_gap"] or "")]
+        started = [r for r in results if r not in stopped]
+        assert stopped and 3 <= len(started) < 8 and all(r["image"] is None for r in results)
+        assert detector.calls < 8 * 3
+        # An item that started keeps its frame and says the detector failed or stopped.
+        assert all(r["frame"] and "detector" in r["image_gap"] for r in started)
+
+
+class TestTimeBudget:
+    @pytest.mark.asyncio
+    async def test_a_hanging_detector_cannot_hold_the_locate_step_past_the_deadline(
+        self, tiny_video_path: Path
+    ) -> None:
+        detector = _HangingDetector()
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
+        started = time.monotonic()
+        try:
+            results = await service.process_incident_report(
+                video_ref=tiny_video_path,
+                video_id="v",
+                report=_many_assets(8),
+                batch_id="run-1",
+                deadline=time.monotonic() + 0.3,
+            )
+        finally:
+            detector.release.set()
+        assert time.monotonic() - started < 3.0
+        assert [r["image_gap"] for r in results] == [TIME_BUDGET_GAP] * 8
+        assert [r["image"] for r in results] == [None] * 8
+
+    @pytest.mark.asyncio
+    async def test_a_spent_budget_skips_the_detector_and_the_second_look_for_every_item(
+        self, tiny_video_path: Path
+    ) -> None:
+        detector = _HangingDetector()
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, deadline=time.monotonic() - 1.0
+        )
+        assert detector.calls == 0 and all(r["image_gap"] == TIME_BUDGET_GAP for r in results)
+
+    @pytest.mark.asyncio
+    async def test_a_second_look_still_waiting_at_the_deadline_gets_a_zoom_gap(self, tiny_video_path: Path) -> None:
+        namer = _HangingNamer()
+        detector = FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="x")])
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore(), namer=namer)
+        started = time.monotonic()
+        try:
+            results = await service.process_incident_report(
+                video_ref=tiny_video_path,
+                video_id="v",
+                report=copy.deepcopy(REPORT),
+                zoom_names=True,
+                deadline=time.monotonic() + 1.0,
+            )
+        finally:
+            namer.release.set()
+        assert time.monotonic() - started < 4.0
+        assert all(r["image"] is not None for r in results)  # the crops were done before the deadline
+        assert [r["zoom_gap"] for r in results] == [TIME_BUDGET_GAP] * 3
+
+    @pytest.mark.asyncio
+    async def test_object_tracking_is_skipped_when_less_than_its_reserve_is_left(self, tiny_video_path: Path) -> None:
+        calls: list = []
+
+        async def runner(
+            video_ref: object, seeds: list, *, detector: object, **options: object
+        ) -> ObjectTrackingOutcome:
+            calls.append(options)
+            return ObjectTrackingOutcome()
+
+        request = ObjectTrackingRequest(budget=CropCallBudget(10), runner=runner)
+        service = CropEvidenceService(
+            detector=FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="x")]),
+            store=InMemoryEvidenceStore(),
+        )
+        await service.process_incident_report(
+            video_ref=tiny_video_path,
+            video_id="v",
+            report=REPORT,
+            object_tracking=request,
+            deadline=time.monotonic() + 20,
+        )
+        assert calls == [] and request.summary.skipped == TIME_BUDGET_GAP
+
+    @pytest.mark.asyncio
+    async def test_object_tracking_gets_the_time_left_minus_its_reserve_as_its_cap(self, tiny_video_path: Path) -> None:
+        caps: list[float] = []
+
+        async def runner(
+            video_ref: object, seeds: list, *, detector: object, settings: object, **_: object
+        ) -> ObjectTrackingOutcome:
+            caps.append(settings.time_cap_seconds)  # type: ignore[attr-defined]
+            return ObjectTrackingOutcome()
+
+        from vss_agents.utils.object_tracking import ObjectTrackingSettings
+
+        request = ObjectTrackingRequest(
+            budget=CropCallBudget(10), runner=runner, options={"settings": ObjectTrackingSettings(time_cap_seconds=120)}
+        )
+        service = CropEvidenceService(
+            detector=FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="x")]),
+            store=InMemoryEvidenceStore(),
+        )
+        await service.process_incident_report(
+            video_ref=tiny_video_path,
+            video_id="v",
+            report=REPORT,
+            object_tracking=request,
+            deadline=time.monotonic() + 70,
+        )
+        assert len(caps) == 1 and 30 < caps[0] <= 40  # 70 s left, 30 s kept for the second look and uploads
+
+
+class _FlakyDetector:
+    """Raises on the first ``errors`` calls, then answers with ``detections``."""
+
+    def __init__(self, errors: int, detections: list[Detection]) -> None:
+        self.errors = errors
+        self.detections = detections
+        self.calls = 0
+
+    def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+        self.calls += 1
+        if self.calls <= self.errors:
+            raise _status_error(500)
+        return self.detections
+
+
+def _report(**items: dict) -> dict:
+    return {"incident": {"title": "x", "type": "burglary"}, **{key: [value] for key, value in items.items()}}
+
+
+def _reply(name: str) -> dict:
+    return {"name": name, "description": f"A {name}.", "confidence": 0.95, "changed": True}
+
+
+class TestWrongRenamesAreBlocked:
+    """Audit finding 1: the second look may only rename an object to the same kind of thing."""
+
+    @pytest.mark.parametrize(
+        ("old", "new"),
+        [
+            ("cash register", "high heel shoe"),  # rev 126 A1
+            ("long thin object", "handgun"),  # rev 127 I1
+            ("club", "handgun"),
+            ("elevator interior", "cabinet"),  # rev 134 A1
+            ("cash register", "plastic bag"),
+        ],
+    )
+    def test_names_of_a_different_kind_do_not_refine(self, old: str, new: str) -> None:
+        assert refines_name(old, new) is False
+
+    @pytest.mark.parametrize(
+        ("old", "new"),
+        [
+            ("plastic bag", "crumpled plastic bag"),
+            ("crumpled plastic bag", "plastic bag"),
+            ("Plastic Bags", "plastic bag"),
+            ("crowbar", "tyre iron"),
+            ("aisle display rack", "toy display"),  # honest result: they share the display group, so it passes
+        ],
+    )
+    def test_names_of_the_same_kind_refine(self, old: str, new: str) -> None:
+        assert refines_name(old, new) is True
+
+    def test_a_name_that_is_not_english_is_refused(self) -> None:
+        assert is_english_name("handgun") and is_english_name("USB-3 stick")
+        assert not is_english_name("棍棒") and not is_english_name("пистолет")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("kind", "name", "description", "reply_name"),
+        [
+            ("assets", "cash register", "Store register", "high heel shoe"),
+            ("instruments", "long thin object", "A long thin object", "handgun"),
+            ("instruments", "long thin object", "A long thin object", "棍棒"),
+        ],
+    )
+    async def test_a_different_object_keeps_the_report_and_shows_the_frame_with_a_gap(
+        self, tiny_video_path: Path, kind: str, name: str, description: str, reply_name: str
+    ) -> None:
+        key = "asset_id" if kind == "assets" else "instrument_id"
+        item = {
+            key: "X1",
+            "name": name,
+            "description": description,
+            "timestamp_seconds": 1,
+            "label": name,
+            **({"threat_level": 2} if kind == "instruments" else {}),
+        }
+        report = _report(**{kind: item})
+        before = copy.deepcopy(report)
+        store = InMemoryEvidenceStore()
+        service = CropEvidenceService(
+            detector=FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="x")]),
+            store=store,
+            namer=FakeZoomNamer({name: _reply(reply_name)}),
+        )
+        [entry] = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=report, zoom_names=True, batch_id="run-1"
+        )
+        assert report == before  # the report's name and description stand
+        assert entry["item_name"] == name and entry["description"] == description and entry["name_before"] is None
+        assert entry["zoom_checked"] is True
+        if not is_english_name(reply_name):
+            # A foreign-language name is only dropped: the box may well be right, so the crop stays.
+            assert entry["image"] and entry["located"] is True and "English" in entry["zoom_gap"]
+            return
+        # The frame is shown, with no crop and no box, and a gap says why.
+        assert entry["frame"] and entry["image"] is None and entry["bounding_box"] is None
+        assert entry["located"] is False and entry.get("detected_box") is None
+        assert DIFFERENT_OBJECT_GAP in entry["image_gap"] and entry["zoom_gap"] == DIFFERENT_OBJECT_GAP
+        assert len(store.images) == 1  # the crop was never stored
+
+    @pytest.mark.asyncio
+    async def test_a_refinement_still_renames(self, tiny_video_path: Path) -> None:
+        report = _report(
+            assets={"asset_id": "A1", "name": "plastic bag", "description": "d", "timestamp_seconds": 1, "label": "bag"}
+        )
+        service = CropEvidenceService(
+            detector=FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="x")]),
+            store=InMemoryEvidenceStore(),
+            namer=FakeZoomNamer({"plastic bag": _reply("crumpled plastic bag")}),
+        )
+        [entry] = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=report, zoom_names=True
+        )
+        assert entry["item_name"] == "crumpled plastic bag" and entry["image"] and entry["located"] is True
+
+
+class TestFrameKeptOnADetectorError:
+    """Audit finding 2: a detector error loses neither the frame nor the other seconds."""
+
+    def test_the_next_second_is_tried_after_an_error(self, tiny_video_path: Path) -> None:
+        detector = _FlakyDetector(1, [Detection(box=[200, 200, 600, 600], score=0.9, label="x")])
+        result = crop_evidence_item(tiny_video_path, 0, "x", detector, not_located_fallback=True, retry_offsets=(1, -1))
+        assert result is not None and result.located is True and detector.calls == 2
+
+    def test_every_second_failing_returns_the_frame_with_a_detector_gap(self, tiny_video_path: Path) -> None:
+        detector = _FlakyDetector(99, [])
+        result = crop_evidence_item(tiny_video_path, 0, "x", detector, not_located_fallback=True, retry_offsets=(1,))
+        assert result is not None and result.located is False and result.frame_bytes is not None
+        assert detector.calls == 2 and result.gap is not None and "detector failed" in result.gap
+
+    def test_without_the_fallback_it_still_returns_none(self, tiny_video_path: Path) -> None:
+        assert crop_evidence_item(tiny_video_path, 0, "x", _FlakyDetector(99, []), retry_offsets=(1,)) is None
+
+    def test_a_stopped_detector_ends_the_attempts_at_once(self, tiny_video_path: Path) -> None:
+        inner = _FailingDetector()
+        guarded = GuardedDetector(inner, DetectorBreaker("t", limit=1))
+        result = crop_evidence_item(tiny_video_path, 0, "x", guarded, not_located_fallback=True, retry_offsets=(1, -1))
+        assert result is not None and result.frame_bytes is not None and result.located is False
+        assert inner.calls == 1 and "detector" in (result.gap or "")
+
+    @pytest.mark.asyncio
+    async def test_the_service_stores_the_frame_and_the_detector_gap(self, tiny_video_path: Path) -> None:
+        store = InMemoryEvidenceStore()
+        service = CropEvidenceService(detector=_FailingDetector(), store=store)
+        [entry] = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=_many_assets(1), batch_id="run-1"
+        )
+        assert entry["frame"] and entry["image"] is None and entry["located"] is False
+        assert "detector failed" in entry["image_gap"]
+        assert await store.get_image(entry["frame"]) is not None
+
+
+def _box_report() -> dict:
+    return _report(
+        assets={"asset_id": "A1", "name": "elevator interior", "description": "d", "timestamp_seconds": 1, "label": "e"}
+    )
+
+
+class TestImplausibleBoxes:
+    """Audit finding 4: an instrument or asset box over half the frame, or a speck, is not a crop of the object."""
+
+    @pytest.mark.parametrize(
+        "box", [[0, 0, 1000, 1000], [50, 50, 950, 950], [100, 100, 104, 104]], ids=["full", "scene", "speck"]
+    )
+    def test_an_object_box_that_cannot_be_the_object_leaves_the_frame_alone(
+        self, tiny_video_path: Path, box: list[int]
+    ) -> None:
+        detector = FakeDetector(detections=[Detection(box=box, score=1.0, label="x")])
+        result = crop_evidence_item(
+            tiny_video_path, 0, "x", detector, not_located_fallback=True, retry_offsets=(1,), item_type="asset"
+        )
+        assert result is not None and result.located is False and result.image_bytes is None
+        assert result.gap is not None and "box covers" in result.gap
+
+    def test_a_good_box_at_another_second_is_used(self, tiny_video_path: Path) -> None:
+        class _BySecond:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+                self.calls += 1
+                box = [0, 0, 1000, 1000] if self.calls == 1 else [200, 200, 600, 600]
+                return [Detection(box=box, score=1.0, label="x")]
+
+        result = crop_evidence_item(
+            tiny_video_path, 0, "x", _BySecond(), not_located_fallback=True, retry_offsets=(1,), item_type="instrument"
+        )
+        assert result is not None and result.located is True and result.box_seconds == 1
+
+    def test_people_keep_their_big_boxes(self, tiny_video_path: Path) -> None:
+        detector = FakeDetector(detections=[Detection(box=[0, 0, 1000, 1000], score=1.0, label="x")])
+        result = crop_evidence_item(tiny_video_path, 0, "x", detector, item_type="entity")
+        assert result is not None and result.located is True
+
+    @pytest.mark.asyncio
+    async def test_the_service_shows_the_frame_for_a_full_frame_box(self, tiny_video_path: Path) -> None:
+        """Rev 134 A1: 'elevator interior' boxed at 100% of the frame."""
+        store = InMemoryEvidenceStore()
+        service = CropEvidenceService(
+            detector=FakeDetector(detections=[Detection(box=[0, 0, 1000, 1000], score=1.0, label="x")]), store=store
+        )
+        [entry] = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=_box_report(), batch_id="run-1"
+        )
+        assert entry["frame"] and entry["image"] is None and entry["bounding_box"] is None
+        assert entry["located"] is False and "box covers" in entry["image_gap"]
+
+
+class TestDuplicateImages:
+    """Audit finding 5: items on one box share one stored image and keep their own entries."""
+
+    @staticmethod
+    def _crop(box: list[int], seconds: int = 1) -> CropResult:
+        return CropResult(
+            image_bytes=b"jpg",
+            normalized_box=box,
+            score=1.0,
+            frame_size=(120, 80),
+            frame_bytes=b"frame",
+            box_seconds=seconds,
+            located=True,
+        )
+
+    @staticmethod
+    def _entry(item_id: str, item_type: str = "asset", holder: str | None = None) -> dict:
+        return {"item_id": item_id, "item_type": item_type, "holder_entity_id": holder}
+
+    def test_three_identical_boxes_share_the_first(self) -> None:
+        """Rev 131: three identical crops."""
+        entries = [self._entry(f"A{n}") for n in (1, 2, 3)]
+        crops = {e["item_id"]: self._crop([100, 100, 500, 500]) for e in entries}
+        assert duplicate_images(entries, crops) == {"A2": "A1", "A3": "A1"}
+
+    def test_different_boxes_seconds_or_holders_are_not_merged(self) -> None:
+        entries = [self._entry("E1", "entity"), self._entry("I1", "instrument", holder="E1"), self._entry("A1")]
+        crops = {
+            "E1": self._crop([100, 100, 500, 500]),
+            "I1": self._crop([100, 100, 500, 500]),  # the holder's box: never merged with the holder
+            "A1": self._crop([600, 600, 900, 900]),
+        }
+        assert duplicate_images(entries, crops) == {}
+        crops["A1"] = self._crop([100, 100, 500, 500], seconds=2)
+        assert duplicate_images(entries, crops) == {}
+
+    @pytest.mark.asyncio
+    async def test_the_service_stores_one_image_for_twins_and_keeps_every_entry(self, tiny_video_path: Path) -> None:
+        store = InMemoryEvidenceStore()
+        report = {
+            "incident": {"title": "x", "type": "burglary"},
+            "assets": [
+                {"asset_id": f"A{n}", "name": f"box {n}", "description": "d", "timestamp_seconds": 1, "label": "box"}
+                for n in (1, 2, 3)
+            ],
+        }
+        service = CropEvidenceService(
+            detector=FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="x")]), store=store
+        )
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=report, batch_id="run-1"
+        )
+        assert [r["item_id"] for r in results] == ["A1", "A2", "A3"]
+        assert {r["image"] for r in results} == {"evidence/v/run-1/A1.jpg"}
+        assert {r["frame"] for r in results} == {"evidence/v/run-1/A1-frame.jpg"}
+        assert all(r["located"] and r["bounding_box"] == results[0]["bounding_box"] for r in results)
+        assert len(store.images) == 2  # one crop and one frame, not six

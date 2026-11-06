@@ -37,6 +37,26 @@ export function parseTrackSamples(value: unknown): TrackSample[] | null {
   return samples.sort((a, b) => a.t - b.t);
 }
 
+/** First and last second of an object track's detector-confirmed samples (score above 0; tracker-only samples score -0.1). */
+export interface ConfirmedSpan {
+  first: number;
+  last: number;
+}
+
+/**
+ * The span of the samples the detector confirmed, read from the raw track (the agent's bare list, or a reviewer object with
+ * `samples`). Null when the file is not a track or no sample has a score above 0.
+ */
+export function confirmedSpan(value: unknown): ConfirmedSpan | null {
+  const list = Array.isArray(value) ? value : value && typeof value === 'object' ? (value as { samples?: unknown }).samples : null;
+  if (!Array.isArray(list)) return null;
+  const times = list.flatMap((raw): number[] => {
+    const { t, score } = (raw && typeof raw === 'object' ? raw : {}) as { t?: unknown; score?: unknown };
+    return typeof t === 'number' && Number.isFinite(t) && t >= 0 && typeof score === 'number' && score > 0 ? [t] : [];
+  });
+  return times.length ? { first: Math.min(...times), last: Math.max(...times) } : null;
+}
+
 /**
  * The box to draw at `seconds`: interpolated between the samples either side when they are close, else the nearest
  * sample's box when it is within the tolerance; null outside the track's span (plus the tolerance) and inside a gap.

@@ -63,6 +63,7 @@ import numpy as np
 
 from vss_agents.utils.crop_evidence import CropCallCapReachedError
 from vss_agents.utils.crop_evidence import DefaultDetector
+from vss_agents.utils.crop_evidence import DetectorBreaker
 from vss_agents.utils.crop_evidence import parse_detections
 from vss_agents.utils.optional_cv2 import ensure_codecs
 from vss_agents.utils.track_evidence import OBJECT_TRACK_SOURCE
@@ -372,9 +373,15 @@ def follow(
     settings: ObjectTrackingSettings,
     tracker_factory: TrackerFactory,
     deadline: float,
+    breaker: DetectorBreaker | None = None,
 ) -> _Pass:
-    """Follow ``seed`` through ``frames`` (the first is the seed's own, the rest in the order of travel)."""
+    """Follow ``seed`` through ``frames`` (the first is the seed's own, the rest in the order of travel).
+
+    ``breaker`` is the run's: once it has tripped (consecutive detector errors) the detector is no longer called
+    and the pass carries on with tracker-only samples. Without one, the pass uses its own.
+    """
     result = _Pass()
+    breaker = breaker or DetectorBreaker("Object tracking")
     first = next(frames, None)
     if first is None or abs(first[0] - seed.seconds) > SEED_FRAME_TOLERANCE_SECONDS:
         return result
@@ -399,12 +406,13 @@ def follow(
         due = abs(second - last_check) >= settings.detect_interval_seconds
         agreed: tuple[tuple[int, ...], float] | None = None
         checked = False
-        if due or not ok:
+        if (due or not ok) and not breaker.tripped:
             last_check = second
             call_started = time.monotonic()
             try:
                 raw = detect(frame, seed.label)
                 result.detector_calls += 1
+                breaker.record_success()
                 checked = True
                 agreed = _agreeing(raw, box if ok and box is not None else last_box, seed.label, settings.reanchor_iou)
             except CropCallCapReachedError:
@@ -414,6 +422,7 @@ def follow(
                 logger.warning("Object tracking detector call failed for '%s': %s", seed.label, type(exc).__name__)
                 result.detector_calls += 1
                 result.detector_errors += 1
+                breaker.record_error(exc)
             call_ms = (time.monotonic() - call_started) * 1000.0
             result.detector_ms += call_ms
             result.detector_max_ms = max(result.detector_max_ms, call_ms)
@@ -457,11 +466,14 @@ def track_item(
     tracker_factory: TrackerFactory,
     deadline: float,
     spans: tuple[float, float] | None = None,
+    breaker: DetectorBreaker | None = None,
 ) -> tuple[Track | None, dict[str, Any]]:
     """Follow one item forwards and backwards from its seed: its track (None when it gained no sample) and telemetry.
 
     ``spans`` is ``(back_seconds, forward_seconds)``; without it both directions use ``settings.span_seconds``.
+    ``breaker`` is shared by every item of a run; without one the two passes of this item share their own.
     """
+    breaker = breaker or DetectorBreaker("Object tracking")
     started = time.monotonic()
     seed_area = _area(seed.box) / 1_000_000.0
     if seed_area > settings.max_seed_area:
@@ -479,7 +491,13 @@ def track_item(
                 span_seconds=forward_span if forward else back_span,
             )
             passes[name] = follow(
-                frames, seed, detect=detect, settings=settings, tracker_factory=tracker_factory, deadline=deadline
+                frames,
+                seed,
+                detect=detect,
+                settings=settings,
+                tracker_factory=tracker_factory,
+                deadline=deadline,
+                breaker=breaker,
             )
             if passes[name].seed_refused:  # the other direction would start on the same seed box
                 break
@@ -495,6 +513,7 @@ def track_item(
         "backward_samples": len(behind.samples),
         "detector_calls": ahead.detector_calls + behind.detector_calls,
         "detector_errors": ahead.detector_errors + behind.detector_errors,
+        "detector_stopped": breaker.tripped,
         "detector_ms": round(ahead.detector_ms + behind.detector_ms, 1),
         "detector_max_ms": round(max(ahead.detector_max_ms, behind.detector_max_ms), 1),
         "reanchors": ahead.reanchors + behind.reanchors,
@@ -549,6 +568,7 @@ async def run_object_tracking(
     detect: Detect = detector.detect if hasattr(detector, "detect") else detector
     deadline = started + active.time_cap_seconds
     semaphore = asyncio.Semaphore(max(1, active.concurrency))
+    breaker = DetectorBreaker("Object tracking")  # one per run: its items share the detector
 
     async def _one(seed: ObjectSeed) -> None:
         async with semaphore:
@@ -564,6 +584,7 @@ async def run_object_tracking(
                     settings=active,
                     tracker_factory=factory,
                     deadline=deadline,
+                    breaker=breaker,
                 )
             except Exception as exc:
                 logger.warning("Object tracking failed for %s: %s", seed.item_id, type(exc).__name__)

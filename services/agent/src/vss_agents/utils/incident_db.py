@@ -368,15 +368,28 @@ def _whole_seconds(value: Any) -> int | None:
 
 
 def revision_summary_text(payload: dict[str, Any]) -> str:
-    """The text embedded for a revision: ``incident.title`` then ``incident.description``.
+    """The text embedded for a revision: ``incident.type: incident.title`` then ``incident.description``.
 
-    Missing parts are left out; an empty string means there is nothing to embed.
+    The type leads so a search for "burglary" matches a burglary whose title does not use the word. This is the one
+    place that builds the text: the AI revision insert, the ``revision-embedding`` route (human versions) and the
+    repair step all come here. Missing parts are left out; an empty string means there is nothing to embed.
     """
     incident = payload.get("incident") if isinstance(payload, dict) else None
     if not isinstance(incident, dict):
         return ""
-    parts = [incident.get("title"), incident.get("description")]
-    return "\n".join(part.strip() for part in parts if isinstance(part, str) and part.strip())
+
+    def clean(value: Any) -> str:
+        return value.strip() if isinstance(value, str) else ""
+
+    incident_type, title, description = (
+        clean(incident.get("type")),
+        clean(incident.get("title")),
+        clean(incident.get("description")),
+    )
+    if not title and not description:
+        return ""
+    headline = f"{incident_type}: {title}" if incident_type and title else incident_type or title
+    return "\n".join(part for part in (headline, description) if part)
 
 
 def revision_facets(payload: dict[str, Any]) -> dict[str, Any]:

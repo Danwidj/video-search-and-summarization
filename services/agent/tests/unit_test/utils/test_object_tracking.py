@@ -312,6 +312,70 @@ class TestReanchoring:
         assert item["detector_errors"] == 1 and item["lost"] == 0 and item["samples"] > 5
 
 
+def status_error(code: int = 429) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://gateway.test/v1/chat/completions")
+    return httpx.HTTPStatusError(f"{code}", request=request, response=httpx.Response(code, request=request))
+
+
+class FlakyDetector(OracleDetector):
+    """The oracle detector with an error on the listed call numbers (1-based) and a delay before each call."""
+
+    def __init__(self, fail_on: set[int] | None = None, always_fail: bool = False, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.fail_on, self.always_fail = fail_on or set(), always_fail
+
+    def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+        if self.always_fail or (self.calls + 1) in self.fail_on:
+            self.calls += 1
+            time.sleep(self.delay)
+            raise self.error
+        return super().detect(frame, query)
+
+
+class TestDetectorStop:
+    @pytest.mark.asyncio
+    async def test_three_errors_in_a_row_stop_the_detector_and_the_tracker_carries_on(self, clip: Path) -> None:
+        detector = FlakyDetector(always_fail=True, error=status_error(429))
+        outcome = await run(clip, detector, seed_at(4.0))
+        item = outcome.items["I1"]
+        assert detector.calls == 3 and item["detector_errors"] == 3 and item["detector_stopped"] is True
+        assert item["samples"] > 5 and item["lost"] == 0  # tracker-only samples to the end of both spans
+        assert outcome.tracks["I1"].samples
+
+    @pytest.mark.asyncio
+    async def test_a_stop_is_logged_once_with_its_reason(self, clip: Path, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level("WARNING", logger="vss_agents.utils.crop_evidence"):
+            await run(clip, FlakyDetector(always_fail=True, error=status_error(429)), seed_at(4.0))
+        stops = [r.getMessage() for r in caplog.records if "stopped calling the detector" in r.getMessage()]
+        assert len(stops) == 1 and "3 consecutive errors" in stops[0] and "HTTPStatusError" in stops[0]
+
+    @pytest.mark.asyncio
+    async def test_a_reply_in_between_resets_the_count(self, clip: Path) -> None:
+        detector = FlakyDetector(fail_on={1, 2, 4, 5}, error=status_error(429))
+        outcome = await run(clip, detector, seed_at(4.0))
+        item = outcome.items["I1"]
+        assert item["detector_errors"] == 4 and item["detector_stopped"] is False
+        assert detector.calls > 5
+
+    @pytest.mark.asyncio
+    async def test_the_stop_is_shared_by_every_item_of_the_run(self, clip: Path) -> None:
+        detector = FlakyDetector(always_fail=True, error=status_error(429), delay=0.02)
+        outcome = await run(
+            clip, detector, seed_at(2.0, "I1"), seed_at(4.0, "I2"), seed_at(6.0, "I3"), config=settings(concurrency=3)
+        )
+        assert detector.calls <= 3 + 2  # the calls already in flight when the third error lands
+        assert all(item["detector_stopped"] for item in outcome.items.values())
+
+    @pytest.mark.asyncio
+    async def test_a_hanging_detector_costs_three_timeouts_not_one_per_interval(self, clip: Path) -> None:
+        detector = FlakyDetector(always_fail=True, error=httpx.ReadTimeout("timed out"), delay=0.2)
+        started = time.monotonic()
+        outcome = await run(clip, detector, seed_at(4.0))
+        elapsed = time.monotonic() - started
+        assert detector.calls == 3 and elapsed < 3 * 0.2 + 1.0
+        assert outcome.items["I1"]["detector_ms"] == pytest.approx(600, abs=200)
+
+
 class TestDetectorLatency:
     @pytest.mark.asyncio
     async def test_the_slowest_and_total_detector_time_are_reported(self, clip: Path) -> None:
