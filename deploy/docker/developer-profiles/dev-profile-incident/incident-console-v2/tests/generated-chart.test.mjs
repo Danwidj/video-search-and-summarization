@@ -62,10 +62,17 @@ function statusDashboard(all, official = all, notOfficial = all) {
   };
 }
 
-function renderer() {
+/** A chart service: `configured` is what it returns from configure (null: none, so the PNG stands in). */
+function renderer({ configured = null } = {}) {
   const drawings = [];
+  const configures = [];
   return {
     drawings,
+    configures,
+    async configure(drawing) {
+      configures.push(drawing);
+      return configured;
+    },
     async draw(drawing) {
       drawings.push(drawing);
       return IMAGE;
@@ -73,8 +80,8 @@ function renderer() {
   };
 }
 
-async function chartFor(reply, { chartType = 'bar', dashboard = statusDashboard(analytics) } = {}) {
-  const drawer = renderer();
+async function chartFor(reply, { chartType = 'bar', dashboard = statusDashboard(analytics), configured = null } = {}) {
+  const drawer = renderer({ configured });
   const answer = await generateChart(
     { interpreter: { interpret: async () => reply }, dashboard, renderer: drawer },
     { request: 'anything', chartType, timezone: 'UTC', now: NOW },
@@ -352,7 +359,7 @@ describe('figures come from the dashboard data', () => {
     assert.equal(drawings.length, 1);
     assert.deepEqual(drawings[0].rows, chart.rows);
     assert.equal(drawings[0].title, 'Reports by severity');
-    assert.equal(drawings[0].chartType, 'pie');
+    assert.equal(drawings[0].chartKind, 'donut');
   });
 
   test('a chart over no records is empty and nothing is drawn', async () => {
@@ -366,7 +373,8 @@ describe('figures come from the dashboard data', () => {
 describe('drawing through chart_generator', () => {
   const originalFetch = globalThis.fetch;
   const drawing = {
-    chartType: 'bar',
+    chartKind: 'bar',
+    sliceColors: null,
     title: 'Reports by incident type',
     categoryLabel: 'Incident type',
     valueLabel: 'Reports',
@@ -418,7 +426,7 @@ describe('drawing through chart_generator', () => {
   test('sends a pie with each figure in its label and no empty slices', async () => {
     await new AgentChartRenderer('http://agent.test').draw({
       ...drawing,
-      chartType: 'pie',
+      chartKind: 'donut',
       series: [{ key: 'count', label: 'Reports' }],
       rows: [
         { category: 'Low', values: { count: 3 } },
@@ -564,7 +572,9 @@ describe('POST /api/dashboard/chart', () => {
       ['system', 'user'],
     );
     assert.equal(modelCalls[0].messages[1].content, 'severity breakdown');
-    assert.deepEqual(chartBodies[0].charts_data[0].sizes, [rpc.severity.low, rpc.severity.medium, rpc.severity.high].filter(Boolean));
+    // The chart service is asked for a configuration first; with none back, the PNG fallback is the last request.
+    assert.equal(chartBodies[0].charts_data[0].output, 'chartjs');
+    assert.deepEqual(chartBodies.at(-1).charts_data[0].sizes, [rpc.severity.low, rpc.severity.medium, rpc.severity.high].filter(Boolean));
   });
 
   test('a hostile model reply reaches neither the database, the chart service nor the answer', async () => {
@@ -611,7 +621,7 @@ describe('POST /api/dashboard/chart', () => {
     'a request over the limit': { request: 'x'.repeat(301), chartType: 'bar' },
     'a missing request': { chartType: 'bar' },
     'a missing chart type': { request: 'severity breakdown' },
-    'a chart type outside the two': { request: 'severity breakdown', chartType: 'line' },
+    'a chart type outside the list': { request: 'severity breakdown', chartType: 'sankey' },
     'a body that is not JSON': '{nope',
     'an invalid time zone': { request: 'severity breakdown', chartType: 'bar', timezone: 'Not/AZone' },
   })) {

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
+import dynamic from 'next/dynamic';
 import { ChartColumnIcon, SearchXIcon } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
-import { CHART_REQUEST_MAX_LENGTH, type ChartType, type GeneratedChart } from '@/modules/dashboard/domain/generated-chart';
+import { chartSummary } from '@/modules/dashboard/domain/chart-summary';
+import { CHART_REQUEST_MAX_LENGTH, type ChartKind, type GeneratedChart } from '@/modules/dashboard/domain/generated-chart';
 import { useChartRequest } from '@/sections/dashboard/hooks/use-chart-request';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -19,20 +21,34 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
+// Chart.js is loaded only when a chart comes back, so the dashboard page does not carry it.
+const ChartJsView = dynamic(() => import('./ChartJsView').then((module) => module.ChartJsView), {
+  ssr: false,
+  loading: () => <Skeleton className="h-72 w-full rounded-2xl" />,
+});
+
 const EXAMPLES = ['Incident distribution', 'Severity breakdown', 'Trends over time'];
+const KIND_LABELS: Record<ChartKind, string> = {
+  bar: 'Bar',
+  stacked_bar: 'Stacked bar',
+  horizontal_bar: 'Horizontal bar',
+  donut: 'Donut',
+  line: 'Line',
+  area: 'Area',
+};
 
 export function ChartRequest() {
   const { state, submit } = useChartRequest();
   const [text, setText] = useState('');
-  const [chartType, setChartType] = useState<ChartType>('bar');
+  const [chartKind, setChartKind] = useState<ChartKind>('bar');
   const loading = state.status === 'loading';
   const run = (request: string) => {
     setText(request);
-    void submit(request, chartType);
+    void submit(request, chartKind);
   };
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (text.trim()) void submit(text.trim(), chartType);
+    if (text.trim()) void submit(text.trim(), chartKind);
   };
   return (
     <Card className="mt-6 rounded-3xl border-ink/10 bg-white p-6 shadow-none" data-testid="chart-request">
@@ -44,19 +60,23 @@ export function ChartRequest() {
         </CardDescription>
       </CardHeader>
       <CardContent className="mt-5 flex flex-col gap-4 p-0">
+        <ToggleGroup
+          aria-label="Chart type"
+          className="flex-wrap justify-start"
+          onValueChange={(value) => {
+            if (value) setChartKind(value as ChartKind);
+          }}
+          type="single"
+          value={chartKind}
+          variant="outline"
+        >
+          {(Object.keys(KIND_LABELS) as ChartKind[]).map((kind) => (
+            <ToggleGroupItem key={kind} value={kind}>
+              {KIND_LABELS[kind]}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
         <form className="flex flex-col gap-2 sm:flex-row" onSubmit={onSubmit}>
-          <ToggleGroup
-            aria-label="Chart type"
-            onValueChange={(value) => {
-              if (value) setChartType(value as ChartType);
-            }}
-            type="single"
-            value={chartType}
-            variant="outline"
-          >
-            <ToggleGroupItem value="bar">Bar</ToggleGroupItem>
-            <ToggleGroupItem value="pie">Pie</ToggleGroupItem>
-          </ToggleGroup>
           <Label className="sr-only" htmlFor="chart-request-text">
             Chart request
           </Label>
@@ -99,10 +119,10 @@ export function ChartRequest() {
           )}
           {state.status === 'needs_bar' && (
             <Alert>
-              <AlertTitle>That one needs a bar chart</AlertTitle>
+              <AlertTitle>That chart type does not suit this request</AlertTitle>
               <AlertDescription>
-                A pie only works when the parts make one whole. Trends, activity and lists where a report can count twice do not, so pick
-                Bar.
+                Bar works for every request. A donut needs parts that make one whole, a line or area needs a trend over time, and a stacked
+                bar needs reports split by status. Pick another type.
               </AlertDescription>
             </Alert>
           )}
@@ -120,6 +140,7 @@ export function ChartRequest() {
 }
 
 function Result({ chart }: { chart: GeneratedChart }) {
+  const drawn = chart.config ?? chart.image;
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
@@ -133,15 +154,19 @@ function Result({ chart }: { chart: GeneratedChart }) {
           ))}
         </div>
       </div>
-      {chart.image ? (
+      {drawn ? (
         <Tabs defaultValue="chart">
           <TabsList>
             <TabsTrigger value="chart">Chart</TabsTrigger>
             <TabsTrigger value="table">Table</TabsTrigger>
           </TabsList>
           <TabsContent value="chart">
-            {/* biome-ignore lint/performance/noImgElement: a data URL our server built, so next/image has nothing to fetch or optimise */}
-            <img alt={`${chart.title}, ${chart.scope.join(', ')}`} className="h-auto w-full max-w-xl" src={chart.image} />
+            {chart.config ? (
+              <ChartJsView config={chart.config} label={chartSummary(chart)} />
+            ) : (
+              /* biome-ignore lint/performance/noImgElement: a data URL our server built, so next/image has nothing to fetch or optimise */
+              <img alt={chartSummary(chart)} className="h-auto w-full max-w-xl" src={chart.image ?? ''} />
+            )}
           </TabsContent>
           <TabsContent value="table">
             <Figures chart={chart} />

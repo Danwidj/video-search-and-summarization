@@ -78,7 +78,7 @@ def test_passes_the_figures_to_the_tool_and_returns_the_image_key():
     response = _client(tool).post("/api/v1/incidents/charts", json=BODY)
     assert response.status_code == 200
     assert response.json() == [
-        {"success": True, "error_message": None, "object_store_key": "dashboard-charts/abc_0.png"}
+        {"success": True, "error_message": None, "object_store_key": "dashboard-charts/abc_0.png", "chart_config": None}
     ]
     sent = tool.ainvoke.await_args.args[0]
     assert sent["charts_data"][0]["series"] == {"Official": [1.0, 0.0], "Not official": [4.0, 2.0]}
@@ -181,3 +181,37 @@ def test_the_chart_request_validates_its_body_before_the_model():
     assert post({**CHAT_BODY, "history": []}) == 422
     assert post({**CHAT_BODY, "system_prompt": "x"}) == 422  # the old shape is refused
     llm.ainvoke.assert_not_awaited()
+
+
+def test_returns_the_chartjs_configuration_with_the_figures_it_was_sent():
+    config = {
+        "type": "bar",
+        "data": {"labels": ["Assault", "Burglary"], "datasets": [{"label": "Official", "data": [1.0, 0.0]}]},
+        "options": {"responsive": True},
+    }
+    tool = MagicMock()
+    tool.ainvoke = AsyncMock(return_value=[ChartGenExecOutput(success=True, error_message=None, chart_config=config)])
+    chartjs = {
+        "output": "chartjs",
+        "kind": "bar",
+        "title": "Reports by incident type",
+        "labels": ["Assault", "Burglary"],
+        "series": [{"label": "Official", "values": [1, 0], "color": "#174f3b"}],
+    }
+    response = _client(tool).post("/api/v1/incidents/charts", json={"charts_data": [chartjs]})
+    assert response.status_code == 200
+    assert response.json() == [
+        {"success": True, "error_message": None, "object_store_key": None, "chart_config": config}
+    ]
+    sent = tool.ainvoke.await_args.args[0]
+    assert sent["charts_data"][0]["series"] == [{"label": "Official", "values": [1.0, 0.0], "color": "#174f3b"}]
+    assert sent["charts_data"][0]["labels"] == ["Assault", "Burglary"]
+
+
+def test_a_chartjs_request_with_a_mismatched_figure_count_is_refused():
+    tool = MagicMock()
+    tool.ainvoke = AsyncMock(return_value=[])
+    bad = {"output": "chartjs", "kind": "bar", "labels": ["a", "b"], "series": [{"label": "R", "values": [1]}]}
+    response = _client(tool).post("/api/v1/incidents/charts", json={"charts_data": [bad]})
+    assert response.status_code == 422
+    tool.ainvoke.assert_not_awaited()

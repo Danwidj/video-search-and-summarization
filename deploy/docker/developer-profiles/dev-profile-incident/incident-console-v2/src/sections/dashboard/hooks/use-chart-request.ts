@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getViewerTimeZone } from '@/lib/time';
-import type { ChartAnswer, ChartType, GeneratedChart } from '@/modules/dashboard/domain/generated-chart';
+import type { ChartAnswer, ChartKind, GeneratedChart } from '@/modules/dashboard/domain/generated-chart';
 
 export type ChartRequestState =
   | { status: 'idle' }
@@ -18,7 +18,7 @@ const FAILED = 'Could not build the chart';
 /** One request: only its own text, the chosen chart type and the time zone are sent. */
 export async function requestChart(
   request: string,
-  chartType: ChartType,
+  chartType: ChartKind,
   timezone: string,
   signal?: AbortSignal,
 ): Promise<ChartRequestState> {
@@ -39,7 +39,7 @@ export function useChartRequest() {
   const [state, setState] = useState<ChartRequestState>({ status: 'idle' });
   const inFlight = useRef<AbortController | null>(null);
   useEffect(() => () => inFlight.current?.abort(), []);
-  const submit = useCallback(async (request: string, chartType: ChartType) => {
+  const submit = useCallback(async (request: string, chartType: ChartKind) => {
     const controller = new AbortController();
     inFlight.current = controller;
     setState({ status: 'loading' });

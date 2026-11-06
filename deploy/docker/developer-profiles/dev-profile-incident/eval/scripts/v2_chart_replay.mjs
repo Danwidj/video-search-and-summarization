@@ -54,7 +54,8 @@ for (const item of input.cases) {
     },
   };
   const interpreter = { interpret: async () => item.spec };
-  const renderer = { draw: async () => null };
+  // No configuration back, so the console takes its PNG path; the figures are the same either way.
+  const renderer = { configure: async () => null, draw: async () => null };
   try {
     const answer = await generateChart(
       { interpreter, dashboard, renderer },
