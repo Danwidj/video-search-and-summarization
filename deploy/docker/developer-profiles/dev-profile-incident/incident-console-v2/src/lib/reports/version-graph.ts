@@ -6,6 +6,15 @@
 
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 
+/** The most characters of a human version's note its row shows; the row's hover title has the whole note. */
+export const VERSION_NOTE_MAX_CHARS = 10;
+
+/** A version's note as its row shows it: whole when it fits, else its first characters and an ellipsis. Counts characters, so an emoji is never split. */
+export function shortVersionNote(note: string): string {
+  const characters = Array.from(note);
+  return characters.length <= VERSION_NOTE_MAX_CHARS ? note : `${characters.slice(0, VERSION_NOTE_MAX_CHARS).join('')}…`;
+}
+
 export interface GraphSegment {
   lane: number;
   /** The lane's line reaches this row from the one above it. */

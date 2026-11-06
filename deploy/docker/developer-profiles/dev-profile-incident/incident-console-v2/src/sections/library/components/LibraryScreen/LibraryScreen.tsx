@@ -4,11 +4,10 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { MessageSquareTextIcon, PlusIcon } from 'lucide-react';
+import { PlusIcon } from 'lucide-react';
 
 import { EvidenceTab, type EvidenceScope } from '@/sections/library/components/EvidenceTab';
 import { IncidentCard } from '@/sections/library/components/IncidentCard';
-import { LibraryChat } from '@/sections/library/components/LibraryChat';
 import { CardSkeleton, ErrorPanel, FilterChip, Select } from '@/sections/library/components/Shared';
 import {
   type DatePreset,
@@ -27,7 +26,6 @@ import { getViewerTimeZone } from '@/lib/time';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination';
 
 type Tab = 'incidents' | 'evidence';
@@ -231,21 +229,6 @@ export function Library() {
           <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">Incident reports</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button className="font-semibold" data-testid="library-chat-open" variant="outline">
-                <MessageSquareTextIcon data-icon="inline-start" />
-                Ask the library
-              </Button>
-            </SheetTrigger>
-            <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
-              <SheetHeader>
-                <SheetTitle>Ask the library</SheetTitle>
-                <SheetDescription>Questions across every incident report, with cited evidence.</SheetDescription>
-              </SheetHeader>
-              <LibraryChat />
-            </SheetContent>
-          </Sheet>
           <Button asChild className="bg-ink font-semibold text-white hover:bg-ink/90">
             <Link href="/">
               <PlusIcon className="size-4" />

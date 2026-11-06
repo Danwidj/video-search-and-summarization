@@ -13,7 +13,14 @@ const { uploadEvidenceImage } = await import('../src/lib/evidence/evidence-image
 
 const crop = new Blob(['jpeg'], { type: 'image/jpeg' });
 const draft = () => ({
-  incident: { type: 'burglary', start_timestamp: 0, end_timestamp: 10, description: 'A break-in.', severity_level: 3 },
+  incident: {
+    type: 'burglary',
+    title: 'An incident',
+    start_timestamp: 0,
+    end_timestamp: 10,
+    description: 'A break-in.',
+    severity_level: 3,
+  },
   entities: [
     {
       key: 'entity-0',

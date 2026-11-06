@@ -155,9 +155,11 @@ test('report chat uses the same title band as report sections', async () => {
 
 test('edit evidence pairs fit the evidence-card footprint', async () => {
   const edit = await readFile(new URL('reports/components/ReportEditPane/ReportEditPane.tsx', components), 'utf8');
-  assert.match(edit, /w-\[min\(24rem,calc\(100vw-4rem\)\)\]/);
-  assert.doesNotMatch(edit, /w-\[min\(42rem,calc\(100vw-4rem\)\)\]/);
-  assert.doesNotMatch(edit, /CardHeader className="gap-0 border-b/, 'edit evidence cards do not add a separate title band');
+  const carousel = await readFile(new URL('evidence/components/EvidenceCarousel/EvidenceCarousel.tsx', components), 'utf8');
+  assert.match(edit, /<EvidenceCarousel[^>]* lanes>/, 'the A and B lanes sit in the carousel, which sets their width');
+  assert.match(carousel, /auto-cols-\[min\(24rem,calc\(100vw-4rem\)\)\]/, 'a pair is one evidence card wide');
+  assert.doesNotMatch(`${edit}${carousel}`, /min\(42rem,calc\(100vw-4rem\)\)/, 'never the old double-width pair');
+  assert.match(edit, /CardHeader className="gap-0 border-b/, 'an edit card has the same title band under its image as a View card');
   assert.match(edit, /max-w-88 gap-0 overflow-hidden/, 'the video and title content have no card-level gap');
   assert.match(edit, /<DraftVideoFrame/, 'a newly selected box is previewed from the browser-loaded video in its draft card');
   assert.match(edit, /testId="draft-evidence-video-preview"/);

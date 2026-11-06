@@ -97,7 +97,10 @@ export function TrackFrame({
 
   return (
     <div
-      className={cn('relative aspect-video select-none overflow-hidden rounded-xl bg-black', drawing && !busy && 'cursor-crosshair')}
+      className={cn(
+        'relative mx-auto aspect-video w-full max-w-[calc((100dvh-30rem)*16/9)] select-none overflow-hidden rounded-xl bg-black',
+        drawing && !busy && 'cursor-crosshair',
+      )}
       data-box-state={at.state}
       data-testid="track-frame"
       onPointerCancel={(event) => finish(event, false)}

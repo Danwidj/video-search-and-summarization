@@ -26,7 +26,7 @@ export function getServiceConfiguration(): ServiceConfiguration {
     analysisMode,
     agentUrl: optionalEnvironmentValue('INCIDENT_AGENT_BASE_URL'),
     gatewayUrl: optionalEnvironmentValue('VLM_GATEWAY_URL'),
-    vlmModel: optionalEnvironmentValue('VLM_MODEL') || 'nvidia/cosmos-3-nano-reasoner',
+    vlmModel: optionalEnvironmentValue('VLM_MODEL') || 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
     supabaseUrl: optionalEnvironmentValue('INCIDENT_SUPABASE_URL'),
     supabaseServiceRoleKey: optionalEnvironmentValue('INCIDENT_SUPABASE_SERVICE_ROLE_KEY'),
     r2AccountId: optionalEnvironmentValue('R2_ACCOUNT_ID'),

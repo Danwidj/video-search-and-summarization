@@ -6,6 +6,7 @@
 // presence bar shows.
 
 import { boxRegion, containFrame } from '@/lib/evidence/frame-geometry';
+import type { EditDraft } from '@/modules/reports/domain/edit-draft';
 import type { ReportView } from '@/modules/reports/domain/report-view';
 import type { EvidenceItemType } from '@/modules/reports/domain/revision';
 
@@ -136,8 +137,8 @@ export function presenceSeekSeconds(fraction: number, durationSeconds: number, f
 }
 
 /**
- * An untracked item's box held on the player: the stored box at the second it was found. An item with a track draws that
- * track instead; one with no box, no second or a detector miss has nothing to hold.
+ * An untracked item's box on the player: the stored box, shown for a moment from the second it was found. An item with a
+ * track draws that track instead; one with no box, no second or a detector miss has nothing to show.
  */
 export interface StillBox {
   id: string;
@@ -164,14 +165,33 @@ export function stillBoxFor(item: {
   return { id: item.id, label: item.title, box: evidence.boundingBox as number[], seconds: evidence.boxSeconds };
 }
 
-/** How far the playhead may drift from a held still box before the player has moved on and the box goes. */
-export const STILL_BOX_TOLERANCE_SECONDS = 0.25;
-/** Whether a held still box still belongs to the frame on screen: the player is paused at its second, give or take. */
-export const stillBoxHolds = (still: StillBox, playheadSeconds: number): boolean =>
-  Math.abs(playheadSeconds - still.seconds) <= STILL_BOX_TOLERANCE_SECONDS;
+/** How long a still box stays on the player from its second. It is one stored box, not a following one, so it stays short. */
+export const STILL_BOX_WINDOW_SECONDS = 2;
+/** How far before its second a still box already shows: a seek can land a frame short of the second it asked for. */
+export const STILL_BOX_LEAD_SECONDS = 0.25;
+/** Whether a still box is on screen at this playhead, playing or paused. */
+export const stillBoxShows = (still: StillBox, playheadSeconds: number): boolean =>
+  playheadSeconds >= still.seconds - STILL_BOX_LEAD_SECONDS && playheadSeconds <= still.seconds + STILL_BOX_WINDOW_SECONDS;
 
-/** One stable colour per tracked item, by its position among the report's tracked items (sorted by id). */
-const TRACK_COLOURS = ['#22c55e', '#3b82f6', '#f97316', '#e11d48', '#a855f7', '#14b8a6', '#eab308', '#ec4899'] as const;
+/**
+ * One stable colour per tracked item, by its position among the report's tracked items (entities, then instruments,
+ * then assets, each by id), so the first ten items of any type never share one. Ten hues far apart in CIELAB (the closest
+ * pair is about 21 apart) and each dark enough for white label text on video.
+ */
+export const TRACK_COLOURS = [
+  '#15803d', // green
+  '#2563eb', // blue
+  '#ea580c', // orange
+  '#dc2626', // red
+  '#9333ea', // purple
+  '#0e7490', // cyan
+  '#a16207', // gold
+  '#db2777', // pink
+  '#78350f', // brown
+  '#475569', // slate
+] as const;
+/** The colour of an untracked item's stored box, on the player and on its card: dark text on it, unlike the track colours. */
+export const STILL_BOX_COLOUR = '#fbbf24';
 export const trackColour = (index: number): string =>
   TRACK_COLOURS[((index % TRACK_COLOURS.length) + TRACK_COLOURS.length) % TRACK_COLOURS.length];
 
@@ -186,9 +206,9 @@ export interface TrackedReportItem {
   colour: string;
 }
 
-/** The report's tracked items (entities, then instruments, then assets, each by id), each with its colour. */
-export function trackedReportItems(structured: ReportView['structured']): TrackedReportItem[] {
-  const all = [
+/** The report's items in the order they take colours (entities, then instruments, then assets, each by id), named as the player names them. */
+function reportItems(structured: ReportView['structured']) {
+  return [
     ...structured.entities.map((item) => ({
       kind: 'entity' as const,
       id: item.entityId,
@@ -208,9 +228,25 @@ export function trackedReportItems(structured: ReportView['structured']): Tracke
       evidence: item.evidence,
     })),
   ];
-  return all
+}
+
+/** The still box of every untracked item in the report. */
+export function stillBoxesFor(structured: ReportView['structured']): StillBox[] {
+  return reportItems(structured).flatMap(({ id, label, evidence }) => stillBoxFor({ id, title: label, evidence }) ?? []);
+}
+
+/** Whether a saved item has a track the player can read and a span to show for it. */
+function isTracked<T extends ReportView['structured']['entities'][number]['evidence']>(
+  evidence: T,
+): evidence is T & { trackUrl: string; trackFirstSeenSeconds: number; trackLastSeenSeconds: number } {
+  return !!evidence?.trackUrl && evidence.trackFirstSeenSeconds !== null && evidence.trackLastSeenSeconds !== null;
+}
+
+/** The report's tracked items (entities, then instruments, then assets, each by id), each with its colour. */
+export function trackedReportItems(structured: ReportView['structured']): TrackedReportItem[] {
+  return reportItems(structured)
     .flatMap(({ kind, id, label, evidence }) => {
-      if (!evidence?.trackUrl || evidence.trackFirstSeenSeconds === null || evidence.trackLastSeenSeconds === null) return [];
+      if (!isTracked(evidence)) return [];
       return [
         {
           kind,
@@ -223,4 +259,66 @@ export function trackedReportItems(structured: ReportView['structured']): Tracke
       ];
     })
     .map((item, index) => ({ ...item, colour: trackColour(index) }));
+}
+
+/** An item of the draft that has a track, as the Edit mode overlay draws it: its stored track's route, or a reviewer's samples held in the browser. */
+export interface DraftTrackedItem {
+  id: string;
+  label: string;
+  colour: string;
+  trackUrl: string | null;
+  samples?: TrackSample[];
+}
+
+/** The frame second and box of a draft item's new evidence image. */
+export interface DraftItemFrame {
+  seconds: number;
+  box: number[];
+}
+
+/**
+ * What the video shows for an edit draft, before Save: an unchanged item keeps its saved track or still box (found through
+ * its source id), a re-tracked or added item shows the reviewer's track or still, and a deleted one shows nothing. Items are
+ * keyed by draft key, and take colours by position in the order Save stores them, so a draft's colours are the ones the
+ * saved version will show; an item added to a kind can only shift the tracked items of the kinds after it. `frames` holds
+ * the second and box of each item whose evidence image Save will cut anew (a pick, else a reviewer track's first sample, else
+ * a reviewer still), so the timeline's thumbnail agrees with the box on the video.
+ */
+export function draftOverlay(
+  draft: EditDraft,
+  base: ReportView['structured'] | null,
+): { tracks: DraftTrackedItem[]; stills: StillBox[]; frames: Record<string, DraftItemFrame> } {
+  const saved = new Map(base ? reportItems(base).map((item) => [`${item.kind}:${item.id}`, item.evidence]) : []);
+  const items = [
+    ...draft.entities.map((item) => ({ kind: 'entity' as const, item, label: item.label || item.type || item.canonicalId })),
+    ...draft.instruments.map((item) => ({ kind: 'instrument' as const, item, label: item.name || item.sourceId || 'New instrument' })),
+    ...draft.assets.map((item) => ({ kind: 'asset' as const, item, label: item.name || item.sourceId || 'New asset' })),
+  ];
+  const tracks: DraftTrackedItem[] = [];
+  const stills: StillBox[] = [];
+  const frames: Record<string, DraftItemFrame> = {};
+  for (const { kind, item, label } of items) {
+    const { key: id, reviewer, imagePick } = item;
+    const evidence = item.sourceId ? (saved.get(`${kind}:${item.sourceId}`) ?? null) : null;
+    const common = { id, label, colour: trackColour(tracks.length) };
+    const firstSample = reviewer?.track?.samples[0];
+    const ownStill =
+      reviewer?.stillBox && reviewer.stillSeconds !== undefined ? { box: reviewer.stillBox, seconds: reviewer.stillSeconds } : null;
+    const frame = imagePick ?? (firstSample ? { box: firstSample.box, seconds: firstSample.t } : ownStill);
+    if (frame) frames[id] = frame;
+    if (reviewer?.track?.samples.length) tracks.push({ ...common, trackUrl: null, samples: reviewer.track.samples });
+    else if (!reviewer && isTracked(evidence)) tracks.push({ ...common, trackUrl: evidence.trackUrl });
+    else {
+      // Save moves a still item's stored box to a picked image, so the draft does too; a tracked item keeps its track.
+      const still = imagePick
+        ? { id, label, box: imagePick.box, seconds: imagePick.seconds }
+        : ownStill
+          ? { id, label, ...ownStill }
+          : reviewer
+            ? null
+            : stillBoxFor({ id, title: label, evidence });
+      if (still) stills.push(still);
+    }
+  }
+  return { tracks, stills, frames };
 }
