@@ -11,7 +11,13 @@
 // database function checks the rest.
 
 import type { ReportView } from '@/modules/reports/domain/report-view';
-import { firstSeen, type ReviewerDraftItem, type ReviewerPayload, reviewerPayload } from '@/modules/reports/domain/reviewer-item';
+import {
+  firstSeen,
+  type ImagePick,
+  type ReviewerDraftItem,
+  type ReviewerPayload,
+  reviewerPayload,
+} from '@/modules/reports/domain/reviewer-item';
 
 export const EDITABLE_INCIDENT_TYPES = ['road accident', 'burglary', 'explosion', 'assault', 'animal attack'] as const;
 export const EDITABLE_ENTITY_TYPES = ['human', 'animal', 'unknown'] as const;
@@ -26,6 +32,8 @@ interface EditItemDetails {
   image_box?: number[] | null;
   /** A reviewer-boxed or re-tracked item: the server cuts its crop and frame at the first-seen second and stores its track. */
   reviewer?: ReviewerPayload | null;
+  /** Set image: the frame second and box the reviewer chose; the server cuts the evidence image there and keeps the track and text. */
+  image_pick?: ImagePick | null;
 }
 /** An entity's on-screen span, in seconds from the video start (the contract's first/last seen). */
 interface EditEntitySpan {
@@ -60,6 +68,8 @@ interface DraftItemDetails {
   imageBox: number[] | null;
   /** Set by the box tool (or a re-track): Save stores the track and cuts the evidence image from its first-seen second. */
   reviewer: ReviewerDraftItem | null;
+  /** Set image: the frame and box the reviewer drew for this item's evidence image; Save cuts it, its track and text are untouched. */
+  imagePick: ImagePick | null;
 }
 
 /** An in-progress edit: values a report may lack (type, times, threat level) start empty and must be chosen. */
@@ -132,6 +142,7 @@ export function newItemDetails(prefix: string, draft: EditDraft): DraftItemDetai
     imageTimestampSeconds: null,
     imageBox: null,
     reviewer: null,
+    imagePick: null,
   };
 }
 
@@ -156,6 +167,7 @@ function details(
     imageTimestampSeconds: null,
     imageBox: null,
     reviewer: null,
+    imagePick: null,
   };
 }
 
@@ -244,6 +256,7 @@ const sent = (item: DraftItemDetails): EditItemDetails => ({
     ? { image_timestamp_seconds: item.imageTimestampSeconds, image_box: item.imageBox }
     : {}),
   ...(item.reviewer ? { reviewer: reviewerPayload(item.reviewer) } : {}),
+  ...(item.imagePick ? { image_pick: item.imagePick } : {}),
 });
 
 /** The edit sent to the server: sequential IDs by position, holders resolved to the renumbered entity IDs, each item's source_id kept. */

@@ -158,13 +158,37 @@ export function humanRevisionContent(
       duration: edit.incident.end_timestamp - edit.incident.start_timestamp,
     },
     entities: edit.entities.map(
-      ({ source_id: _source, image: _image, image_timestamp_seconds: _at, image_box: _box, reviewer: _reviewer, ...item }) => item,
+      ({
+        source_id: _source,
+        image: _image,
+        image_timestamp_seconds: _at,
+        image_box: _box,
+        reviewer: _reviewer,
+        image_pick: _pick,
+        ...item
+      }) => item,
     ),
     instruments: edit.instruments.map(
-      ({ source_id: _source, image: _image, image_timestamp_seconds: _at, image_box: _box, reviewer: _reviewer, ...item }) => item,
+      ({
+        source_id: _source,
+        image: _image,
+        image_timestamp_seconds: _at,
+        image_box: _box,
+        reviewer: _reviewer,
+        image_pick: _pick,
+        ...item
+      }) => item,
     ),
     assets: edit.assets.map(
-      ({ source_id: _source, image: _image, image_timestamp_seconds: _at, image_box: _box, reviewer: _reviewer, ...item }) => item,
+      ({
+        source_id: _source,
+        image: _image,
+        image_timestamp_seconds: _at,
+        image_box: _box,
+        reviewer: _reviewer,
+        image_pick: _pick,
+        ...item
+      }) => item,
     ),
   };
   const evidence: EvidenceEntry[] = [];

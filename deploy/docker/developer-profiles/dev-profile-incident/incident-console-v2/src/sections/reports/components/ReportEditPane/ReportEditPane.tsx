@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { evidenceDisplay, videoFrameUrl } from '@/lib/evidence/evidence-view';
 import type { BoxToolClient } from '@/lib/evidence/box-tool-client';
 import { addBoxItem, holderChoices, retrackDraftItem } from '@/lib/evidence/box-tool';
+import { pickSeed, setImagePick } from '@/lib/evidence/image-pick';
 import {
   deleteDraftItem,
   draftItemName,
@@ -33,7 +34,7 @@ import {
 } from '@/lib/reports/compare';
 import { severityStyle } from '@/lib/ui/severity';
 import { cn } from '@/lib/utils';
-import type { ReviewerDraftItem as BoxToolItem, ReviewerTrack } from '@/modules/reports/domain/reviewer-item';
+import type { ImagePick, ReviewerDraftItem as BoxToolItem, ReviewerTrack } from '@/modules/reports/domain/reviewer-item';
 import type { EvidenceItemType as BoxItemType } from '@/modules/reports/domain/revision';
 import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, type EditDraft } from '@/modules/reports/domain/edit-draft';
 import { formatClock } from '@/modules/reports/domain/normalize';
@@ -41,6 +42,7 @@ import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
 import { EvidenceCarousel } from '@/sections/evidence/components/EvidenceCarousel';
 import { BoxTool, type ExistingItem } from '@/sections/evidence/components/BoxTool';
 import { BoxCanvas } from '@/sections/evidence/components/BoxTool/BoxCanvas';
+import { EvidenceImagePicker } from '@/sections/evidence/components/EvidenceImagePicker';
 import { TrackEditor } from '@/sections/evidence/components/TrackEditor';
 import { trackEditorSource } from '@/lib/evidence/track-editor-source';
 
@@ -57,8 +59,9 @@ const draftDisplayId = (item: NonNullable<PairRow['b']>) =>
  * holds); Revert puts an edited or deleted item back exactly as A has it.
  * "+ Add evidence" opens the box tool: the reviewer draws a box, the AI names
  * and tracks it, and the result goes into a new draft item. Edit track adjusts
- * an existing item's track without touching its text. An item's evidence image
- * is always the first second it is seen.
+ * an existing item's track without touching its text. Set image changes only an
+ * item's evidence image: the reviewer picks a frame and draws the crop. Without
+ * one, an item's evidence image is the first second it is seen.
  */
 export function ReportEditPane({
   a,
@@ -98,6 +101,11 @@ export function ReportEditPane({
     row: NonNullable<PairRow['b']>;
     saved: NonNullable<PairRow['a']>['evidence'] | null;
   } | null>(null);
+  // Set image: pick a frame and draw the crop for a card's evidence image. `saved` is the opened version's item evidence.
+  const [imagePicker, setImagePicker] = useState<{
+    row: NonNullable<PairRow['b']>;
+    saved: NonNullable<PairRow['a']>['evidence'] | null;
+  } | null>(null);
   const pairing = pairReport(a, draft);
   const patchIncident = (patch: Partial<EditDraft['incident']>) => onChange({ ...draft, incident: { ...draft.incident, ...patch } });
   const patchEntity = (key: string, patch: Partial<EditDraft['entities'][number]>) =>
@@ -117,6 +125,15 @@ export function ReportEditPane({
   };
   const editTrack = (row: PairRow) => {
     if (row.b) setTrackEditor({ row: row.b, saved: row.a?.evidence ?? null });
+  };
+  const setImage = (row: PairRow) => {
+    if (row.b) setImagePicker({ row: row.b, saved: row.a?.evidence ?? null });
+  };
+  const finishImagePicker = (pick: ImagePick) => {
+    const target = imagePicker?.row;
+    if (!target) return;
+    onChange(setImagePick(draft, itemKind(target), target.key, pick));
+    setImagePicker(null);
   };
   const finishTrackEditor = (track: ReviewerTrack) => {
     const target = trackEditor?.row;
@@ -400,6 +417,7 @@ export function ReportEditPane({
                   key={rowKey(row)}
                   onRemove={remove}
                   onEditTrack={editTrack}
+                  onSetImage={setImage}
                   onRevert={revert}
                   onSeek={onSeek}
                   patchAsset={patchAsset}
@@ -425,6 +443,18 @@ export function ReportEditPane({
           {...trackEditorProps(trackEditor.row, trackEditor.saved)}
         />
       )}
+      {imagePicker && (
+        <EvidenceImagePicker
+          itemId={imagePicker.row.sourceId}
+          kind={itemKind(imagePicker.row)}
+          name={draftItemName(imagePicker.row)}
+          onClose={() => setImagePicker(null)}
+          onDone={finishImagePicker}
+          seed={pickSeed(imagePicker.row, imagePicker.saved)}
+          videoId={videoId}
+          videoSrc={videoSrc}
+        />
+      )}
       {boxTool && (
         <BoxTool
           client={boxClient}
@@ -440,6 +470,9 @@ export function ReportEditPane({
     </div>
   );
 }
+
+const itemKind = (item: NonNullable<PairRow['b']>): BoxItemType =>
+  isDraftEntity(item) ? 'entity' : isDraftInstrument(item) ? 'instrument' : 'asset';
 
 /** What the track editor opens with: the item's track (the reviewer's or the saved one), else a still box, else nothing. */
 function trackEditorProps(item: NonNullable<PairRow['b']>, saved: NonNullable<PairRow['a']>['evidence'] | null) {
@@ -479,6 +512,7 @@ function PairRowView({
   holderOptions,
   onRemove,
   onEditTrack,
+  onSetImage,
   onRevert,
   onSeek,
   patchEntity,
@@ -496,6 +530,7 @@ function PairRowView({
   holderOptions: Array<{ key: string; label: string }>;
   onRemove: (row: PairRow) => void;
   onEditTrack: (row: PairRow) => void;
+  onSetImage: (row: PairRow) => void;
   onRevert: (row: PairRow) => void;
   onSeek: (seconds: number) => void;
   patchEntity: PatchEntity;
@@ -529,6 +564,7 @@ function PairRowView({
             item={row.b}
             onRemove={() => onRemove(row)}
             onEditTrack={() => onEditTrack(row)}
+            onSetImage={() => onSetImage(row)}
             onRevert={changed ? () => onRevert(row) : null}
             onSeek={onSeek}
             patchAsset={patchAsset}
@@ -630,6 +666,7 @@ function EditCard({
   draftHolder,
   onRemove,
   onEditTrack,
+  onSetImage,
   onRevert,
   onSeek,
   patchEntity,
@@ -645,15 +682,19 @@ function EditCard({
   draftHolder: (instrument: EditDraft['instruments'][number]) => string;
   onRemove: () => void;
   onEditTrack: () => void;
+  onSetImage: () => void;
   onRevert: (() => void) | null;
   onSeek: (seconds: number) => void;
   patchEntity: PatchEntity;
   patchInstrument: PatchInstrument;
   patchAsset: PatchAsset;
 }) {
-  // A frame the reviewer picked is shown as the frame and the box they drew (the crop is only what Save stores for search);
-  // until then the draft shows the saved item's frame and box, as View does.
-  const picked = item.imageBox && item.imageTimestampSeconds !== null;
+  // A frame the reviewer picked (Set image) is shown as the frame and the box they drew (the crop is only what Save stores for
+  // search); until then the draft shows the saved item's frame and box, as View does.
+  const pick = item.imagePick;
+  const picked = pick !== null || (item.imageBox && item.imageTimestampSeconds !== null);
+  const pickedBox = pick ? pick.box : item.imageBox;
+  const pickedSeconds = pick ? pick.seconds : (item.imageTimestampSeconds ?? 0);
   const inherited = !picked && saved && saved.image === item.image ? evidenceDisplay(saved, videoId) : null;
   const browserPreview = item.sourceId === null && item.reviewer !== null;
   const nameInput = isDraftEntity(item) ? (
@@ -681,8 +722,8 @@ function EditCard({
   );
   return (
     <CardFrame
-      box={picked ? item.imageBox : (inherited?.box ?? item.reviewer?.track?.samples[0]?.box ?? item.reviewer?.stillBox ?? null)}
-      frameSrc={picked ? videoFrameUrl(videoId, item.imageTimestampSeconds ?? 0) : (inherited?.frameSrc ?? null)}
+      box={picked ? pickedBox : (inherited?.box ?? item.reviewer?.track?.samples[0]?.box ?? item.reviewer?.stillBox ?? null)}
+      frameSrc={picked ? videoFrameUrl(videoId, pickedSeconds) : (inherited?.frameSrc ?? null)}
       header={
         <>
           <Badge className="shrink-0 px-1.5 py-0 font-mono text-[10px] font-bold" variant="outline">
@@ -695,7 +736,8 @@ function EditCard({
       name={`${draftDisplayId(item)} · ${draftItemName(item)}`}
       notLocated={inherited?.notLocated ?? false}
       onSeek={onSeek}
-      previewVideoSrc={browserPreview ? videoSrc : null}
+      onSetImage={onSetImage}
+      previewVideoSrc={browserPreview && !pick ? videoSrc : null}
       seconds={item.timestampSeconds}
     >
       {isDraftEntity(item) && (
@@ -793,6 +835,14 @@ function EditCard({
           Most visible at <b className="font-mono">{clock(item.timestampSeconds)}</b>
         </p>
       )}
+      {pick && (
+        <p className="text-ink/50" data-testid="image-pick-line">
+          <Badge className="mr-1 text-[10px]" variant="outline">
+            Image set by you
+          </Badge>
+          frame at <b className="font-mono">{pickedSeconds.toFixed(1)} s</b>
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px] font-semibold">
         <Button
           className="h-6 rounded-full px-2 text-[11px] text-ink hover:bg-ink/5"
@@ -839,6 +889,7 @@ function CardFrame({
   notLocated = false,
   seconds,
   onSeek,
+  onSetImage = null,
   previewVideoSrc = null,
   children,
 }: {
@@ -852,16 +903,21 @@ function CardFrame({
   notLocated?: boolean;
   seconds: number | null;
   onSeek: (seconds: number) => void;
+  /** Edit mode: clicking the image (and only the image) opens Set image for this item, instead of playing the video. */
+  onSetImage?: (() => void) | null;
   previewVideoSrc?: string | null;
   children: React.ReactNode;
 }) {
   return (
     <Card className="w-full max-w-88 gap-0 overflow-hidden rounded-xl border border-border/80 bg-card p-0 text-xs shadow-xs">
       <button
-        aria-label={seconds === null ? `${name} image` : `Play video from ${formatClock(seconds)}: ${name}`}
-        className="block w-full disabled:cursor-default focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-        disabled={seconds === null}
-        onClick={() => seconds !== null && onSeek(seconds)}
+        aria-label={
+          onSetImage ? `Set image: ${name}` : seconds === null ? `${name} image` : `Play video from ${formatClock(seconds)}: ${name}`
+        }
+        className="group relative block w-full disabled:cursor-default focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+        data-testid={onSetImage ? 'set-image' : undefined}
+        disabled={!onSetImage && seconds === null}
+        onClick={() => (onSetImage ? onSetImage() : seconds !== null && onSeek(seconds))}
         type="button"
       >
         {previewVideoSrc && seconds !== null ? (
@@ -879,6 +935,14 @@ function CardFrame({
             seconds={seconds}
             src={imageUrl}
           />
+        )}
+        {onSetImage && (
+          <span
+            className="pointer-events-none absolute inset-0 grid place-items-center bg-ink/0 text-[11px] font-semibold text-white opacity-0 transition group-hover:bg-ink/45 group-hover:opacity-100 group-focus-visible:bg-ink/45 group-focus-visible:opacity-100"
+            data-testid="set-image-hint"
+          >
+            Click to set the image
+          </span>
         )}
       </button>
       <CardHeader className="gap-0 border-b border-border/70 bg-primary/5 px-3 py-2.5">

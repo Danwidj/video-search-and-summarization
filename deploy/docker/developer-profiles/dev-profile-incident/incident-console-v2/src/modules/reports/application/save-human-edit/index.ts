@@ -32,7 +32,7 @@ export class SearchableStepError extends Error {
 }
 
 function hasReviewerItems(edit: StructuredEdit): boolean {
-  return [...edit.entities, ...edit.instruments, ...edit.assets].some((item) => item.reviewer);
+  return [...edit.entities, ...edit.instruments, ...edit.assets].some((item) => item.reviewer || item.image_pick);
 }
 
 /** An edit's item images must be ones the opened revision already used or new uploads for this video. */
