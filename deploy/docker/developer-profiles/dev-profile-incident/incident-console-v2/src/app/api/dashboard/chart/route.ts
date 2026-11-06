@@ -9,13 +9,14 @@ import { isValidTimeZone } from '@/lib/time';
 import { generateChart } from '@/modules/dashboard/application/generate-chart';
 import { ChartInterpreterError } from '@/modules/dashboard/domain/ChartInterpreter';
 import { ChartRenderError } from '@/modules/dashboard/domain/ChartRenderer';
-import { CHART_REQUEST_MAX_LENGTH, CHART_TYPES } from '@/modules/dashboard/domain/generated-chart';
+import { CHART_KIND_INPUTS, CHART_REQUEST_MAX_LENGTH } from '@/modules/dashboard/domain/generated-chart';
 
 // One request, one answer: nothing else is accepted, so no history can reach the model.
 const body = z
   .object({
     request: z.string().trim().min(1).max(CHART_REQUEST_MAX_LENGTH),
-    chartType: z.enum(CHART_TYPES),
+    // The kind the user picked. 'pie' is the former name of 'donut' and is still accepted.
+    chartType: z.enum(CHART_KIND_INPUTS),
     timezone: z.string().optional(),
   })
   .strict();
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
     const input = body.safeParse(await request.json().catch(() => null));
     if (!input.success) {
       return NextResponse.json(
-        { error: `Pick bar or pie and describe the chart in 1 to ${CHART_REQUEST_MAX_LENGTH} characters` },
+        { error: `Pick a chart type and describe the chart in 1 to ${CHART_REQUEST_MAX_LENGTH} characters` },
         { status: 400 },
       );
     }
