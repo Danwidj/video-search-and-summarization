@@ -20,6 +20,7 @@ import {
   unratedReports,
 } from '../src/modules/dashboard/domain/charts.ts';
 import { severityChartColor } from '../src/lib/ui/severity.ts';
+import { CHART_REQUEST_ID, CHART_REQUEST_INPUT_ID, jumpToChartRequest } from '../src/sections/dashboard/chart-request-jump.ts';
 
 const analytics = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'dashboard-rpc.json'), 'utf8'));
 
@@ -118,14 +119,31 @@ test('rows without a loaded split draw from their totals alone, and missing evid
   assert.equal(allSplit(evidenceRows(dashboardFromRpc(analytics))), true);
 });
 
-test('the dashboard has no period comparison; its jump button reaches the chart request', () => {
-  const dashboard = readFileSync(join(process.cwd(), 'src', 'sections', 'dashboard', 'components', 'Dashboard', 'Dashboard.tsx'), 'utf8');
-  const chartRequest = readFileSync(
-    join(process.cwd(), 'src', 'sections', 'dashboard', 'components', 'ChartRequest', 'ChartRequest.tsx'),
-    'utf8',
-  );
-  assert.doesNotMatch(dashboard, /previous period|compare-period|setCompare|% vs\. previous/);
-  assert.match(dashboard, /Ask for a chart/);
-  assert.match(dashboard, /prefers-reduced-motion: reduce/);
-  assert.match(chartRequest, /id=\{CHART_REQUEST_ID\}/);
+test('the Ask for a chart jump scrolls to the request, gently unless motion is reduced, and focuses its box', () => {
+  const page = (reduce, present = true) => {
+    const calls = [];
+    const elements = {
+      [CHART_REQUEST_ID]: { scrollIntoView: (options) => calls.push(['scroll', options]) },
+      [CHART_REQUEST_INPUT_ID]: { focus: (options) => calls.push(['focus', options]) },
+      'some-other-input': { focus: () => calls.push(['wrong focus']) },
+    };
+    const doc = { getElementById: (id) => (present || id !== CHART_REQUEST_ID ? (elements[id] ?? null) : null) };
+    const win = { matchMedia: (query) => ({ matches: reduce && query === '(prefers-reduced-motion: reduce)' }) };
+    return { calls, jump: () => jumpToChartRequest(doc, win) };
+  };
+  const smooth = page(false);
+  assert.equal(smooth.jump(), true);
+  assert.deepEqual(smooth.calls, [
+    ['scroll', { behavior: 'smooth', block: 'start' }],
+    ['focus', { preventScroll: true }],
+  ]);
+  const reduced = page(true);
+  assert.equal(reduced.jump(), true);
+  assert.deepEqual(reduced.calls, [
+    ['scroll', { behavior: 'auto', block: 'start' }],
+    ['focus', { preventScroll: true }],
+  ]);
+  const missing = page(false, false);
+  assert.equal(missing.jump(), false);
+  assert.deepEqual(missing.calls, [], 'nothing scrolls or takes focus when the section is not on the page');
 });

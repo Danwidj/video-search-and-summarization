@@ -7,6 +7,7 @@ import { useState, type FormEvent } from 'react';
 
 import { chartSummary } from '@/modules/dashboard/domain/chart-summary';
 import { CHART_REQUEST_MAX_LENGTH, type ChartKind, type GeneratedChart } from '@/modules/dashboard/domain/generated-chart';
+import { CHART_REQUEST_ID, CHART_REQUEST_INPUT_ID } from '@/sections/dashboard/chart-request-jump';
 import { useChartRequest } from '@/sections/dashboard/hooks/use-chart-request';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -27,8 +28,7 @@ const ChartJsView = dynamic(() => import('./ChartJsView').then((module) => modul
   loading: () => <Skeleton className="h-72 w-full rounded-2xl" />,
 });
 
-/** The section's anchor id: the dashboard's Ask for a chart button scrolls to it. */
-export const CHART_REQUEST_ID = 'ask-for-a-chart';
+export { CHART_REQUEST_ID, CHART_REQUEST_INPUT_ID };
 
 const EXAMPLES = ['Incident distribution', 'Severity breakdown', 'Trends over time'];
 const KIND_LABELS: Record<ChartKind, string> = {
@@ -80,11 +80,11 @@ export function ChartRequest() {
           ))}
         </ToggleGroup>
         <form className="flex flex-col gap-2 sm:flex-row" onSubmit={onSubmit}>
-          <Label className="sr-only" htmlFor="chart-request-text">
+          <Label className="sr-only" htmlFor={CHART_REQUEST_INPUT_ID}>
             Chart request
           </Label>
           <Input
-            id="chart-request-text"
+            id={CHART_REQUEST_INPUT_ID}
             maxLength={CHART_REQUEST_MAX_LENGTH}
             onChange={(event) => setText(event.target.value)}
             placeholder="For example: high severity incidents per month"

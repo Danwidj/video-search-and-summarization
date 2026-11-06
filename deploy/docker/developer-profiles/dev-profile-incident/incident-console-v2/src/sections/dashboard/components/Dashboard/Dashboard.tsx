@@ -47,7 +47,8 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { cn } from 'cn';
-import { CHART_REQUEST_ID, ChartRequest } from '@/sections/dashboard/components/ChartRequest';
+import { jumpToChartRequest } from '@/sections/dashboard/chart-request-jump';
+import { ChartRequest } from '@/sections/dashboard/components/ChartRequest';
 
 const NONE: Filters = { type: '', severity: '', day: '', hour: '' };
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -149,14 +150,6 @@ export function Dashboard() {
   const emptyText = active ? 'No reports match these filters.' : days === 'all' ? 'No reports yet.' : 'No reports in this period.';
   const panel = (content: (d: DashboardAnalytics) => ReactNode, skeletonHeight: string) =>
     data ? content(data) : <Skeleton className={cn('w-full rounded-xl', skeletonHeight)} />;
-  // The jump link: smooth unless the viewer prefers reduced motion, then focus the request box without scrolling twice.
-  const jumpToChartRequest = () => {
-    const section = document.getElementById(CHART_REQUEST_ID);
-    if (!section) return;
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    section.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
-    section.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
-  };
   return (
     <div className="mx-auto max-w-[1500px] px-4 pb-20 pt-8 sm:px-6 lg:px-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -169,7 +162,7 @@ export function Dashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-4">
-          <Button className="border-ink/10 bg-white font-normal text-ink" onClick={jumpToChartRequest} variant="outline">
+          <Button className="border-ink/10 bg-white font-normal text-ink" onClick={() => jumpToChartRequest(document, window)} variant="outline">
             <ChartColumnIcon data-icon="inline-start" />
             Ask for a chart
           </Button>
