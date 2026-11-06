@@ -15,7 +15,8 @@ export type ChartDrawing = Pick<GeneratedChart, 'title' | 'categoryLabel' | 'val
 export interface ChartRenderer {
   /**
    * The Chart.js configuration with these figures placed in it, as the agent sent it; null when the
-   * service returned none. The caller checks it against the rows. Throws ChartRenderError when the call fails.
+   * service returned none or cannot build one (an agent without Chart.js output), so the caller draws the PNG.
+   * The caller checks it against the rows. Throws ChartRenderError when the call fails any other way.
    */
   configure(drawing: ChartDrawing): Promise<unknown>;
   /** The static PNG as a data URL (the fallback). Throws ChartRenderError when it could not be drawn. */

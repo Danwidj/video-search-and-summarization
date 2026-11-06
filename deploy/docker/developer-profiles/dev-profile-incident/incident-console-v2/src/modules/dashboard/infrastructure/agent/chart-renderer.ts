@@ -10,6 +10,17 @@ import { ChartRenderError, type ChartDrawing, type ChartRenderer } from '@/modul
 
 const OUTPUT_DIR = 'dashboard-charts';
 const TIMEOUT_MS = 30_000;
+/** What an agent without the chartjs output answers for a chartjs item: refused (422), unknown route (404) or not implemented (501). */
+const NO_CHARTJS_STATUSES = new Set([404, 422, 501]);
+
+class ChartServiceHttpError extends ChartRenderError {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`The chart service returned HTTP ${status}`);
+    this.status = status;
+  }
+}
 
 /** The figures as the agent's chartjs input: labels and one value list per series, exactly the rows' figures. */
 function chartJsData({ chartKind, title, categoryLabel, valueLabel, series, rows, sliceColors }: ChartDrawing) {
@@ -68,7 +79,7 @@ export class AgentChartRenderer implements ChartRenderer {
 
   private async fetch(path: string, init: RequestInit): Promise<Response> {
     const response = await fetch(`${this.baseUrl}${path}`, { ...init, cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (!response.ok) throw new ChartRenderError(`The chart service returned HTTP ${response.status}`);
+    if (!response.ok) throw new ChartServiceHttpError(response.status);
     return response;
   }
 
@@ -87,7 +98,12 @@ export class AgentChartRenderer implements ChartRenderer {
   }
 
   async configure(drawing: ChartDrawing): Promise<unknown> {
-    return configOf(await this.post({ charts_data: [chartJsData(drawing)] }));
+    try {
+      return configOf(await this.post({ charts_data: [chartJsData(drawing)] }));
+    } catch (error) {
+      if (error instanceof ChartServiceHttpError && NO_CHARTJS_STATUSES.has(error.status)) return null;
+      throw error;
+    }
   }
 
   async draw(drawing: ChartDrawing): Promise<string> {

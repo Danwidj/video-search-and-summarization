@@ -296,6 +296,67 @@ describe('the agent renderer', () => {
     }
   });
 
+  for (const status of [404, 422, 501]) {
+    test(`an agent that answers ${status} for the chartjs item gets the picture, not an error`, async () => {
+      const posted = [];
+      globalThis.fetch = async (url, init) => {
+        const path = String(url).replace('http://agent.test', '');
+        if (path === '/api/v1/incidents/charts') {
+          const [item] = JSON.parse(init.body).charts_data;
+          posted.push(item);
+          if (item.output === 'chartjs') return Response.json({ detail: 'Extra inputs are not permitted' }, { status });
+          return Response.json([{ success: true, error_message: null, object_store_key: 'dashboard-charts/old_0.png' }]);
+        }
+        if (init?.method === 'GET') return new Response(Buffer.from('image'));
+        return new Response(null, { status: 204 });
+      };
+      try {
+        const answer = await generateChart(
+          {
+            interpreter: { interpret: async () => spec({ dimension: 'severity' }) },
+            dashboard,
+            renderer: new AgentChartRenderer('http://agent.test'),
+          },
+          { request: 'severity breakdown', chartType: 'bar', timezone: 'UTC', now: NOW },
+        );
+        assert.equal(answer.kind, 'chart');
+        assert.equal(answer.chart.config, null);
+        assert.equal(answer.chart.image, 'data:image/png;base64,aW1hZ2U=');
+        assert.deepEqual(
+          posted.map((item) => item.output ?? item.chart_file_format),
+          ['chartjs', 'png'],
+        );
+        assert.deepEqual(posted[1].x_categories, ['Low', 'Medium', 'High']);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  }
+
+  test('a failing or unreachable agent is still an error, not the picture', async () => {
+    const drawing = {
+      chartKind: 'bar',
+      title: 'T',
+      categoryLabel: 'c',
+      valueLabel: 'v',
+      series: [OFFICIAL_SERIES],
+      rows: [{ category: 'A', values: { official: 1 } }],
+      sliceColors: null,
+    };
+    try {
+      for (const status of [500, 502, 503]) {
+        globalThis.fetch = async () => new Response('boom', { status });
+        await assert.rejects(() => new AgentChartRenderer('http://agent.test').configure(drawing), ChartRenderError);
+      }
+      globalThis.fetch = async () => {
+        throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      };
+      await assert.rejects(() => new AgentChartRenderer('http://agent.test').configure(drawing), ChartRenderError);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('a reply with no configuration is null, so the caller falls back to the picture', async () => {
     globalThis.fetch = async () => Response.json([{ success: true, error_message: null, object_store_key: 'k' }]);
     try {
