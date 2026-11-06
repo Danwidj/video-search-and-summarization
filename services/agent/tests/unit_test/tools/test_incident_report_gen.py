@@ -732,7 +732,7 @@ class TestTracking:
     async def test_the_flag_on_returns_the_tracking_summary(self, monkeypatch):
         monkeypatch.setenv("INCIDENT_TRACKING_ENABLED", "1")
         result, _ = await TestEndToEnd()._run(self._handler, tool_input=self.INPUT)
-        assert set(result.tracking) == {"enabled", "matched", "tracks", "elapsed_ms", "skipped"}
+        assert set(result.tracking) == {"enabled", "matched", "matched_by_time", "tracks", "elapsed_ms", "skipped"}
         assert result.tracking["enabled"] is True
 
     @pytest.mark.asyncio
