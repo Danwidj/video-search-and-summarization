@@ -172,7 +172,7 @@ test('an answer sits on the muted bubble, so its times, citation titles and vers
 
 test('the panel leads with the timeline question and says answers come from the stored report', () => {
   const chat = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportChat', 'ReportChat.tsx'), 'utf8');
-  assert.match(chat, /SUGGESTIONS = \['Show the timeline of events'/);
+  assert.match(chat, /SUGGESTIONS = \['Show the timeline of events'\];/, 'one suggestion: the panel stays short (PR 491)');
   assert.match(chat, /stored report for the version you have\s+open, not from a new look at the video/);
   assert.match(chat, /Answered from the stored report: \{message\.answeredFrom\}/);
   assert.doesNotMatch(chat, /Searching evidence/, 'nothing is searched, so the panel does not say so');
