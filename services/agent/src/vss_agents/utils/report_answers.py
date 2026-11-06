@@ -338,11 +338,15 @@ _PEOPLE_NOUNS = frozenset(
     {"man", "men", "woman", "women", "guy", "boy", "girl", "child", "attacker", "victim", "suspect"}
 )
 # Words that ask nothing beyond the kind of answer: "who appears", "what was identified".
-_PLAIN_TEXT = "appear appears anything anyone identified identify recorded listed list mentioned present there"
+_PLAIN_TEXT = (
+    "appear appears anything anyone identified identify recorded record listed list mentioned present there affected "
+    "rated rating level given part during between finish finishes timestamp timestamps point place individual individuals"
+)
 _PLAIN_WORDS = frozenset(_PLAIN_TEXT.split())
 # A question that leans on the conversation, or that asks for reasoning a template cannot give.
 _CONTEXT = re.compile(r"\b(?:he|she|they|him|her|them|his|hers|their|next|else|afterwards?)\b")
 _REASONING = re.compile(r"^\s*(?:why|how come)\b|\bhow did\b|\bexplain\b|\bbecause\b|\breason\b")
+_THIS_INCIDENT = re.compile(r"\b(?:in|of|for|during) (?:this|the) (?:event|incident)\b")
 _TIME_FIRST = re.compile(r"^\s*(?:when|what time|how long|at what (?:second|point|time|moment))\b")
 
 
@@ -1131,6 +1135,12 @@ def _incident_type(view: ReportView) -> ComposedAnswer:
     return ComposedAnswer(text, (), False, "type")
 
 
+def _chronology_asked(q: str) -> bool:
+    """Whether a lower-case question asks for the course of events. "This event" only names the incident: "what
+    property was involved in this event?" asks about the property."""
+    return bool(_CHRONOLOGY.search(_THIS_INCIDENT.sub(" ", q)))
+
+
 def _intent_words(q: str) -> set[str]:
     """The words of a lower-case question that say what kind of answer it wants, rather than what it is about."""
     return {
@@ -1258,9 +1268,11 @@ def compose(question: str, view: ReportView) -> ComposedAnswer:
         answer = _after_incident(view)
     elif _TIME_FIRST.search(q):
         answer = _when(view, targets)
-    elif _CHRONOLOGY.search(q) and _SEQUENCE.search(q):
+    elif _TYPE.search(q):
+        answer = _incident_type(view)
+    elif _chronology_asked(q) and _SEQUENCE.search(q):
         answer = _around(view, q)
-    elif _CHRONOLOGY.search(q):
+    elif _chronology_asked(q):
         answer = _chronology(view, targets)
     elif _TAKEN.search(q) or _HARM.search(q):
         # A question may ask both ("what was taken, or what could cause harm?"): each part is answered.
@@ -1273,8 +1285,6 @@ def compose(question: str, view: ReportView) -> ComposedAnswer:
                 all(part.insufficient_evidence for part in parts),
                 "taken-harm",
             )
-    elif _TYPE.search(q):
-        answer = _incident_type(view)
     elif _SEVERITY.search(q) and not targets:
         answer = _severity(view)
     elif _WHEN.search(q):

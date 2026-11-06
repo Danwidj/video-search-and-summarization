@@ -260,6 +260,21 @@ def test_a_time_in_any_report_field_is_known() -> None:
     assert body["grounding"]["unknown_times"] == []
 
 
+def test_a_time_stated_in_the_reports_own_words_is_known() -> None:
+    store = Store({7: _revision(incident={"type": "assault", "description": "At 0:07 he falls; at 1:15 he leaves."})})
+    body = _ask("When was he pushed?", FakeModel(answer="He falls at 0:07.", citations=[]), store=store).json()
+    assert body["grounding"]["unknown_times"] == []
+
+
+def test_a_time_stated_in_seconds_is_known_rounded_either_way() -> None:
+    store = Store(
+        {7: _revision(incident={"type": "assault", "description": "He leaves at about 4.5s, then 7-8.5 seconds."})}
+    )
+    answer = "He leaves at 0:04 or 0:05, then 0:07 to 0:08 or 0:09, not 0:15."
+    body = _ask("When was he pushed?", FakeModel(answer=answer, citations=[]), store=store).json()
+    assert body["grounding"]["unknown_times"] == ["0:15"]
+
+
 def test_ids_stay_out_of_the_text() -> None:
     body = _ask("Who pushed him?", FakeModel(answer="E2 pushes E1.")).json()
     assert "E2" not in body["message"]["content"] and body["grounding"]["ids_resolved"] == ["E2", "E1"]

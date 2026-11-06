@@ -38,6 +38,7 @@ from collections import Counter
 from dataclasses import dataclass
 from dataclasses import field
 import json
+import math
 import os
 import re
 import time
@@ -216,6 +217,9 @@ ROUTED_SCHEMA: dict[str, Any] = {
 _TIME = re.compile(r"(?<![\w:./])(?:(\d{1,2}):([0-5]\d):([0-5]\d)|(\d{1,3}):([0-5]\d))(?:\.\d+)?(?![\w:])")
 
 
+_SECONDS_IN_TEXT = re.compile(r"(?<![\w.:])(\d+(?:\.\d+)?)(?:\s*[-\u2013]\s*(\d+(?:\.\d+)?))?\s*(?:s|secs?|seconds?)\b")
+
+
 def routed_context(report: Mapping[str, Any], evidence: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """:func:`report_context` with the report's uncertainties, and each item's evidence second as a card shows it."""
     context = report_context(report, evidence)
@@ -240,6 +244,13 @@ def routed_messages(context: Mapping[str, Any], history: Sequence[Mapping[str, s
     return messages
 
 
+def _whole_seconds(match: re.Match[str]) -> int:
+    hours, minutes, seconds, short_minutes, short_seconds = match.groups()
+    if hours is not None:
+        return int(hours) * 3600 + int(minutes) * 60 + int(seconds)
+    return int(short_minutes) * 60 + int(short_seconds)
+
+
 def known_seconds(context: Mapping[str, Any]) -> set[int]:
     """Every whole second the report holds, which is every time an answer may give."""
     incident = context.get("incident") or {}
@@ -249,7 +260,17 @@ def known_seconds(context: Mapping[str, Any]) -> set[int]:
     for item in context.get("items") or []:
         raw += [item.get(key) for key in ("timestamp_seconds", "first_seen_seconds", "last_seen_seconds")]
         raw.append(item.get("evidence_second"))
-    return {int(value) for value in (_seconds(v) for v in raw) if value is not None}
+    known = {int(value) for value in (_seconds(v) for v in raw) if value is not None}
+    # A report may also state times in its own words: the description, an event or an uncertainty.
+    texts = [str(incident.get("description") or ""), *(str(u) for u in context.get("uncertainties") or [])]
+    texts += [str(event.get("description") or "") for event in context.get("timeline") or []]
+    texts += [str(item.get("description") or "") for item in context.get("items") or []]
+    known |= {_whole_seconds(match) for text in texts for match in _TIME.finditer(text)}
+    for text in texts:  # "at about 4.5s", "7-8.5 seconds": an answer may round either way when it writes m:ss
+        for match in _SECONDS_IN_TEXT.finditer(text):
+            for value in filter(None, match.groups()):
+                known |= {math.floor(float(value)), math.ceil(float(value))}
+    return known
 
 
 def unknown_times(text: str, context: Mapping[str, Any]) -> list[str]:
@@ -257,13 +278,7 @@ def unknown_times(text: str, context: Mapping[str, Any]) -> list[str]:
     known = known_seconds(context)
     out: list[str] = []
     for match in _TIME.finditer(text):
-        hours, minutes, seconds, short_minutes, short_seconds = match.groups()
-        whole = (
-            int(hours) * 3600 + int(minutes) * 60 + int(seconds)
-            if hours is not None
-            else int(short_minutes) * 60 + int(short_seconds)
-        )
-        if whole not in known and match.group(0) not in out:
+        if _whole_seconds(match) not in known and match.group(0) not in out:
             out.append(match.group(0))
     return out
 

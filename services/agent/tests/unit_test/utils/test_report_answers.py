@@ -205,6 +205,13 @@ def _moments():
     return ra.report_view(_report(timeline=events))
 
 
+def test_describe_and_event_do_not_turn_a_field_question_into_a_chronology():
+    view = ra.report_view(_report())
+    assert ra.compose("What kind of incident does this report describe?", view).kind == "type"
+    assert ra.compose("What property was involved in this event?", view).kind == "objects"
+    assert ra.compose("Describe what happened", view).kind == "chronology"
+
+
 def test_a_question_about_one_moment_is_not_the_whole_timeline():
     answer = ra.compose("What happened after the man fell?", _moments())
     assert answer.text.startswith("The report puts that moment at 0:10. After it:")
