@@ -3,7 +3,7 @@
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
 ### 2026-11-06: Chat routes by question behind `INCIDENT_CHAT_MODE=routed`, and a video check needs a click
-- **Status:** built and off. The default stays template. Turning either setting on needs a paid pilot and approval ([plan](mvp2/chat-routing.md#before-switching-on)).
+- **Status:** built and off. The default stays template. The text-model pilot ran on 6 Nov ([results](mvp2/chat-routing.md#text-model-pilot-2026-11-06-paid-owner-approved)); turning either setting on still needs approval ([plan](mvp2/chat-routing.md#before-switching-on)).
 - **Decision:**
   - A third mode, `routed`, answers report-field questions by code with no model call and sends the rest to the chat model, which reads the report only ([routes](mvp2/chat-routing.md#routes)).
   - It has its own prompt (`chat/incident-routed`) and contract (`chat-contract-v3`), so template stays v1 and grounded stays exactly as evaluated.
