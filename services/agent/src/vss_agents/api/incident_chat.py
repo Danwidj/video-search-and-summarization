@@ -44,6 +44,7 @@ import asyncio
 import logging
 import os
 import time
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import Literal
 from typing import Protocol
@@ -58,11 +59,16 @@ from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import model_validator
 
+from vss_agents.utils import chat_routing
 from vss_agents.utils import grounded_chat
 from vss_agents.utils import incident_db
 from vss_agents.utils import report_answers
+from vss_agents.utils import video_check
 from vss_agents.utils.crop_evidence import evidence_items
 from vss_agents.utils.r2 import resolve_r2_url
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -459,6 +465,13 @@ class EvidenceCitation(BaseModel):
     crop_image_url: str
 
 
+class VideoOffer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(..., min_length=1)
+    from_seconds: float | None = Field(default=None, ge=0)
+
+
 class AssistantMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -467,6 +480,9 @@ class AssistantMessage(BaseModel):
     citations: list[EvidenceCitation]
     # chat-contract-v2 only (grounded mode); absent from a template answer, which stays chat-contract-v1.
     insufficient_evidence: bool | None = None
+    # chat-contract-v3 only (routed mode).
+    source: Literal["report", "report_llm"] | None = None
+    video_offer: VideoOffer | None = None
 
 
 class ChatResponse(BaseModel):
@@ -478,11 +494,12 @@ class ChatResponse(BaseModel):
 
 
 CHAT_MODE_ENV = "INCIDENT_CHAT_MODE"
-CHAT_MODES = ("template", "grounded")
+CHAT_MODES = ("template", "grounded", "routed")
 
 
 def chat_mode() -> str:
-    """``template`` (the default: keyword-ranked evidence, no model call) or ``grounded`` (a chat model answers)."""
+    """``template`` (the default: composed from the report, no model call), ``grounded`` (a chat model answers every
+    question) or ``routed`` (code answers what it can, the chat model the rest; see :mod:`.chat_routing`)."""
     mode = (os.environ.get(CHAT_MODE_ENV) or "template").strip().lower()
     if mode not in CHAT_MODES:
         raise ValueError(f"{CHAT_MODE_ENV} must be one of {CHAT_MODES}, got {mode!r}")
@@ -622,6 +639,99 @@ def create_incident_chat_router(
             session_id=session_id,
             message=AssistantMessage(
                 content=answer.content, citations=citations, insufficient_evidence=answer.insufficient_evidence
+            ),
+            grounding=grounding,
+        )
+
+    async def _routed(body: ChatRequest, session_id: str, incident_id: str | None) -> ChatResponse:
+        """One question through the routes of :mod:`.chat_routing`: code, else the chat model, over one version.
+
+        The version is the asked one, else the official one. Nothing here reads the video: a check is only offered,
+        when the agent has them on, and the reviewer's confirmation runs it on its own route.
+        """
+        version_id = body.version_id
+        try:
+            if version_id is None:
+                assert incident_id is not None
+                version_id = await revisions.get_official_revision_id(incident_id)
+                if version_id is None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Incident {incident_id} has no official report version; send version_id",
+                    )
+            located = body.model_copy(update={"version_id": version_id})
+            revision, video_id = await _load_version(
+                located, {"incident_id": incident_id} if incident_id else {}, revisions
+            )
+            official = await revisions.get_official_revision_id(video_id) == version_id
+        except RevisionStoreUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=f"Report revisions unavailable: {exc}") from exc
+        report, evidence, retired = _version_report(revision, body.draft_report)
+        view = report_answers.report_view(report, evidence, retired=retired)
+        question = next(m.content for m in reversed(body.messages) if m.role == "user").strip()
+        decision = chat_routing.decide(question, view)
+        grounding: dict[str, Any] = {
+            "mode": "routed",
+            "scope": "incident",
+            "model": None,
+            "version_id": version_id,
+            "official": official,
+            "draft": body.draft_report is not None,
+            "dropped_citations": [],
+            "route": decision.route,
+            "route_reason": decision.reason,
+        }
+        offer: VideoOffer | None = None
+        checks_video = video_check.enabled()
+        earlier = any(message.role == "assistant" for message in body.messages)
+        if decision.reason == "needs_reading" and not earlier and report_answers.has_no_subject(question, view):
+            return ChatResponse(
+                session_id=session_id,
+                message=AssistantMessage(content=NO_SUBJECT, citations=[], insufficient_evidence=True, source="report"),
+                grounding={**grounding, "route": "insufficient", "route_reason": "no_subject"},
+            )
+        if decision.route == "deterministic":
+            composed = report_answers.compose(question, view)
+            content, item_ids, insufficient = composed.text, composed.item_ids, composed.insufficient_evidence
+            if composed.kind == "after_incident" and checks_video:
+                end = report_answers.incident_end(view)
+                offer = VideoOffer(reason="The report records nothing after the incident ends.", from_seconds=end)
+            source: Literal["report", "report_llm"] = "report"
+        else:
+            context = grounded_chat.routed_context(report, evidence)
+            model = _model()
+            history = [message.model_dump() for message in body.messages]
+            try:
+                reply = await model.complete(
+                    grounded_chat.routed_messages(context, history), grounded_chat.ROUTED_SCHEMA
+                )
+                answer = grounded_chat.check_routed(reply, context, view, question=question, retired=retired)
+            except grounded_chat.ChatModelError as exc:
+                logger.error("Chat model failed for version %s: %s", version_id, exc)
+                raise HTTPException(status_code=502, detail=f"Chat model error: {exc}") from exc
+            content, item_ids, insufficient = answer.content, answer.item_ids, answer.insufficient_evidence
+            source = "report_llm"
+            grounding |= {
+                "model": model.model,
+                "dropped_citations": list(answer.dropped_citations),
+                "ids_resolved": list(answer.ids_resolved),
+                "unknown_times": list(answer.unknown_times),
+                "prompt_sha256": grounded_chat.incident_contract.prompt_sha256(grounded_chat.ROUTED_PROMPT_ID),
+                "usage": dict(getattr(model, "last_usage", {}) or {}),
+            }
+            wanted = decision.video == "always" or (decision.video == "if_missing" and answer.video_could_answer)
+            if checks_video and wanted:
+                offer = VideoOffer(reason=_offer_reason(decision.video, answer.not_established))
+        if insufficient and offer is None:
+            grounding["route"] = "insufficient"
+        return ChatResponse(
+            session_id=session_id,
+            message=AssistantMessage(
+                content=content,
+                citations=_citations(video_id, item_ids, view, evidence),
+                insufficient_evidence=insufficient,
+                source=source,
+                video_offer=offer,
             ),
             grounding=grounding,
         )
@@ -782,14 +892,24 @@ def create_incident_chat_router(
         if body.context and body.context.scope == "incident" and body.context.incident_id:
             filters["incident_id"] = body.context.incident_id
 
+        if selected_mode == "routed" and (body.version_id is not None or "incident_id" in filters):
+            return await _routed(body, session_id, filters.get("incident_id"))
         if selected_mode == "grounded" and (body.version_id is not None or "incident_id" in filters):
             return await _grounded(body, session_id, filters.get("incident_id"))
-        if selected_mode == "grounded":
+        if selected_mode in ("grounded", "routed"):
             return await _library(body, session_id)
 
         scope = "incident" if filters else "library"
         if body.version_id is not None:
             revision, video_id = await _load_version(body, filters, revisions)
+            report, evidence, retired = _version_report(revision, body.draft_report)
+            view = report_answers.report_view(report, evidence, retired=retired)
+            earlier = any(message.role == "assistant" for message in body.messages)
+            if earlier and report_answers.needs_context(query_text, view):
+                return ChatResponse(
+                    session_id=session_id,
+                    message=AssistantMessage(role="assistant", content=NEEDS_NAME, citations=[]),
+                )
             return _composed_answer(session_id, query_text, video_id, revision, body.draft_report)
 
         if not getattr(client, "enabled", True):
@@ -870,32 +990,45 @@ NOT_SEARCHED = {
 }
 
 
-def _composed_answer(
-    session_id: str,
-    query: str,
-    video_id: str,
-    revision: dict[str, Any],
-    draft_report: dict[str, Any] | None,
-) -> ChatResponse:
-    """The answer to a question about one revision (or a draft of it), composed from its report.
+NO_SUBJECT = 'Which person or object do you mean? Name them, for example "the man in the white shirt".'
+NEEDS_NAME = (
+    "This chat mode reads each question on its own, so it can't tell who or what that refers to. "
+    'Name the person or object, for example "the man in the white shirt".'
+)
 
-    The citations are the items the answer relies on, each with the crop and second of its evidence entry
-    (a draft item takes the saved crop of the same item in the base revision).
-    """
+
+def _offer_reason(video: str, missing: str) -> str:
+    """Why an offer is made: what the report lacks, else that a check is what was asked for."""
+    if missing.strip():
+        return missing.strip()
+    return "The report can't settle this." if video == "always" else "The report doesn't record this detail."
+
+
+def _version_report(
+    revision: dict[str, Any], draft_report: dict[str, Any] | None
+) -> tuple[dict[str, Any], list[dict[str, Any]], set[str]]:
+    """The report a question reads (a draft laid over its base version), its evidence and the ids the draft removed."""
+    raw = revision.get("payload")
+    payload: dict[str, Any] = raw if isinstance(raw, dict) else {}
     saved = revision.get("evidence") or []
-    payload = revision.get("payload") if isinstance(revision.get("payload"), dict) else None
-    report: dict[str, Any] | None = payload
-    evidence, retired = saved, set()
-    if draft_report is not None:
-        # The console's draft holds only the edited fields; the title, timeline and the rest come from the base.
-        report = report_answers.overlay_draft(payload, draft_report)
-        evidence = _draft_evidence(draft_report, saved)
-        retired = report_answers.item_ids(payload) - report_answers.item_ids(report)
-    view = report_answers.report_view(report, evidence, retired=retired)
-    answer = report_answers.compose(query, view)
+    if draft_report is None:
+        return payload, saved, set()
+    report = report_answers.overlay_draft(payload, draft_report)
+    return (
+        report,
+        _draft_evidence(draft_report, saved),
+        report_answers.item_ids(payload) - report_answers.item_ids(report),
+    )
+
+
+def _citations(
+    video_id: str, item_ids: Iterable[str], view: report_answers.ReportView, evidence: list[dict[str, Any]]
+) -> list[EvidenceCitation]:
+    """Each item's card from its own evidence entry in this version: its crop and the second that crop was found at.
+    An id the version does not hold, or an item with no stored second, gets no card rather than an invented one."""
     entries = {(str(e.get("item_type")), str(e.get("item_id"))): e for e in evidence if isinstance(e, dict)}
     citations: list[EvidenceCitation] = []
-    for item_id in answer.item_ids:
+    for item_id in item_ids:
         item = view.item(item_id)
         if item is None:
             continue
@@ -920,9 +1053,29 @@ def _composed_answer(
                 crop_image_url=resolve_r2_url(str(entry.get("image") or "")),
             )
         )
+    return citations
+
+
+def _composed_answer(
+    session_id: str,
+    query: str,
+    video_id: str,
+    revision: dict[str, Any],
+    draft_report: dict[str, Any] | None,
+) -> ChatResponse:
+    """The answer to a question about one revision (or a draft of it), composed from its report.
+
+    The citations are the items the answer relies on, each with the crop and second of its evidence entry
+    (a draft item takes the saved crop of the same item in the base revision).
+    """
+    report, evidence, retired = _version_report(revision, draft_report)
+    view = report_answers.report_view(report, evidence, retired=retired)
+    answer = report_answers.compose(query, view)
     return ChatResponse(
         session_id=session_id,
-        message=AssistantMessage(role="assistant", content=answer.text, citations=citations),
+        message=AssistantMessage(
+            role="assistant", content=answer.text, citations=_citations(video_id, answer.item_ids, view, evidence)
+        ),
     )
 
 

@@ -1,0 +1,92 @@
+{
+  "name": "chat-routed-multi-turn-v1-retest",
+  "note": "The conversations whose failures needed a model call to re-check, after the fixes. Same questions and criteria.",
+  "conversations": [
+    {
+      "id": "C-uncertainty",
+      "purpose": "Recorded fact stays apart from uncertainty.",
+      "turns": [
+        {
+          "version": 127,
+          "question": "Was the object a weapon?",
+          "pass": "Separates what the report records from what it does not establish."
+        },
+        {
+          "version": 127,
+          "question": "How certain are you?",
+          "pass": "Answers about the report's certainty without claiming more than it states."
+        }
+      ]
+    },
+    {
+      "id": "D-version",
+      "purpose": "An earlier answer from another version must not leak. Adversarial: the console starts a new thread on a version change, so this history cannot reach the model in production.",
+      "turns": [
+        {
+          "version": 6,
+          "question": "What animal is in this incident?",
+          "pass": "Follows version 6 (a monkey)."
+        },
+        {
+          "version": 121,
+          "question": "What did the animal knock over?",
+          "pass": "Follows version 121 (a dog), and does not call the animal a monkey as a fact of this report."
+        }
+      ]
+    },
+    {
+      "id": "F-navigation",
+      "purpose": "A follow-up keeps its timestamps and cards.",
+      "turns": [
+        {
+          "version": 143,
+          "question": "What happened to the vase?",
+          "pass": "Gives the events with times, and a Vase card."
+        },
+        {
+          "version": 143,
+          "question": "When did that happen?",
+          "pass": "Gives the report's times, as clickable text, and keeps a Vase card."
+        }
+      ]
+    },
+    {
+      "id": "G-sequence",
+      "purpose": "An elliptical follow-up continues the sequence.",
+      "turns": [
+        {
+          "version": 135,
+          "question": "What did the bear do at the refrigerator?",
+          "pass": "Gives the refrigerator events with times and cards."
+        },
+        {
+          "version": 135,
+          "question": "And after that?",
+          "pass": "Gives the later events, in order."
+        }
+      ]
+    },
+    {
+      "id": "K2-near",
+      "purpose": "An answerable free-form question keeps its navigation. Added after the frozen run showed that set is nearly all refusals, before any of these were asked.",
+      "turns": [
+        {
+          "version": 129,
+          "question": "Which objects were near the attacker?",
+          "pass": "Answers from the report, gives the report's times for the events it mentions, and has cards for the items it names."
+        }
+      ]
+    },
+    {
+      "id": "K4-severity",
+      "purpose": "An answerable free-form question keeps its navigation. Added after the frozen run showed that set is nearly all refusals, before any of these were asked.",
+      "turns": [
+        {
+          "version": 143,
+          "question": "Why was this classified with this severity?",
+          "pass": "Answers from the report, gives the report's times for the events it mentions, and has cards for the items it names."
+        }
+      ]
+    }
+  ]
+}
