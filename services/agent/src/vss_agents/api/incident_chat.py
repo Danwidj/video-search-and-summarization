@@ -683,6 +683,13 @@ def create_incident_chat_router(
         }
         offer: VideoOffer | None = None
         checks_video = video_check.enabled()
+        earlier = any(message.role == "assistant" for message in body.messages)
+        if decision.reason == "needs_reading" and not earlier and report_answers.has_no_subject(question, view):
+            return ChatResponse(
+                session_id=session_id,
+                message=AssistantMessage(content=NO_SUBJECT, citations=[], insufficient_evidence=True, source="report"),
+                grounding={**grounding, "route": "insufficient", "route_reason": "no_subject"},
+            )
         if decision.route == "deterministic":
             composed = report_answers.compose(question, view)
             content, item_ids, insufficient = composed.text, composed.item_ids, composed.insufficient_evidence
@@ -983,6 +990,7 @@ NOT_SEARCHED = {
 }
 
 
+NO_SUBJECT = 'Which person or object do you mean? Name them, for example "the man in the white shirt".'
 NEEDS_NAME = (
     "This chat mode reads each question on its own, so it can't tell who or what that refers to. "
     'Name the person or object, for example "the man in the white shirt".'
