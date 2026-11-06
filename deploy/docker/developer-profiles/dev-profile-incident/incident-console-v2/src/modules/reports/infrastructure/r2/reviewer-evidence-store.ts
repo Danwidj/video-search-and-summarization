@@ -16,10 +16,15 @@ export class R2ReviewerEvidenceStore implements ReviewerEvidenceStore {
     this.config = config;
   }
 
-  async frame(videoKey: string, seconds: number, region: { x: number; y: number; w: number; h: number } | null): Promise<Buffer> {
+  async frame(
+    videoKey: string,
+    seconds: number,
+    region: { x: number; y: number; w: number; h: number } | null,
+    scaleTo: { w: number; h: number } | null = null,
+  ): Promise<Buffer> {
     // Loaded on first use: it pulls in the ffmpeg binary, which an edit without reviewer items never needs.
     const { extractFrameJpeg } = await import('@/lib/video/ffmpeg-frame');
-    return extractFrameJpeg(await createR2PlaybackUrl(this.config, videoKey), seconds, region);
+    return extractFrameJpeg(await createR2PlaybackUrl(this.config, videoKey), seconds, region, scaleTo);
   }
 
   exists(key: string): Promise<boolean> {

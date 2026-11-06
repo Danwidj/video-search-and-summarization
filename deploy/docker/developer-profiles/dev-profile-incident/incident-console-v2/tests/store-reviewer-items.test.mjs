@@ -11,15 +11,43 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { storeReviewerItems } = await import('../src/modules/reports/application/store-reviewer-items/index.ts');
 
+// A JPEG header with a start-of-frame marker: all the Save use case reads from a frame is its size.
+const jpeg = (width, height) =>
+  Buffer.from([
+    0xff,
+    0xd8,
+    0xff,
+    0xc0,
+    0,
+    17,
+    8,
+    height >> 8,
+    height & 255,
+    width >> 8,
+    width & 255,
+    3,
+    1,
+    0x22,
+    0,
+    2,
+    0x11,
+    1,
+    3,
+    0x11,
+    1,
+    0xff,
+    0xd9,
+  ]);
+
 const fakeStore = () => {
   const frames = [];
   const puts = [];
   return {
     frames,
     puts,
-    frame: async (_videoKey, seconds, region) => {
-      frames.push({ seconds, region });
-      return Buffer.from('jpeg');
+    frame: async (_videoKey, seconds, region, scaleTo = null) => {
+      frames.push({ seconds, region, scaleTo });
+      return jpeg(1920, 1080);
     },
     exists: async () => false,
     put: async (key) => {
@@ -99,10 +127,10 @@ test("a re-tracked item drops the old crop's box, second look and gaps, and cuts
   assert.deepEqual(
     store.frames.map((frame) => [frame.seconds, frame.region === null ? 'frame' : 'crop']),
     [
-      [7.6, 'crop'],
       [7.6, 'frame'],
+      [7.6, 'crop'],
     ],
-    "crop and frame are cut sequentially at the first sample's exact second",
+    "frame and crop are cut sequentially at the first sample's exact second",
   );
 });
 
@@ -143,8 +171,8 @@ test('a picked image is cut at the picked second and box, keeps the track, and d
   assert.deepEqual(
     store.frames.map((frame) => [frame.seconds, frame.region === null ? 'frame' : 'crop']),
     [
-      [9.35, 'crop'],
       [9.35, 'frame'],
+      [9.35, 'crop'],
     ],
   );
   assert.equal(
@@ -188,4 +216,46 @@ test('a pick wins over the first sample of a re-tracked item, and the track is s
     store.puts.some((key) => key.endsWith('-track.json')),
     true,
   );
+});
+
+test('a pick marks the entry as the reviewer image, and a later re-track without a pick keeps that image', async () => {
+  const pick = { seconds: 9.35, box: [200, 300, 600, 700] };
+  const first = (await storeReviewerItems(fakeStore(), 'v.mp4', picked(pick), [trackedEntry])).get('entity:E1');
+  assert.equal(first.image_source, 'reviewer');
+  const store = fakeStore();
+  const next = (await storeReviewerItems(store, 'v.mp4', retracked, [first])).get('entity:E1');
+  assert.equal(next.image, first.image, "the reviewer's image survives a re-track");
+  assert.equal(next.frame, first.frame);
+  assert.deepEqual(next.bounding_box, pick.box);
+  assert.equal(next.box_seconds, 9.35);
+  assert.equal(next.image_source, 'reviewer');
+  assert.equal(next.track_first_seen_seconds, 7.6, 'the track itself is the new one');
+  assert.deepEqual(store.frames, [], 'nothing is cut again');
+  assert.equal(
+    store.puts.every((key) => key.endsWith('-track.json')),
+    true,
+    'only the track file is written',
+  );
+});
+
+test('a re-track of an item whose image was not set by a reviewer takes the new track first frame', async () => {
+  const entry = (await storeReviewerItems(fakeStore(), 'v.mp4', retracked, [{ ...aiEntry, image_source: undefined }])).get('entity:E1');
+  assert.equal(entry.box_seconds, 7.6);
+  assert.equal('image_source' in entry && entry.image_source !== undefined, false);
+});
+
+test('a small box is cut with a wider margin and enlarged; the stored box stays exact', async () => {
+  const store = fakeStore();
+  const pick = { seconds: 2, box: [500, 500, 560, 530] };
+  const entry = (await storeReviewerItems(store, 'v.mp4', picked(pick), [trackedEntry])).get('entity:E1');
+  const crop = store.frames.find((frame) => frame.region !== null);
+  assert.ok(crop.scaleTo && Math.min(crop.scaleTo.w, crop.scaleTo.h) >= 192, 'enlarged to a readable size');
+  assert.ok(crop.region.w > 0.03 && crop.region.h > 0.06, 'the context margin is wider than the box');
+  assert.deepEqual(entry.bounding_box, pick.box);
+});
+
+test('a box of ordinary size is cut as drawn and not enlarged', async () => {
+  const store = fakeStore();
+  await storeReviewerItems(store, 'v.mp4', picked({ seconds: 2, box: [100, 100, 600, 500] }), [trackedEntry]);
+  assert.equal(store.frames.find((frame) => frame.region !== null).scaleTo, null);
 });

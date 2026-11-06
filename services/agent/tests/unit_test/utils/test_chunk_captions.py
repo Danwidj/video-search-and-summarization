@@ -305,7 +305,7 @@ SETTINGS = ChunkSettings(enabled=True, window_seconds=20, overlap_seconds=2, min
 class TestCaptionVideo:
     @pytest.mark.asyncio
     async def test_the_whole_pass_on_the_scout_fixture(self, no_ffmpeg_work, monkeypatch):
-        monkeypatch.setattr(chunk_captions, "create_retry_strategy", _no_wait_retry)
+        monkeypatch.setattr(chunk_captions, "_sleep", _no_sleep)
         r2 = FakeR2()
         prefix = scratch_prefix("uploads/IMG_8206_480.mp4", "run1")
         responses = {
@@ -354,7 +354,7 @@ class TestCaptionVideo:
 
     @pytest.mark.asyncio
     async def test_a_429_is_retried_and_counted(self, no_ffmpeg_work, monkeypatch):
-        monkeypatch.setattr(chunk_captions, "create_retry_strategy", _no_wait_retry)
+        monkeypatch.setattr(chunk_captions, "_sleep", _no_sleep)
         r2 = FakeR2()
         prefix = scratch_prefix("v1", "run1")
         responses = {
@@ -379,10 +379,102 @@ class TestCaptionVideo:
         assert r2.objects == {}
 
     @pytest.mark.asyncio
+    async def test_a_429_waits_for_the_services_retry_after(self, no_ffmpeg_work, monkeypatch):
+        waits: list[float] = []
+
+        async def record(seconds: float) -> None:
+            waits.append(seconds)
+
+        monkeypatch.setattr(chunk_captions, "_sleep", record)
+        r2 = FakeR2()
+        prefix = scratch_prefix("v1", "run1")
+        responses = {
+            f"{prefix}0.mp4": [httpx.Response(429, headers={"retry-after": "17"}), _completion("[0s-20s] a")],
+            f"{prefix}1.mp4": [_completion("[0s-13s] b")],
+        }
+        seen: list[dict[str, Any]] = []
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_gateway(responses, seen))) as client:
+            result = await caption_video(
+                video_url=VIDEO_URL,
+                video_key="v1",
+                run_id="run1",
+                duration_seconds=31.0,
+                client=client,
+                vlm_base_url="https://switchyard.example",
+                model="vlm",
+                settings=SETTINGS,
+                store=ScratchStore(bucket="bucket", client=r2),
+                deadline=time.monotonic() + 240,
+            )
+        assert waits == [17.0] and result.telemetry["retries"] == 1
+
+    @pytest.mark.asyncio
+    async def test_a_429_without_retry_after_backs_off_like_the_main_call(self, no_ffmpeg_work, monkeypatch):
+        waits: list[float] = []
+
+        async def record(seconds: float) -> None:
+            waits.append(seconds)
+
+        monkeypatch.setattr(chunk_captions, "_sleep", record)
+        r2 = FakeR2()
+        prefix = scratch_prefix("v1", "run1")
+        responses = {
+            f"{prefix}0.mp4": [httpx.Response(429), httpx.Response(429), _completion("[0s-20s] a")],
+            f"{prefix}1.mp4": [_completion("[0s-13s] b")],
+        }
+        seen: list[dict[str, Any]] = []
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_gateway(responses, seen))) as client:
+            await caption_video(
+                video_url=VIDEO_URL,
+                video_key="v1",
+                run_id="run1",
+                duration_seconds=31.0,
+                client=client,
+                vlm_base_url="https://switchyard.example",
+                model="vlm",
+                settings=SETTINGS,
+                store=ScratchStore(bucket="bucket", client=r2),
+            )
+        assert 2.5 <= waits[0] <= 5.0 and 5.0 <= waits[1] <= 10.0  # jittered, doubling
+
+    @pytest.mark.asyncio
+    async def test_a_429_wait_that_does_not_fit_the_deadline_fails_the_pass_without_waiting(
+        self, no_ffmpeg_work, monkeypatch
+    ):
+        waits: list[float] = []
+
+        async def record(seconds: float) -> None:
+            waits.append(seconds)
+
+        monkeypatch.setattr(chunk_captions, "_sleep", record)
+        r2 = FakeR2()
+        prefix = scratch_prefix("v1", "run1")
+        responses = {
+            f"{prefix}0.mp4": [httpx.Response(429, headers={"retry-after": "90"}), _completion("[0s-20s] a")],
+            f"{prefix}1.mp4": [_completion("[0s-13s] b")],
+        }
+        seen: list[dict[str, Any]] = []
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_gateway(responses, seen))) as client:
+            with pytest.raises(ChunkCaptionError, match="HTTP 429"):
+                await caption_video(
+                    video_url=VIDEO_URL,
+                    video_key="v1",
+                    run_id="run1",
+                    duration_seconds=31.0,
+                    client=client,
+                    vlm_base_url="https://switchyard.example",
+                    model="vlm",
+                    settings=SETTINGS,
+                    store=ScratchStore(bucket="bucket", client=r2),
+                    deadline=time.monotonic() + 100,  # 90 s + the 60 s a call needs does not fit
+                )
+        assert waits == [] and r2.objects == {}
+
+    @pytest.mark.asyncio
     async def test_a_window_that_keeps_failing_fails_the_pass_and_the_scratch_is_still_deleted(
         self, no_ffmpeg_work, monkeypatch
     ):
-        monkeypatch.setattr(chunk_captions, "create_retry_strategy", _no_wait_retry)
+        monkeypatch.setattr(chunk_captions, "_sleep", _no_sleep)
         r2 = FakeR2()
         prefix = scratch_prefix("v1", "run1")
         responses = {
@@ -408,7 +500,7 @@ class TestCaptionVideo:
 
     @pytest.mark.asyncio
     async def test_a_400_is_not_retried(self, no_ffmpeg_work, monkeypatch):
-        monkeypatch.setattr(chunk_captions, "create_retry_strategy", _no_wait_retry)
+        monkeypatch.setattr(chunk_captions, "_sleep", _no_sleep)
         r2 = FakeR2()
         prefix = scratch_prefix("v1", "run1")
         responses = {f"{prefix}0.mp4": [httpx.Response(400, text="bad")], f"{prefix}1.mp4": [_completion("[0s-13s] b")]}
@@ -505,16 +597,8 @@ class TestCaptionVideo:
             )
 
 
-def _no_wait_retry(retries: int, delay: float = 2, exceptions: tuple = ()) -> Any:
-    """The module's retry strategy without the sleep between attempts."""
-    from tenacity import AsyncRetrying
-    from tenacity import retry_if_exception_type
-    from tenacity import stop_after_attempt
-    from tenacity import wait_none
-
-    return AsyncRetrying(
-        retry=retry_if_exception_type(exceptions), stop=stop_after_attempt(retries), wait=wait_none(), reraise=True
-    )
+async def _no_sleep(seconds: float) -> None:
+    """The module's wait between caption attempts, without the wait."""
 
 
 class TestScratchStore:
@@ -584,7 +668,7 @@ class TestScratchStores:
 
     @pytest.mark.asyncio
     async def test_the_whole_pass_runs_with_the_inline_store(self, no_ffmpeg_work, monkeypatch):
-        monkeypatch.setattr(chunk_captions, "create_retry_strategy", _no_wait_retry)
+        monkeypatch.setattr(chunk_captions, "_sleep", _no_sleep)
         by_index = {c["index"]: c for c in FIXTURE["chunks"]}
         seen: list[str] = []
 
@@ -650,7 +734,7 @@ class TestExperimentScratch:
     async def test_a_pass_under_an_experiment_root_deletes_each_window_right_after_its_call(
         self, no_ffmpeg_work, monkeypatch
     ):
-        monkeypatch.setattr(chunk_captions, "create_retry_strategy", _no_wait_retry)
+        monkeypatch.setattr(chunk_captions, "_sleep", _no_sleep)
         r2 = FakeR2()
         store = ScratchStore(bucket="bucket", client=r2, root="scratch/eval", delete_after_use=True)
 
@@ -681,7 +765,7 @@ class TestExperimentScratch:
 
     @pytest.mark.asyncio
     async def test_the_caption_call_cap_refuses_an_attempt_beyond_it(self, no_ffmpeg_work, monkeypatch):
-        monkeypatch.setattr(chunk_captions, "create_retry_strategy", _no_wait_retry)
+        monkeypatch.setattr(chunk_captions, "_sleep", _no_sleep)
         r2 = FakeR2()
         prefix = scratch_prefix("v1", "run1")
         responses = {

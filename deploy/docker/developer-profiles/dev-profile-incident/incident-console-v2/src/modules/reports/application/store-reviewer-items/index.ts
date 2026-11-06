@@ -3,11 +3,21 @@
 // Store reviewer items: for each item of a saved edit that came from the box tool (or was re-tracked), cut the crop and the
 // whole frame at the first-seen second, store them and the track file under `edit-<N>/`, and answer the evidence entry the
 // new revision holds for it. An item whose image the reviewer set (Set image, `image_pick`) is cut at the frame and box they
-// drew instead, and keeps its track and text. The reviewer's own box is the box, so nothing is detected here.
+// drew instead, and keeps its track and text; the entry then carries `image_source: 'reviewer'`, so a re-track in a later Save keeps
+// that image. Without it an item with a track takes the first frame of the new track. The reviewer's own box is the box, so
+// nothing is detected here. A box under 96 px on its short side is cut with a wider margin and enlarged (cropPlan).
 
-import { boxRegion } from '@/lib/evidence/frame-geometry';
+import { boxRegion, cropPlan } from '@/lib/evidence/frame-geometry';
+import { jpegSize } from '@/lib/evidence/jpeg-size';
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
-import { type ImagePick, imageEntryFields, reviewerEntryFields, type ReviewerPayload } from '@/modules/reports/domain/reviewer-item';
+import {
+  IMAGE_ENTRY_KEYS,
+  type ImagePick,
+  imageEntryFields,
+  REVIEWER_IMAGE_SOURCE,
+  reviewerEntryFields,
+  type ReviewerPayload,
+} from '@/modules/reports/domain/reviewer-item';
 import {
   type EvidenceEntry,
   type EvidenceItemType,
@@ -105,23 +115,31 @@ export async function storeReviewerItems(
     const region = boxRegion(box);
     if (seconds === null || seconds === undefined || !region)
       throw new StoreRejection('invalid', `${itemId}: a reviewer item needs a track, or a still second and box`);
-    // ffmpeg-static is memory-heavy. Running the crop and full-frame decode together can make the host kill one process
-    // (Node then reports a null exit code), so keep the two short extractions sequential.
-    const crop = await store.frame(videoKey, seconds, region);
-    const frame = await store.frame(videoKey, seconds, null);
+    const base = sourceId ? parentEvidence.find((entry) => entry.item_type === type && entry.item_id === sourceId) : undefined;
+    // A reviewer's image from an earlier Save outlives a re-track: the new track replaces only the track fields.
+    const keepsImage = !!reviewer && !pick && base?.image_source === REVIEWER_IMAGE_SOURCE;
     const keys = {
       image: uploadedEvidenceKey(videoKey, editNumber, itemId),
       frame: reviewerFrameKey(videoKey, editNumber, itemId),
       track: reviewer?.track ? reviewerTrackKey(videoKey, editNumber, itemId) : null,
     };
-    await store.put(keys.image, crop, 'image/jpeg');
-    await store.put(keys.frame, frame, 'image/jpeg');
+    if (!keepsImage) {
+      // ffmpeg-static is memory-heavy. Running the crop and full-frame decode together can make the host kill one process
+      // (Node then reports a null exit code), so keep the two short extractions sequential.
+      const frame = await store.frame(videoKey, seconds, null);
+      const size = jpegSize(frame);
+      const plan = size ? cropPlan(region, size.width, size.height) : { region, scaleTo: null };
+      const crop = await store.frame(videoKey, seconds, plan.region, plan.scaleTo);
+      await store.put(keys.image, crop, 'image/jpeg');
+      await store.put(keys.frame, frame, 'image/jpeg');
+    }
     if (reviewer?.track && keys.track) await store.put(keys.track, Buffer.from(JSON.stringify(reviewer.track)), 'application/json');
-    const base = sourceId ? parentEvidence.find((entry) => entry.item_type === type && entry.item_id === sourceId) : undefined;
     const replaced = reviewer ? REPLACED_FIELDS : IMAGE_REPLACED_FIELDS;
     const kept = Object.fromEntries(Object.entries(base ?? {}).filter(([key]) => !replaced.includes(key)));
     const fields = reviewer ? reviewerEntryFields(reviewer, keys, pick) : imageEntryFields({ seconds, box: box as ImagePick['box'] }, keys);
+    if (keepsImage) for (const key of IMAGE_ENTRY_KEYS) delete fields[key];
     const entry = { ...kept, item_type: type, item_id: itemId, ...fields } as EvidenceEntry;
+    if (pick) entry.image_source = REVIEWER_IMAGE_SOURCE;
     // A re-tracked or re-imaged item keeps the source its entry had (an AI entry has none); only a box the reviewer drew is `reviewer`.
     if (base) {
       if (base.source === undefined) delete entry.source;
