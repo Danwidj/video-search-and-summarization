@@ -41,7 +41,7 @@ The P1 prompt is stored as `{"$contract_text": "incident_extraction_prompt.txt",
 3. Every other producer of the case must then match as well: that is the parity check.
 4. A change that is not a contract bump also gets a line in the [Decision log](../../.docs/decisions.md) saying why.
 
-Not covered here: the template chat, which makes no model call, and the experiment prompts in [experiments](../experiments/README.md), which have their own registry hashes.
+Not covered here: the template chat, which makes no model call, the routed chat and video-check prompts, which are off and have one producer, and the experiment prompts in [experiments](../experiments/README.md), which have their own registry hashes.
 
 ## Read more
 
