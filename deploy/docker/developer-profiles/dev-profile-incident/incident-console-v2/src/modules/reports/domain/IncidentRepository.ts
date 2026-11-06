@@ -88,6 +88,11 @@ export interface HumanRevisionInput {
    * revision (the new revision is then the searchable one). Empty when there is nothing to store.
    */
   crops: OfficialCrop[];
+  /**
+   * The summary vector of the payload's incident title and description, stored with the revision so the Find incidents text
+   * search finds it. null when it could not be embedded: the save still succeeds and the repair step stores one later.
+   */
+  embedding: number[] | null;
   createdBy: string;
   note: string | null;
 }

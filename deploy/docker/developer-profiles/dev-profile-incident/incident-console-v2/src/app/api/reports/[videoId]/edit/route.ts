@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { readStoredJson } from '@/lib/r2/stored-json';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/container';
-import { fetchEvidenceItemEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
+import { fetchEvidenceItemEmbeddings, fetchSummaryEmbedding } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { saveHumanEdit, SearchableStepError } from '@/modules/reports/application/save-human-edit';
 import { StructuredEditError, validateStructuredEdit } from '@/modules/contract/domain/structured-edit';
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
@@ -53,6 +54,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
       { videoId, parentId: parsed.data.parentId, edit, createdBy: parsed.data.editedBy, note: parsed.data.note },
       (evidence) => fetchEvidenceItemEmbeddings(config, evidence),
       isR2Configured(config) ? new R2ReviewerEvidenceStore(config) : undefined,
+      isR2Configured(config) ? readStoredJson(config) : undefined,
+      (summary) => fetchSummaryEmbedding(config, summary),
     );
     return NextResponse.json({ saved: true, revision });
   } catch (error) {

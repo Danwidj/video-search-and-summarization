@@ -19,6 +19,9 @@ BEGIN;
 
 DROP FUNCTION IF EXISTS public.search_evidence_items(
     extensions.vector, INTEGER, DOUBLE PRECISION, TEXT[], TEXT[], INTEGER, INTEGER);
+-- Also drop this signature, so running the file again after a later migration changed its return type (20261105090000) works.
+DROP FUNCTION IF EXISTS public.search_evidence_items(
+    extensions.vector, INTEGER, DOUBLE PRECISION, TEXT[], TEXT[], INTEGER, INTEGER, VARCHAR);
 
 CREATE OR REPLACE FUNCTION public.search_evidence_items(
     p_query_embedding extensions.vector(1024),

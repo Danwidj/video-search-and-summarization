@@ -301,9 +301,18 @@ describe('Supabase adapter: revisions', () => {
           p_start_seconds: 1,
           p_end_seconds: 9,
           p_crops: [],
+          p_embedding: null,
         },
       },
     ]);
+  });
+
+  test('a summary vector is sent as a vector literal for the new revision', async () => {
+    const { repo, db } = implementations.supabase();
+    const input = humanInput(await repo.getRevision(VIDEO_ID, 1));
+    db.requests.length = 0;
+    await repo.saveHumanRevision({ ...input, embedding: [0.25, 0.5] });
+    assert.equal(db.requests[0].body.p_embedding, '[0.25,0.5]');
   });
 
   test("an RPC's RAISE is a StoreRejection with its message; any other failure is rethrown", async () => {
