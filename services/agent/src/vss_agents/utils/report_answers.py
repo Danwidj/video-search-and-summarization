@@ -333,6 +333,8 @@ _PAST_FORMS = {
     "broken": "break",
     "shot": "shoot",
     "held": "hold",
+    "knelt": "kneel",
+    "stood": "stand",
 }
 _PEOPLE_NOUNS = frozenset(
     {"man", "men", "woman", "women", "guy", "boy", "girl", "child", "attacker", "victim", "suspect"}
@@ -1161,7 +1163,7 @@ def _intent_words(q: str) -> set[str]:
     }
 
 
-def _action_words(text: str) -> set[str]:
+def action_words(text: str) -> set[str]:
     # A verb's -s form is not a plural: "leaves" is "leave", which the plural rules read as "leaf".
     bases = [_PAST_FORMS.get(word, word) for word in _tokens(text)]
     return {
@@ -1197,9 +1199,9 @@ def _around(view: ReportView, q: str) -> ComposedAnswer:
     The first event with the action is that moment. With no such event the report does not say.
     """
     names = set().union(*(i.name_words for i in view.items)) if view.items else set()
-    wanted = _action_words(_SEQUENCE.sub(" ", q)) - _intent_words(q) - names - _PEOPLE_NOUNS
+    wanted = action_words(_SEQUENCE.sub(" ", q)) - _intent_words(q) - names - _PEOPLE_NOUNS
     events = list(view.timeline)
-    moment = next((n for n, e in enumerate(events) if wanted & _action_words(str(e.get("description") or ""))), None)
+    moment = next((n for n, e in enumerate(events) if wanted & action_words(str(e.get("description") or ""))), None)
     if moment is None:
         return ComposedAnswer(
             "The report's timeline doesn't record that moment, so it can't say what came around it. "

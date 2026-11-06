@@ -256,28 +256,43 @@ def test_with_no_citation_the_cards_come_from_what_the_text_names() -> None:
 
 
 def test_a_time_the_report_does_not_hold_is_reported_so_it_is_not_linked() -> None:
-    body = _ask("When was he pushed?", FakeModel(answer="It happened at 0:22, then again at 0:58.")).json()
+    body = _ask(
+        "When was he pushed?", FakeModel(answer="He pushes him to the wall at 0:22, then again at 0:58.")
+    ).json()
     assert body["grounding"]["unknown_times"] == ["0:58"]
 
 
-def test_a_time_in_any_report_field_is_known() -> None:
-    body = _ask("When was he pushed?", FakeModel(answer="At 0:03, 0:21, 0:22, 0:36 and 0:46.", citations=[])).json()
-    assert body["grounding"]["unknown_times"] == []
+def test_a_time_in_any_report_field_is_held_by_the_report() -> None:
+    context = grounded_chat.routed_context(_revision()["payload"], _revision()["evidence"])
+    assert grounded_chat.unknown_times("At 0:03, 0:21, 0:22, 0:36 and 0:46.", context) == []
 
 
-def test_a_time_stated_in_the_reports_own_words_is_known() -> None:
-    store = Store({7: _revision(incident={"type": "assault", "description": "At 0:07 he falls; at 1:15 he leaves."})})
-    body = _ask("When was he pushed?", FakeModel(answer="He falls at 0:07.", citations=[]), store=store).json()
-    assert body["grounding"]["unknown_times"] == []
+def test_a_time_stated_in_the_reports_own_words_is_held_by_the_report() -> None:
+    report = _revision(incident={"type": "assault", "description": "At 0:07 he falls; at 1:15 he leaves."})["payload"]
+    assert grounded_chat.unknown_times("He falls at 0:07.", grounded_chat.routed_context(report, [])) == []
 
 
-def test_a_time_stated_in_seconds_is_known_rounded_either_way() -> None:
-    store = Store(
-        {7: _revision(incident={"type": "assault", "description": "He leaves at about 4.5s, then 7-8.5 seconds."})}
-    )
-    answer = "He leaves at 0:04 or 0:05, then 0:07 to 0:08 or 0:09, not 0:15."
-    body = _ask("When was he pushed?", FakeModel(answer=answer, citations=[]), store=store).json()
-    assert body["grounding"]["unknown_times"] == ["0:15"]
+def test_a_time_stated_in_seconds_is_held_rounded_either_way() -> None:
+    report = _revision(incident={"type": "assault", "description": "He leaves at about 4.5s, then 7-8.5 seconds."})[
+        "payload"
+    ]
+    text = "He leaves at 0:04 or 0:05, then 0:07 to 0:08 or 0:09, not 0:15."
+    assert grounded_chat.unknown_times(text, grounded_chat.routed_context(report, [])) == ["0:15"]
+
+
+def test_a_time_beside_the_wrong_event_is_reported_so_it_is_not_linked() -> None:
+    answer = "The man in the white shirt restrains him at 0:36."
+    body = _ask("When was he restrained?", FakeModel(answer=answer, citations=[])).json()
+    assert body["grounding"]["unknown_times"] == ["0:36"]
+    assert body["message"]["content"] == answer, "the text stays as written: only the link is withheld"
+
+
+def test_a_model_answer_gets_the_events_time_and_keeps_its_card_at_the_stored_second() -> None:
+    body = _ask(
+        "What happened at the wall?", FakeModel(answer="He pushes him to the wall.", citations=[{"item_id": "E2"}])
+    ).json()
+    assert body["message"]["content"] == "He pushes him to the wall (0:22)."
+    assert [(c["item_id"], c["timestamp_seconds"]) for c in body["message"]["citations"]] == [("E2", 21.5), ("A1", 22)]
 
 
 def test_an_id_the_question_wrote_is_not_rewritten() -> None:
