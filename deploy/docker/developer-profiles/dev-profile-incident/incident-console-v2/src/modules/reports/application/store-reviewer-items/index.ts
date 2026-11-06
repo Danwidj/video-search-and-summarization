@@ -45,6 +45,7 @@ const REPLACED_FIELDS = [
   'track_first_seen_seconds',
   'track_last_seen_seconds',
   'track_source',
+  'box_source',
   'track_partial',
 ];
 

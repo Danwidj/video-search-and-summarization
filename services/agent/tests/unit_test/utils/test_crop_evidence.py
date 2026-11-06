@@ -15,6 +15,7 @@
 
 """Unit tests for crop_evidence utility and CropEvidenceService (MVP2 VM Step 3)."""
 
+import asyncio
 import base64
 from collections.abc import Generator
 import copy
@@ -35,6 +36,7 @@ import pytest
 
 from vss_agents.utils import crop_evidence
 from vss_agents.utils.crop_evidence import DIFFERENT_OBJECT_GAP
+from vss_agents.utils.crop_evidence import GROUNDING_TIMEOUT_SECONDS
 from vss_agents.utils.crop_evidence import SMALL_CROP_MARGIN
 from vss_agents.utils.crop_evidence import SMALL_CROP_MIN_SHORT_SIDE
 from vss_agents.utils.crop_evidence import TIME_BUDGET_GAP
@@ -1472,7 +1474,7 @@ class TestZoomSecondLook:
         limited = detector.with_request_limits(15.0, 1)
         assert limited is not detector and limited.call_budget is budget
         assert (limited.timeout_seconds, limited.max_attempts) == (15.0, 1)
-        assert (detector.timeout_seconds, detector.max_attempts) == (120.0, 4)
+        assert (detector.timeout_seconds, detector.max_attempts) == (GROUNDING_TIMEOUT_SECONDS, 4)
 
     def test_a_single_attempt_detector_does_not_retry_a_rate_limit(self) -> None:
         detector = DefaultDetector(api_key="k").with_request_limits(15.0, 1)
@@ -1634,7 +1636,7 @@ class TestDetectorStopInTheLocateStep:
     def test_a_guarded_detector_makes_no_call_once_the_breaker_has_tripped_or_the_deadline_has_passed(self) -> None:
         detector = _FailingDetector()
         frame = np.zeros((8, 8, 3), dtype=np.uint8)
-        guarded = GuardedDetector(detector, DetectorBreaker("t", limit=1))
+        guarded = GuardedDetector(detector, DetectorBreaker("t", limit=1, max_trips=1))
         with pytest.raises(httpx.HTTPStatusError):
             guarded.detect(frame, "x")
         with pytest.raises(DetectorStoppedError):
@@ -1906,7 +1908,7 @@ class TestFrameKeptOnADetectorError:
 
     def test_a_stopped_detector_ends_the_attempts_at_once(self, tiny_video_path: Path) -> None:
         inner = _FailingDetector()
-        guarded = GuardedDetector(inner, DetectorBreaker("t", limit=1))
+        guarded = GuardedDetector(inner, DetectorBreaker("t", limit=1, max_trips=1))
         result = crop_evidence_item(tiny_video_path, 0, "x", guarded, not_located_fallback=True, retry_offsets=(1, -1))
         assert result is not None and result.frame_bytes is not None and result.located is False
         assert inner.calls == 1 and "detector" in (result.gap or "")
@@ -2036,3 +2038,256 @@ class TestDuplicateImages:
         assert {r["frame"] for r in results} == {"evidence/v/run-1/A1-frame.jpg"}
         assert all(r["located"] and r["bounding_box"] == results[0]["bounding_box"] for r in results)
         assert len(store.images) == 2  # one crop and one frame, not six
+
+
+class TestStalledGroundingCall:
+    """A stalled hosted-detector call must not eat the analysis budget."""
+
+    @staticmethod
+    def _good_reply() -> MagicMock:
+        reply = MagicMock(status_code=200)
+        reply.json.return_value = {"choices": [{"message": {"content": '{"bbox_2d": [100, 200, 300, 400]}'}}]}
+        return reply
+
+    def test_the_timeout_is_short_and_a_timed_out_call_is_tried_once_more(self) -> None:
+        detector = DefaultDetector(api_key="k")
+        frame = np.zeros((80, 120, 3), dtype=np.uint8)
+        with patch(
+            "vss_agents.utils.crop_evidence.httpx.post",
+            side_effect=[httpx.ReadTimeout("stalled"), self._good_reply()],
+        ) as post:
+            assert detector.detect(frame, "person")
+        assert post.call_count == 2
+        assert [call.kwargs["timeout"] for call in post.call_args_list] == [GROUNDING_TIMEOUT_SECONDS] * 2
+        assert GROUNDING_TIMEOUT_SECONDS < 60.0
+
+    def test_a_second_timeout_raises_so_the_item_moves_on(self) -> None:
+        detector = DefaultDetector(api_key="k")
+        with (
+            patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=httpx.ReadTimeout("stalled")) as post,
+            pytest.raises(httpx.ReadTimeout),
+        ):
+            detector.detect(np.zeros((80, 120, 3), dtype=np.uint8), "person")
+        assert post.call_count == 2  # one try and one retry, not the four attempts a rate limit gets
+
+    def test_no_request_waits_past_the_deadline(self) -> None:
+        detector = DefaultDetector(api_key="k").with_deadline(time.monotonic() + 5.0)
+        with patch("vss_agents.utils.crop_evidence.httpx.post", return_value=self._good_reply()) as post:
+            detector.detect(np.zeros((80, 120, 3), dtype=np.uint8), "person")
+        assert 0 < post.call_args.kwargs["timeout"] <= 5.0
+        spent = DefaultDetector(api_key="k").with_deadline(time.monotonic() - 1.0)
+        with patch("vss_agents.utils.crop_evidence.httpx.post") as post, pytest.raises(DetectorStoppedError):
+            spent.detect(np.zeros((80, 120, 3), dtype=np.uint8), "person")
+        assert post.call_count == 0
+
+    def test_a_deadline_is_given_to_the_services_default_detector_only(self, tiny_video_path: Path) -> None:
+        seen: list[float | None] = []
+
+        class _Spy(DefaultDetector):
+            def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+                seen.append(self.deadline)
+                return []
+
+        service = CropEvidenceService(detector=_Spy(api_key="k"), store=InMemoryEvidenceStore())
+        deadline = time.monotonic() + 60
+        asyncio.run(
+            service.process_incident_report(
+                video_ref=tiny_video_path, video_id="v", report=_many_assets(1), batch_id="b", deadline=deadline
+            )
+        )
+        assert seen and set(seen) == {deadline}
+
+
+class TestBreakerRecovery:
+    """Quick timeouts across concurrent items pause the detector; only repeated failure stops it for good."""
+
+    def _breaker(self) -> tuple[DetectorBreaker, list[float]]:
+        now = [100.0]
+        return DetectorBreaker("t", cooldown_seconds=10.0, clock=lambda: now[0]), now
+
+    def test_three_errors_pause_calls_and_the_pause_ends(self) -> None:
+        breaker, now = self._breaker()
+        for _ in range(3):
+            breaker.record_error(httpx.ReadTimeout("stalled"))
+        assert breaker.tripped and not breaker.stopped and breaker.cooldown_left() == pytest.approx(10.0)
+        now[0] += 10.5
+        assert not breaker.tripped and breaker.cooldown_left() == 0.0
+
+    def test_a_reply_after_the_pause_closes_the_breaker_for_good(self) -> None:
+        breaker, now = self._breaker()
+        for _ in range(3):
+            breaker.record_error(RuntimeError())
+        now[0] += 11
+        breaker.record_success()
+        for _ in range(2):
+            breaker.record_error(RuntimeError())
+        assert not breaker.tripped, "the streak and the trip count start again"
+
+    def test_one_error_after_a_pause_pauses_it_again_and_the_third_pause_is_a_hard_stop(self) -> None:
+        breaker, now = self._breaker()
+        for _ in range(3):
+            breaker.record_error(RuntimeError())
+        for _ in range(2):  # a failed probe after each pause
+            now[0] += 11
+            assert not breaker.tripped
+            breaker.record_error(RuntimeError())
+        assert breaker.stopped and breaker.tripped and breaker.cooldown_left() == 0.0
+        now[0] += 1000
+        assert breaker.tripped, "a stopped breaker never recovers"
+
+    def test_errors_from_calls_already_in_flight_do_not_count_again(self) -> None:
+        breaker, _ = self._breaker()
+        for _ in range(8):  # four concurrent items fail around the trip
+            breaker.record_error(httpx.ReadTimeout("stalled"))
+        assert breaker.tripped and not breaker.stopped
+
+    def test_a_guarded_detector_waits_out_a_pause_then_calls(self) -> None:
+        breaker = DetectorBreaker("t", limit=1, cooldown_seconds=0.05)
+        breaker.record_error(RuntimeError())
+        inner = FakeDetector(detections=[Detection(box=[1, 1, 9, 9], score=0.9)])
+        started = time.monotonic()
+        assert GuardedDetector(inner, breaker).detect(np.zeros((8, 8, 3), dtype=np.uint8), "x")
+        assert time.monotonic() - started >= 0.04
+
+    def test_a_pause_longer_than_the_deadline_ends_at_the_deadline(self) -> None:
+        breaker = DetectorBreaker("t", limit=1, cooldown_seconds=30.0)
+        breaker.record_error(RuntimeError())
+        guarded = GuardedDetector(FakeDetector(), breaker, deadline=time.monotonic() + 0.1)
+        started = time.monotonic()
+        with pytest.raises(DetectorStoppedError):
+            guarded.detect(np.zeros((8, 8, 3), dtype=np.uint8), "x")
+        assert time.monotonic() - started < 2.0
+
+    @pytest.mark.asyncio
+    async def test_items_after_a_dead_detector_hard_stop_are_not_sent(
+        self, tiny_video_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("vss_agents.utils.crop_evidence.DETECTOR_COOLDOWN_SECONDS", 0.01)
+        detector = _FailingDetector(error=httpx.ReadTimeout("stalled"))
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=_many_assets(12), batch_id="run-1"
+        )
+        stopped = [
+            r for r in results if "detector stopped after 3 consecutive errors, 3 times" in (r["image_gap"] or "")
+        ]
+        assert stopped and all(r["image"] is None for r in results)
+        assert detector.calls < 12 * 3, "a dead service is called a bounded number of times"
+
+
+class TestPeopleWithNoBoxGetATrack:
+    """A person the detector gave no box is matched to a person track by the report's on-screen seconds."""
+
+    DARK = FakeDetector(detections=[])  # nothing is ever located
+
+    @staticmethod
+    def _request(*tracks: Track) -> TrackingRequest:
+        async def runner(video_ref: object, *, sensor_id: str, **_: object) -> TrackingOutcome:
+            return TrackingOutcome(tracks=list(tracks))
+
+        return TrackingRequest(sensor_id="s", runner=runner)
+
+    @staticmethod
+    def _track(track_id: str, start: float, end: float) -> Track:
+        return Track(
+            track_id,
+            [Sample(start + (end - start) * i / 4, (300, 300, 700, 600), 0.9) for i in range(5)],
+        )
+
+    @staticmethod
+    def _report(*people: tuple[str, int, int]) -> dict:
+        return {
+            "incident": {"title": "x", "type": "burglary"},
+            "entities": [
+                {
+                    "entity_id": entity_id,
+                    "type": "human",
+                    "description": "person",
+                    "timestamp_seconds": first,
+                    "first_seen_seconds": first,
+                    "last_seen_seconds": last,
+                    "label": "person",
+                }
+                for entity_id, first, last in people
+            ],
+        }
+
+    async def _run(self, video: Path, report: dict, request: TrackingRequest, **kwargs: object) -> list[dict]:
+        service = CropEvidenceService(detector=kwargs.pop("detector", self.DARK), store=InMemoryEvidenceStore())
+        return await service.process_incident_report(
+            video_ref=video, video_id="v", report=report, batch_id="b", tracking=request, **kwargs
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_person_with_no_box_gets_the_track_an_image_and_how_the_box_was_found(
+        self, tiny_video_path: Path
+    ) -> None:
+        request = self._request(self._track("7", 0.0, 1.8))
+        (person,) = await self._run(tiny_video_path, self._report(("E1", 0, 1)), request)
+        assert person["track"] == "evidence/v/b/E1-track.json"
+        assert person["box_source"] == "track-time" and "track_source" not in person
+        assert person["located"] is True and person["image"] and person["bounding_box"]
+        assert person["box_seconds"] == 0.0, "cut at the track's first sample"
+        assert person["image_gap"] is None and "track_gap" not in person
+        assert request.summary.matched == 1 and request.summary.matched_by_time == 1
+
+    @pytest.mark.asyncio
+    async def test_it_works_when_the_breaker_has_tripped(
+        self, tiny_video_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("vss_agents.utils.crop_evidence.DETECTOR_COOLDOWN_SECONDS", 0.01)
+        detector = _FailingDetector(error=httpx.ReadTimeout("stalled"))
+        request = self._request(self._track("7", 0.0, 1.8))
+        report = self._report(("E1", 0, 1))
+        report["assets"] = [
+            {"asset_id": f"A{n}", "name": "box", "description": "d", "timestamp_seconds": 1, "label": "box"}
+            for n in range(12)
+        ]
+        results = await self._run(tiny_video_path, report, request, detector=detector)
+        person = next(r for r in results if r["item_id"] == "E1")
+        assert person["track"] and person["box_source"] == "track-time" and person["image_gap"] is None
+
+    @pytest.mark.asyncio
+    async def test_it_works_when_the_time_budget_stopped_the_detector(self, tiny_video_path: Path) -> None:
+        request = self._request(self._track("7", 0.0, 1.8))
+        (person,) = await self._run(tiny_video_path, self._report(("E1", 0, 1)), request, deadline=time.monotonic() - 1)
+        assert person["track"] and person["image"] and person["image_gap"] is None
+
+    @pytest.mark.asyncio
+    async def test_an_ambiguous_person_stays_unmatched_and_says_why(self, tiny_video_path: Path) -> None:
+        request = self._request(self._track("1", 0.0, 1.6), self._track("2", 0.2, 1.8))
+        (person,) = await self._run(tiny_video_path, self._report(("E1", 0, 2)), request)
+        assert "track" not in person and person["image"] is None and "box_source" not in person
+        assert "this person was not located" in person["track_gap"] and "none clearly fits" in person["track_gap"]
+        assert request.summary.matched == 0 and request.summary.matched_by_time == 0
+
+    @pytest.mark.asyncio
+    async def test_one_track_never_goes_to_two_people(self, tiny_video_path: Path) -> None:
+        request = self._request(self._track("7", 0.0, 1.8))
+        first, second = await self._run(tiny_video_path, self._report(("E1", 0, 1), ("E2", 0, 1)), request)
+        assert "track" not in first and "track" not in second
+        assert "2 people fit the same person track" in first["track_gap"]
+
+    @pytest.mark.asyncio
+    async def test_a_track_taken_by_a_located_person_is_not_offered_again(self, tiny_video_path: Path) -> None:
+        # E1 is located and overlaps the only track; E2 has no box and the same seconds: it must not take it too
+        located = FakeDetector(detections=[Detection(box=[300, 300, 700, 600], score=0.9, label="person")])
+        report = self._report(("E1", 0, 1), ("E2", 0, 1))
+
+        class _OnlyE1(FakeDetector):
+            def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+                return located.detect(frame, query) if "first" in query else []
+
+        report["entities"][0]["label"] = "first person"
+        request = self._request(self._track("7", 0.0, 1.8))
+        first, second = await self._run(tiny_video_path, report, request, detector=_OnlyE1(detections=[]))
+        assert first["track"] and "box_source" not in first
+        assert "track" not in second and second["image"] is None and second["track_gap"]
+
+    @pytest.mark.asyncio
+    async def test_a_located_person_keeps_the_detectors_box_and_gets_no_time_match(self, tiny_video_path: Path) -> None:
+        located = FakeDetector(detections=[Detection(box=[800, 800, 950, 950], score=0.9, label="person")])
+        request = self._request(self._track("7", 1.0, 1.8))  # no sample within 0.5 s of the box's second
+        (person,) = await self._run(tiny_video_path, self._report(("E1", 0, 1)), request, detector=located)
+        assert "track" not in person and "box_source" not in person
+        assert person["track_gap"] == "no person track overlapped this person's box"
