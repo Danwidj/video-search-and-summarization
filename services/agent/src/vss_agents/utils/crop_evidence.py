@@ -75,6 +75,8 @@ from PIL import Image
 from PIL import ImageDraw
 
 from vss_agents import incident_contract
+from vss_agents.utils import rate_limit
+from vss_agents.utils import run_cancel
 from vss_agents.utils import run_provenance
 from vss_agents.utils import track_evidence
 from vss_agents.utils.optional_cv2 import ensure_codecs
@@ -124,12 +126,19 @@ FRAME_JPEG_QUALITY = 90
 # confidence a correction needs before it is applied, and the flag that turns the second look off.
 ZOOM_NAMES_ENV = "INCIDENT_ZOOM_NAMES_ENABLED"
 ZOOM_CROP_PADDING = 0.25
+# A stored crop whose short side (with the 5% padding) is under SMALL_CROP_SHORT_SIDE px is too small to read or embed:
+# it is cut with a SMALL_CROP_MARGIN context margin and upscaled to a short side of SMALL_CROP_MIN_SHORT_SIDE px.
+# ``bounding_box`` stays the padded box the console draws; ``detected_box`` stays the exact detector box.
+SMALL_CROP_SHORT_SIDE = 96
+SMALL_CROP_MARGIN = 0.40
+SMALL_CROP_MIN_SHORT_SIDE = 192
 ZOOM_MIN_SHORT_SIDE = 256
 ZOOM_CONFIDENCE_THRESHOLD = 0.7
 ZOOM_TIMEOUT_SECONDS = 60.0
 # Seconds of an analysis time budget that object tracking leaves for the zoomed second look and the uploads.
 TRACKING_BUDGET_RESERVE_SECONDS = 30.0
 TIME_BUDGET_GAP = "analysis time budget exhausted"
+TRACK_RECUT_GAP = "the first frame of the track could not be cut, so the track was not kept"
 # Describing a reviewer-drawn box waits on a person, so it runs with reasoning off (about 2.5 s instead of 30 s on
 # the shared VLM) and tries a timed-out request once more; each try may take up to 150 s so a slow model can still
 # give its final answer, and two tries (300 s) stay under the console's 330 s wait.
@@ -325,6 +334,19 @@ def merge_prompt(item_type: str, name: str, description: str, look: ZoomLook) ->
     return incident_contract.render_prompt("zoom/merge-object", item_type=item_type, **fields)
 
 
+def upscale_to_short_side(cut: np.ndarray, min_short_side: int) -> np.ndarray:
+    """``cut`` enlarged (bicubic) so its short side is at least ``min_short_side`` pixels; a larger cut is returned as is."""
+    cut = np.ascontiguousarray(cut)
+    short_side = min(cut.shape[:2])
+    if 0 < short_side < min_short_side:
+        scale = min_short_side / short_side
+        size = (max(1, round(cut.shape[1] * scale)), max(1, round(cut.shape[0] * scale)))
+        cut = np.ascontiguousarray(
+            np.asarray(Image.fromarray(cut[..., ::-1]).resize(size, Image.Resampling.BICUBIC))[..., ::-1]
+        )
+    return cut
+
+
 def zoom_crop(frame: np.ndarray, box: Sequence[int | float]) -> bytes | None:
     """The close-up the second look names: ``box`` cut from ``frame`` at native resolution with a 25% margin.
 
@@ -335,14 +357,7 @@ def zoom_crop(frame: np.ndarray, box: Sequence[int | float]) -> bytes | None:
     c_ymin, c_xmin, c_ymax, c_xmax = apply_box_padding(box, frame_w, frame_h, padding_fraction=ZOOM_CROP_PADDING)
     if c_ymin >= c_ymax or c_xmin >= c_xmax:
         return None
-    cut = np.ascontiguousarray(frame[c_ymin:c_ymax, c_xmin:c_xmax])
-    short_side = min(cut.shape[:2])
-    if 0 < short_side < ZOOM_MIN_SHORT_SIDE:
-        scale = ZOOM_MIN_SHORT_SIDE / short_side
-        size = (max(1, round(cut.shape[1] * scale)), max(1, round(cut.shape[0] * scale)))
-        cut = np.asarray(Image.fromarray(cut[..., ::-1]).resize(size, Image.Resampling.BICUBIC))[..., ::-1]
-        cut = np.ascontiguousarray(cut)
-    return encode_jpeg(cut, quality=85)
+    return encode_jpeg(upscale_to_short_side(frame[c_ymin:c_ymax, c_xmin:c_xmax], ZOOM_MIN_SHORT_SIDE), quality=85)
 
 
 def describe_box_close_up(frame: np.ndarray, box: Sequence[int | float]) -> bytes | None:
@@ -723,6 +738,7 @@ class GuardedDetector:
 
     def detect(self, frame: np.ndarray, query: str) -> Sequence[Detection | dict[str, Any]]:
         while True:
+            run_cancel.raise_if_cancelled()
             if self.breaker.stopped:
                 raise DetectorStoppedError("detector stopped after consecutive errors")
             if self.deadline is not None and time.monotonic() >= self.deadline:
@@ -730,7 +746,7 @@ class GuardedDetector:
             pause = self.breaker.cooldown_left()
             if pause <= 0:
                 break
-            time.sleep(pause if self.deadline is None else max(0.0, min(pause, self.deadline - time.monotonic())))
+            run_cancel.sleep(pause if self.deadline is None else max(0.0, min(pause, self.deadline - time.monotonic())))
         try:
             detections: Sequence[Detection | dict[str, Any]] = (
                 self.detector.detect(frame, query) if hasattr(self.detector, "detect") else self.detector(frame, query)
@@ -827,6 +843,21 @@ class DefaultDetector:
         bounded.deadline = deadline
         return bounded
 
+    def _rate_limit_pause(self, resp: Any, attempt: int) -> float | None:
+        """Seconds to wait before retrying a rate-limited or failed zoom call, or None when it must not be retried.
+
+        The wait is the main P1 call's (:mod:`vss_agents.utils.rate_limit`): the service's ``retry-after``, else a
+        jittered back-off for an HTTP 429 (2 s for a 5xx), and only while it leaves the analysis budget a call's
+        worth of time.
+        """
+        retry_after = rate_limit.parse_retry_after(resp.headers.get("retry-after"))
+        wait = (
+            rate_limit.backoff_seconds(retry_after, attempt)
+            if resp.status_code == 429
+            else (retry_after if retry_after is not None else 2.0)
+        )
+        return wait if rate_limit.wait_fits(wait, self.deadline) else None
+
     def with_zoom_budget(self, budget: CropCallBudget) -> "DefaultDetector":
         """A copy for one request whose zoomed-second-look attempts draw on ``budget``."""
         capped = copy.copy(self)
@@ -873,6 +904,7 @@ class DefaultDetector:
         """
         timeouts = 0
         for attempt in range(1, self.max_attempts + 1):
+            run_cancel.raise_if_cancelled()  # the caller gave up: no further hosted call
             timeout = self.timeout_seconds
             if self.deadline is not None:
                 timeout = min(timeout, self.deadline - time.monotonic())
@@ -907,7 +939,7 @@ class DefaultDetector:
             last_attempt = attempt == self.max_attempts
             if resp.status_code in _RETRYABLE_STATUS_CODES and not last_attempt:
                 self._count(None, started, resp, ok=False)
-                time.sleep(float(resp.headers.get("retry-after") or 2.0 * attempt))
+                run_cancel.sleep(float(resp.headers.get("retry-after") or 2.0 * attempt))
                 continue
             if _failed_status(resp):
                 self._count(None, started, resp, ok=False)
@@ -943,8 +975,9 @@ class DefaultDetector:
         reply. Outside any grounding ``CropCallBudget``; an experiment's ``zoom_budget``, when set, is checked
         before each attempt.
 
-        A rate limit or server error is retried once after ``retry-after`` (default 2 s); the gateway answers 429
-        when a report's items are checked concurrently. With ``retry_timeout`` a request that times out is tried once
+        A rate limit or server error is retried once after the wait of :meth:`_rate_limit_pause` (the main P1
+        call's, bounded by the analysis ``deadline``); the gateway answers 429 when a report's items are checked
+        concurrently. With ``retry_timeout`` a request that times out is tried once
         more too. ``thinking=False`` turns the model's reasoning off for the call.
         """
         body = {
@@ -973,6 +1006,7 @@ class DefaultDetector:
         if not thinking:
             body["chat_template_kwargs"] = {"enable_thinking": False}
         for attempt in (1, 2):
+            run_cancel.raise_if_cancelled()  # the caller gave up: no further hosted call
             if self.zoom_budget is not None:
                 try:
                     self.zoom_budget.acquire()  # before sending: a refused attempt is never made
@@ -996,9 +1030,11 @@ class DefaultDetector:
             if self.zoom_budget is not None:
                 self.zoom_budget.record_response(resp)
             if resp.status_code in _RETRYABLE_STATUS_CODES and attempt == 1:
-                self._count("zoom", started, resp, ok=False)
-                time.sleep(float(resp.headers.get("retry-after") or 2.0))
-                continue
+                pause = self._rate_limit_pause(resp, attempt)
+                if pause is not None:
+                    self._count("zoom", started, resp, ok=False)
+                    run_cancel.sleep(pause)
+                    continue
             if _failed_status(resp):
                 self._count("zoom", started, resp, ok=False)
             resp.raise_for_status()
@@ -1267,7 +1303,13 @@ def _locate_in_frame(
     c_ymin, c_xmin, c_ymax, c_xmax = apply_box_padding(best.box, frame_w, frame_h, padding_fraction=0.05)
     if c_ymin >= c_ymax or c_xmin >= c_xmax:
         return None
-    jpeg_bytes = encode_jpeg(frame[c_ymin:c_ymax, c_xmin:c_xmax], quality=85)
+    cut = frame[c_ymin:c_ymax, c_xmin:c_xmax]
+    if min(cut.shape[:2]) < SMALL_CROP_SHORT_SIDE:
+        # Too small to read or embed: more context around the object, enlarged. The drawn box stays the 5% one.
+        wide = apply_box_padding(best.box, frame_w, frame_h, padding_fraction=SMALL_CROP_MARGIN)
+        if wide[0] < wide[2] and wide[1] < wide[3]:
+            cut = upscale_to_short_side(frame[wide[0] : wide[2], wide[1] : wide[3]], SMALL_CROP_MIN_SHORT_SIDE)
+    jpeg_bytes = encode_jpeg(cut, quality=85)
     frame_bytes = encode_jpeg(frame, quality=FRAME_JPEG_QUALITY)
     if not jpeg_bytes or not frame_bytes:
         return None
@@ -1814,6 +1856,8 @@ class CropEvidenceService:
         zoom_on = zoom_names_enabled() if zoom_names is None else zoom_names
         # ``namer`` overrides the shared one for this call (an experiment's zoom-capped copy).
         namer = (namer if namer is not None else self.namer) if zoom_on else None
+        if isinstance(namer, DefaultDetector):
+            namer = namer.with_deadline(deadline)  # its rate-limit waits stay inside the analysis budget
         active_store = store if store is not None else self.store
         folder = video_key or video_id
         batch = batch_id or (await active_store.next_batch_id(folder) if active_store is not None else "run-1")
@@ -1965,8 +2009,14 @@ class CropEvidenceService:
                 if entry["zoom_gap"] != DIFFERENT_OBJECT_GAP:
                     entry["zoom_gap"] = "object not located"
 
+        recut_failed: set[str] = set()
+
         async def _recut(entry: dict[str, Any], track: track_evidence.Track) -> track_evidence.Track | None:
-            """Re-cut a matched entity's frame and crop at the track's first-seen sample; None keeps today's result."""
+            """Re-cut a tracked item's frame and crop at the track's first-seen sample.
+
+            An item with a track always shows that first frame, so a re-cut that fails returns None and the caller drops
+            the track (``track_gap`` says why) rather than leave the track on the frame the item was first located in.
+            """
             moment = track_evidence.first_seen_sample(track)
 
             def _cut() -> CropResult | None:
@@ -1988,8 +2038,9 @@ class CropEvidenceService:
                     recut = await asyncio.to_thread(_cut)
             except Exception as exc:
                 logger.warning("Track re-cut failed for %s %s: %s", video_id, entry["item_id"], exc)
-                return None
+                recut = None
             if recut is None:
+                recut_failed.add(entry["item_id"])
                 return None
             crops[entry["item_id"]] = recut
             return track
@@ -2315,17 +2366,24 @@ class CropEvidenceService:
                 object_tracks = {}
             for item_id, track in object_tracks.items():
                 crop = crops.get(item_id)
+                if crop is None or not crop.located:
+                    continue  # nothing is stored for an item that was not located, so there is no image to put a track on
                 moment = track_evidence.first_seen_sample(track)
-                if crop is not None and moment.t != crop.box_seconds:
-                    await _recut(by_id[item_id], track)  # a failed re-cut keeps the located frame and the track
-                matched_tracks[item_id] = track
+                if moment.t == crop.box_seconds:
+                    matched_tracks[item_id] = track  # already cut at the track's first sample
+                elif await _recut(by_id[item_id], track) is not None:
+                    matched_tracks[item_id] = track
+                else:
+                    by_id[item_id]["track_gap"] = TRACK_RECUT_GAP
 
         if tracking is not None:
             # A person left without a track says why, so the console can show it (``track_gap``, like ``image_gap``).
             for entry in entries:
                 if entry["item_type"] == "entity" and entry["item_id"] not in matched_tracks:
                     crop = crops.get(entry["item_id"])
-                    if tracking.summary.skipped:
+                    if entry["item_id"] in recut_failed:
+                        entry["track_gap"] = TRACK_RECUT_GAP
+                    elif tracking.summary.skipped:
                         entry["track_gap"] = tracking.summary.skipped
                     elif crop is not None and crop.located:
                         entry["track_gap"] = "no person track overlapped this person's box"

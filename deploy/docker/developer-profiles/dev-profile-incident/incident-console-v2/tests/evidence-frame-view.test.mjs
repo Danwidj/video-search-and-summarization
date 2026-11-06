@@ -183,3 +183,39 @@ test('a searchable crop row takes the second the box was found at, else the item
     ],
   );
 });
+
+test('a tracked item with no stored image or frame shows the frame at its track first second, with no box', () => {
+  const tracked = { track: 'evidence/v/run-1/E1-track.json', trackFirstSeenSeconds: 6.25, trackLastSeenSeconds: 12 };
+  const shown = evidenceDisplay(evidence({ image: null, imageUrl: null, ...tracked }), '189');
+  assert.equal(shown.frameSrc, '/api/reports/189/frame?t=6.25');
+  assert.equal(shown.box, null);
+  assert.equal(evidenceFrameState({ src: shown.src, frameSrc: shown.frameSrc, box: shown.box, fullFrame: true }), 'full-frame');
+});
+
+test('the track first frame is only the fallback: a stored image, a stored frame or an item without a track keep their own', () => {
+  const tracked = { track: 'k', trackFirstSeenSeconds: 6, trackLastSeenSeconds: 12 };
+  assert.equal(evidenceDisplay(evidence(tracked), '1').frameSrc, null, 'a stored crop stands in whole');
+  assert.equal(
+    evidenceDisplay(evidence({ ...tracked, image: null, imageUrl: null, frameUrl: 'https://signed/frame' }), '1').frameSrc,
+    'https://signed/frame',
+  );
+  assert.equal(evidenceDisplay(evidence({ image: null, imageUrl: null }), '1').frameSrc, null, 'no track, no frame to show');
+});
+
+test('cropPlan widens and enlarges a crop under 96 px on its short side and leaves a larger one alone', async () => {
+  const { cropPlan } = await import('../src/lib/evidence/frame-geometry.ts');
+  const small = cropPlan({ x: 0.5, y: 0.5, w: 30 / 1920, h: 60 / 1080 }, 1920, 1080);
+  assert.ok(small.region.w > (30 / 1920) * 1.7, 'about 40% of context on each side');
+  assert.ok(small.scaleTo && Math.min(small.scaleTo.w, small.scaleTo.h) === 192);
+  const edge = cropPlan({ x: 0, y: 0, w: 30 / 1920, h: 60 / 1080 }, 1920, 1080);
+  assert.equal(edge.region.x, 0, 'kept inside the frame');
+  const large = cropPlan({ x: 0.1, y: 0.1, w: 0.3, h: 0.3 }, 1920, 1080);
+  assert.deepEqual(large, { region: { x: 0.1, y: 0.1, w: 0.3, h: 0.3 }, scaleTo: null });
+});
+
+test('jpegSize reads the size from the header and answers null for other bytes', async () => {
+  const { jpegSize } = await import('../src/lib/evidence/jpeg-size.ts');
+  const bytes = [0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc0, 0, 11, 8, 0x04, 0x38, 0x07, 0x80, 1, 1, 0x11, 0];
+  assert.deepEqual(jpegSize(Buffer.from(bytes)), { width: 1920, height: 1080 });
+  assert.equal(jpegSize(Buffer.from('not a jpeg')), null);
+});

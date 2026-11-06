@@ -16,14 +16,23 @@ import type { FrameRegion } from '@/lib/evidence/frame-geometry';
 import { FrameRequestError } from '@/lib/evidence/frame-request';
 import { resolveHostBinary } from '@/lib/video/host-binaries';
 
+/** The pixel size a small crop is enlarged to. */
+export type ScaleTo = { w: number; h: number };
+
 const TIMEOUT_MS = 20_000;
 const MAX_JPEG_BYTES = 10 * 1024 * 1024;
 
 /** ffmpeg arguments for one JPEG on stdout. Exported for tests. */
-export function ffmpegFrameArguments(inputUrl: string, seconds: number, region: FrameRegion | null): string[] {
-  const crop = region
-    ? ['-vf', `crop=w=trunc(iw*${region.w}):h=trunc(ih*${region.h}):x=trunc(iw*${region.x}):y=trunc(ih*${region.y})`]
-    : [];
+export function ffmpegFrameArguments(
+  inputUrl: string,
+  seconds: number,
+  region: FrameRegion | null,
+  scaleTo: ScaleTo | null = null,
+): string[] {
+  const cut = region ? `crop=w=trunc(iw*${region.w}):h=trunc(ih*${region.h}):x=trunc(iw*${region.x}):y=trunc(ih*${region.y})` : null;
+  const enlarge = region && scaleTo ? `scale=${Math.round(scaleTo.w)}:${Math.round(scaleTo.h)}:flags=lanczos` : null;
+  const filters = [cut, enlarge].filter((filter): filter is string => filter !== null);
+  const crop = filters.length ? ['-vf', filters.join(',')] : [];
   return [
     '-v',
     'error',
@@ -49,9 +58,14 @@ export function ffmpegFrameArguments(inputUrl: string, seconds: number, region: 
   ];
 }
 
-async function extractFrameJpegOnce(inputUrl: string, seconds: number, region: FrameRegion | null): Promise<Buffer> {
+async function extractFrameJpegOnce(
+  inputUrl: string,
+  seconds: number,
+  region: FrameRegion | null,
+  scaleTo: ScaleTo | null,
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const child = spawn(resolveHostBinary('ffmpeg'), ffmpegFrameArguments(inputUrl, seconds, region), {
+    const child = spawn(resolveHostBinary('ffmpeg'), ffmpegFrameArguments(inputUrl, seconds, region, scaleTo), {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const chunks: Buffer[] = [];
@@ -116,16 +130,21 @@ async function downloadVideo(inputUrl: string, target: string): Promise<void> {
  * Extracts one frame over the signed R2 URL. Some ffmpeg-static builds segfault in their HTTPS/range reader for otherwise
  * valid MP4s; only for that signal, retry from a streamed temporary local file and always remove it afterwards.
  */
-export async function extractFrameJpeg(inputUrl: string, seconds: number, region: FrameRegion | null): Promise<Buffer> {
+export async function extractFrameJpeg(
+  inputUrl: string,
+  seconds: number,
+  region: FrameRegion | null,
+  scaleTo: ScaleTo | null = null,
+): Promise<Buffer> {
   try {
-    return await extractFrameJpegOnce(inputUrl, seconds, region);
+    return await extractFrameJpegOnce(inputUrl, seconds, region, scaleTo);
   } catch (error) {
     if (!(error instanceof FrameRequestError) || !/terminated by SIGSEGV/.test(error.message) || !/^https:/.test(inputUrl)) throw error;
     const directory = await mkdtemp(join(tmpdir(), 'incident-frame-'));
     const localVideo = join(directory, 'video.mp4');
     try {
       await downloadVideo(inputUrl, localVideo);
-      return await extractFrameJpegOnce(localVideo, seconds, region);
+      return await extractFrameJpegOnce(localVideo, seconds, region, scaleTo);
     } finally {
       await rm(directory, { force: true, recursive: true });
     }

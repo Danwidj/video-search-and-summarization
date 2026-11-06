@@ -66,6 +66,7 @@ from typing import Literal
 from fastapi import APIRouter
 from fastapi import FastAPI
 from fastapi import HTTPException
+from fastapi import Request
 from nat.builder.framework_enum import LLMFrameworkEnum
 from pydantic import BaseModel
 from pydantic import Field
@@ -79,6 +80,7 @@ from vss_agents.tools.incident_report_gen import MAX_CROP_CALLS_LIMIT
 from vss_agents.tools.incident_report_gen import MAX_REVIEWER_PROMPT_LENGTH
 from vss_agents.tools.incident_report_gen import ExperimentRefusedError
 from vss_agents.tools.incident_report_gen import VlmNoAnswerError
+from vss_agents.utils import run_cancel
 
 if TYPE_CHECKING:
     from nat.builder.workflow_builder import WorkflowBuilder
@@ -209,7 +211,7 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
         summary="Extract a contract incident report from an uploaded video (P1) and write a prose report (RP1)",
         tags=["Incident Analyze"],
     )
-    async def analyze_incident(incident_id: str, body: AnalyzeIncidentRequest) -> dict[str, Any]:
+    async def analyze_incident(incident_id: str, body: AnalyzeIncidentRequest, request: Request) -> dict[str, Any]:
         if body.is_experimental() and not incident_experiments.experiments_enabled():
             raise HTTPException(
                 status_code=403,
@@ -279,7 +281,13 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             tool_input["max_caption_calls"] = body.max_caption_calls
 
         try:
-            result = await incident_report_gen_tool.ainvoke(tool_input)
+            result = await run_cancel.run_until_disconnect(
+                lambda: incident_report_gen_tool.ainvoke(tool_input), request.is_disconnected
+            )
+        except run_cancel.AnalysisCancelledError as exc:
+            # The client (the console, at its 300 s limit) has gone: the run was stopped and wrote no report.
+            logger.warning("/analyze cancelled for incident_id=%s: the caller disconnected", incident_id)
+            raise HTTPException(status_code=499, detail="The caller disconnected; the analysis was stopped") from exc
         except IncidentExtractionError as exc:
             logger.error("/analyze contract violation for incident_id=%s: %s", incident_id, exc)
             detail: dict[str, Any] = {

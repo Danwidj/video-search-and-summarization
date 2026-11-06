@@ -35,8 +35,9 @@ export function videoFrameUrl(videoId: string, seconds: number): string {
 
 /**
  * The frame, box and note for one item. The stored frame comes first. An item analysed before frames were stored, or one a
- * reviewer replaced with a picked frame, has a box and a second, so its frame is cut from the stored video. Without any of
- * those the stored crop is shown whole.
+ * reviewer replaced with a picked frame, has a box and a second, so its frame is cut from the stored video. An item with a
+ * track but no stored image or frame (the agent could not cut one) shows the frame at its track's first second, with no box:
+ * a tracked item's image is the first frame of its track. Without any of those the stored crop is shown whole.
  */
 export function evidenceDisplay(evidence: ItemEvidence | null | undefined, videoId: string): EvidenceDisplay {
   if (!evidence) return { frameSrc: null, src: null, box: null, notLocated: false };
@@ -44,7 +45,11 @@ export function evidenceDisplay(evidence: ItemEvidence | null | undefined, video
   const box = notLocated || !boxRegion(evidence.boundingBox) ? null : evidence.boundingBox;
   const seconds = evidence.boxSeconds ?? evidence.timestampSeconds;
   const fromVideo = seconds !== null && (box !== null || notLocated) ? videoFrameUrl(videoId, seconds) : null;
-  return { frameSrc: evidence.frameUrl ?? fromVideo, src: evidence.imageUrl, box, notLocated };
+  const trackFrame =
+    !evidence.imageUrl && !evidence.frameUrl && !fromVideo && evidence.track && evidence.trackFirstSeenSeconds !== null
+      ? videoFrameUrl(videoId, evidence.trackFirstSeenSeconds)
+      : null;
+  return { frameSrc: evidence.frameUrl ?? fromVideo ?? trackFrame, src: evidence.imageUrl, box, notLocated };
 }
 
 /**

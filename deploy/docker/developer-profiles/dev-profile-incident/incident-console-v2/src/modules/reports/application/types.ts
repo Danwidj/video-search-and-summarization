@@ -44,10 +44,15 @@ export interface EvidenceObjectStore {
 
 /**
  * What Save needs from storage to keep a reviewer item: a frame of the video (JPEG, optionally cropped to a region given as
- * fractions) and the write of a new object (never replacing one; `exists` lets Save pick a free edit number).
+ * fractions and enlarged to a pixel size) and the write of a new object (never replacing one; `exists` lets Save pick a free edit number).
  */
 export interface ReviewerEvidenceStore {
-  frame(videoKey: string, seconds: number, region: { x: number; y: number; w: number; h: number } | null): Promise<Buffer>;
+  frame(
+    videoKey: string,
+    seconds: number,
+    region: { x: number; y: number; w: number; h: number } | null,
+    scaleTo?: { w: number; h: number } | null,
+  ): Promise<Buffer>;
   exists(key: string): Promise<boolean>;
   put(key: string, body: Buffer, contentType: string): Promise<void>;
 }

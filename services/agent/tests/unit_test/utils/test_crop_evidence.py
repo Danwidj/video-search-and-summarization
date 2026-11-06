@@ -34,9 +34,13 @@ import httpx
 import numpy as np
 import pytest
 
+from vss_agents.utils import crop_evidence
 from vss_agents.utils.crop_evidence import DIFFERENT_OBJECT_GAP
 from vss_agents.utils.crop_evidence import GROUNDING_TIMEOUT_SECONDS
+from vss_agents.utils.crop_evidence import SMALL_CROP_MARGIN
+from vss_agents.utils.crop_evidence import SMALL_CROP_MIN_SHORT_SIDE
 from vss_agents.utils.crop_evidence import TIME_BUDGET_GAP
+from vss_agents.utils.crop_evidence import TRACK_RECUT_GAP
 from vss_agents.utils.crop_evidence import BudgetedDetector
 from vss_agents.utils.crop_evidence import CropCallBudget
 from vss_agents.utils.crop_evidence import CropCallCapReachedError
@@ -53,6 +57,7 @@ from vss_agents.utils.crop_evidence import InMemoryEvidenceStore
 from vss_agents.utils.crop_evidence import R2EvidenceStore
 from vss_agents.utils.crop_evidence import ZoomLook
 from vss_agents.utils.crop_evidence import ZoomVerdict
+from vss_agents.utils.crop_evidence import _locate_in_frame
 from vss_agents.utils.crop_evidence import apply_box_padding
 from vss_agents.utils.crop_evidence import crop_evidence_item
 from vss_agents.utils.crop_evidence import duplicate_images
@@ -1108,6 +1113,67 @@ class TestObjectTrackingEvidence:
         assert instrument["track_source"] == OBJECT_TRACK_SOURCE and instrument["track"]
         assert instrument["box_seconds"] == 0.5 and instrument["located"] is True
 
+    @pytest.mark.asyncio
+    async def test_a_failed_re_cut_drops_the_track_instead_of_leaving_it_on_another_frame(
+        self, tiny_video_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real = crop_evidence.extract_frame
+
+        def no_frame_at_the_first_sample(video_ref: object, seconds: float) -> np.ndarray | None:
+            return None if seconds == 0.5 else real(video_ref, seconds)
+
+        monkeypatch.setattr(crop_evidence, "extract_frame", no_frame_at_the_first_sample)
+        request, _ = self._request(ObjectTrackingOutcome(tracks={"I1": self._track("I1")}))
+        results = await CropEvidenceService(
+            detector=self.DETECTOR, store=InMemoryEvidenceStore()
+        ).process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b", object_tracking=request
+        )
+        instrument = results[1]
+        assert instrument["track_gap"] == TRACK_RECUT_GAP
+        assert not any(key.startswith("track") and key != "track_gap" for key in instrument)
+        assert instrument["image"] and instrument["box_seconds"] == instrument["timestamp_seconds"]  # a plain item
+
+
+class TestSmallCrops:
+    """A crop under about 96 px on its short side is widened to a 40% margin and enlarged; its boxes stay exact."""
+
+    @staticmethod
+    def _crop(frame_size: tuple[int, int], box: list[int]) -> CropResult:
+        width, height = frame_size
+        frame = np.full((height, width, 3), 127, dtype=np.uint8)
+        result = _locate_in_frame(frame, 1.0, [Detection(box=box, score=0.9, label="x")], "x", 0.0)
+        assert result is not None and result.image_bytes is not None
+        return result
+
+    @staticmethod
+    def _shape(result: CropResult) -> tuple[int, int]:
+        assert result.image_bytes is not None
+        height, width = cv2.imdecode(np.frombuffer(result.image_bytes, np.uint8), cv2.IMREAD_COLOR).shape[:2]
+        return height, width
+
+    def test_a_small_crop_is_enlarged_and_keeps_the_drawn_and_the_exact_box(self) -> None:
+        box = [500, 500, 550, 540]  # 24 x 25.6 px at 640 x 480
+        result = self._crop((640, 480), box)
+        assert min(self._shape(result)) >= SMALL_CROP_MIN_SHORT_SIDE
+        padded = apply_box_padding(box, 640, 480, padding_fraction=0.05)
+        assert result.normalized_box == normalize_box(*padded, 640, 480)  # the 5% box the console draws
+        assert result.detected_box == tuple(box)  # the exact detector box
+
+    def test_a_small_crop_has_a_wider_context_than_the_five_percent_crop(self) -> None:
+        box = [500, 500, 550, 540]
+        wide = apply_box_padding(box, 640, 480, padding_fraction=SMALL_CROP_MARGIN)
+        tight = apply_box_padding(box, 640, 480, padding_fraction=0.05)
+        height, width = self._shape(self._crop((640, 480), box))
+        assert abs(width / height - (wide[3] - wide[1]) / (wide[2] - wide[0])) < 0.05
+        assert (wide[3] - wide[1]) > (tight[3] - tight[1])
+
+    def test_a_crop_of_96_px_or_more_is_cut_as_before(self) -> None:
+        box = [300, 300, 700, 700]  # 192 x 256 px at 640 x 480
+        result = self._crop((640, 480), box)
+        padded = apply_box_padding(box, 640, 480, padding_fraction=0.05)
+        assert self._shape(result) == (padded[2] - padded[0], padded[3] - padded[1])
+
 
 class TestZoomSecondLook:
     """The zoomed second look: a close-up of each located item is named again and a confident correction applied."""
@@ -1140,7 +1206,7 @@ class TestZoomSecondLook:
         z_ymin, z_xmin, z_ymax, z_xmax = apply_box_padding(box, 640, 480, padding_fraction=0.25)
         assert (z_ymax - z_ymin, z_xmax - z_xmin) == (36, 38)
 
-    def test_a_located_crop_carries_its_zoom_bytes_but_the_stored_crop_is_unchanged(
+    def test_a_located_crop_carries_its_zoom_bytes_and_a_small_stored_crop_is_widened_and_enlarged(
         self, tiny_video_path: Path
     ) -> None:
         result = crop_evidence_item(tiny_video_path, 0, "x", FakeDetector(detections=self.LOCATED))
@@ -1150,9 +1216,10 @@ class TestZoomSecondLook:
         assert context.shape[:2] == (80, 120)  # the whole frame, with the box drawn on it
         _, green, red = (int(v) for v in context[16, 24])  # the top-left corner of the drawn box (BGR)
         assert red > 150 and green < 60  # red ink on the blue frame, allowing for JPEG chroma blur
-        crop_h = cv2.imdecode(np.frombuffer(result.image_bytes, np.uint8), cv2.IMREAD_COLOR).shape[0]
+        crop = cv2.imdecode(np.frombuffer(result.image_bytes, np.uint8), cv2.IMREAD_COLOR)
         zoom_h = cv2.imdecode(np.frombuffer(result.zoom_bytes, np.uint8), cv2.IMREAD_COLOR).shape[0]
-        assert crop_h < 80 and zoom_h >= 256  # the 80 px frame yields a small stored crop and an upscaled close-up
+        # The 80 px frame yields a crop under 96 px: it is cut with a wider margin and enlarged to 192 px.
+        assert min(crop.shape[:2]) == SMALL_CROP_MIN_SHORT_SIDE and zoom_h >= 256
 
     @pytest.mark.parametrize(
         "reply",
@@ -1361,6 +1428,45 @@ class TestZoomSecondLook:
             with pytest.raises(RuntimeError):
                 detector._chat_json([b"jpeg"], "look", dict)  # a second 429 is not retried again
         assert post.call_count == 4 and sleep.call_count == 2
+
+    def test_a_zoom_429_waits_the_services_retry_after_inside_the_deadline(self) -> None:
+        limited = MagicMock(status_code=429, headers={"retry-after": "17"})
+        ok = MagicMock(status_code=200, headers={})
+        ok.json.return_value = {
+            "choices": [{"message": {"content": '{"name": "bag", "description": "", "confidence": 1}'}}]
+        }
+        detector = DefaultDetector(api_key="k").with_deadline(time.monotonic() + 240)
+        with (
+            patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=[limited, ok]),
+            patch("vss_agents.utils.crop_evidence.time.sleep") as sleep,
+        ):
+            assert detector._chat_json([b"jpeg"], "look", dict)["name"] == "bag"
+        sleep.assert_called_once_with(17.0)
+
+    def test_a_zoom_429_without_retry_after_backs_off_with_jitter(self) -> None:
+        limited = MagicMock(status_code=429, headers={})
+        ok = MagicMock(status_code=200, headers={})
+        ok.json.return_value = {
+            "choices": [{"message": {"content": '{"name": "bag", "description": "", "confidence": 1}'}}]
+        }
+        with (
+            patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=[limited, ok]),
+            patch("vss_agents.utils.crop_evidence.time.sleep") as sleep,
+        ):
+            DefaultDetector(api_key="k")._chat_json([b"jpeg"], "look", dict)
+        assert 2.5 <= sleep.call_args.args[0] <= 5.0
+
+    def test_a_zoom_429_that_does_not_fit_the_deadline_is_not_waited_for(self) -> None:
+        limited = MagicMock(status_code=429, headers={"retry-after": "90"})
+        limited.raise_for_status.side_effect = httpx.HTTPStatusError("429", request=MagicMock(), response=limited)
+        detector = DefaultDetector(api_key="k").with_deadline(time.monotonic() + 100)
+        with (
+            patch("vss_agents.utils.crop_evidence.httpx.post", return_value=limited) as post,
+            patch("vss_agents.utils.crop_evidence.time.sleep") as sleep,
+            pytest.raises(httpx.HTTPStatusError),
+        ):
+            detector._chat_json([b"jpeg"], "look", dict)
+        assert post.call_count == 1 and sleep.call_count == 0
 
     def test_request_limits_give_a_copy_that_keeps_the_budget(self) -> None:
         budget = CropCallBudget(5)

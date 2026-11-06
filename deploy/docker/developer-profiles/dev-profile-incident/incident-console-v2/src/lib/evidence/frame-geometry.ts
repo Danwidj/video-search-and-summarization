@@ -78,6 +78,39 @@ export function containFrame(frameAspect: number, tileAspect: number): { w: numb
   return frameAspect >= tileAspect ? { w: 1, h: tileAspect / frameAspect } : { w: frameAspect / tileAspect, h: 1 };
 }
 
+// A crop whose short side is under SMALL_CROP_SHORT_SIDE px is too small to read: it is cut with a wider margin and enlarged to
+// SMALL_CROP_MIN_SHORT_SIDE px. The numbers match the agent's (crop_evidence.py), so a reviewer's cut looks like an AI cut.
+export const SMALL_CROP_SHORT_SIDE = 96;
+export const SMALL_CROP_MARGIN = 0.4;
+export const SMALL_CROP_MIN_SHORT_SIDE = 192;
+
+/** What to cut for an item's stored image: the region, and the pixel size to enlarge it to (null when it is left as cut). */
+export interface CropPlan {
+  region: FrameRegion;
+  scaleTo: { w: number; h: number } | null;
+}
+
+/**
+ * The cut for a box on a frame of `frameWidth` x `frameHeight` px. A box under SMALL_CROP_SHORT_SIDE px on its short side is
+ * cut with SMALL_CROP_MARGIN of context on every side (kept inside the frame) and enlarged so the context is readable. The
+ * item's own box is not changed: it stays the exact box the reviewer drew.
+ */
+export function cropPlan(region: FrameRegion, frameWidth: number, frameHeight: number): CropPlan {
+  const short = Math.min(region.w * frameWidth, region.h * frameHeight);
+  if (!(frameWidth > 0) || !(frameHeight > 0) || short >= SMALL_CROP_SHORT_SIDE) return { region, scaleTo: null };
+  const x = clamp(region.x - region.w * SMALL_CROP_MARGIN, 0, 1);
+  const y = clamp(region.y - region.h * SMALL_CROP_MARGIN, 0, 1);
+  const wide: FrameRegion = {
+    x,
+    y,
+    w: clamp(region.x + region.w * (1 + SMALL_CROP_MARGIN), 0, 1) - x,
+    h: clamp(region.y + region.h * (1 + SMALL_CROP_MARGIN), 0, 1) - y,
+  };
+  const widePx = { w: wide.w * frameWidth, h: wide.h * frameHeight };
+  const scale = SMALL_CROP_MIN_SHORT_SIDE / Math.min(widePx.w, widePx.h);
+  return { region: wide, scaleTo: scale > 1 ? { w: Math.round(widePx.w * scale), h: Math.round(widePx.h * scale) } : null };
+}
+
 export type EvidenceFrameState = 'image' | 'frame-crop' | 'full-frame' | 'pending' | 'missing';
 
 /** What an evidence tile can show: the whole frame when asked for, else its stored image, else a crop of the frame, else a placeholder. */

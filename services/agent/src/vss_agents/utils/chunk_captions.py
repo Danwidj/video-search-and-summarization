@@ -45,6 +45,7 @@ from dataclasses import dataclass
 import logging
 import os
 from pathlib import Path
+import random
 import re
 import shutil
 import tempfile
@@ -58,13 +59,13 @@ from typing import cast
 import httpx
 
 from vss_agents import incident_contract
+from vss_agents.utils import rate_limit
 from vss_agents.utils import run_provenance
 from vss_agents.utils.crop_evidence import CropCallBudget
 from vss_agents.utils.crop_evidence import CropCallCapReachedError
 from vss_agents.utils.r2 import get_r2_client
 from vss_agents.utils.r2 import get_r2_presigned_url
 from vss_agents.utils.r2 import is_r2_configured
-from vss_agents.utils.retry import create_retry_strategy
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -95,6 +96,8 @@ MIN_EVENT_SECONDS = 0.5
 # lifetime of a scratch window (a pass takes seconds; an hour leaves nothing usable behind for long).
 CAPTION_MAX_TOKENS = 4096
 CAPTION_RETRIES = 3
+CAPTION_RETRY_MIN_WAIT_SECONDS = 2.0
+CAPTION_RETRY_MAX_WAIT_SECONDS = 6.0
 SCRATCH_URL_SECONDS = 3600
 DOWNLOAD_TIMEOUT_SECONDS = 120.0
 FFMPEG_TIMEOUT_SECONDS = 120.0
@@ -361,7 +364,30 @@ def caption_request_body(model: str, video_url: str, window_length: float, num_f
 
 
 class CaptionCallRetryableError(RuntimeError):
-    """A caption call answer worth retrying: HTTP 429 or a 5xx."""
+    """A caption call answer worth retrying: HTTP 429 or a 5xx (``retry_after`` is a 429's ``retry-after``, if sent)."""
+
+    def __init__(self, message: str, *, rate_limited: bool = False, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.rate_limited = rate_limited
+        self.retry_after = retry_after
+
+
+async def _sleep(seconds: float) -> None:
+    await asyncio.sleep(seconds)
+
+
+def _retry_wait(exc: BaseException, attempts: int, deadline: float | None) -> float | None:
+    """Seconds to wait before the next caption attempt, or None when the failure or the budget allows no retry.
+
+    An HTTP 429 waits as the main P1 call does (the service's retry-after, else a jittered back-off) and only while
+    the wait fits ``deadline``, the analysis budget; a 5xx or a transport error keeps the short random wait.
+    """
+    if isinstance(exc, CaptionCallRetryableError) and exc.rate_limited:
+        wait = rate_limit.backoff_seconds(exc.retry_after, attempts)
+        return wait if rate_limit.wait_fits(wait, deadline) else None
+    if deadline is not None and deadline - time.monotonic() < rate_limit.MIN_CALL_SECONDS:
+        return None
+    return random.uniform(CAPTION_RETRY_MIN_WAIT_SECONDS, CAPTION_RETRY_MAX_WAIT_SECONDS)
 
 
 class ScratchStorage(Protocol):
@@ -592,66 +618,87 @@ async def caption_window(
     semaphore: asyncio.Semaphore,
     telemetry: dict[str, Any],
     budget: CropCallBudget | None = None,
+    deadline: float | None = None,
 ) -> dict[str, Any]:
     """Caption one window with retries on 429, 5xx and transport errors; returns the timeline entry.
+
+    A retry waits only while the analysis budget ``deadline`` (a ``time.monotonic()`` value; None means unlimited)
+    leaves a call's worth of time; a 429 waits for the service's retry-after (see :func:`_retry_wait`).
 
     With ``budget`` (an experiment's ``max_caption_calls``) every attempt, retries included, is checked against the
     cap before it is sent; a refused attempt fails the window (and so the pass) and is counted as refused.
     """
     body = caption_request_body(model, signed_url, window.length, num_frames)
     attempts = 0
-    content = ""
+
+    async def one_attempt() -> str:
+        nonlocal attempts
+        if budget is not None:
+            try:
+                budget.acquire()  # before sending: a refused attempt is never made
+            except CropCallCapReachedError:
+                run_provenance.record_refused("caption")
+                raise ChunkCaptionError(
+                    f"caption-call cap of {budget.limit} reached (max_caption_calls) at window {window.index}"
+                ) from None
+        attempts += 1
+        started = time.perf_counter()
+        try:
+            response = await client.post(chat_url, json=body)
+        except Exception:
+            run_provenance.record_call(
+                "caption",
+                ok=False,
+                usage=None,
+                model=model,
+                elapsed_ms=(time.perf_counter() - started) * 1000.0,
+            )
+            raise
+        if budget is not None:
+            budget.record_response(response)
+        answered = response.status_code < 400
+        run_provenance.record_call(
+            "caption",
+            ok=answered,
+            usage=run_provenance.usage_of(response),
+            model=model,
+            elapsed_ms=(time.perf_counter() - started) * 1000.0,
+        )
+        if response.status_code == 429 or response.status_code >= 500:
+            raise CaptionCallRetryableError(
+                f"window {window.index} caption call returned HTTP {response.status_code}: {response.text[:200]}",
+                rate_limited=response.status_code == 429,
+                retry_after=rate_limit.parse_retry_after(response.headers.get("retry-after")),
+            )
+        if response.status_code >= 400:
+            raise ChunkCaptionError(
+                f"window {window.index} caption call returned HTTP {response.status_code}: {response.text[:200]}"
+            )
+        payload = response.json()
+        if not isinstance(payload, dict) or not payload.get("choices"):
+            raise ChunkCaptionError(f"window {window.index} caption call returned no completion")
+        usage = payload.get("usage") or {}
+        telemetry["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
+        telemetry["completion_tokens"] += int(usage.get("completion_tokens") or 0)
+        return str((payload["choices"][0].get("message") or {}).get("content") or "")
+
     async with semaphore:
-        async for attempt in create_retry_strategy(
-            retries=CAPTION_RETRIES, exceptions=(CaptionCallRetryableError, httpx.TransportError)
-        ):
-            with attempt:
-                if budget is not None:
-                    try:
-                        budget.acquire()  # before sending: a refused attempt is never made
-                    except CropCallCapReachedError:
-                        run_provenance.record_refused("caption")
-                        raise ChunkCaptionError(
-                            f"caption-call cap of {budget.limit} reached (max_caption_calls) at window {window.index}"
-                        ) from None
-                attempts += 1
-                started = time.perf_counter()
-                try:
-                    response = await client.post(chat_url, json=body)
-                except Exception:
-                    run_provenance.record_call(
-                        "caption",
-                        ok=False,
-                        usage=None,
-                        model=model,
-                        elapsed_ms=(time.perf_counter() - started) * 1000.0,
-                    )
+        while True:
+            try:
+                content = await one_attempt()
+                break
+            except (CaptionCallRetryableError, httpx.TransportError) as exc:
+                wait = _retry_wait(exc, attempts, deadline) if attempts < CAPTION_RETRIES else None
+                if wait is None:
                     raise
-                if budget is not None:
-                    budget.record_response(response)
-                answered = response.status_code < 400
-                run_provenance.record_call(
-                    "caption",
-                    ok=answered,
-                    usage=run_provenance.usage_of(response),
-                    model=model,
-                    elapsed_ms=(time.perf_counter() - started) * 1000.0,
+                logger.warning(
+                    "chunk_captions: window %d attempt %d failed (%s); retrying in %.1f s",
+                    window.index,
+                    attempts,
+                    exc,
+                    wait,
                 )
-                if response.status_code == 429 or response.status_code >= 500:
-                    raise CaptionCallRetryableError(
-                        f"window {window.index} caption call returned HTTP {response.status_code}: {response.text[:200]}"
-                    )
-                if response.status_code >= 400:
-                    raise ChunkCaptionError(
-                        f"window {window.index} caption call returned HTTP {response.status_code}: {response.text[:200]}"
-                    )
-                payload = response.json()
-                if not isinstance(payload, dict) or not payload.get("choices"):
-                    raise ChunkCaptionError(f"window {window.index} caption call returned no completion")
-                usage = payload.get("usage") or {}
-                telemetry["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
-                telemetry["completion_tokens"] += int(usage.get("completion_tokens") or 0)
-                content = (payload["choices"][0].get("message") or {}).get("content") or ""
+                await _sleep(wait)
     telemetry["calls"] += attempts
     telemetry["retries"] += attempts - 1
     caption = filter_short_duration_lines(offset_chunk_timestamps(clean_caption(content), window.start, window.end))
@@ -670,8 +717,12 @@ async def caption_video(
     settings: ChunkSettings,
     store: ScratchStorage | None = None,
     budget: CropCallBudget | None = None,
+    deadline: float | None = None,
 ) -> ChunkCaptions:
     """The whole caption pass: plan, cut, upload, caption, then delete the scratch prefix.
+
+    ``deadline`` is the analysis's ``time.monotonic()`` budget end: a retry after an HTTP 429 or other failure is only
+    waited for while it leaves the budget a call's worth of time (None means unlimited).
 
     ``client`` is the model client (bearer key set) ``run_p1`` uses; the video download uses a client of its
     own. ``store`` defaults to the production R2 store (``scratch/analyze``); each window is released to it once
@@ -733,7 +784,16 @@ async def caption_video(
             async def caption_and_release(window: Window, key: str, url: str) -> dict[str, Any]:
                 try:
                     return await caption_window(
-                        client, chat_url, model, window, url, settings.num_frames, semaphore, telemetry, budget
+                        client,
+                        chat_url,
+                        model,
+                        window,
+                        url,
+                        settings.num_frames,
+                        semaphore,
+                        telemetry,
+                        budget,
+                        deadline,
                     )
                 finally:
                     try:
