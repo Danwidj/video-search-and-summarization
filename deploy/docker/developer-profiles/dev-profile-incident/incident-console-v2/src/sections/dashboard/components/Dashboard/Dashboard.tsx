@@ -450,7 +450,7 @@ function Total({ data, link }: { data: DashboardAnalytics; link: (extra?: LinkFi
 
 /** Neutral chip beside the total: how many counted reports have several versions. Its tooltip is also its accessible label. */
 function RevisedChip({ count }: { count: number }) {
-  const explanation = `${count} of these reports have 2+ versions (edited or re-analysed)`;
+  const explanation = `${count} of these reports ${count === 1 ? 'has' : 'have'} 2+ versions (edited or re-analysed)`;
   return (
     <TooltipProvider>
       <Tooltip>
