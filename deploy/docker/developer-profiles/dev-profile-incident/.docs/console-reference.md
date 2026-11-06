@@ -133,7 +133,7 @@ The report shows "Reviewer-edited after generation", "Model assessed N/5; review
   - **Agent answers:** the agent's `chat-contract-v2` flag shows as a **Not in this report** badge, and `grounding` reaches the panel as `grounding`. A v1 answer has neither.
   - **Errors:** an agent 4xx (a version of another incident, no official version) keeps its status; an agent 5xx becomes a 502.
   - **Reset:** the panel is keyed by the version and draft state, so changing version starts a new conversation.
-  - **Library chat:** the library page's **Ask the library** button opens a side sheet (`LibraryChat`).
+  - **Library chat:** the library page no longer has an entry point (the **Ask the library** button and its side sheet were removed); `LibraryChat` and the library scope of `/api/chat` stay in place, unmounted.
     - Its questions go through the same `/api/chat` route without `incidentId` or a version, so the agent answers in library scope.
     - Citations are grouped by incident under the incident's type and title (`grounding.incident_titles`; never the raw id). Each is labelled by the name the answer gave the item (`grounding.item_names`, else its kind; never its id) and opens that incident's report at the version the answer read and the cited second (`/reports/<id>?revision=<version>&t=`, from `grounding.versions`).
     - A count or breakdown composed by code (`grounding.answered_by: "code"`) cites no item; it lists its matching reports (`grounding.candidates`) as links to the versions read. A refusal lists none.
