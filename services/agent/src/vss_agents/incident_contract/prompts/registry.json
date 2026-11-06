@@ -238,6 +238,41 @@
         "agent"
       ],
       "purpose": "The library chat's answer to a question that is not a count: answer from the matching reports and the code counts, cite incident and item ids."
+    },
+    {
+      "id": "chat/incident-routed",
+      "file": "chat/incident-routed.txt",
+      "sha256": "b01eef293627981814ce930b327d1529cd762cee8abe3f06e85de01a81c2e13d",
+      "stage": "chat",
+      "placeholders": [],
+      "used_by": [
+        "agent"
+      ],
+      "purpose": "The routed chat's system prompt: answer from one report version, keeping what it records, what it supports and what it does not establish apart."
+    },
+    {
+      "id": "chat/video-look",
+      "file": "chat/video-look.txt",
+      "sha256": "6ebe9d8ac64576f0668058b8bcc899781eb6c66c24f781f42782955636db6c09",
+      "stage": "chat",
+      "placeholders": [
+        "question"
+      ],
+      "used_by": [
+        "agent"
+      ],
+      "purpose": "A reviewer-confirmed blind look at a clip: the question only, never the report's claim (flag, off by default)."
+    },
+    {
+      "id": "chat/video-compare",
+      "file": "chat/video-compare.txt",
+      "sha256": "1f0a0ddbfdc6bf0a538f0668e18697ec2a7da0ba0301532da454a1f75f6d324e",
+      "stage": "chat",
+      "placeholders": [],
+      "used_by": [
+        "agent"
+      ],
+      "purpose": "Text-only comparison of a stored report with a blind video look; it decides nothing, and flags a conflict for a person."
     }
   ]
 }

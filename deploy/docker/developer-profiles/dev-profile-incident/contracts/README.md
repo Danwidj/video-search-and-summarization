@@ -23,7 +23,7 @@ The single source of truth for incident extraction (`incident-contract-v4`): one
 | [prompts/](prompts/README.md) | Every other model prompt: the caption pass, the P1 preambles, grounding, the zoomed second look, chat and the exported chart prompt |
 | [golden/](golden/README.md) | The exact request bodies sent to models; the console, eval and the agent each test theirs against them |
 | [experiments/](experiments/README.md) | The append-only prompt registry for the prompt experiments. It is not part of the contract: `sync.py` does not vendor it |
-| [search-contract-v1](search-contract-v1/README.md), [chat-contract-v1](chat-contract-v1/README.md), [chat-contract-v2](chat-contract-v2/README.md) | The search and chat HTTP contracts (v2 is the grounded chat answer) |
+| [search-contract-v1](search-contract-v1/README.md), [chat-contract-v1](chat-contract-v1/README.md), [chat-contract-v2](chat-contract-v2/README.md), [chat-contract-v3](chat-contract-v3/README.md) | The search and chat HTTP contracts (v2 is the grounded chat answer, v3 the routed one) |
 | `sync.py` | Copies the contract and the agent's prompts into the agent; `--check` reports drift |
 | `test_schema.py`, `test-schema.mjs` | Schema validation tests |
 
