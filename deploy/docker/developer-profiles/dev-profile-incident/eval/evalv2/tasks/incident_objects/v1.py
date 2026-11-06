@@ -66,10 +66,28 @@ resolve_holder = eval_gt.resolve_holder
 prf1 = eval_gt.prf1
 solve_assignment = matching.solve_assignment
 cosine_matrix = matching._cosine_similarity_matrix
-evaluate_policy = v1_contract.evaluate_policy
 field_intervals = extraction_stats.field_intervals
 pooled_items = experiment_report.items
 severity_summary = severity_metrics.summarise
+
+
+def evaluate_policy(content: str | None, duration_s: float | None) -> dict[str, Any]:
+    """V1's contract policy, with one harness fix (C3 amendment A1, 2026-11-03).
+
+    ``json.loads`` refuses some syntactically valid JSON with a plain ``ValueError`` that is not a
+    ``JSONDecodeError``: an integer literal longer than Python's int-string limit (a runaway reply printed a
+    13,698-digit number). V1's policy only catches ``JSONDecodeError``, so the exception escaped and stopped the run.
+    Such a reply is classified exactly as unparseable content already is (``INVALID_JSON``, a core violation): an
+    invalid output, a model failure under the pre-registered rules. Every other reply is unaffected.
+    """
+    try:
+        return v1_contract.evaluate_policy(content, duration_s)
+    except ValueError as exc:  # not a JSONDecodeError: that one is handled inside the V1 policy
+        result = v1_contract.evaluate_policy("", duration_s)
+        result["core"] = [{"code": "INVALID_JSON", "scope": "core", "path": "<root>",
+                           "message": f"content is not a single JSON document this parser accepts: {str(exc)[:200]}"}]
+        return result
+
 
 
 def empty_prediction() -> dict[str, Any]:
