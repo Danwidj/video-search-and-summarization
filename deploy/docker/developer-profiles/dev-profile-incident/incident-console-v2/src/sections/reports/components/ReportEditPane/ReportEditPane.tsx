@@ -97,7 +97,7 @@ export function ReportEditPane({
 }) {
   // The box tool: adding new evidence, or re-tracking a card's item from a new box.
   const [boxTool, setBoxTool] = useState<{ row: PairRow['b'] } | null>(null);
-  const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLDivElement | null>(null);
+  const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLElement | null>(null);
   // The track editor: fix a card's track with keyframes. `saved` is the opened version's item, whose track it starts from.
   const [trackEditor, setTrackEditor] = useState<{
     row: NonNullable<PairRow['b']>;
@@ -388,7 +388,7 @@ export function ReportEditPane({
               <PlusIcon aria-hidden="true" />
               Add evidence
             </Button>
-            <div aria-label="Evidence navigation" className="flex min-h-8 gap-2" ref={setCarouselControlsTarget} />
+            <nav aria-label="Evidence navigation" className="flex min-h-8 gap-2" ref={setCarouselControlsTarget} />
           </div>
         </CardHeader>
         {pairing.rows.length === 0 ? (

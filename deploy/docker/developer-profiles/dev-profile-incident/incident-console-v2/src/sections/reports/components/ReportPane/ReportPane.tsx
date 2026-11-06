@@ -70,7 +70,7 @@ export function ReportPane({
   const heldIds = new Set(structured.entities.flatMap((entity) => heldBy(entity.entityId).map((instrument) => instrument.instrumentId)));
   const unheld = structured.instruments.filter((instrument) => !heldIds.has(instrument.instrumentId));
   const [detail, setDetail] = useState<EvidenceDetailItem | null>(null);
-  const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLDivElement | null>(null);
+  const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLElement | null>(null);
   const itemCount = structured.entities.length + structured.instruments.length + structured.assets.length;
   const tracked = new Map(trackedReportItems(structured).map((item) => [`${item.kind}:${item.id}`, item]));
   const cardProps = (item: EvidenceDetailItem) => {
@@ -224,7 +224,7 @@ export function ReportPane({
             </Badge>
             <CardDescription className="text-xs">People, instruments and assets linked to this incident</CardDescription>
           </div>
-          <div aria-label="Evidence navigation" className="flex min-h-8 shrink-0 gap-2" ref={setCarouselControlsTarget} />
+          <nav aria-label="Evidence navigation" className="flex min-h-8 shrink-0 gap-2" ref={setCarouselControlsTarget} />
         </CardHeader>
         {itemCount === 0 ? (
           <CardContent className="px-4 py-5">
