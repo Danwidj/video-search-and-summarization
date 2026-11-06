@@ -50,7 +50,7 @@ from vss_agents.utils import chunk_captions
 
 from ..incident_contract.test_parity_golden import golden
 from ..utils.test_chunk_captions import FakeR2
-from ..utils.test_chunk_captions import _no_wait_retry
+from ..utils.test_chunk_captions import _no_sleep
 from .test_incident_report_gen import MODEL_OUTPUT
 from .test_incident_report_gen import VIDEO_URL
 from .test_incident_report_gen import _config
@@ -99,7 +99,7 @@ def experiment_agent(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in AGENT_SETTINGS:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, "1")
-    monkeypatch.setattr(chunk_captions, "create_retry_strategy", _no_wait_retry)
+    monkeypatch.setattr(chunk_captions, "_sleep", _no_sleep)
 
 
 @pytest.fixture

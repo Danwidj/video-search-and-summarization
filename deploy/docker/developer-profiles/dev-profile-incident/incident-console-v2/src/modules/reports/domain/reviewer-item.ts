@@ -158,6 +158,12 @@ export interface ImagePick {
   box: Box;
 }
 
+/** The entry fields that name an item's image, frame and box: what a reviewer's own image keeps through a later re-track. */
+export const IMAGE_ENTRY_KEYS = ['image', 'frame', 'bounding_box', 'timestamp_seconds', 'box_seconds', 'located'] as const;
+
+/** The marker on an entry whose image a reviewer set (Set image): a later re-track keeps that image instead of the track's first frame. */
+export const REVIEWER_IMAGE_SOURCE = 'reviewer';
+
 /** The fields of an evidence entry that name its image: the crop and frame keys, the box, and the exact second they were cut at. */
 export function imageEntryFields(seen: ImagePick, keys: { image: string; frame: string }): Record<string, unknown> {
   return {

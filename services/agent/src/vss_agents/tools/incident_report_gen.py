@@ -73,13 +73,11 @@ belongs to the console, which owns the durable R2 key, so this tool never writes
 import asyncio
 from collections.abc import AsyncGenerator
 import copy
-from email.utils import parsedate_to_datetime
 import hashlib
 import json
 import logging
 import math
 import os
-import random
 import re
 import time
 from typing import Annotated
@@ -105,12 +103,15 @@ from vss_agents.utils import chunk_captions
 from vss_agents.utils import crop_evidence
 from vss_agents.utils import incident_db
 from vss_agents.utils import object_tracking
+from vss_agents.utils import rate_limit
+from vss_agents.utils import run_cancel
 from vss_agents.utils import run_provenance
 from vss_agents.utils import set_of_marks
 from vss_agents.utils import track_evidence
 from vss_agents.utils import video_duration
 from vss_agents.utils.embeddings import RemoteTextEmbedder
 from vss_agents.utils.r2 import is_r2_configured
+from vss_agents.utils.rate_limit import parse_retry_after
 
 logger = logging.getLogger(__name__)
 
@@ -485,22 +486,6 @@ class _Undecoded:
         self.text = text
 
 
-def parse_retry_after(value: str | None) -> float | None:
-    """Seconds from a ``retry-after`` header (delta-seconds or an HTTP date); ``None`` when absent or unreadable."""
-    if not value or not value.strip():
-        return None
-    value = value.strip()
-    try:
-        seconds = float(value)
-    except ValueError:
-        try:
-            when = parsedate_to_datetime(value)
-            seconds = when.timestamp() - time.time()
-        except (TypeError, ValueError):
-            return None
-    return max(0.0, seconds) if math.isfinite(seconds) else None
-
-
 async def _assemble_stream(response: httpx.Response) -> dict[str, Any]:
     """The completion body of a server-sent-events reply: all content deltas joined, the finish reason and usage."""
     parts: list[str] = []
@@ -668,10 +653,10 @@ P1_MAX_ATTEMPTS = 2
 # HTTP 429 from the hosted service: wait (its retry-after, else a jittered back-off) and call again, at most this many
 # calls in all, and only while the wait leaves the analysis budget this long for the call itself.
 P1_MAX_RATE_LIMIT_CALLS = 4
-P1_RATE_LIMIT_BACKOFF_SECONDS = 5.0
-P1_RATE_LIMIT_BACKOFF_CAP_SECONDS = 30.0
-P1_RATE_LIMIT_MIN_CALL_SECONDS = 60.0
-P1_RATE_LIMIT_MAX_UNBOUNDED_WAIT_SECONDS = 120.0  # with no deadline (a batch evaluation)
+P1_RATE_LIMIT_BACKOFF_SECONDS = rate_limit.BACKOFF_SECONDS
+P1_RATE_LIMIT_BACKOFF_CAP_SECONDS = rate_limit.BACKOFF_CAP_SECONDS
+P1_RATE_LIMIT_MIN_CALL_SECONDS = rate_limit.MIN_CALL_SECONDS
+P1_RATE_LIMIT_MAX_UNBOUNDED_WAIT_SECONDS = rate_limit.MAX_UNBOUNDED_WAIT_SECONDS
 
 
 def _runaway(exc: IncidentExtractionError) -> bool:
@@ -685,10 +670,7 @@ async def _sleep(seconds: float) -> None:
 
 def _rate_limit_wait(exc: P1RateLimitedError, calls_made: int) -> float:
     """Seconds to wait after the ``calls_made``-th HTTP 429: its retry-after, else a jittered exponential back-off."""
-    if exc.retry_after is not None:
-        return exc.retry_after
-    ceiling = min(P1_RATE_LIMIT_BACKOFF_CAP_SECONDS, P1_RATE_LIMIT_BACKOFF_SECONDS * 2 ** (calls_made - 1))
-    return random.uniform(ceiling / 2, ceiling)
+    return rate_limit.backoff_seconds(exc.retry_after, calls_made)
 
 
 async def _run_p1_waiting_out_429(
@@ -709,10 +691,7 @@ async def _run_p1_waiting_out_429(
             return await run_p1(client, config, video_url, **kwargs)
         except P1RateLimitedError as exc:
             wait = _rate_limit_wait(exc, calls_made)
-            if deadline is None:
-                affordable = wait <= P1_RATE_LIMIT_MAX_UNBOUNDED_WAIT_SECONDS
-            else:
-                affordable = wait + P1_RATE_LIMIT_MIN_CALL_SECONDS <= deadline - time.monotonic()
+            affordable = rate_limit.wait_fits(wait, deadline)
             if calls_made == P1_MAX_RATE_LIMIT_CALLS or not affordable:
                 logger.warning(
                     "incident_report_gen: P1 rate limited (HTTP 429, call %d of %d); giving up (%s)",
@@ -978,8 +957,12 @@ async def run_caption_pass(
     tool_input: IncidentReportGenInput,
     model_name: str,
     video_duration_seconds: float | None,
+    deadline: float | None = None,
 ) -> chunk_captions.ChunkCaptions | None:
     """The caption pass of a production request. Never raises.
+
+    A window call answered HTTP 429 is waited out as P1's is (its retry-after, else a jittered back-off) while the wait
+    fits the analysis budget ``deadline``.
 
     ``None`` when ``INCIDENT_CHUNKING_ENABLED`` is not ``1``.
     Otherwise the captions and their telemetry, or an empty timeline with ``telemetry = {"skipped": reason}``
@@ -999,6 +982,7 @@ async def run_caption_pass(
         video_duration_seconds,
         settings,
         run_id=tool_input.model_run_id or uuid.uuid4().hex[:12],
+        deadline=deadline,
     )
 
 
@@ -1013,6 +997,7 @@ async def _caption_pass(
     run_id: str,
     store: chunk_captions.ScratchStorage | None = None,
     budget: crop_evidence.CropCallBudget | None = None,
+    deadline: float | None = None,
 ) -> chunk_captions.ChunkCaptions:
     """One caption pass with ``settings`` (``store`` None is production's R2 store). Never raises: a pass that
     could not run or finish is an empty timeline with its reason, logged."""
@@ -1032,6 +1017,7 @@ async def _caption_pass(
             settings=settings,
             store=store,
             budget=budget,
+            deadline=deadline,
         )
     except Exception as exc:
         reason = str(exc) if isinstance(exc, chunk_captions.ChunkCaptionError) else f"{type(exc).__name__}: {exc}"
@@ -1295,7 +1281,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             marked: set_of_marks.MarkedClip | None = None
             if experiment is None:
                 captions, marked = await asyncio.gather(
-                    run_caption_pass(client, config, tool_input, model_name, video_length.seconds),
+                    run_caption_pass(client, config, tool_input, model_name, video_length.seconds, deadline),
                     run_marks_pass(tool_input, tracking),
                 )
             elif experiment["captions"] is not None:
@@ -1424,6 +1410,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                         entry.get("frame"),
                         entry.get("box_seconds"),
                     )
+        run_cancel.raise_if_cancelled()  # a caller that has gone (the console's abort) gets no report written
         # An experimental request never writes a report revision: its output is an experiment result.
         revision_id = (
             None
