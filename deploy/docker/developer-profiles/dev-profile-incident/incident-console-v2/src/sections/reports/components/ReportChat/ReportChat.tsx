@@ -22,7 +22,7 @@ import { segmentChatText } from '@/lib/chat/timestamps';
 import type { ChatCitation, ChatResponse } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
-const SUGGESTIONS = ['What happened, in order?', 'Who is involved?', 'What was taken, or what could cause harm?'];
+const SUGGESTIONS = ['Show the timeline of events', 'Who appears?', 'Was anything taken?', 'Any weapons?'];
 
 let messageSequence = 0;
 
@@ -190,8 +190,8 @@ export function ReportChat({
               {!messages.length && (
                 <>
                   <p className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-muted-foreground">
-                    Ask about the people, objects and events in this incident. Answers come from the version you have open, and link to the
-                    moment in the video.
+                    Ask about the people, objects and events in this incident. Answers come from the stored report for the version you have
+                    open, not from a new look at the video. Times in an answer jump to that moment.
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {SUGGESTIONS.map((suggestion) => (
@@ -263,7 +263,7 @@ export function ReportChat({
                           </Badge>
                         )}
                         <p className="mt-1.5 text-[10.5px] text-muted-foreground" data-testid="chat-answered-from">
-                          Answered from {message.answeredFrom}
+                          Answered from the stored report: {message.answeredFrom}
                         </p>
                       </BubbleContent>
                     </Bubble>
@@ -272,8 +272,8 @@ export function ReportChat({
               )}
               {busy && (
                 <Marker className="self-start rounded-2xl bg-muted px-3 py-2 text-xs text-muted-foreground">
-                  <MarkerContent aria-label="Searching evidence" role="status">
-                    Searching evidence…
+                  <MarkerContent aria-label="Reading the report" role="status">
+                    Reading the report…
                   </MarkerContent>
                 </Marker>
               )}
