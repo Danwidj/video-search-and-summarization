@@ -27,6 +27,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { chatTarget, citationTitles } from '@/lib/chat/report-chat';
+import { seekTarget } from '@/lib/chat/timestamps';
 import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
 import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
 import {
@@ -41,7 +42,7 @@ import { reportHeading, type ReportView } from '@/modules/reports/domain/report-
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { trackedReportItems } from '@/modules/reports/domain/track';
 import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
-import { ReportChat } from '@/sections/reports/components/ReportChat';
+import { type ChatThread, EMPTY_CHAT_THREAD, ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
 import { ReportTimeline } from '@/sections/reports/components/ReportTimeline';
@@ -62,6 +63,8 @@ interface EditBase {
 const SAVE_AUTHOR = 'Reviewer';
 
 const DEFAULT_VIDEO_ASPECT = 16 / 9;
+
+const chatThreadKey = (versionId: number, draft: boolean) => `${versionId}-${draft ? 'draft' : 'saved'}`;
 
 /** revisionId null opens the incident's official version, else its newest. startSeconds, when set, is where the player seeks once it has loaded. */
 export function ReportPage({
@@ -88,9 +91,13 @@ export function ReportPage({
   const [pipSupported, setPipSupported] = useState(false);
   const [inPip, setInPip] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Below the lg breakpoint the media pane is hidden and this player shows instead.
+  const compactVideoRef = useRef<HTMLVideoElement>(null);
   const startedAt = useRef(false);
 
   const [chatOpen, setChatOpen] = useState(false);
+  // Each version's conversation (and its draft's) lives here, so it outlasts the panel closing.
+  const [chatThreads, setChatThreads] = useState<Record<string, ChatThread>>({});
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [undoStack, setUndoStack] = useState<EditDraft[]>([]);
   const [editBase, setEditBase] = useState<EditBase | null>(null);
@@ -183,9 +190,11 @@ export function ReportPage({
   // Plays from `seconds`; with a `held` still box (an item with no track) it only seeks there and pauses, box shown, until the user plays.
   const seek = useCallback(
     (seconds: number, held?: StillBox | null) => {
-      const video = videoRef.current;
+      const video = [videoRef.current, compactVideoRef.current].find((player) => player?.getClientRects().length) ?? videoRef.current;
       if (!video) return;
-      video.currentTime = seconds;
+      const target = seekTarget(seconds, video.duration);
+      if (target === null) return;
+      video.currentTime = target;
       if (held && shownReport) {
         video.pause();
         setStillPin({ revisionId: shownReport.revisionId, still: held });
@@ -200,6 +209,8 @@ export function ReportPage({
   const startEdit = useCallback((base: ReportView, addEvidence = false) => {
     setOpenAddEvidenceOnEdit(addEvidence);
     setDraft(draftFromView(base));
+    // A new draft starts a new conversation: answers about an earlier draft no longer describe it.
+    setChatThreads(({ [chatThreadKey(base.revisionId, true)]: _earlierDraft, ...threads }) => threads);
     setUndoStack([]);
     setEditBase({ revisionId: base.revisionId, revisionNo: base.revision.revisionNo, report: base });
     setCompareReport(base);
@@ -515,6 +526,7 @@ export function ReportPage({
                     className="size-full object-contain"
                     controls
                     onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+                    ref={compactVideoRef}
                     src={report.run.playbackUrl}
                   />
                 </div>
@@ -687,8 +699,14 @@ export function ReportPage({
         </DialogContent>
       </Dialog>
 
-      <Sheet onOpenChange={setChatOpen} open={chatOpen}>
-        <SheetContent className="flex flex-col p-0 sm:max-w-md" showCloseButton={false} side="right">
+      {/* Not modal: the player stays usable beside the chat, so a jump can be watched, paused or scrubbed from there. */}
+      <Sheet modal={false} onOpenChange={setChatOpen} open={chatOpen}>
+        <SheetContent
+          className="flex flex-col p-0 sm:max-w-md"
+          onInteractOutside={(event) => event.preventDefault()}
+          showCloseButton={false}
+          side="right"
+        >
           <SheetHeader className="sr-only">
             <SheetTitle>Ask about this incident</SheetTitle>
             <SheetDescription>Conversational questions and answers about this incident</SheetDescription>
@@ -699,12 +717,21 @@ export function ReportPage({
                 ? { revision: editBase.report.revision, isOfficial: editBase.report.official.isOfficial, draft }
                 : { revision: report.revision, isOfficial: report.official.isOfficial, draft: null },
             );
-            // Keyed by the version (and whether it is a draft), so changing version starts a new conversation.
+            // Keyed by the version (and whether it is a draft), so each one has its own conversation.
+            const threadKey = chatThreadKey(target.versionId, mode === 'edit' && draft !== null);
             return (
               <ReportChat
-                key={`${target.versionId}-${mode === 'edit' && draft ? 'draft' : 'saved'}`}
+                durationSeconds={playerDuration}
+                key={threadKey}
                 onSeek={seek}
+                onThreadChange={(change) =>
+                  setChatThreads((threads) => ({
+                    ...threads,
+                    [threadKey]: { ...(threads[threadKey] ?? EMPTY_CHAT_THREAD), ...change },
+                  }))
+                }
                 target={target}
+                thread={chatThreads[threadKey] ?? EMPTY_CHAT_THREAD}
                 titles={citationTitles(mode === 'edit' && draft && editBase ? editBase.report.structured : report.structured)}
                 videoId={videoId}
               />

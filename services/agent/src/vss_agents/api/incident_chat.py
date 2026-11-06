@@ -23,10 +23,9 @@ Follows a hexagonal architecture: calls evidence search capabilities through the
 :class:`SearchClient` port. An in-memory adapter is provided for testing and offline
 operation.
 
-A request may name a report revision (``version_id``) and carry an inline ``draft_report``. The
-official revision is answered through the search client (decision 2026-10-24). Any other revision,
-and any draft, is answered from that revision's own report and saved ``evidence`` by
-:mod:`vss_agents.utils.report_answers`, which composes prose for the kind of question asked (what
+A request may name a report revision (``version_id``) and carry an inline ``draft_report``. Any
+revision, official or not, and any draft, is answered from that revision's own report and saved
+``evidence`` by :mod:`vss_agents.utils.report_answers`, which composes prose for the kind of question asked (what
 happened in order, who, which objects, when, severity, type). The prose names people and objects by
 their descriptions, and keeps item and incident ids for the structured citations only. Revisions
 are read through the :class:`RevisionStore` port.
@@ -223,11 +222,10 @@ _DEFAULT_SEED_HITS: list[dict[str, Any]] = [
 class DisabledSearchClient:
     """The default chat search client: it searches nothing, and the chat answer says so.
 
-    Decision 2026-10-24 kept official-version chat on the in-memory canned client for MVP2, so a finals
-    video gets no evidence. That client's demo hits (``Assault007``, ``Burglary005``) were also returned,
-    as if they were real, for every library question. The default now searches nothing instead, and the
-    answer says that this chat mode does not search that scope. Tests and local tools inject
-    :class:`InMemorySearchClient` explicitly.
+    The in-memory canned client's demo hits (``Assault007``, ``Burglary005``) were once returned, as if they
+    were real, for every library question. The default now searches nothing instead, and the answer says that
+    this chat mode does not search that scope. Tests and local tools inject :class:`InMemorySearchClient`
+    explicitly.
     """
 
     enabled = False
@@ -630,8 +628,8 @@ def create_incident_chat_router(
 
     async def _load_version(
         body: ChatRequest, filters: dict[str, Any], store: RevisionStore
-    ) -> tuple[dict[str, Any], str, bool]:
-        """The revision a question is about (``body.version_id``), its incident, and whether it is official."""
+    ) -> tuple[dict[str, Any], str]:
+        """The revision a question is about (``body.version_id``) and its incident."""
         assert body.version_id is not None
         try:
             revision = await store.get_revision(body.version_id)
@@ -644,7 +642,6 @@ def create_incident_chat_router(
                     detail=f"Report version {body.version_id} belongs to incident {video_id}, "
                     f"not {filters['incident_id']}",
                 )
-            official = await store.get_official_revision_id(video_id) == body.version_id
         except RevisionStoreUnavailableError as exc:
             raise HTTPException(status_code=503, detail=f"Report revisions unavailable: {exc}") from exc
         except HTTPException:
@@ -652,7 +649,7 @@ def create_incident_chat_router(
         except Exception as exc:
             logger.error("RevisionStore failed during incident chat: %s", exc, exc_info=True)
             raise HTTPException(status_code=502, detail=f"Report revision error: {exc}") from exc
-        return revision, video_id, official
+        return revision, video_id
 
     async def _library(body: ChatRequest, session_id: str) -> ChatResponse:
         """A planned search over every incident's report. Code applies the plan's filters and counts; a count or
@@ -792,11 +789,8 @@ def create_incident_chat_router(
 
         scope = "incident" if filters else "library"
         if body.version_id is not None:
-            revision, video_id, official = await _load_version(body, filters, revisions)
-            if not official or body.draft_report is not None:
-                return _composed_answer(session_id, query_text, video_id, revision, body.draft_report)
-            # The official revision goes through the search client (decision 2026-10-24).
-            filters, scope = {"incident_id": video_id}, "official"
+            revision, video_id = await _load_version(body, filters, revisions)
+            return _composed_answer(session_id, query_text, video_id, revision, body.draft_report)
 
         if not getattr(client, "enabled", True):
             return ChatResponse(
@@ -865,10 +859,6 @@ def create_incident_chat_router(
 
 
 NOT_SEARCHED = {
-    "official": (
-        "This chat mode doesn't answer questions about the official version yet, so no evidence was searched. "
-        "You can ask about any other version of this report, or about an unsaved edit."
-    ),
     "incident": (
         "This chat mode only answers questions about a report version, so no evidence was searched. "
         "Ask from the incident's report page."
@@ -910,9 +900,17 @@ def _composed_answer(
         if item is None:
             continue
         entry = entries.get((item.kind, item_id), {})
-        seconds = entry.get("timestamp_seconds")
-        if not isinstance(seconds, int | float) or isinstance(seconds, bool):
-            seconds = item.seconds or 0
+        # The second the crop was found at, as the evidence card and grounded answers use it, else the item's own.
+        seconds = next(
+            (
+                value
+                for value in (entry.get("box_seconds"), entry.get("timestamp_seconds"))
+                if isinstance(value, int | float) and not isinstance(value, bool)
+            ),
+            item.seconds,
+        )
+        if seconds is None:  # no stored moment: a card would have to invent one
+            continue
         citations.append(
             EvidenceCitation(
                 incident_id=video_id,

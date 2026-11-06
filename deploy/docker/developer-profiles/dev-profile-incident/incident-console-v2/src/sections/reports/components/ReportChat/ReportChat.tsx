@@ -20,10 +20,11 @@ import {
   MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
 import { type ChatTarget, chatRequestBody, citationTitle } from '@/lib/chat/report-chat';
+import { segmentChatText } from '@/lib/chat/timestamps';
 import type { ChatCitation, ChatResponse } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
-const SUGGESTIONS = ['What happened, in order?'];
+const SUGGESTIONS = ['Show the timeline of events'];
 
 let messageSequence = 0;
 
@@ -37,28 +38,75 @@ type ChatMessage = {
   insufficientEvidence?: boolean;
 };
 
+/** One conversation. The report page holds it, so closing the panel does not lose it. */
+export type ChatThread = {
+  messages: ChatMessage[];
+  sessionId?: string;
+  busy: boolean;
+  failed: string | null;
+};
+
+export const EMPTY_CHAT_THREAD: ChatThread = { messages: [], busy: false, failed: null };
+
+/** An answer's text as written, each video time in it a button that jumps there. */
+function AnswerText({
+  content,
+  durationSeconds,
+  onSeek,
+}: {
+  content: string;
+  durationSeconds: number | null;
+  onSeek: (seconds: number) => void;
+}) {
+  return (
+    <p className="whitespace-pre-wrap" data-testid="chat-answer">
+      {segmentChatText(content, { durationSeconds }).map((segment, index) =>
+        segment.kind === 'time' ? (
+          <button
+            aria-label={`Jump to ${segment.text} in the video`}
+            className="rounded-sm font-semibold text-primary tabular-nums underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid="chat-time"
+            // biome-ignore lint/suspicious/noArrayIndexKey: segments are derived from one fixed text, in order
+            key={index}
+            onClick={() => onSeek(segment.seconds)}
+            type="button"
+          >
+            {segment.text}
+          </button>
+        ) : (
+          segment.text
+        ),
+      )}
+    </p>
+  );
+}
+
 /**
  * Floating / drawer "Ask about this incident" panel. It asks about `target`: the version on
  * screen in View, the unsaved draft in Edit. Each answer says which version it came
- * from, and its citations jump the video to the cited moment.
+ * from, and every video time in it, like its citations, jumps the video to that moment.
  */
 export function ReportChat({
   videoId,
   target,
+  thread,
+  onThreadChange,
   onSeek,
+  durationSeconds = null,
   titles = {},
 }: {
   videoId: string;
   target: ChatTarget;
+  thread: ChatThread;
+  onThreadChange: (change: Partial<ChatThread>) => void;
   onSeek: (seconds: number) => void;
+  /** The player's length, once known: a time past it is not offered as a jump. */
+  durationSeconds?: number | null;
   /** Each cited item's name (citationTitles), so a citation is shown without its id. */
   titles?: Record<string, string>;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [sessionId, setSessionId] = useState<string | undefined>();
+  const { messages, sessionId, busy, failed } = thread;
   const [question, setQuestion] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
   const scrollerViewportRef = useRef<HTMLDivElement>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll to bottom whenever chat state updates
@@ -69,9 +117,7 @@ export function ReportChat({
   async function send(text: string, history: ChatMessage[]) {
     messageSequence += 1;
     const next: ChatMessage[] = [...history, { id: `msg-${messageSequence}`, role: 'user', content: text }];
-    setMessages(next);
-    setBusy(true);
-    setFailed(null);
+    onThreadChange({ messages: next, busy: true, failed: null });
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -82,13 +128,15 @@ export function ReportChat({
       });
       const payload = (await response.json()) as Partial<ChatResponse> & { error?: string };
       if (!response.ok || !payload.message) throw new Error(payload.error || 'No answer returned');
-      setSessionId(payload.sessionId);
       messageSequence += 1;
-      setMessages([...next, { ...payload.message, id: `msg-${messageSequence}`, answeredFrom: target.label }]);
+      onThreadChange({
+        sessionId: payload.sessionId,
+        messages: [...next, { ...payload.message, id: `msg-${messageSequence}`, answeredFrom: target.label }],
+      });
     } catch (cause) {
-      setFailed(cause instanceof Error ? cause.message : 'Chat failed');
+      onThreadChange({ failed: cause instanceof Error ? cause.message : 'Chat failed' });
     } finally {
-      setBusy(false);
+      onThreadChange({ busy: false });
     }
   }
 
@@ -133,11 +181,7 @@ export function ReportChat({
         <Button
           className="absolute right-4 bottom-3"
           disabled={!messages.length || busy}
-          onClick={() => {
-            setMessages([]);
-            setSessionId(undefined);
-            setFailed(null);
-          }}
+          onClick={() => onThreadChange({ messages: [], sessionId: undefined, failed: null })}
           size="xs"
           type="button"
           variant="outline"
@@ -152,8 +196,8 @@ export function ReportChat({
               {!messages.length && (
                 <>
                   <p className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-muted-foreground">
-                    Ask about the people, objects and events in this incident. Answers come from the version you have open, and link to the
-                    moment in the video.
+                    Ask about the people, objects and events in this incident. Answers come from the stored report for the version you have
+                    open, not from a new look at the video. Times in an answer jump to that moment.
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {SUGGESTIONS.map((suggestion) => (
@@ -182,9 +226,9 @@ export function ReportChat({
                   </Message>
                 ) : (
                   <Message align="start" className="self-start" key={message.id}>
-                    <Bubble>
+                    <Bubble variant="muted">
                       <BubbleContent className="rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-foreground">
-                        <p className="whitespace-pre-wrap">{message.content}</p>
+                        <AnswerText content={message.content} durationSeconds={durationSeconds} onSeek={onSeek} />
                         {!!message.citations?.length && (
                           <ul className="mt-2 grid gap-1.5" data-testid="chat-citations">
                             {message.citations.map((citation) => (
@@ -195,9 +239,17 @@ export function ReportChat({
                                   onClick={() => onSeek(citation.timestampSeconds)}
                                   type="button"
                                 >
-                                  {/* eslint-disable-next-line @next/next/no-img-element -- the agent's signed crop URL, used as given */}
-                                  {/* biome-ignore lint/performance/noImgElement: the agent's signed crop URL, used as given */}
-                                  <img alt="" className="h-9 w-[52px] rounded-md bg-muted object-cover" src={citation.cropImageUrl} />
+                                  {citation.cropImageUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element -- the agent's signed crop URL, used as given
+                                    // biome-ignore lint/performance/noImgElement: the agent's signed crop URL, used as given
+                                    <img alt="" className="h-9 w-[52px] rounded-md bg-muted object-cover" src={citation.cropImageUrl} />
+                                  ) : (
+                                    <span
+                                      aria-hidden="true"
+                                      className="h-9 w-[52px] rounded-md bg-muted"
+                                      data-testid="chat-citation-no-crop"
+                                    />
+                                  )}
                                   <span className="min-w-0">
                                     <b className="block truncate text-xs" data-testid="chat-citation-title">
                                       {citationTitle(titles, citation)}
@@ -217,7 +269,7 @@ export function ReportChat({
                           </Badge>
                         )}
                         <p className="mt-1.5 text-[10.5px] text-muted-foreground" data-testid="chat-answered-from">
-                          Answered from {message.answeredFrom}
+                          Answered from the stored report: {message.answeredFrom}
                         </p>
                       </BubbleContent>
                     </Bubble>
@@ -226,8 +278,8 @@ export function ReportChat({
               )}
               {busy && (
                 <Marker className="self-start rounded-2xl bg-muted px-3 py-2 text-xs text-muted-foreground">
-                  <MarkerContent aria-label="Searching evidence" role="status">
-                    Searching evidence…
+                  <MarkerContent aria-label="Reading the report" role="status">
+                    Reading the report…
                   </MarkerContent>
                 </Marker>
               )}

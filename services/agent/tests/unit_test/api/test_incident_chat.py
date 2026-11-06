@@ -333,12 +333,13 @@ def test_chat_non_official_version_cites_its_own_saved_crops():
     assert not list(response_validator.iter_errors(data))
 
 
-def test_chat_official_version_uses_search_index():
+def test_chat_official_version_is_answered_from_its_own_report():
     search = FakeSearchClient(hits=[])
-    store = FakeRevisionStore(revisions={3: _revision(3)}, official={"V1": 3})
+    store = FakeRevisionStore(revisions={2: _revision(2), 3: _revision(3)}, official={"V1": 3})
     resp = _ask(_make_client(search, store), version_id=3)
     assert resp.status_code == 200
-    assert search.last_filters == {"incident_id": "V1"}
+    assert search.last_query is None, "no search: the version asked about is the source"
+    assert resp.json()["message"]["citations"][0]["crop_image_url"].endswith("evidence/V1/batch3/I1.jpg")
 
 
 def test_chat_draft_uses_draft_items_with_crops_from_base_version():
@@ -535,7 +536,7 @@ def test_a_chronological_question_gets_the_timeline_in_order_not_an_item_list():
     assert "relevant item(s) were identified" not in content, "the old item-list template is gone"
     assert content.index("2:14") < content.index("2:21") < content.index("2:50"), content
     assert "walks up to the counter" in content and "leaves through the door" in content
-    assert "the man in black hoodie" in content and "the cashier in red apron" in content
+    assert "The man in black hoodie" in content and "the cashier in red apron" in content
     assert [c["item_id"] for c in message["citations"]] == ["E1", "E2", "I1", "E3"]
     assert message["citations"][0]["crop_image_url"].endswith(f"evidence/{VIDEO}/run1/E1.jpg")
 
@@ -725,19 +726,125 @@ def test_the_default_client_never_serves_demo_hits_for_a_library_question():
     assert "Assault007" not in resp.text and "machete" not in resp.text
 
 
-def test_the_official_version_keeps_the_decision_and_says_nothing_was_searched():
-    search = FakeSearchClient()  # an enabled client: the official version is searched (decision 2026-10-24)
-    message = _ask_version("What happened, in order?", official=True, search=search)
-    assert search.last_filters == {"incident_id": VIDEO}
-    assert message["content"] == (
-        "No matching incidents or evidence items were found for 'What happened, in order?' in this incident."
-    )
+def test_marking_a_version_official_does_not_change_its_answer():
+    plain = _ask_version("What happened, in order?")
+    official = _ask_version("What happened, in order?", official=True)
+    assert official == plain
+    assert "2:14" in official["content"] and official["citations"]
+
+
+def test_the_official_version_is_answered_with_the_default_search_client_too():
     store = FakeRevisionStore(revisions={7: _robbery_revision()}, official={VIDEO: 7})
     resp = _make_client(revision_store=store).post(
         "/api/v1/incidents/chat",
         json={"messages": [{"role": "user", "content": "What happened?"}], "version_id": 7},
     )
-    assert resp.json()["message"] == {"role": "assistant", "content": NOT_SEARCHED["official"], "citations": []}
+    assert resp.status_code == 200
+    assert "walks up to the counter" in resp.json()["message"]["content"]
+    assert "official" not in NOT_SEARCHED
+
+
+def _citation_seconds(entry: dict[str, Any]) -> float:
+    revision = _robbery_revision()
+    item = {"item_id": "E1", "item_type": "entity", "image": "evidence/run1/E1.jpg", **entry}
+    revision["evidence"] = [item]
+    store = FakeRevisionStore(revisions={7: revision})
+    resp = _make_client(revision_store=store).post(
+        "/api/v1/incidents/chat",
+        json={"messages": [{"role": "user", "content": "Who is involved?"}], "version_id": 7},
+    )
+    return next(c for c in resp.json()["message"]["citations"] if c["item_id"] == "E1")["timestamp_seconds"]
+
+
+def _animal_revision(revision_id: int, *, vase_image: str | None = "evidence/rev/A1.jpg") -> dict[str, Any]:
+    """A report shaped like the one that drew no cards: a dog, three assets and a timeline with no ids."""
+
+    def asset(asset_id: str, name: str) -> dict[str, Any]:
+        return {"asset_id": asset_id, "name": name, "label": name, "description": "", "timestamp_seconds": 0}
+
+    payload = {
+        "incident": {"type": "animal attack", "start_timestamp": 0, "end_timestamp": 5},
+        "entities": [
+            {"entity_id": "E1", "type": "animal", "label": "tan dog", "description": "", "timestamp_seconds": 0}
+        ],
+        "instruments": [],
+        "assets": [asset("A1", "vase"), asset("A2", "coffee table"), asset("A3", "sofa")],
+        "timeline": [
+            {"start_seconds": 0, "end_seconds": 1, "description": "The dog knocks over the vase on the coffee table."},
+            {"start_seconds": 1, "end_seconds": 2, "description": "The vase shatters on the floor."},
+        ],
+    }
+    evidence = [
+        {"item_type": "entity", "item_id": "E1", "image": f"evidence/{revision_id}/E1.jpg", "timestamp_seconds": 0},
+        {"item_type": "asset", "item_id": "A1", "image": vase_image, "timestamp_seconds": 0, "box_seconds": 0.4},
+        {"item_type": "asset", "item_id": "A2", "image": f"evidence/{revision_id}/A2.jpg", "timestamp_seconds": 0},
+        {"item_type": "asset", "item_id": "A3", "image": f"evidence/{revision_id}/A3.jpg", "timestamp_seconds": 0},
+    ]
+    return {"id": revision_id, "video_id": VIDEO, "payload": payload, "evidence": evidence}
+
+
+def _ask_animal(revisions: dict[int, dict[str, Any]], version_id: int, question: str, **extra: Any) -> dict[str, Any]:
+    store = FakeRevisionStore(revisions=revisions)
+    resp = _make_client(revision_store=store).post(
+        "/api/v1/incidents/chat",
+        json={"messages": [{"role": "user", "content": question}], "version_id": version_id, **extra},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["message"]
+
+
+def test_a_chronology_of_an_animal_attack_has_cards_for_what_it_names():
+    message = _ask_animal({7: _animal_revision(7)}, 7, "What happened?")
+    assert [c["item_id"] for c in message["citations"]] == ["E1", "A1", "A2"], "the sofa is never mentioned"
+
+
+def test_a_card_keeps_its_stored_second_not_the_events():
+    message = _ask_animal({7: _animal_revision(7)}, 7, "Show the timeline of events")
+    assert {c["item_id"]: c["timestamp_seconds"] for c in message["citations"]} == {"E1": 0, "A1": 0.4, "A2": 0}
+
+
+def test_a_card_with_no_crop_is_kept_with_an_empty_image():
+    message = _ask_animal({7: _animal_revision(7, vase_image=None)}, 7, "What happened?")
+    vase = next(c for c in message["citations"] if c["item_id"] == "A1")
+    assert vase["crop_image_url"] == "" and vase["timestamp_seconds"] == 0.4
+
+
+def test_an_item_with_no_stored_second_gets_no_card_rather_than_an_invented_one():
+    revision = _animal_revision(7)
+    del revision["payload"]["assets"][1]["timestamp_seconds"]
+    revision["evidence"] = [e for e in revision["evidence"] if e["item_id"] != "A2"]
+    message = _ask_animal({7: revision}, 7, "What happened?")
+    assert [c["item_id"] for c in message["citations"]] == ["E1", "A1"]
+
+
+def test_cards_come_from_the_version_asked_about():
+    other = _animal_revision(8)
+    other["evidence"] = [{**e, "image": f"evidence/8/{e['item_id']}.jpg"} for e in other["evidence"]]
+    message = _ask_animal({7: _animal_revision(7), 8: other}, 7, "What happened?")
+    assert all("/8/" not in c["crop_image_url"] for c in message["citations"])
+    assert _ask_animal({7: _animal_revision(7), 8: other}, 8, "What happened?")["citations"][0][
+        "crop_image_url"
+    ].endswith("evidence/8/E1.jpg")
+
+
+def test_an_official_version_and_a_draft_get_cards_too():
+    store = FakeRevisionStore(revisions={7: _animal_revision(7)}, official={VIDEO: 7})
+    resp = _make_client(revision_store=store).post(
+        "/api/v1/incidents/chat",
+        json={"messages": [{"role": "user", "content": "What happened?"}], "version_id": 7},
+    )
+    assert [c["item_id"] for c in resp.json()["message"]["citations"]] == ["E1", "A1", "A2"]
+    payload = _animal_revision(7)["payload"]
+    draft = {"incident": {}, "entities": payload["entities"], "instruments": [], "assets": payload["assets"][:1]}
+    message = _ask_animal({7: _animal_revision(7)}, 7, "What happened?", draft_report=draft)
+    assert [c["item_id"] for c in message["citations"]] == ["E1", "A1"], "the draft removed the coffee table"
+
+
+def test_a_citation_jumps_to_the_second_its_crop_was_found_at():
+    assert _citation_seconds({"box_seconds": 12.5, "timestamp_seconds": 0}) == 12.5
+    assert _citation_seconds({"box_seconds": 0, "timestamp_seconds": 9}) == 0, "second 0 is a real second"
+    assert _citation_seconds({"box_seconds": None, "timestamp_seconds": 9}) == 9
+    assert _citation_seconds({"timestamp_seconds": 9}) == 9
 
 
 def test_search_hits_read_as_prose_by_incident_with_ids_only_in_citations():
@@ -830,6 +937,6 @@ def test_a_console_draft_keeps_the_base_timeline_and_title():
         },
     )
     content = resp.json()["message"]["content"]
-    assert content.startswith("The report describes a robbery from 2:10 to 3:00. In order:"), content
+    assert content.startswith("The report describes a robbery from 2:10 to 3:00.\n\n\u2022 2:14"), content
     assert "confronts a person" in content, "E2 was removed in the draft, so the base timeline names a person"
     assert not ID_TOKEN.search(content) and "new-E" not in content

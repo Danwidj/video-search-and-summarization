@@ -16,6 +16,44 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Dependencies:** `react-day-picker` (the engine under the shadcn `Calendar`) is the only new package. The shadcn CLI also added `date-fns`; nothing imports it, so it was removed.
 - **Links:** [`Dashboard.tsx`](../incident-console-v2/src/sections/dashboard/components/Dashboard/Dashboard.tsx), [`charts.ts`](../incident-console-v2/src/modules/dashboard/domain/charts.ts), [`calendar.tsx`](../incident-console-v2/src/components/ui/calendar.tsx), [`route.ts`](../incident-console-v2/src/app/api/dashboard/route.ts), [migration](../supabase/migrations/20261106140000_dashboard_versions_and_evidence.sql), [console reference](console-reference.md#dashboard-analytics-and-cross-filtering).
 
+### 2026-11-06: A template chat answer cites the items its report text names, matched by id or by name
+- **Decision:** a chronology, a description fallback and a taking cite the items their report text refers to, each once, in order of first mention. An id in the text counts. Otherwise an item counts when its name or label stands whole in the text (articles and plurals aside), or when a person's or animal's head word does ("the dog") and no other entity shares it. The longest phrase wins a stretch of text. Items tied on it are one object if they share a name and label, else the text does not say which it means and none is cited. Descriptions are not matched. With nothing named there are no citations. A card keeps its stored second, and an item with none gets no card.
+- **Why:** the fallback cited every person when the text held no ids. 54 of 57 stored events hold none, so an animal attack with a dog and three assets had no cards, while other reports listed bystanders the events never mention, and objects were never cited. On the 16 default-opened reports on 6 Nov the rule cites what each timeline names: the dog, coffee table and vase but not the sofa, and not rev 129's pedestrian.
+- **Rejected:** word overlap (the first version's "on ground", from "backpack on ground", matched "remains on the ground"); matching descriptions (they mention neighbouring things); a model call to choose cards (not worth a call, and grounded mode stays off).
+- **Known limit:** text that names an item differently gets no card: "the vehicle" for a car, or "the man" with two men in the report. A one-word name can also match the same word used another way.
+- **Links:** [`report_answers.py`](../../../../../services/agent/src/vss_agents/utils/report_answers.py)
+
+### 2026-11-06: The report chat offers one suggested question, Show the timeline of events
+- **Decision:** the panel keeps PR 491's single suggestion and its header, and the owner chose the wording **Show the timeline of events**. Who, what was taken and weapons are still answered when typed.
+- **Why:** PR 491 cut the list to one and recorded that in the docs, so the panel stays short. It kept the old text, "What happened, in order?", without a stated reason. The new wording says what the answer is: a timed list. Typing the old question still gives the same answer.
+- **Rejected:** the four chips first built for this work (they would have undone PR 491).
+- **Links:** [`ReportChat.tsx`](../incident-console-v2/src/sections/reports/components/ReportChat/ReportChat.tsx)
+
+### 2026-11-06: Template chat answers the official version from its report, and citations use the crop's second
+- **Status:** approved by the owner on 2026-11-06. Replaces [2026-10-24](archive/decisions-superseded.md#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2-superseded-2026-11-06) for template mode; grounded mode already answered it. Grounded mode stays off.
+- **Decision:** in template mode the official version is answered from its own report, like any other version, so the search client no longer takes part in a question that names a version. A template citation seeks to the evidence entry's `box_seconds`, else its `timestamp_seconds`, else the item's second.
+- **Why:** marking a report official replaced its chat answers with "This chat mode doesn't answer questions about the official version yet". No video had an official version on 6 Nov (0 of 15), so nobody had met it, but the first star would have. For the second: the evidence card and grounded mode use `box_seconds`, and the two differ by 1 s or more on 29 of 66 evidence entries, so a card could jump away from the moment its image shows.
+- **Rejected:** keeping the official version on the search client (it finds nothing for a finals video); turning on grounded mode to fix this (not validated against template mode yet).
+- **Links:** [`incident_chat.py`](../../../../../services/agent/src/vss_agents/api/incident_chat.py), [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat)
+
+### 2026-11-06: The report chat panel is not modal and its conversation lives on the report page
+- **Decision:** the report page's chat sheet is non-modal, has no overlay and stays open when the page behind it is used; only its close button, Escape or the toggle closes it. Each version's conversation (and its draft's) is held by `ReportPage`, so closing the panel keeps it; a new Edit draft starts a new conversation. `seek` uses the player on screen, which below the `lg` breakpoint is the compact one. The library chat sheet is unchanged.
+- **Why:** checked in a browser on 6 Nov against the VM agent. While the panel was open the overlay took the clicks and the player was `aria-hidden`, so a jump could not be paused or scrubbed. Closing the panel to watch unmounted the chat and lost the conversation. Below `lg`, seeks went to the hidden player, so a jump did nothing visible.
+- **Amends:** [2026-11-03](#2026-11-03-every-console-video-is-silent-play-clip-is-removed-and-the-chat-sheet-does-not-blur-the-page), where the shared overlay "still dims the page": that now applies to the library chat only.
+- **Rejected:** closing the panel on every jump (loses the place in a long answer); keeping the panel mounted while closed (a hidden sheet in the page's focus order).
+- **Links:** [`ReportPage.tsx`](../incident-console-v2/src/sections/reports/components/ReportPage/ReportPage.tsx), [`ReportChat.tsx`](../incident-console-v2/src/sections/reports/components/ReportChat/ReportChat.tsx)
+
+### 2026-11-06: The chat keeps the report timeline and relevant uncertainties, and the report page stays without them
+- **Status:** an exception to [2026-10-28: The report timeline is being removed](#2026-10-28-the-report-timeline-is-being-removed), approved by the owner on 2026-11-06 for the chatbot work, and by the captain the same day, whose 28 Oct direction it changes. The captain's approval, which also covers merging PRs 492 and 494, was given outside GitHub and passed on by the owner, so neither PR holds a review or comment from the captain. [2026-11-01](#2026-11-01-the-console-no-longer-shows-the-model-event-timeline-or-the-model-reported-uncertainties) stands: nothing returns to the report page.
+- **Decision:**
+  - `timeline` stays in `incident-contract-v4` as the chat's source for a what-happened answer, and is not restored to the report UI.
+  - Uncertainties reach a chat answer only in a chronology, and only those that relate to the events shown.
+  - Removing `timeline` from the contract (action item 5) is on hold, and would first need another source for the chronology.
+- **Why:** the timeline is the only ordered, timed account of an incident the system stores. Without it a what-happened answer falls back to one description paragraph. Audit on 6 Nov of the 15 reports the library opens by default: all 15 have a timeline, with 2 to 7 events each.
+- **The 28 Oct concern still applies:** the timeline is unscored and can disagree with the incident window (6 of 57 events fell outside it). Such an event may be real lead-up or aftermath, so the answer labels it as context around the incident rather than dropping it or treating it as wrong.
+- **Rejected:** deleting the timeline as planned (the chat loses its chronology); restoring it to the report page (the 1 Nov decision stands); building a chronology from first-seen and last-seen times (they place items, not events).
+- **Links:** [`report_answers.py`](../../../../../services/agent/src/vss_agents/utils/report_answers.py), [`status.md`](status.md#5-action-items).
+
 ### 2026-11-06: Dashboard charts are Chart.js configurations that VSS `chart_generator` builds, and the browser draws them
 - **Decision:** `chart_generator` returns a Chart.js configuration (`type`, `data`, `options`) as plain JSON for each `"output": "chartjs"` item, with the figures the console sent placed exactly as sent and no callbacks. The PNG output stays as the fallback. The console draws the configuration with `chart.js` 4 and `react-chartjs-2` 5 in a client component, loaded only when a chart comes back. The user picks one of six kinds: bar, stacked bar (official and not yet official in one bar, for dimensions with the split), horizontal bar, donut (for dimensions that are a whole, in place of the pie), and line or area (for day, week and month trends). No heatmap. The model is unchanged: it still picks only the dimension, period and filters.
 - **Figures:** the console checks every label and figure in the returned configuration against the rows it computed (`configMatchesChart`). A mismatch is a 502 and is never shown. The Table tab lists the same rows.
@@ -334,7 +372,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [contract](vm-api-contracts.md#post-apiv1incidentschat), [`grounded_chat.py`](../../../../../services/agent/src/vss_agents/utils/grounded_chat.py)
 
 ### 2026-11-02: Grounded chat answers from one report version with a chat model, behind a mode switch (Gate M2 approved by the chatbot feature owner)
-- **Status:** approved on 2026-11-02 by the authorised chatbot feature owner (Gate M2). The decision covers implementing and integrating grounded report chat (P5), library chat (P6) and console report chat (P7), and it supersedes [2026-10-24: Chat about the official version uses the in-memory chat search client](#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2) for grounded mode. **The production default does not change:** template mode stays the default (`INCIDENT_CHAT_MODE` unset) until Evaluation V2 validates grounded mode, and nothing is deployed to the shared agent by this merge. First proposed 2026-11-01.
+- **Status:** approved on 2026-11-02 by the authorised chatbot feature owner (Gate M2). The decision covers implementing and integrating grounded report chat (P5), library chat (P6) and console report chat (P7), and it supersedes [2026-10-24: Chat about the official version uses the in-memory chat search client](archive/decisions-superseded.md#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2-superseded-2026-11-06) for grounded mode. **The production default does not change:** template mode stays the default (`INCIDENT_CHAT_MODE` unset) until Evaluation V2 validates grounded mode, and nothing is deployed to the shared agent by this merge. First proposed 2026-11-01.
 - **Decision:** with `INCIDENT_CHAT_MODE=grounded`, an incident question is answered by a chat model from one report version: the asked one, else the official one, or the reviewer's draft.
   - The model is `INCIDENT_CHAT_MODEL`, default Nemotron 3 Ultra, which the endpoint check (RB1) must confirm.
   - It sees the registered prompt `chat/incident-answer`, the version as JSON (incident, items with ids, timeline) and the last eight turns.
@@ -549,7 +587,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - removing the ids from the old sentence: it would still list items for every question;
   - answering the official version from its saved report as well: that supersedes the 2026-10-24 decision (Gate M2);
   - wiring the real search store or a model into this mode: that is grounded chat (P5 and P6), behind the same gate.
-- **Links:** [`report_answers.py`](../../../../../services/agent/src/vss_agents/utils/report_answers.py), [`incident_chat.py`](../../../../../services/agent/src/vss_agents/api/incident_chat.py), [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat), [2026-10-24 decision](#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2).
+- **Links:** [`report_answers.py`](../../../../../services/agent/src/vss_agents/utils/report_answers.py), [`incident_chat.py`](../../../../../services/agent/src/vss_agents/api/incident_chat.py), [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat), [2026-10-24 decision](archive/decisions-superseded.md#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2-superseded-2026-11-06).
 
 ### 2026-11-01: The dashboard breaks ties in byte order (COLLATE "C"), whatever the database collation
 - **Decision:** every text tie-break in `get_incident_dashboard` (types, entity, instrument and asset labels, model names) says `COLLATE "C"`. The function is otherwise unchanged (migration `20261101120000_dashboard_byte_order_ties.sql`).
@@ -926,6 +964,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** PR #246, `incident-console-v2/src/modules/reports/domain/edit-draft.ts`, `incident-console-v2/src/lib/reports/compare.ts`.
 
 ### 2026-10-28: The report timeline is being removed
+- **Amended (2026-11-06):** the contract removal is on hold, because the chat's chronology reads the timeline ([exception](#2026-11-06-the-chat-keeps-the-report-timeline-and-relevant-uncertainties-and-the-report-page-stays-without-them)).
 - **Decision:** the model-generated `timeline` is being dropped from the report. The console no longer shows it ([2026-11-01](#2026-11-01-the-console-no-longer-shows-the-model-event-timeline-or-the-model-reported-uncertainties)), but `incident-contract-v4` still carries `timeline`. Removing it from the contract is a version bump per the contract rules and is an open action in [`status.md`](status.md#5-action-items).
 - **Why:** the timeline is enrichment, not a core scored field: its violations are not fatal under `core-scored-v1`, and it could disagree with the incident window ([`analysis-schema.md`](analysis-schema.md)).
 - **Links:** [`analysis-schema.md`](analysis-schema.md), [`status.md`](status.md#5-action-items).
@@ -1331,13 +1370,6 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:** Reproduced on 2026-10-25 (known issue 8): a SIGTERM to `start.sh` alone left `next-server`, the mock and the gateway listening, because bash runs a trap only after the foreground command returns, and killing a wrapper (`uv run`, `npm run`) does not stop the server it started. Ctrl-C from a terminal worked only because the terminal signals the whole process group.
 - **Rejected:** `setsid` or `set -m` per child (`setsid` is not on macOS laptops, and `set -m` changes terminal and signal handling for every background job, including the VM lock's `ssh -tt`); killing process groups (all children share `start.sh`'s group, so it would signal `start.sh` too).
 - **Links:** [`incident-profile-operations.md`](incident-profile-operations.md); `eval/tests/test_start_script.py`.
-
-### 2026-10-24: Chat about the official version uses the in-memory chat search client for MVP2
-- **Superseded for grounded mode (2026-11-02):** see [Grounded chat answers from one report version](#2026-11-02-grounded-chat-answers-from-one-report-version-with-a-chat-model-behind-a-mode-switch-gate-m2-approved-by-the-chatbot-feature-owner). This entry still describes template mode, which remains the default.
-- **Decision:** A chat question about the official revision with no draft goes to the agent chat route's search client, which stays the in-memory canned client for MVP2, so it finds no evidence for a finals video. Other versions and drafts are answered from their saved evidence.
-- **Why:** A deliberate choice by the captain (2026-10-24); no reason was recorded.
-- **Rejected:** none recorded.
-- **Links:** [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat).
 
 ### 2026-10-24: A human revision's search text comes from its evidence entries as they are
 - **Decision:** On Save, an item that keeps its image copies the parent's evidence entry, so its search passage (`"{item_name}: {description}"`) is the parent's text, not the reviewer's edit; an item with a replaced or added image gets an entry with neither field, so its vector is close to empty (`humanRevisionContent`). This is deliberate.
