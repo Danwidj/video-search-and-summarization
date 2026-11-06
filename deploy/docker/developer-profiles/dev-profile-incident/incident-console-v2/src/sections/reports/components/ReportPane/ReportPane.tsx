@@ -3,7 +3,6 @@
 
 import Link from 'next/link';
 import { Fragment, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useState } from 'react';
-import { PlusIcon } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { EvidenceBadges } from '@/sections/reports/components/EvidenceBadges';
@@ -47,7 +46,6 @@ export function ReportPane({
   report,
   playerDuration,
   onSeek,
-  onAddEvidence,
   officialMissing = false,
   compareHref = null,
   selectedTrackId = null,
@@ -56,7 +54,6 @@ export function ReportPane({
   report: ReportView;
   playerDuration: number | null;
   onSeek: (seconds: number, still?: StillBox | null) => void;
-  onAddEvidence: () => void;
   /** True once the versions have loaded and none of them is official. */
   officialMissing?: boolean;
   /** Link to compare this version with another AI version, when there is one. */
@@ -223,23 +220,15 @@ export function ReportPane({
       </UICard>
 
       <UICard className="mt-5 gap-0 overflow-hidden border-border/80 py-0" data-testid="evidence-section">
-        <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-4 py-3.5">
-          <div className="flex min-w-0 flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="text-base font-semibold">Evidence items</CardTitle>
-              <Badge className="font-mono text-[10px]" variant="secondary">
-                {itemCount}
-              </Badge>
-            </div>
+        <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-4 py-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+            <CardTitle className="text-base font-semibold">Evidence items</CardTitle>
+            <Badge className="font-mono text-[10px]" variant="secondary">
+              {itemCount}
+            </Badge>
             <CardDescription className="text-xs">People, instruments and assets linked to this incident</CardDescription>
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <Button data-testid="add-evidence" onClick={onAddEvidence} size="sm" type="button">
-              <PlusIcon aria-hidden="true" />
-              Add evidence
-            </Button>
-            <div aria-label="Evidence navigation" className="flex min-h-8 gap-2" ref={setCarouselControlsTarget} />
-          </div>
+          <div aria-label="Evidence navigation" className="flex min-h-8 shrink-0 gap-2" ref={setCarouselControlsTarget} />
         </CardHeader>
         {itemCount === 0 ? (
           <CardContent className="px-4 py-5">
@@ -247,7 +236,7 @@ export function ReportPane({
               className="m-0 rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground"
               data-testid="evidence-empty"
             >
-              No evidence items yet. Add evidence to start documenting people, instruments or assets in this incident.
+              No evidence items yet. Use Edit to add people, instruments or assets to this incident.
             </p>
           </CardContent>
         ) : (

@@ -82,7 +82,6 @@ export function ReportPage({
   const [revisions, setRevisions] = useState<RevisionSummary[] | null>(null);
   const [revisionsError, setRevisionsError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('view');
-  const [openAddEvidenceOnEdit, setOpenAddEvidenceOnEdit] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   // The player's own length, a second guard (besides the recorded length) before jumping to a time.
   const [playerDuration, setPlayerDuration] = useState<number | null>(null);
@@ -206,8 +205,7 @@ export function ReportPage({
     [shownReport],
   );
 
-  const startEdit = useCallback((base: ReportView, addEvidence = false) => {
-    setOpenAddEvidenceOnEdit(addEvidence);
+  const startEdit = useCallback((base: ReportView) => {
     setDraft(draftFromView(base));
     // A new draft starts a new conversation: answers about an earlier draft no longer describe it.
     setChatThreads(({ [chatThreadKey(base.revisionId, true)]: _earlierDraft, ...threads }) => threads);
@@ -545,7 +543,6 @@ export function ReportPage({
                   <ReportPane
                     compareHref={compareHref}
                     officialMissing={!officialRevision && revisions !== null}
-                    onAddEvidence={() => startEdit(report, true)}
                     onSeek={seek}
                     onSelectTrack={selectTrack}
                     playerDuration={playerDuration}
@@ -558,7 +555,6 @@ export function ReportPage({
                     aRevisionNo={compareReport?.revision.revisionNo ?? editBase.revisionNo}
                     baseRevisionNo={editBase.revisionNo}
                     draft={draft}
-                    initiallyAddEvidence={openAddEvidenceOnEdit}
                     officialMissing={!officialRevision && revisions !== null}
                     onChange={changeDraft}
                     onSeek={seek}

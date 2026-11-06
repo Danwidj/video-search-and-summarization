@@ -74,7 +74,6 @@ export function ReportEditPane({
   onChange,
   onSeek,
   boxClient,
-  initiallyAddEvidence = false,
   officialMissing = false,
 }: {
   a: Structured | null;
@@ -89,12 +88,11 @@ export function ReportEditPane({
   /** Replaces the box tool's calls to the console routes (tests). */
   boxClient?: BoxToolClient;
   /** Open the existing box tool immediately when entering Edit from the View evidence section. */
-  initiallyAddEvidence?: boolean;
   /** True once revisions have loaded and none of them is official. */
   officialMissing?: boolean;
 }) {
   // The box tool: adding new evidence, or re-tracking a card's item from a new box.
-  const [boxTool, setBoxTool] = useState<{ row: PairRow['b'] } | null>(initiallyAddEvidence ? { row: null } : null);
+  const [boxTool, setBoxTool] = useState<{ row: PairRow['b'] } | null>(null);
   const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLDivElement | null>(null);
   // The track editor: fix a card's track with keyframes. `saved` is the opened version's item, whose track it starts from.
   const [trackEditor, setTrackEditor] = useState<{
