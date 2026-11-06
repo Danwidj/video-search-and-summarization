@@ -58,7 +58,7 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 On by default in vm mode (since 31 Oct 2026): `./start.sh --mode vm` runs `tracking-stack.sh start` on the VM after Phoenix; it keeps running when `start.sh` exits; `tracking-stack.sh stop` stops it by hand. `native-services.sh` starts `vss-agent` with `INCIDENT_TRACKING_ENABLED=true` unless `generated.env.remote` sets it, and the agent needs `ffmpeg` and `ffprobe`, which `native-services.sh` provides ([default stack](#default-analysis-stack-in-vm-mode)).
 
 - **Turn it off:** `ENABLE_TRACKING=false ./start.sh` skips the stack; the agent then reports `tracking.skipped` and the analysis runs as before. To stop the agent trying at all, set `INCIDENT_TRACKING_ENABLED=false` in `generated.env.remote` (ask first) and `./native-services.sh restart vss-agent`.
-- **Latency:** an analysis takes about the clip's length plus 10 s longer (31 Oct 2026: 24 s clip 56 s, 49 s clip 79 s, 94 s clip 132 s in total). An agent run is bounded by the model's 300 s timeout (`contracts/inference.json`), so clips over about 3 minutes may time out.
+- **Latency:** an analysis takes about the clip's length plus 10 s longer (31 Oct 2026: 24 s clip 56 s, 49 s clip 79 s, 94 s clip 132 s in total). An agent run is limited to 600 s by the console (`INCIDENT_ANALYSIS_TIMEOUT_SECONDS`) and the agent spends at most 540 s before it saves (`INCIDENT_ANALYSIS_BUDGET_SECONDS`), so a slow main call still gets its report; gateway runs keep the model's 300 s timeout (`contracts/inference.json`).
 
 ### Default analysis stack in vm mode
 

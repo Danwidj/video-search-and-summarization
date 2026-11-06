@@ -18,13 +18,17 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 import threading
 import time
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+from fastapi import FastAPI
+from fastapi import Request
 import httpx
 import pytest
+import uvicorn
 
 from vss_agents.utils import run_cancel
 from vss_agents.utils.crop_evidence import DefaultDetector
@@ -191,3 +195,82 @@ class TestHostedCallsStopAfterAnAbort:
             assert post.call_count == 1 and time.monotonic() - started < 5
         finally:
             run_cancel._CANCEL.reset(token)
+
+
+class TestARealServerBehindTheMiddleware:
+    """Job 59 (6 Nov 2026): NAT puts a ``BaseHTTPMiddleware`` in front of every route, and behind it
+    ``request.is_disconnected()`` never turned true, so a run whose caller had gone still saved a report.
+
+    These tests start a real uvicorn server with that middleware and drop a raw TCP connection, which is what the
+    console's abort (or the SSH tunnel closing) does.
+    """
+
+    @staticmethod
+    def _serve(*, with_middleware: bool, use_request_watcher: bool, seen: list[str]):
+        app = FastAPI()
+        if with_middleware:
+
+            @app.middleware("http")
+            async def passthrough(request: Request, call_next):  # the shape of NAT's authentication_log_filter
+                return await call_next(request)
+
+        async def slow_run() -> dict:
+            await asyncio.sleep(8)  # the main call
+            seen.append("report written")
+            return {"ok": True}
+
+        @app.post("/analyze")
+        async def analyze(request: Request) -> dict:
+            await request.body()
+            try:
+                if use_request_watcher:
+                    return await run_cancel.run_until_request_disconnect(slow_run, request)
+                return await run_cancel.run_until_disconnect(slow_run, request.is_disconnected, poll_seconds=0.1)
+            except run_cancel.AnalysisCancelledError:
+                seen.append("cancelled")
+                raise
+
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="critical"))
+        thread = threading.Thread(target=server.run, daemon=True)
+        thread.start()
+        deadline = time.monotonic() + 10
+        while not server.started and time.monotonic() < deadline:
+            time.sleep(0.05)
+        return server, thread, port
+
+    @staticmethod
+    def _post_and_hang_up(port: int, after_seconds: float) -> None:
+        body = b"{}"
+        with socket.create_connection(("127.0.0.1", port)) as conn:
+            conn.sendall(
+                b"POST /analyze HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                + f"Content-Length: {len(body)}\r\n\r\n".encode()
+                + body
+            )
+            time.sleep(after_seconds)
+
+    def _drop_a_client(self, *, with_middleware: bool, use_request_watcher: bool) -> list[str]:
+        seen: list[str] = []
+        server, thread, port = self._serve(
+            with_middleware=with_middleware, use_request_watcher=use_request_watcher, seen=seen
+        )
+        try:
+            self._post_and_hang_up(port, after_seconds=1.0)
+            time.sleep(3)  # long enough for the poll, far short of the 8 s run
+        finally:
+            server.should_exit = True
+            thread.join(timeout=15)
+        return seen
+
+    @pytest.mark.parametrize("with_middleware", [False, True])
+    def test_a_client_that_hangs_up_stops_the_run_and_no_report_is_written(self, with_middleware: bool) -> None:
+        assert self._drop_a_client(with_middleware=with_middleware, use_request_watcher=True) == ["cancelled"]
+
+    def test_polling_is_disconnected_behind_the_middleware_never_saw_the_hang_up(self) -> None:
+        # The old call. This pins the cause: if it starts passing, the middleware stopped hiding the disconnect and
+        # the watcher is no longer needed.
+        assert self._drop_a_client(with_middleware=True, use_request_watcher=False) == ["report written"]
+        assert self._drop_a_client(with_middleware=False, use_request_watcher=False) == ["cancelled"]

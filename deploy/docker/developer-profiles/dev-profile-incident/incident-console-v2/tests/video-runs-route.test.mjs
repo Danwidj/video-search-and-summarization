@@ -8,6 +8,9 @@ import { afterEach, beforeEach, mock, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
+const { agentBridge } = await import('./support/agent-bridge.mjs');
+const AGENT_URL = await agentBridge();
+
 mock.module('@aws-sdk/client-s3', {
   namedExports: {
     S3Client: class {
@@ -181,7 +184,7 @@ test('agent-mode re-analysis sends the chosen model and reviewer prompt to the a
   const gatewayFetch = globalThis.fetch;
   const agentBodies = [];
   process.env.ANALYSIS_MODE = 'agent';
-  process.env.INCIDENT_AGENT_BASE_URL = 'http://agent.test:8000';
+  process.env.INCIDENT_AGENT_BASE_URL = AGENT_URL;
   globalThis.fetch = async (url, init = {}) => {
     if (!String(url).includes('/api/v1/incidents/')) return gatewayFetch(url, init);
     agentBodies.push(JSON.parse(String(init.body)));

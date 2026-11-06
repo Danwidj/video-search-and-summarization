@@ -7,7 +7,8 @@
 // One job at
 // a time per console, like the batch upload, which keeps within the model
 // provider's rate limits. It is not a request, so no route maxDuration applies;
-// each model's own timeout (contracts/inference.json) still bounds an analysis.
+// the analysis limit still bounds one: 600 s in agent mode (INCIDENT_ANALYSIS_TIMEOUT_SECONDS), each model's own
+// timeout (contracts/inference.json) in gateway mode. The heartbeat runs on its own timer, so a long run is not stale.
 // ANALYSIS_JOB_LOOP=off leaves it stopped (jobs then wait for another console).
 
 import { getAnalysisJobs, getDbAdapters, getUploadAnalysis } from '@/lib/container';
