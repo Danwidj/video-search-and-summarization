@@ -3,10 +3,15 @@
 // get_incident_dashboard: DashboardQuery -> RPC arguments, and its JSON ->
 // DashboardAnalytics field by field. For every result its SQL can build (the
 // latest definition in supabase/migrations/) the output equals the input; the
-// defaults only apply to a malformed result.
+// defaults only apply to a malformed result. A field an older definition does
+// not return (multipleVersions, evidence, the entity and instrument split) is
+// null, never 0, so the page never shows a figure it has not loaded.
 
 import type {
   DashboardAnalytics,
+  EvidenceKind,
+  EvidenceTotal,
+  MaybeSplitRankedValue,
   ModelCoverage,
   OfficialSplit,
   RankedValue,
@@ -25,9 +30,24 @@ const numberOrNull = (value: unknown): number | null => (typeof value === 'numbe
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 const ranked = (value: unknown): RankedValue[] => asRows(value).map((item) => ({ label: text(item.label), count: count(item.count) }));
 
+const EVIDENCE_KINDS: readonly EvidenceKind[] = ['entities', 'instruments', 'assets'];
+/** The kinds the RPC returns; anything else is a malformed result and is read as the first kind with no count. */
+const evidenceKind = (value: unknown): EvidenceKind => EVIDENCE_KINDS.find((kind) => kind === value) ?? 'entities';
+
 const split = (item: Row): OfficialSplit => ({ official: count(item.official), notOfficial: count(item.notOfficial) });
 const splitRanked = (value: unknown): SplitRankedValue[] =>
   asRows(value).map((item) => ({ label: text(item.label), count: count(item.count), ...split(item) }));
+/** A row without its split keys is from an older definition: its split is unknown, not zero. */
+const maybeSplitRanked = (value: unknown): MaybeSplitRankedValue[] =>
+  asRows(value).map((item) => {
+    const known = 'official' in item || 'notOfficial' in item;
+    return {
+      label: text(item.label),
+      count: count(item.count),
+      official: known ? count(item.official) : null,
+      notOfficial: known ? count(item.notOfficial) : null,
+    };
+  });
 
 function severityCounts(value: unknown): SeverityCounts {
   const item = asRow(value);
@@ -60,6 +80,7 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
   return {
     total: count(result.total),
     ...split(result),
+    multipleVersions: numberOrNull(result.multipleVersions),
     videos: {
       uploaded: count(videos.uploaded),
       withOfficial: count(videos.withOfficial),
@@ -96,8 +117,11 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
       ...split(item),
     })),
     confidence: asRows(result.confidence).map((item) => ({ bucket: count(item.bucket), count: count(item.count) })),
-    entityTypes: ranked(result.entityTypes),
-    topInstruments: ranked(result.topInstruments),
+    evidence: Array.isArray(result.evidence)
+      ? asRows(result.evidence).map((item): EvidenceTotal => ({ kind: evidenceKind(item.kind), count: count(item.count), ...split(item) }))
+      : null,
+    entityTypes: maybeSplitRanked(result.entityTypes),
+    topInstruments: maybeSplitRanked(result.topInstruments),
     topAssets: splitRanked(result.topAssets),
     threatLevels: asRows(result.threatLevels).map((item) => ({ level: count(item.level), count: count(item.count) })),
     modelCoverage: asRows(result.modelCoverage).map(

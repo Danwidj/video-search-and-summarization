@@ -352,7 +352,7 @@ stored. It never returns `payload`, notes, signed URLs or video content.
 #### `get_incident_dashboard`
 
 Counts each video once through `searchable_revision_id`: its **official revision, else its newest**,
-the same rule as the library and search (migration `20261031090000_dashboard_official_else_newest.sql`).
+the same rule as the library and search (migration `20261031090000_dashboard_official_else_newest.sql`). The latest definition is `20261106140000_dashboard_versions_and_evidence.sql` (not yet applied to finals; it also carries the byte-order ties of `20261101120000`).
 Ranked lists and types sort by count, then by label, type or model name in byte order (`COLLATE "C"`,
 migration `20261101120000`), so ties rank the same on every database.
 It only reads `videos.official_revision_id`, to report the split, and never sets it. Filtered by the
@@ -365,8 +365,8 @@ it). Returns `total` with
 (`ai`/`human`), types with per-type evidence, daily `trend` (days in `p_timezone`), `heatmap`,
 `entityTypes`, `topInstruments`, `topAssets`, `threatLevels`, a confidence histogram with
 `confidenceNotProvided`, and `modelCoverage` (attempts by outcome: failed attempts from `model_runs`,
-successful ones from AI revisions). Each `types`, `trend`, `heatmap` and `topAssets` entry also
-carries `official` and `notOfficial`. `videos` and `modelCoverage` ignore every filter except that
+successful ones from AI revisions). Each `types`, `trend`, `heatmap`, `topAssets`, `entityTypes` and `topInstruments` entry also
+carries `official` and `notOfficial`. `multipleVersions` counts the counted reports whose video has more than one `report_revisions` row (AI and human alike; not part of the split). `evidence` lists the counted reports' items by kind in the order `entities`, `instruments`, `assets`, each with `count`, `official` and `notOfficial`; an item is one entry of the report payload, not a distinct name. `videos` and `modelCoverage` ignore every filter except that
 `modelCoverage` follows the period. A `type` of `Unclassified` selects a NULL `incident_type`.
 
 ---
