@@ -27,6 +27,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { chatTarget, citationTitles } from '@/lib/chat/report-chat';
+import { seekTarget } from '@/lib/chat/timestamps';
 import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
 import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
 import {
@@ -185,7 +186,9 @@ export function ReportPage({
     (seconds: number, held?: StillBox | null) => {
       const video = videoRef.current;
       if (!video) return;
-      video.currentTime = seconds;
+      const target = seekTarget(seconds, video.duration);
+      if (target === null) return;
+      video.currentTime = target;
       if (held && shownReport) {
         video.pause();
         setStillPin({ revisionId: shownReport.revisionId, still: held });
@@ -698,6 +701,7 @@ export function ReportPage({
             // Keyed by the version (and whether it is a draft), so changing version starts a new conversation.
             return (
               <ReportChat
+                durationSeconds={playerDuration}
                 key={`${target.versionId}-${mode === 'edit' && draft ? 'draft' : 'saved'}`}
                 onSeek={seek}
                 target={target}

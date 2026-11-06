@@ -18,6 +18,7 @@ import {
   MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
 import { type ChatTarget, chatRequestBody, citationTitle } from '@/lib/chat/report-chat';
+import { segmentChatText } from '@/lib/chat/timestamps';
 import type { ChatCitation, ChatResponse } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
@@ -35,20 +36,56 @@ type ChatMessage = {
   insufficientEvidence?: boolean;
 };
 
+/** An answer's text as written, each video time in it a button that jumps there. */
+function AnswerText({
+  content,
+  durationSeconds,
+  onSeek,
+}: {
+  content: string;
+  durationSeconds: number | null;
+  onSeek: (seconds: number) => void;
+}) {
+  return (
+    <p className="whitespace-pre-wrap" data-testid="chat-answer">
+      {segmentChatText(content, { durationSeconds }).map((segment, index) =>
+        segment.kind === 'time' ? (
+          <button
+            aria-label={`Jump to ${segment.text} in the video`}
+            className="rounded-sm font-semibold text-primary tabular-nums underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid="chat-time"
+            // biome-ignore lint/suspicious/noArrayIndexKey: segments are derived from one fixed text, in order
+            key={index}
+            onClick={() => onSeek(segment.seconds)}
+            type="button"
+          >
+            {segment.text}
+          </button>
+        ) : (
+          segment.text
+        ),
+      )}
+    </p>
+  );
+}
+
 /**
  * Floating / drawer "Ask about this incident" panel. It asks about `target`: the version on
  * screen in View, the unsaved draft in Edit. Each answer says which version it came
- * from, and its citations jump the video to the cited moment.
+ * from, and every video time in it, like its citations, jumps the video to that moment.
  */
 export function ReportChat({
   videoId,
   target,
   onSeek,
+  durationSeconds = null,
   titles = {},
 }: {
   videoId: string;
   target: ChatTarget;
   onSeek: (seconds: number) => void;
+  /** The player's length, once known: a time past it is not offered as a jump. */
+  durationSeconds?: number | null;
   /** Each cited item's name (citationTitles), so a citation is shown without its id. */
   titles?: Record<string, string>;
 }) {
@@ -178,7 +215,7 @@ export function ReportChat({
                   <Message align="start" className="self-start" key={message.id}>
                     <Bubble>
                       <BubbleContent className="rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-foreground">
-                        <p className="whitespace-pre-wrap">{message.content}</p>
+                        <AnswerText content={message.content} durationSeconds={durationSeconds} onSeek={onSeek} />
                         {!!message.citations?.length && (
                           <ul className="mt-2 grid gap-1.5" data-testid="chat-citations">
                             {message.citations.map((citation) => (
@@ -189,9 +226,17 @@ export function ReportChat({
                                   onClick={() => onSeek(citation.timestampSeconds)}
                                   type="button"
                                 >
-                                  {/* eslint-disable-next-line @next/next/no-img-element -- the agent's signed crop URL, used as given */}
-                                  {/* biome-ignore lint/performance/noImgElement: the agent's signed crop URL, used as given */}
-                                  <img alt="" className="h-9 w-[52px] rounded-md bg-muted object-cover" src={citation.cropImageUrl} />
+                                  {citation.cropImageUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element -- the agent's signed crop URL, used as given
+                                    // biome-ignore lint/performance/noImgElement: the agent's signed crop URL, used as given
+                                    <img alt="" className="h-9 w-[52px] rounded-md bg-muted object-cover" src={citation.cropImageUrl} />
+                                  ) : (
+                                    <span
+                                      aria-hidden="true"
+                                      className="h-9 w-[52px] rounded-md bg-muted"
+                                      data-testid="chat-citation-no-crop"
+                                    />
+                                  )}
                                   <span className="min-w-0">
                                     <b className="block truncate text-xs" data-testid="chat-citation-title">
                                       {citationTitle(titles, citation)}
