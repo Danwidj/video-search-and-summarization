@@ -38,6 +38,7 @@ import type { ImagePick, ReviewerDraftItem as BoxToolItem, ReviewerTrack } from 
 import type { EvidenceItemType as BoxItemType } from '@/modules/reports/domain/revision';
 import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, type EditDraft } from '@/modules/reports/domain/edit-draft';
 import { formatClock } from '@/modules/reports/domain/normalize';
+import { draftOverlay, STILL_BOX_COLOUR, trackedReportItems } from '@/modules/reports/domain/track';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
 import { EvidenceCarousel } from '@/sections/evidence/components/EvidenceCarousel';
 import { BoxTool, type ExistingItem } from '@/sections/evidence/components/BoxTool';
@@ -72,9 +73,9 @@ export function ReportEditPane({
   videoId,
   videoSrc,
   onChange,
+  onEditingTrack,
   onSeek,
   boxClient,
-  initiallyAddEvidence = false,
   officialMissing = false,
 }: {
   a: Structured | null;
@@ -85,17 +86,18 @@ export function ReportEditPane({
   videoId: string;
   videoSrc: string;
   onChange: (draft: EditDraft) => void;
+  /** The draft item whose Edit track dialog is open, or null: the page hides that item's box on the video meanwhile. */
+  onEditingTrack?: (key: string | null) => void;
   onSeek: (seconds: number) => void;
   /** Replaces the box tool's calls to the console routes (tests). */
   boxClient?: BoxToolClient;
   /** Open the existing box tool immediately when entering Edit from the View evidence section. */
-  initiallyAddEvidence?: boolean;
   /** True once revisions have loaded and none of them is official. */
   officialMissing?: boolean;
 }) {
   // The box tool: adding new evidence, or re-tracking a card's item from a new box.
-  const [boxTool, setBoxTool] = useState<{ row: PairRow['b'] } | null>(initiallyAddEvidence ? { row: null } : null);
-  const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLDivElement | null>(null);
+  const [boxTool, setBoxTool] = useState<{ row: PairRow['b'] } | null>(null);
+  const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLElement | null>(null);
   // The track editor: fix a card's track with keyframes. `saved` is the opened version's item, whose track it starts from.
   const [trackEditor, setTrackEditor] = useState<{
     row: NonNullable<PairRow['b']>;
@@ -106,7 +108,15 @@ export function ReportEditPane({
     row: NonNullable<PairRow['b']>;
     saved: NonNullable<PairRow['a']>['evidence'] | null;
   } | null>(null);
+  const editingTrackKey = trackEditor?.row.key ?? null;
+  useEffect(() => {
+    onEditingTrack?.(editingTrackKey);
+    return () => onEditingTrack?.(null);
+  }, [editingTrackKey, onEditingTrack]);
   const pairing = pairReport(a, draft);
+  // A's cards take the colours of the version they show, B's the colours the video gives the draft.
+  const savedColours = new Map(a ? trackedReportItems(a).map((item) => [item.id, item.colour]) : []);
+  const draftColours = new Map(draftOverlay(draft, a).tracks.map((item) => [item.id, item.colour]));
   const patchIncident = (patch: Partial<EditDraft['incident']>) => onChange({ ...draft, incident: { ...draft.incident, ...patch } });
   const patchEntity = (key: string, patch: Partial<EditDraft['entities'][number]>) =>
     onChange({ ...draft, entities: draft.entities.map((entity) => (entity.key === key ? { ...entity, ...patch } : entity)) });
@@ -241,9 +251,13 @@ export function ReportEditPane({
               label="Title"
               left={title}
               right={
-                <span className="text-ink/60">
-                  {title} <span className="text-[11px] text-ink-caption">(model-generated)</span>
-                </span>
+                <Input
+                  aria-label="Draft title"
+                  className="h-9 text-xs"
+                  onChange={(event) => patchIncident({ title: event.target.value })}
+                  placeholder={title}
+                  value={draft.incident.title}
+                />
               }
             />
             <PairField
@@ -378,7 +392,7 @@ export function ReportEditPane({
               <PlusIcon aria-hidden="true" />
               Add evidence
             </Button>
-            <div aria-label="Evidence navigation" className="flex min-h-8 gap-2" ref={setCarouselControlsTarget} />
+            <nav aria-label="Evidence navigation" className="flex min-h-8 gap-2" ref={setCarouselControlsTarget} />
           </div>
         </CardHeader>
         {pairing.rows.length === 0 ? (
@@ -408,6 +422,8 @@ export function ReportEditPane({
               {pairing.rows.map((row) => (
                 <PairRowView
                   aRevisionNo={aRevisionNo}
+                  aColour={(row.a && savedColours.get(savedItemId(row.a))) ?? STILL_BOX_COLOUR}
+                  bColour={(row.b && draftColours.get(row.b.key)) ?? STILL_BOX_COLOUR}
                   videoId={videoId}
                   videoSrc={videoSrc}
                   draft={draft}
@@ -502,6 +518,8 @@ type PatchAsset = (key: string, patch: Partial<EditDraft['assets'][number]>) => 
 
 function PairRowView({
   aRevisionNo,
+  aColour,
+  bColour,
   videoId,
   videoSrc,
   draft,
@@ -520,6 +538,9 @@ function PairRowView({
   patchAsset,
 }: {
   aRevisionNo: number;
+  /** The colour each side's item has on the video. */
+  aColour: string;
+  bColour: string;
   videoId: string;
   videoSrc: string;
   draft: EditDraft;
@@ -543,7 +564,7 @@ function PairRowView({
     <Fragment>
       <div className="min-w-0 snap-start border-r border-dotted border-border pr-3" data-row-kind={row.kind} data-side="A">
         {row.a ? (
-          <ReadCard inherited={inherited} item={row.a} onSeek={onSeek} savedHolder={savedHolder} videoId={videoId} />
+          <ReadCard colour={aColour} inherited={inherited} item={row.a} onSeek={onSeek} savedHolder={savedHolder} videoId={videoId} />
         ) : (
           <div
             className="flex items-center gap-2 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-4 text-xs font-semibold text-primary"
@@ -556,6 +577,7 @@ function PairRowView({
       <div className="min-w-0 snap-start border-r border-dotted border-border pr-3" data-row-kind={row.kind} data-side="B">
         {row.b ? (
           <EditCard
+            colour={bColour}
             draftHolder={draftHolder}
             videoId={videoId}
             videoSrc={videoSrc}
@@ -599,12 +621,14 @@ function PairRowView({
 }
 
 function ReadCard({
+  colour,
   item,
   inherited,
   savedHolder,
   onSeek,
   videoId,
 }: {
+  colour: string;
   item: NonNullable<PairRow['a']>;
   inherited: string;
   savedHolder: (instrument: PairRow['a']) => string;
@@ -616,6 +640,8 @@ function ReadCard({
   return (
     <CardFrame
       box={shown.box}
+      boxColour={colour}
+      boxLabel={savedItemName(item)}
       frameSrc={shown.frameSrc}
       header={
         <>
@@ -658,6 +684,7 @@ function ReadCard({
 }
 
 function EditCard({
+  colour,
   item,
   videoId,
   videoSrc,
@@ -673,6 +700,7 @@ function EditCard({
   patchInstrument,
   patchAsset,
 }: {
+  colour: string;
   item: NonNullable<PairRow['b']>;
   videoId: string;
   videoSrc: string;
@@ -723,6 +751,8 @@ function EditCard({
   return (
     <CardFrame
       box={picked ? pickedBox : (inherited?.box ?? item.reviewer?.track?.samples[0]?.box ?? item.reviewer?.stillBox ?? null)}
+      boxColour={colour}
+      boxLabel={draftItemName(item)}
       frameSrc={picked ? videoFrameUrl(videoId, pickedSeconds) : (inherited?.frameSrc ?? null)}
       header={
         <>
@@ -881,6 +911,8 @@ function EditCard({
 
 function CardFrame({
   box = null,
+  boxColour,
+  boxLabel,
   frameSrc = null,
   header,
   imageUrl,
@@ -894,6 +926,9 @@ function CardFrame({
   children,
 }: {
   box?: readonly number[] | null;
+  /** The colour the item has on the video, and the title on its box. */
+  boxColour: string;
+  boxLabel: string;
   /** The whole video frame to draw the box on; the image is shown whole when there is none. */
   frameSrc?: string | null;
   header: React.ReactNode;
@@ -921,11 +956,13 @@ function CardFrame({
         type="button"
       >
         {previewVideoSrc && seconds !== null ? (
-          <DraftVideoFrame box={box} label={name || 'Evidence'} seconds={seconds} src={previewVideoSrc} />
+          <DraftVideoFrame box={box} colour={boxColour} label={boxLabel || 'Evidence'} seconds={seconds} src={previewVideoSrc} />
         ) : (
           <EvidenceFrame
             aspect={16 / 9}
             box={box}
+            boxColour={boxColour}
+            boxLabel={boxLabel || 'Evidence'}
             className="rounded-none!"
             frameSrc={frameSrc}
             fullFrame
@@ -953,14 +990,26 @@ function CardFrame({
   );
 }
 
-function DraftVideoFrame({ box, label, seconds, src }: { box: readonly number[] | null; label: string; seconds: number; src: string }) {
+function DraftVideoFrame({
+  box,
+  colour,
+  label,
+  seconds,
+  src,
+}: {
+  box: readonly number[] | null;
+  colour: string;
+  label: string;
+  seconds: number;
+  src: string;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const video = ref.current;
     if (video && Math.abs(video.currentTime - seconds) >= 0.02) video.currentTime = seconds;
   }, [seconds]);
   return (
-    <BoxCanvas box={box} drawable={false} label={label} testId="draft-evidence-video-preview">
+    <BoxCanvas box={box} colour={colour} drawable={false} label={label} testId="draft-evidence-video-preview">
       <MutedVideo
         className="h-full w-full object-fill"
         onLoadedMetadata={(event) => {

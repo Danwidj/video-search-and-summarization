@@ -71,6 +71,9 @@ export function toReportView(
     };
   }
 
+  // An older record may hold its title only in the run notes: the version's title is then the model's.
+  if (!structured.incident.title && modelOutput?.title) structured.incident.title = modelOutput.title;
+
   const differences: ReportView['differences'] = { fields: [] };
   if (modelOutput) {
     const { original } = modelOutput;

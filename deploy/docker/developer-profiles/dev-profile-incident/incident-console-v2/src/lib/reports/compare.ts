@@ -8,7 +8,9 @@
 // instruments it holds), revert to A, and the change count the bottom bar
 // shows. Everything here is pure and browser-safe.
 
+import { videoFrameUrl } from '@/lib/evidence/evidence-view';
 import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, newKey, type EditDraft } from '@/modules/reports/domain/edit-draft';
+import type { DraftItemFrame } from '@/modules/reports/domain/track';
 import type {
   ReportView,
   StructuredAsset,
@@ -161,6 +163,7 @@ export function draftChangeCount(base: Structured, draft: EditDraft): number {
   const { incident } = base;
   const fields: Array<[unknown, unknown]> = [
     [incident.type, draft.incident.type],
+    [incident.title ?? '', draft.incident.title],
     [incident.startSeconds, draft.incident.start_timestamp],
     [incident.endSeconds, draft.incident.end_timestamp],
     [incident.description ?? '', draft.incident.description],
@@ -292,10 +295,14 @@ export function revertDraftItem(draft: EditDraft, a: Structured, row: PairRow): 
   return { ...draft, assets };
 }
 
-/** The draft as the structured shape the timeline and the cards read. */
-export function draftToStructured(draft: EditDraft): Structured {
+/**
+ * The draft as the structured shape the timeline and the cards read. `frames` (from `draftOverlay`, the video's source) names
+ * the items whose evidence image Save will cut anew: they show that frame and box instead of the image they had.
+ */
+export function draftToStructured(draft: EditDraft, videoId?: string, frames: Record<string, DraftItemFrame> = {}): Structured {
   const incident: StructuredIncident = {
     type: editableIncidentType(draft.incident.type),
+    title: draft.incident.title,
     startSeconds: draft.incident.start_timestamp,
     endSeconds: draft.incident.end_timestamp,
     duration:
@@ -306,15 +313,15 @@ export function draftToStructured(draft: EditDraft): Structured {
     severityLevel: draft.incident.severity_level,
     confidenceScore: null,
   };
-  const evidence = (image: string | null, imageUrl: string | null, seconds: number | null) => ({
+  const evidence = (key: string, image: string | null, imageUrl: string | null, seconds: number | null) => ({
     image,
-    imageUrl,
+    imageUrl: frames[key] && videoId ? null : imageUrl,
     frame: null,
-    frameUrl: null,
+    frameUrl: frames[key] && videoId ? videoFrameUrl(videoId, frames[key].seconds) : null,
     located: null,
-    boxSeconds: null,
+    boxSeconds: frames[key]?.seconds ?? null,
     imageGap: null,
-    boundingBox: null,
+    boundingBox: frames[key]?.box ?? null,
     timestampSeconds: seconds,
     uploaded: false,
     track: null,
@@ -338,7 +345,7 @@ export function draftToStructured(draft: EditDraft): Structured {
       firstSeenSeconds: entity.firstSeenSeconds,
       lastSeenSeconds: entity.lastSeenSeconds,
       label: entity.label,
-      evidence: evidence(entity.image, entity.imageUrl, entity.timestampSeconds),
+      evidence: evidence(entity.key, entity.image, entity.imageUrl, entity.timestampSeconds),
     })),
     instruments: draft.instruments.map((instrument) => ({
       instrumentId: instrument.key,
@@ -348,7 +355,7 @@ export function draftToStructured(draft: EditDraft): Structured {
       threatLevel: instrument.threat_level,
       timestampSeconds: instrument.timestampSeconds,
       label: instrument.label,
-      evidence: evidence(instrument.image, instrument.imageUrl, instrument.timestampSeconds),
+      evidence: evidence(instrument.key, instrument.image, instrument.imageUrl, instrument.timestampSeconds),
     })),
     assets: draft.assets.map((asset) => ({
       assetId: asset.key,
@@ -356,7 +363,7 @@ export function draftToStructured(draft: EditDraft): Structured {
       description: asset.description,
       timestampSeconds: asset.timestampSeconds,
       label: asset.label,
-      evidence: evidence(asset.image, asset.imageUrl, asset.timestampSeconds),
+      evidence: evidence(asset.key, asset.image, asset.imageUrl, asset.timestampSeconds),
     })),
   };
 }

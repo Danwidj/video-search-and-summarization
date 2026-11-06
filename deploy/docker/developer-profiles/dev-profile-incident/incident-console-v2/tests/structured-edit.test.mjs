@@ -10,7 +10,10 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { StructuredEditError, validateStructuredEdit } = await import('../src/modules/contract/domain/structured-edit.ts');
 const { draftFromView, draftProblems, editFromDraft } = await import('../src/modules/reports/domain/edit-draft.ts');
-const { buildReportView } = await import('./support/report-view.mjs');
+const { draftChangeCount } = await import('../src/lib/reports/compare.ts');
+const { reportHeading } = await import('../src/modules/reports/domain/report-view.ts');
+const { humanRevisionContent } = await import('../src/modules/reports/domain/revision.ts');
+const { aiRevisionRow, buildReportView } = await import('./support/report-view.mjs');
 
 const fixture = (name) => JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', name), 'utf8'));
 const repaired = fixture('contract-v2-repaired-run.json');
@@ -35,7 +38,14 @@ test('an unchanged draft of each real contract-v2 run is a valid edit with the s
     const edit = editFromDraft(draftFromView(view(rows)));
     assert.deepEqual(validateStructuredEdit(edit), edit);
     assert.deepEqual(Object.keys(edit).sort(), ['assets', 'entities', 'incident', 'instruments']);
-    assert.deepEqual(Object.keys(edit.incident).sort(), ['description', 'end_timestamp', 'severity_level', 'start_timestamp', 'type']);
+    assert.deepEqual(Object.keys(edit.incident).sort(), [
+      'description',
+      'end_timestamp',
+      'severity_level',
+      'start_timestamp',
+      'title',
+      'type',
+    ]);
   }
   const edit = editFromDraft(draftFromView(view(repaired)));
   assert.deepEqual(
@@ -50,7 +60,6 @@ test('an unchanged draft of each real contract-v2 run is a valid edit with the s
 test('Class B and Class C fields cannot be part of an edit (400)', () => {
   const base = editFromDraft(draftFromView(view(repaired)));
   for (const [path, value] of [
-    ['incident.title', 'x'],
     ['incident.severity_reason', 'x'],
     ['incident.location', 'x'],
     ['incident.confidence_score', 0.5],
@@ -307,7 +316,11 @@ test('a legacy run is normalised for the edit: contract type, seconds, E#/I# IDs
       }),
     ),
   });
-  assert.deepEqual(draftProblems(draftFromView(unknownType)), ['Choose an incident type.', 'Enter the incident start and end in seconds.']);
+  assert.deepEqual(draftProblems(draftFromView(unknownType)), [
+    'Choose an incident type.',
+    'Enter a title.',
+    'Enter the incident start and end in seconds.',
+  ]);
 });
 
 test('an entity span must be ordered and contain the most-visible second; a draft of a v2 run starts from that second', () => {
@@ -344,4 +357,68 @@ test("a drawn image's second and box are validated when present", () => {
   const bad = clone(base);
   Object.assign(bad.entities[0], { image_box: [0, 0, 5000, 500] });
   expectError(bad, 422, /image_box/);
+});
+
+test('the title is part of the draft: it starts as the version title, counts as a change, and a blank one cannot be sent', () => {
+  const opened = view(repaired);
+  const draft = draftFromView(opened);
+  assert.equal(draft.incident.title, opened.structured.incident.title);
+  assert.equal(draftChangeCount(opened.structured, draft), 0, 'an untouched title is no change');
+
+  const renamed = { ...draft, incident: { ...draft.incident, title: '  Physical altercation in a lift ' } };
+  assert.equal(draftChangeCount(opened.structured, renamed), 1, 'a new title is one unsaved change');
+  assert.equal(editFromDraft(renamed).incident.title, 'Physical altercation in a lift', 'it is sent trimmed');
+  assert.equal(draftChangeCount(opened.structured, draft), 0, 'Undo goes back to the earlier draft: no change again');
+
+  for (const title of ['', '   ']) {
+    const blank = { ...draft, incident: { ...draft.incident, title } };
+    assert.ok(draftProblems(blank).includes('Enter a title.'));
+    assert.throws(() => editFromDraft(blank), /Enter a title/);
+  }
+});
+
+test('the edit contract requires a title and rejects a blank one; severity rationale and location stay read-only', () => {
+  const base = editFromDraft(draftFromView(view(repaired)));
+  assert.equal(validateStructuredEdit({ ...base, incident: { ...base.incident, title: 'A new title' } }).incident.title, 'A new title');
+  const { title: _title, ...untitled } = base.incident;
+  assert.throws(
+    () => validateStructuredEdit({ ...base, incident: untitled }),
+    (error) => error instanceof StructuredEditError && error.status === 422 && /title/.test(error.message),
+  );
+  assert.throws(
+    () => validateStructuredEdit({ ...base, incident: { ...base.incident, title: '   ' } }),
+    (error) => error instanceof StructuredEditError && error.status === 422 && /title must not be blank/.test(error.message),
+  );
+  for (const key of ['severity_reason', 'location']) {
+    assert.throws(
+      () => validateStructuredEdit({ ...base, incident: { ...base.incident, [key]: 'x' } }),
+      (error) => error instanceof StructuredEditError && error.status === 400,
+    );
+  }
+});
+
+test("the reviewer's title is stored on the human revision and read back everywhere; the model's and the parent's are untouched", () => {
+  const parent = aiRevisionRow(repaired);
+  const parentBefore = JSON.stringify(parent);
+  const edit = editFromDraft(draftFromView(view(repaired)));
+  edit.incident.title = 'Physical altercation in a lift';
+  const { payload } = humanRevisionContent({ payload: parent.payload, evidence: parent.evidence ?? [] }, edit);
+  assert.equal(payload.incident.title, 'Physical altercation in a lift', 'the payload every reader uses holds the new title');
+  assert.equal(payload.incident.severity_reason, parent.payload.incident.severity_reason, 'model-only fields stay as the parent has them');
+  assert.equal(payload.incident.location, parent.payload.incident.location);
+  assert.equal(JSON.stringify(parent), parentBefore, 'the earlier version is not changed');
+
+  const rows = { ...repaired, incident: payload.incident };
+  const human = buildReportView(rows);
+  assert.equal(human.structured.incident.title, 'Physical altercation in a lift');
+  assert.equal(reportHeading(human), 'Physical altercation in a lift', 'the report page and the version compare read this heading');
+  assert.equal(human.modelOutput.title, view(repaired).modelOutput.title, 'the run record keeps the model title');
+  assert.notEqual(human.modelOutput.title, 'Physical altercation in a lift');
+});
+
+test('an older record with a title only in its run notes still opens with that title', () => {
+  const { title: _title, ...stored } = repaired.incident;
+  const older = buildReportView({ ...repaired, incident: stored });
+  assert.equal(older.structured.incident.title, view(repaired).modelOutput.title);
+  assert.equal(draftChangeCount(older.structured, draftFromView(older)), 0);
 });

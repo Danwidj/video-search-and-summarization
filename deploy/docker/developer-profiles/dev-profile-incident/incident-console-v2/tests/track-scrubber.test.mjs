@@ -90,7 +90,7 @@ test('a second and box picked on the track are saved as a new human revision, as
     lastSeenSeconds: 85,
   };
   const draft = {
-    incident: { type: 'assault', start_timestamp: 80, end_timestamp: 86, description: 'A fall.', severity_level: 2 },
+    incident: { type: 'assault', title: 'An incident', start_timestamp: 80, end_timestamp: 86, description: 'A fall.', severity_level: 2 },
     entities: [item],
     instruments: [],
     assets: [],

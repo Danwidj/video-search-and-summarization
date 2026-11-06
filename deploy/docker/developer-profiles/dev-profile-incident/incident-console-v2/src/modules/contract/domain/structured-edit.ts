@@ -18,7 +18,7 @@ import type { IncidentContractReport } from '@/modules/contract/domain/types';
 import { crossFieldViolations, type ContractViolation } from '@/modules/contract/domain/validate';
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
 
-export const EDITABLE_INCIDENT_FIELDS = ['type', 'start_timestamp', 'end_timestamp', 'description', 'severity_level'] as const;
+export const EDITABLE_INCIDENT_FIELDS = ['type', 'title', 'start_timestamp', 'end_timestamp', 'description', 'severity_level'] as const;
 export const EDITABLE_ENTITY_FIELDS = [
   'entity_id',
   'type',
@@ -210,7 +210,10 @@ export function validateStructuredEdit(edit: unknown, catalog?: ContractCatalog)
   const typed = edit as StructuredEdit;
   // The contract's own cross-field rules; the timeline is model output and not part of an edit.
   const pseudoReport = { ...typed, incident: { ...typed.incident }, timeline: [], uncertainties: [] } as unknown as IncidentContractReport;
-  const violations = [...crossFieldViolations(pseudoReport), ...entitySpanViolations(typed)];
+  const blankTitle: ContractViolation[] = typed.incident.title.trim()
+    ? []
+    : [{ code: 'SCHEMA_VIOLATION', path: 'incident/title', message: 'incident/title: the title must not be blank' }];
+  const violations = [...crossFieldViolations(pseudoReport), ...entitySpanViolations(typed), ...blankTitle];
   if (violations.length) {
     throw new StructuredEditError(
       422,

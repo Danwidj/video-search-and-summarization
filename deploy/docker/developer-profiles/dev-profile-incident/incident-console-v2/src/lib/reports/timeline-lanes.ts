@@ -25,6 +25,8 @@ export interface TimelineLane {
   markers: LaneMarker[];
   /** The entity's evidence image, for the lane header. */
   imageUrl: string | null;
+  /** A frame and box to cut the header's image from when there is no stored image (a draft's new first frame or pick). */
+  frame: { src: string; box: number[] } | null;
 }
 
 type Structured = ReportView['structured'];
@@ -52,6 +54,10 @@ export function buildTimelineLanes({ entities, instruments, assets }: Structured
       ...instruments.filter((instrument) => instrument.entityId === entity.entityId).map(instrumentMarker),
     ],
     imageUrl: entity.evidence?.imageUrl ?? null,
+    frame:
+      !entity.evidence?.imageUrl && entity.evidence?.frameUrl && entity.evidence.boundingBox
+        ? { src: entity.evidence.frameUrl, box: entity.evidence.boundingBox }
+        : null,
   }));
 
   const unheld = instruments.filter((instrument) => !instrument.entityId || !holders.has(instrument.entityId));
@@ -63,6 +69,7 @@ export function buildTimelineLanes({ entities, instruments, assets }: Structured
       span: null,
       markers: unheld.map(instrumentMarker),
       imageUrl: null,
+      frame: null,
     });
   if (assets.length)
     lanes.push({
@@ -72,6 +79,7 @@ export function buildTimelineLanes({ entities, instruments, assets }: Structured
       span: null,
       markers: assets.map((asset) => ({ id: asset.assetId, kind: 'asset', label: asset.name, seconds: asset.timestampSeconds })),
       imageUrl: null,
+      frame: null,
     });
   return lanes;
 }

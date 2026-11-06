@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { boxRegion, boxStyle, containFrame, cropImageStyle, cropRegion, evidenceFrameState } from '@/lib/evidence/frame-geometry';
 import { formatClock } from '@/modules/reports/domain/normalize';
 import type { EvidenceItemType } from '@/modules/reports/domain/revision';
+import { STILL_BOX_COLOUR } from '@/modules/reports/domain/track';
 
 export const KIND_COLOUR: Record<EvidenceItemType, string> = { entity: 'bg-moss', instrument: 'bg-clay', asset: 'bg-[#5f7896]' };
 export const KIND_LABEL: Record<EvidenceItemType, string> = { entity: 'Entity', instrument: 'Instrument', asset: 'Asset' };
@@ -22,6 +23,10 @@ export interface EvidenceFrameProps {
   frameAspect?: number;
   kind?: EvidenceItemType;
   label: string;
+  /** The title on the drawn box; `label` unless that says more than the item's name. */
+  boxLabel?: string;
+  /** The item's colour on the video; the default green where the item has none (a search result). */
+  boxColour?: string;
   /** Video second the evidence was taken from. */
   seconds?: number | null;
   /** The crop is still being produced. */
@@ -46,6 +51,8 @@ export function EvidenceFrame({
   frameAspect = 16 / 9,
   kind,
   label,
+  boxLabel,
+  boxColour,
   seconds,
   pending,
   selected,
@@ -134,18 +141,20 @@ export function EvidenceFrame({
             src={frameSrc ?? undefined}
           />
           {boxStyle(box) && (
-            <span
-              className="pointer-events-none absolute rounded-sm border-2 border-solid border-signal"
-              data-testid="evidence-frame-box"
-              style={boxStyle(box) ?? undefined}
+            <DrawnBox
+              colour={boxColour}
+              label={boxLabel ?? label}
+              nearTop={(boxRegion(box)?.y ?? 0) < LABEL_ROOM}
+              style={boxStyle(box) ?? {}}
             />
           )}
         </div>
       )}
       {boxed && region && (
-        <span
-          className="pointer-events-none absolute rounded-sm border-2 border-solid border-signal"
-          data-testid="evidence-frame-box"
+        <DrawnBox
+          colour={boxColour}
+          label={boxLabel ?? label}
+          nearTop={(boxed.y - region.y) / region.h < LABEL_ROOM}
           style={{
             left: pct((boxed.x - region.x) / region.w),
             top: pct((boxed.y - region.y) / region.h),
@@ -195,6 +204,31 @@ export function EvidenceFrame({
         </Badge>
       )}
     </div>
+  );
+}
+
+/** How close to the tile's top a box may start, as a fraction of its height, before its title moves inside so it is not cut off. */
+const LABEL_ROOM = 0.14;
+
+/** The item's box on its frame, titled, in the colour the video draws it: dashed for a stored box, as on the player. */
+function DrawnBox({ colour, label, nearTop, style }: { colour?: string; label: string; nearTop: boolean; style: CSSProperties }) {
+  const still = colour === STILL_BOX_COLOUR;
+  return (
+    <span
+      className={`pointer-events-none absolute rounded-sm border-2 ${still ? 'border-dashed' : 'border-solid'} ${colour ? '' : 'border-signal'}`}
+      data-testid="evidence-frame-box"
+      style={{ ...style, ...(colour ? { borderColor: colour } : {}) }}
+    >
+      <span
+        className={`absolute -left-[2px] max-w-40 truncate rounded-sm px-1 py-px font-mono text-[10px] font-bold ${
+          nearTop ? 'top-0' : '-top-[1.2rem]'
+        } ${still ? 'text-black' : 'text-white'} ${colour ? '' : 'bg-signal'}`}
+        data-testid="evidence-frame-box-label"
+        style={colour ? { backgroundColor: colour } : undefined}
+      >
+        {label}
+      </span>
+    </span>
   );
 }
 

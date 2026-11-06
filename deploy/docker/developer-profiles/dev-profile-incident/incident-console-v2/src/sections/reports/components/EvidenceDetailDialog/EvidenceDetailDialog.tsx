@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { evidenceDisplay } from '@/lib/evidence/evidence-view';
 import { type EvidenceDetailItem, evidenceDetailLines } from '@/modules/reports/domain/evidence-detail';
-import { type StillBox, stillBoxFor, type TrackedReportItem } from '@/modules/reports/domain/track';
+import { STILL_BOX_COLOUR, type StillBox, stillBoxFor, type TrackedReportItem } from '@/modules/reports/domain/track';
 import { EvidenceFrame, KIND_LABEL } from '@/sections/evidence/components/EvidenceFrame';
 import { PresenceBar } from '@/sections/reports/components/PresenceBar';
 
@@ -31,7 +31,7 @@ export function EvidenceDetailDialog({
   /** The report's video; an older item's frame is cut from its stored file. */
   videoId: string;
   onClose: () => void;
-  /** An untracked item passes its still box: the page seeks to the box's second, pauses and holds the box. */
+  /** An untracked item passes its still box: the page seeks to the box's second, pauses and selects the box. */
   onPlayFrom: (seconds: number, still?: StillBox | null) => void;
   /** The item's track, when it has one. */
   track?: TrackedReportItem | null;
@@ -91,6 +91,8 @@ function Detail({
       <EvidenceFrame
         aspect={16 / 9}
         box={shown.box}
+        boxColour={track?.colour ?? STILL_BOX_COLOUR}
+        boxLabel={item.title}
         frameSrc={shown.frameSrc}
         fullFrame
         kind={item.kind}
@@ -149,7 +151,7 @@ function Detail({
             onClick={() => {
               if (seconds === null) return;
               onClose();
-              // An item with no track has only its stored box: seek to the second it was found, pause and hold the box.
+              // An item with no track has only its stored box: seek to the second it was found and pause with the box shown.
               if (still) onPlayFrom(still.seconds, still);
               else onPlayFrom(seconds);
             }}

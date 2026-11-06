@@ -84,13 +84,13 @@ test('a code-composed count links its matching reports at their versions; a refu
   assert.deepEqual(matchingReports({ citations: [] }, undefined), []);
 });
 
-test('the library page mounts the chat in a titled sheet', () => {
+test('the library page no longer offers the chat sheet', () => {
   const screen = readFileSync(
     join(process.cwd(), 'src', 'sections', 'library', 'components', 'LibraryScreen', 'LibraryScreen.tsx'),
     'utf8',
   );
-  assert.match(screen, /<SheetTitle>Ask the library<\/SheetTitle>/);
-  assert.match(screen, /<LibraryChat \/>/);
+  assert.doesNotMatch(screen, /Ask the library/);
+  assert.doesNotMatch(screen, /<LibraryChat \/>/);
   const panel = readFileSync(join(process.cwd(), 'src', 'sections', 'library', 'components', 'LibraryChat', 'LibraryChat.tsx'), 'utf8');
   assert.match(panel, /libraryChatRequestBody/);
   assert.doesNotMatch(panel, /incidentId:/, 'the panel never names an incident in its request');

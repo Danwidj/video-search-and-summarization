@@ -11,7 +11,6 @@ import { NavigationMenu, NavigationMenuItem, NavigationMenuLink, NavigationMenuL
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from 'cn';
 import { forgetLibraryState } from '@/lib/library/remembered-state';
-import { HealthStrip } from '@/sections/shell/components/HealthStrip';
 
 const NAV_ITEMS = [
   { href: '/', key: 'analyze', label: 'Analyze' },
@@ -90,9 +89,6 @@ export function AppHeader({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <div className="hidden lg:block">
-        <HealthStrip />
-      </div>
     </header>
   );
 }

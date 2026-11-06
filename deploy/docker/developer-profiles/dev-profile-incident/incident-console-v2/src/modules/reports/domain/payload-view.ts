@@ -77,6 +77,7 @@ export function structuredFromPayload(payload: ReportPayload, evidence: Evidence
   return {
     incident: {
       type: canonicalIncidentType(incident.type),
+      title: text(incident.title),
       startSeconds: parseTimestamp(incident.start_timestamp),
       endSeconds: parseTimestamp(incident.end_timestamp),
       duration: num(incident.duration),

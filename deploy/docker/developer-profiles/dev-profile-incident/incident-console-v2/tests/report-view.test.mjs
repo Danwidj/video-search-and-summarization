@@ -27,6 +27,7 @@ test('contract-v2 smoke run: Class A from rows, Class B from notes, Class C from
 
   assert.deepEqual(view.structured.incident, {
     type: 'assault',
+    title: 'Person falls on sidewalk while walking.',
     startSeconds: 1,
     endSeconds: 11,
     duration: 10,

@@ -18,7 +18,7 @@ This document describes how incident analysis output is defined, validated, stor
 
 `incident-console-v2/src/modules/analysis/application/build-request.ts` builds exactly the request of `eval/scripts/eval_vlm_client.py:analyze_video_with_p1`:
 
-- **Model:** one of the allowlisted models in [`contracts/inference.json`](../contracts/inference.json): `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
+- **Model:** one of the allowlisted models in [`contracts/inference.json`](../contracts/inference.json): `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` (the default when `VLM_MODEL` is unset).
 - **`messages`:** one user message:
   1. the signed R2 video URL;
   2. the canonical extraction prompt, verbatim;
@@ -125,8 +125,8 @@ Records written before attempt statuses existed lack `status`; they are shown as
 
 | Class | Fields | Source | Editable |
 |---|---|---|---|
-| **A: structured** | type, start/end (integer seconds as text), duration (derived), description, severity level, confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`), and each item's description, detail and image | `report_revisions.payload` and `.evidence` | Yes, into a new `human` revision only, except duration (recomputed) and confidence |
-| **B: model output** | title, severity rationale, location (shown); timeline and uncertainties (stored in the report, not shown by the console since 2026-11-01) | the report in notes | No (read-only) |
+| **A: structured** | type, title (editable since 2026-11-06; the model's stays in the run record), start/end (integer seconds as text), duration (derived), description, severity level, confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`), and each item's description, detail and image | `report_revisions.payload` and `.evidence` | Yes, into a new `human` revision only, except duration (recomputed) and confidence |
+| **B: model output** | severity rationale, location (shown); the model's original title (shown beside a reviewer's); timeline and uncertainties (stored in the report, not shown by the console since 2026-11-01) | the report in notes | No (read-only) |
 | **C: provenance** | model, contract version, run id, instruction, settings, fingerprints, raw response, reasoning, finish reason, usage, repair record | notes + `model_runs` | No |
 
 ### Report revisions (AI and human)
@@ -151,7 +151,7 @@ A report is a list of immutable revisions in `report_revisions`; the columns, th
 The report page:
 - shows "Model severity rationale";
 - when a human revision changed the severity, adds "Model assessed N/5; reviewer set M/5";
-- marks every other changed structured field ("Reviewer-edited after generation"). Entities, instruments and assets are compared with the stored payload of the AI revision the version derives from (its own for an AI version), not the first pass in the run notes, so the zoomed second look's corrections are never reviewer edits.
+- shows no "Reviewer-edited after generation" line (removed 2026-11-06; `differences.fields` still tracks the changed fields). Entities, instruments and assets are compared with the stored payload of the AI revision the version derives from (its own for an AI version), not the first pass in the run notes, so the zoomed second look's corrections are never reviewer edits.
 
 ## 5. Legacy data
 
