@@ -17,11 +17,12 @@ export function summaryLabel(stepCount: number, appliedCount: number, skippedCou
   return parts.join(' · ');
 }
 
-/** Whether a chat message holds any steps or edit actions worth expanding. */
-export function hasStepsOrActions(message: { steps?: unknown[]; applied?: unknown[]; skipped?: unknown[] }): boolean {
+/** Whether a chat message holds any steps, edit actions or new-evidence rows worth expanding. */
+export function hasStepsOrActions(message: { steps?: unknown[]; applied?: unknown[]; skipped?: unknown[]; evidence?: unknown[] }): boolean {
   return (
     (Array.isArray(message.steps) && message.steps.length > 0) ||
     (Array.isArray(message.applied) && message.applied.length > 0) ||
-    (Array.isArray(message.skipped) && message.skipped.length > 0)
+    (Array.isArray(message.skipped) && message.skipped.length > 0) ||
+    (Array.isArray(message.evidence) && message.evidence.length > 0)
   );
 }

@@ -7,11 +7,11 @@
 import type { EditDraft } from '@/modules/reports/domain/edit-draft';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import type { StructuredAsset, StructuredEntity, StructuredInstrument } from '@/modules/reports/domain/report-view';
+import type { EvidenceExchange } from '@/modules/chat/domain/chat';
 
 /**
  * Fixed prefix returned when the chat report editor refuses an unsupported edit request
- * (re-tracking, box change, setting an image, adding new evidence, or unsupported incident types)
- * instead of running proposal tools or improvising.
+ * (re-tracking, box change, setting an image, or unsupported incident types) instead of running proposal tools or improvising.
  * Matches the refusal instructions in report_editor's system_prompt in config.yml.
  */
 export const CHAT_EDITOR_REFUSAL_PREFIX = "I can't do that in chat:";
@@ -117,6 +117,7 @@ export function chatRequestBody({
   target,
   steps,
   editDraft,
+  evidence,
 }: {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   sessionId?: string;
@@ -125,6 +126,8 @@ export function chatRequestBody({
   steps?: boolean;
   /** The draft snapshot (lib/edits/chat-edit.ts draftSnapshot): the chat may then change the draft. */
   editDraft?: Record<string, unknown>;
+  /** The new-evidence exchange still open (lib/chat/evidence-ask.ts pendingEvidenceExchange). */
+  evidence?: EvidenceExchange;
 }) {
   return {
     messages,
@@ -134,6 +137,7 @@ export function chatRequestBody({
     ...(target.draftReport ? { draftReport: target.draftReport } : {}),
     ...(steps !== undefined ? { steps } : {}),
     ...(editDraft ? { editDraft } : {}),
+    ...(evidence ? { evidence } : {}),
   };
 }
 

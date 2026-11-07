@@ -86,6 +86,7 @@ export function ReportEditPane({
   boxClient,
   officialMissing = false,
   evidenceOpening = null,
+  onEvidenceOpened,
   assistantKeys = [],
 }: {
   a: Structured | null;
@@ -109,14 +110,18 @@ export function ReportEditPane({
   officialMissing?: boolean;
   /** New evidence the chat asked for (its open_box_tool proposal): opens the box tool with the name filled in. */
   evidenceOpening?: EvidenceOpening | null;
+  /** Called once the box tool has opened on `evidenceOpening`, so the page does not open it again when this pane remounts. */
+  onEvidenceOpened?: () => void;
   /** Keys of the items the chat's last edit added or changed, and INCIDENT_HIGHLIGHT_KEY for the report fields: shown ringed. */
   assistantKeys?: string[];
 }) {
   // The box tool: adding new evidence, or re-tracking a card's item from a new box.
   const [boxTool, setBoxTool] = useState<{ row: PairRow['b']; opening?: EvidenceOpening } | null>(null);
   useEffect(() => {
-    if (evidenceOpening) setBoxTool({ row: null, opening: evidenceOpening });
-  }, [evidenceOpening]);
+    if (!evidenceOpening) return;
+    setBoxTool({ row: null, opening: evidenceOpening });
+    onEvidenceOpened?.();
+  }, [evidenceOpening, onEvidenceOpened]);
   const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLElement | null>(null);
   // The track editor: fix a card's track with keyframes. `saved` is the opened version's item, whose track it starts from.
   const [trackEditor, setTrackEditor] = useState<{

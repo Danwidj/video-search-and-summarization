@@ -107,10 +107,16 @@ functions:
   propose_delete_item:
     _type: propose_delete_item
 
+  propose_ask_reviewer:
+    _type: propose_ask_reviewer
+
+  propose_open_box_tool:
+    _type: propose_open_box_tool
+
   report_editor:
     _type: tool_calling_agent
     llm_name: investigator_llm
-    tool_names: [propose_set_incident_fields, propose_set_timeline_item, propose_upsert_entity, propose_upsert_instrument, propose_upsert_asset, propose_set_instrument_holder, propose_delete_item]
+    tool_names: [propose_set_incident_fields, propose_set_timeline_item, propose_upsert_entity, propose_upsert_instrument, propose_upsert_asset, propose_set_instrument_holder, propose_delete_item, propose_ask_reviewer, propose_open_box_tool]
     max_iterations: 5
     handle_tool_errors: true
     system_prompt: |
@@ -121,8 +127,13 @@ functions:
       - To add an instrument held by someone, pass its holder_key in the same propose_upsert_instrument call; never guess a key for an item that does not exist yet.
       - Allowed incident types are road accident, burglary, explosion, assault and animal attack. If asked for a type outside
         this list, call no tool, never pick the closest type, and reply "I can't do that in chat: allowed incident types are road accident, burglary, explosion, assault and animal attack."
-      - If asked to re-track a person or object, change a box, set an item's image or add new evidence, call no tool and reply
-        "I can't do that in chat: re-tracking and images are done in the box tool in Edit, and new evidence with + Add evidence."
+      - If asked to re-track a person or object, change a box or set an item's image, call no tool and reply
+        "I can't do that in chat: re-tracking and images are done in the box tool in Edit."
+      - New evidence (something in the video that the draft does not have yet): ask what is needed with propose_ask_reviewer,
+        one short question per call, at most two questions for one piece of evidence in all; the exchange says how many were
+        asked. When you know what it is and where, call propose_open_box_tool once, with the second it is best seen at (inside
+        the incident) and a short name such as "bag on floor". Take the second from the draft or the reviewer's answers; ask
+        when you cannot.
       - If the request is not a change to this draft (a question, small talk, anything else), call no tool and reply
         "This is not an edit." Never answer it from your own knowledge.
       - If a tool returns an error, fix the call once with the error in mind; if it still fails, say what could not be done.

@@ -13,19 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Proposal tools for new evidence: at most two questions to the reviewer, then open the box tool.
+"""Proposal checks for new evidence: at most two questions to the reviewer, then open the box tool.
 
-Nothing here writes or asks anything. The orchestrator sends its calls with the number of questions already asked for
-this piece of evidence, and each call is checked here. The console carries out the proposals: ``ask_reviewer`` puts the
-question in the report chat, and ``open_box_tool`` opens the box tool at that second with the name filled in, so the
-reviewer draws the box. No question may follow the box tool, and the box tool opens once.
-
-Off unless ``INCIDENT_EVIDENCE_ASKS_ENABLED`` is set. See :mod:`vss_agents.api.incident_evidence_asks`.
+Nothing here writes or asks anything. The report editor's ``propose_ask_reviewer`` and ``propose_open_box_tool`` tools
+(:mod:`vss_agents.tools.incident_editor`) and the ``evidence-asks`` route (:mod:`vss_agents.api.incident_evidence_asks`)
+check each call here. The console carries out the proposals: ``ask_reviewer`` is the reply in the report chat, and
+``open_box_tool`` opens the box tool at that second with the name filled in, so the reviewer draws the box. No question
+may follow the box tool, and the box tool opens once.
 """
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from pydantic import BaseModel
@@ -34,13 +32,7 @@ from pydantic import Field
 from pydantic import ValidationError
 from pydantic import field_validator
 
-ENABLED_ENV = "INCIDENT_EVIDENCE_ASKS_ENABLED"
 MAX_QUESTIONS = 2
-
-
-def enabled() -> bool:
-    """Whether this agent may ask about new evidence. Off unless the setting says otherwise."""
-    return (os.environ.get(ENABLED_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 class EvidenceAskError(ValueError):

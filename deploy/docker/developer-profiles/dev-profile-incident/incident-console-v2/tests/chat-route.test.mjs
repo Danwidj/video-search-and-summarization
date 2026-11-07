@@ -246,6 +246,26 @@ test('the draft goes to the investigate route and its actions come back for the 
   assert.equal(body.message.applied, undefined);
 });
 
+test('the new-evidence exchange goes with the draft to the editor, in the agent shape', async () => {
+  upstream.body = {
+    status: 'ok',
+    answer: '',
+    steps: [{ tool: 'propose_ask_reviewer', args: { question: 'Which shop?' }, ok: true, ms: 4 }],
+    actions: [{ tool: 'propose_ask_reviewer', args: { question: 'Which shop?' } }],
+    wall_ms: 5,
+  };
+  const evidence = { questionsAsked: 1, transcript: [{ role: 'reviewer', text: 'a bag on the floor' }] };
+  const response = await post({
+    messages: [{ role: 'user', content: 'near the till' }],
+    incidentId: 'V1',
+    editDraft: { incident: {}, entities: [] },
+    evidence,
+  });
+  const body = await response.json();
+  assert.deepEqual(upstream.calls[0].body.evidence, { questions_asked: 1, transcript: evidence.transcript });
+  assert.deepEqual(body.message.actions, upstream.body.actions);
+});
+
 test('an editor run that used no tool was not an edit: the usual chat answers, as it does without a draft', async () => {
   const bodies = [{ status: 'ok', answer: 'This is not an edit.', steps: [], actions: [], wall_ms: 3 }, agentResponse];
   globalThis.fetch = async (url, init) => {

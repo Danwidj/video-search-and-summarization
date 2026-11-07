@@ -15,9 +15,9 @@
 
 """``POST /api/v1/incidents/{video_id}/evidence-asks`` - check the orchestrator's new-evidence calls.
 
-Off unless ``INCIDENT_EVIDENCE_ASKS_ENABLED`` is set: a request is then a ``404``. The route checks each call and returns
-the proposals that pass, with a reason for each that does not. It writes nothing and asks nothing: the console puts a
-question in the chat and opens the box tool. See :mod:`vss_agents.utils.evidence_asks`.
+The route checks each call and returns the proposals that pass, with a reason for each that does not. It writes nothing and
+asks nothing: the console puts a question in the chat and opens the box tool. The report editor runs the same checks as
+its ``propose_ask_reviewer`` and ``propose_open_box_tool`` tools. See :mod:`vss_agents.utils.evidence_asks`.
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ import logging
 
 from fastapi import APIRouter
 from fastapi import FastAPI
-from fastapi import HTTPException
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
@@ -56,8 +55,6 @@ def create_incident_evidence_asks_router() -> APIRouter:
         tags=["Incident Chat"],
     )
     async def propose_evidence_asks(video_id: str, body: EvidenceAskRequest) -> evidence_asks.ProposalResult:
-        if not evidence_asks.enabled():
-            raise HTTPException(status_code=404, detail="Evidence questions are not enabled on this agent")
         result = evidence_asks.propose(body.incident, body.questions_asked, body.calls)
         logger.info(
             "Evidence asks for %s: %d proposed, %d rejected", video_id, len(result.proposals), len(result.rejected)
