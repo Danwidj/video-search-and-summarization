@@ -22,11 +22,12 @@ import {
 import type { LibrarySearchResponse } from '@/lib/library/search';
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { LIBRARY_STATE_KEY } from '@/lib/library/remembered-state';
+import { pageItems } from '@/lib/library/pages';
 import { getViewerTimeZone } from '@/lib/time';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination';
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem } from '@/components/ui/pagination';
 
 type Tab = 'incidents' | 'evidence';
 const STATE_KEY = LIBRARY_STATE_KEY;
@@ -454,21 +455,28 @@ export function Library() {
                           Previous
                         </Button>
                       </PaginationItem>
-                      {Array.from({ length: totalPages }, (_, index) => index + 1).map((value) => (
-                        <PaginationItem key={value}>
-                          <Button
-                            aria-current={value === filters.page ? 'page' : undefined}
-                            aria-label={`Page ${value}`}
-                            className={value === filters.page ? 'bg-ink text-white' : ''}
-                            onClick={() => apply({ page: value }, true)}
-                            size="sm"
-                            type="button"
-                            variant={value === filters.page ? 'default' : 'outline'}
-                          >
-                            {value}
-                          </Button>
-                        </PaginationItem>
-                      ))}
+                      {pageItems(filters.page, totalPages).map((value, index) =>
+                        value === 'gap' ? (
+                          // biome-ignore lint/suspicious/noArrayIndexKey: the gaps have no identity of their own
+                          <PaginationItem key={`gap-${index}`}>
+                            <PaginationEllipsis />
+                          </PaginationItem>
+                        ) : (
+                          <PaginationItem key={value}>
+                            <Button
+                              aria-current={value === filters.page ? 'page' : undefined}
+                              aria-label={`Page ${value}`}
+                              className={value === filters.page ? 'bg-ink text-white' : ''}
+                              onClick={() => apply({ page: value }, true)}
+                              size="sm"
+                              type="button"
+                              variant={value === filters.page ? 'default' : 'outline'}
+                            >
+                              {value}
+                            </Button>
+                          </PaginationItem>
+                        ),
+                      )}
                       <PaginationItem>
                         <Button
                           disabled={filters.page >= totalPages}

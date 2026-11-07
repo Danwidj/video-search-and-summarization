@@ -22,7 +22,8 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination';
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem } from '@/components/ui/pagination';
+import { pageItems } from '@/lib/library/pages';
 
 export interface EvidenceScope {
   videoId: string;
@@ -298,18 +299,25 @@ export function EvidenceTab({
                       Previous
                     </Button>
                   </PaginationItem>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                    <PaginationItem key={p}>
-                      <Button
-                        className={p === page ? 'bg-ink text-white' : ''}
-                        onClick={() => setPage(p)}
-                        size="sm"
-                        variant={p === page ? 'default' : 'outline'}
-                      >
-                        {p}
-                      </Button>
-                    </PaginationItem>
-                  ))}
+                  {pageItems(page, totalPages).map((p, index) =>
+                    p === 'gap' ? (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: the gaps have no identity of their own
+                      <PaginationItem key={`gap-${index}`}>
+                        <PaginationEllipsis />
+                      </PaginationItem>
+                    ) : (
+                      <PaginationItem key={p}>
+                        <Button
+                          className={p === page ? 'bg-ink text-white' : ''}
+                          onClick={() => setPage(p)}
+                          size="sm"
+                          variant={p === page ? 'default' : 'outline'}
+                        >
+                          {p}
+                        </Button>
+                      </PaginationItem>
+                    ),
+                  )}
                   <PaginationItem>
                     <Button
                       disabled={page >= totalPages}
