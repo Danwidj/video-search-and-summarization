@@ -11,6 +11,12 @@ import type { TrackSample } from '@/modules/reports/domain/track';
 
 type ReviewerTrackSample = ReviewerTrack['samples'][number];
 
+/** New evidence the chat asked for: the box tool opens at this second with the name already filled in. */
+export interface EvidenceOpening {
+  seconds: number;
+  name: string;
+}
+
 /** How far one "Extend" button reaches, and the window either side of a fresh box. */
 export const TRACK_WINDOW_SECONDS = 3;
 /** Milliseconds of waiting on the AI before the box tool says it is still looking. */

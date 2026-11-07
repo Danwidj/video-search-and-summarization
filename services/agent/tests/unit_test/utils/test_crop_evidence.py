@@ -41,6 +41,7 @@ from vss_agents.utils.crop_evidence import SMALL_CROP_MARGIN
 from vss_agents.utils.crop_evidence import SMALL_CROP_MIN_SHORT_SIDE
 from vss_agents.utils.crop_evidence import TIME_BUDGET_GAP
 from vss_agents.utils.crop_evidence import TRACK_RECUT_GAP
+from vss_agents.utils.crop_evidence import BoxCheck
 from vss_agents.utils.crop_evidence import BudgetedDetector
 from vss_agents.utils.crop_evidence import CropCallBudget
 from vss_agents.utils.crop_evidence import CropCallCapReachedError
@@ -59,19 +60,25 @@ from vss_agents.utils.crop_evidence import ZoomLook
 from vss_agents.utils.crop_evidence import ZoomVerdict
 from vss_agents.utils.crop_evidence import _locate_in_frame
 from vss_agents.utils.crop_evidence import apply_box_padding
+from vss_agents.utils.crop_evidence import box_check_accepts
 from vss_agents.utils.crop_evidence import crop_evidence_item
 from vss_agents.utils.crop_evidence import duplicate_images
 from vss_agents.utils.crop_evidence import encode_jpeg
 from vss_agents.utils.crop_evidence import evidence_items
 from vss_agents.utils.crop_evidence import evidence_key
 from vss_agents.utils.crop_evidence import extract_frame
+from vss_agents.utils.crop_evidence import gap_retry_enabled
+from vss_agents.utils.crop_evidence import gap_retry_kind
 from vss_agents.utils.crop_evidence import get_crop_evidence_service
 from vss_agents.utils.crop_evidence import is_english_name
+from vss_agents.utils.crop_evidence import locate_in_tiles
 from vss_agents.utils.crop_evidence import looks_agree
 from vss_agents.utils.crop_evidence import next_run_batch_id
 from vss_agents.utils.crop_evidence import normalize_box
+from vss_agents.utils.crop_evidence import parse_box_check
 from vss_agents.utils.crop_evidence import parse_zoom_reply
 from vss_agents.utils.crop_evidence import refines_name
+from vss_agents.utils.crop_evidence import retry_gap_item
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
 from vss_agents.utils.crop_evidence import zoom_crop
 from vss_agents.utils.crop_evidence import zoom_names_enabled
@@ -2412,3 +2419,214 @@ class TestDetectorEndpointSetting:
     def test_the_gateway_setting_wins_over_the_shared_one(self, monkeypatch):
         monkeypatch.setenv("VLM_GATEWAY_BASE_URL", "https://gateway.example/")
         assert DefaultDetector(api_key="k")._chat_url().startswith("https://gateway.example/")
+
+
+class _QueryLog:
+    """Detector that records each query and answers from ``by_query`` (nothing otherwise)."""
+
+    def __init__(self, by_query: dict[str, list[Detection]] | None = None, error: Exception | None = None) -> None:
+        self.by_query = by_query or {}
+        self.error = error
+        self.queries: list[str] = []
+
+    def is_available(self) -> bool:
+        return True
+
+    def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+        self.queries.append(query)
+        if self.error is not None:
+            raise self.error
+        return self.by_query.get(query, [])
+
+
+_ASSET = {
+    "asset_id": "A1",
+    "name": "crowbar",
+    "description": "Heavy metal tool. Painted red.",
+    "timestamp_seconds": 1,
+    "label": "crowbar",
+}
+_GAP_BOX = Detection(box=[200, 200, 600, 600], score=0.9, label="x")
+
+
+def _asset_report() -> dict:
+    return {"incident": {"title": "x", "type": "burglary"}, "assets": [dict(_ASSET)]}
+
+
+class TestGapRetry:
+    def test_the_flag_is_off_by_default_and_read_on_each_call(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("INCIDENT_GAP_RETRY_ENABLED", raising=False)
+        assert gap_retry_enabled() is False
+        monkeypatch.setenv("INCIDENT_GAP_RETRY_ENABLED", "on")
+        assert gap_retry_enabled() is True
+        monkeypatch.setenv("INCIDENT_GAP_RETRY_ENABLED", "0")
+        assert gap_retry_enabled() is False
+
+    @pytest.mark.parametrize(
+        ("gap", "kind"),
+        [
+            (None, "missed"),
+            ("detector failed at 1s (ReadTimeout)", "error"),
+            ("no usable box within 2s either side: too small to judge", "small"),
+            ("no usable box within 2s either side: too large", "large"),
+            (TIME_BUDGET_GAP, None),
+            ("crop-call cap reached", None),
+            ("detector stopped at 1s", None),
+            ("no frame produced at 1s", None),
+        ],
+    )
+    def test_only_the_gaps_a_retry_can_help_are_retried(self, gap: str | None, kind: str | None) -> None:
+        assert gap_retry_kind(gap) == kind
+
+    def test_a_box_check_needs_a_confident_yes_and_for_an_object_the_same_kind_of_thing(self) -> None:
+        assert box_check_accepts(BoxCheck(True, 0.9, "crowbar"), "asset", "crowbar")
+        assert not box_check_accepts(BoxCheck(True, 0.5, "crowbar"), "asset", "crowbar")
+        assert not box_check_accepts(BoxCheck(False, 0.99, "crowbar"), "asset", "crowbar")
+        assert not box_check_accepts(BoxCheck(True, 0.95, "handgun"), "asset", "crowbar")
+        assert box_check_accepts(BoxCheck(True, 0.8, "man"), "entity", "suspect")
+        assert parse_box_check({"match": True, "confidence": 0.8, "seen": "crowbar"}).match is True
+
+    def test_a_tile_box_is_mapped_back_to_the_whole_frame(self) -> None:
+        frame = np.full((100, 200, 3), 128, dtype=np.uint8)
+        # the bottom-right tile spans y 25..100 and x 50..200, so a box over its middle half maps to (y 43..81, x 87..162)
+        detector = _QueryLog()
+        replies = iter([[], [], [], [Detection(box=[250, 250, 750, 750], score=0.9, label="k")]])
+        detector.detect = lambda _frame, _query: next(replies)  # type: ignore[method-assign]
+        found = locate_in_tiles(frame, 1, detector, "k", "asset")
+        assert found is not None and found.located
+        box = found.normalized_box
+        assert box is not None
+        # padding widens the box, so compare its centre: the tile box's middle is (y 62.5%, x 62.5%) of the frame
+        assert (box[0] + box[2]) / 2 == pytest.approx(625, abs=3) and (box[1] + box[3]) / 2 == pytest.approx(625, abs=3)
+
+    def test_the_description_is_asked_for_when_the_label_finds_nothing(self) -> None:
+        frame = np.full((80, 120, 3), 128, dtype=np.uint8)
+        detector = _QueryLog({"Heavy metal tool.": [_GAP_BOX]})
+        found = retry_gap_item(
+            frame, 1, label="crowbar", item_type="asset", name="crowbar", description="Heavy metal tool. Painted red.",
+            gap=None, detector=detector, checker=FakeZoomNamer(),
+        )  # fmt: skip
+        assert found is not None and found.located
+        assert detector.queries[-1] == "Heavy metal tool."
+
+    def test_a_transport_error_gap_is_retried_once_at_the_same_second_only(self) -> None:
+        frame = np.full((80, 120, 3), 128, dtype=np.uint8)
+        detector = _QueryLog({"crowbar": [_GAP_BOX]})
+        found = retry_gap_item(
+            frame, 1, label="crowbar", item_type="asset", name="crowbar", description="d",
+            gap="detector failed at 1s (ReadTimeout)", detector=detector, checker=FakeZoomNamer(),
+        )  # fmt: skip
+        assert found is not None and detector.queries == ["crowbar"]
+        detector = _QueryLog()
+        assert retry_gap_item(
+            frame, 1, label="crowbar", item_type="asset", name="crowbar", description="d",
+            gap="detector failed at 1s (ReadTimeout)", detector=detector, checker=FakeZoomNamer(),
+        ) is None  # fmt: skip
+        assert detector.queries == ["crowbar"]
+
+    def test_a_box_the_model_refuses_is_not_kept_and_checks_are_capped_per_item(self) -> None:
+        frame = np.full((80, 120, 3), 128, dtype=np.uint8)
+        detector = _QueryLog({"crowbar": [_GAP_BOX]})
+        checker = FakeZoomNamer(box_checks={"crowbar": {"match": False, "confidence": 0.9, "seen": "shelf"}})
+        found = retry_gap_item(
+            frame, 1, label="crowbar", item_type="asset", name="crowbar", description="d",
+            gap=None, detector=detector, checker=checker,
+        )  # fmt: skip
+        assert found is None
+        assert len(checker.checks) == 2  # GAP_RETRY_MAX_CHECKS_PER_ITEM
+
+    def test_a_failing_check_rejects_the_box_without_raising(self) -> None:
+        frame = np.full((80, 120, 3), 128, dtype=np.uint8)
+        detector = _QueryLog({"crowbar": [_GAP_BOX]})
+        checker = FakeZoomNamer(box_checks={"crowbar": RuntimeError("model down")})
+        assert retry_gap_item(
+            frame, 1, label="crowbar", item_type="asset", name="crowbar", description="d",
+            gap=None, detector=detector, checker=checker,
+        ) is None  # fmt: skip
+
+    def test_an_item_is_capped_at_its_own_detector_calls(self) -> None:
+        frame = np.full((80, 120, 3), 128, dtype=np.uint8)
+        detector = _QueryLog()
+        retry_gap_item(
+            frame, 1, label="crowbar", item_type="asset", name="crowbar", description="d",
+            gap=None, detector=detector, checker=FakeZoomNamer(), max_calls=3,
+        )  # fmt: skip
+        assert len(detector.queries) == 3
+
+    def test_no_detector_call_is_made_after_the_stop_time(self) -> None:
+        frame = np.full((80, 120, 3), 128, dtype=np.uint8)
+        detector = _QueryLog()
+        assert retry_gap_item(
+            frame, 1, label="crowbar", item_type="asset", name="crowbar", description="d",
+            gap=None, detector=detector, checker=FakeZoomNamer(), stop_at=time.monotonic() - 1,
+        ) is None  # fmt: skip
+        assert detector.queries == []
+
+    def test_a_spent_shared_budget_ends_the_retry_with_no_extra_call(self) -> None:
+        frame = np.full((80, 120, 3), 128, dtype=np.uint8)
+        inner = _QueryLog()
+        budget = CropCallBudget(2)
+        with pytest.raises(CropCallCapReachedError):
+            retry_gap_item(
+                frame, 1, label="crowbar", item_type="asset", name="crowbar", description="d",
+                gap=None, detector=BudgetedDetector(inner, budget), checker=FakeZoomNamer(),
+            )  # fmt: skip
+        assert len(inner.queries) == 2
+
+    @pytest.mark.asyncio
+    async def test_the_retry_is_off_without_the_flag_and_adds_no_detector_call(
+        self, tiny_video_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("INCIDENT_GAP_RETRY_ENABLED", raising=False)
+        detector = _QueryLog()
+        namer = FakeZoomNamer()
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore(), namer=namer)
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=_asset_report(), batch_id="run-1"
+        )
+        assert results[0]["image"] is None and namer.checks == []
+        assert "gap-retry" not in {r.get("box_source") for r in results}
+
+    @pytest.mark.asyncio
+    async def test_a_retried_box_the_model_confirms_is_kept_and_marked(self, tiny_video_path: Path) -> None:
+        detector = _QueryLog({"Heavy metal tool.": [_GAP_BOX]})
+        namer = FakeZoomNamer()
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore(), namer=namer)
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=_asset_report(), batch_id="run-1", gap_retry=True
+        )
+        assert results[0]["image"] is not None and results[0]["box_source"] == "gap-retry"
+        assert results[0].get("image_gap") is None
+        assert len(namer.checks) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_retried_box_the_model_refuses_leaves_the_original_gap(self, tiny_video_path: Path) -> None:
+        detector = _QueryLog({"Heavy metal tool.": [_GAP_BOX]})
+        namer = FakeZoomNamer(box_checks={"crowbar": {"match": False, "confidence": 0.9, "seen": "wall"}})
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore(), namer=namer)
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=_asset_report(), batch_id="run-1", gap_retry=True
+        )
+        assert results[0]["image"] is None and results[0].get("box_source") != "gap-retry"
+
+    @pytest.mark.asyncio
+    async def test_without_a_second_look_client_nothing_is_retried(self, tiny_video_path: Path) -> None:
+        plain = _QueryLog()
+        service = CropEvidenceService(detector=plain, store=InMemoryEvidenceStore())
+        await service.process_incident_report(video_ref=tiny_video_path, video_id="v", report=_asset_report())
+        before = len(plain.queries)
+        retry = _QueryLog()
+        service = CropEvidenceService(detector=retry, store=InMemoryEvidenceStore())
+        await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=_asset_report(), gap_retry=True
+        )
+        assert len(retry.queries) == before
+
+    @pytest.mark.asyncio
+    async def test_a_detector_that_fails_never_fails_the_analysis(self, tiny_video_path: Path) -> None:
+        detector = _QueryLog(error=RuntimeError("boom"))
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore(), namer=FakeZoomNamer())
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=_asset_report(), gap_retry=True
+        )
+        assert results[0]["image"] is None

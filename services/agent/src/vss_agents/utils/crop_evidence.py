@@ -121,6 +121,21 @@ class CropResult:
 
 # Seconds tried, in order, around the requested one when the detector finds nothing there.
 LOCATE_RETRY_OFFSETS: tuple[int, ...] = (1, -1, 2, -2)
+# Gap retry (``INCIDENT_GAP_RETRY_ENABLED``, off by default): a second pass over items the locate step left without a
+# box. It tries the seconds beyond LOCATE_RETRY_OFFSETS, a 2x2 tiled search, and the description as the label, and takes
+# a new box only when the video model confirms it shows the item. It runs only while more than
+# GAP_RETRY_RESERVE_SECONDS of the analysis budget remain, and at most GAP_RETRY_MAX_CALLS detector calls per
+# analysis (GAP_RETRY_MAX_CALLS_PER_ITEM per item, GAP_RETRY_MAX_CHECKS_PER_ITEM model checks per item).
+GAP_RETRY_ENV = "INCIDENT_GAP_RETRY_ENABLED"
+GAP_RETRY_OFFSETS: tuple[int, ...] = (3, -3, 4, -4)
+GAP_RETRY_MAX_CALLS = 24
+GAP_RETRY_MAX_CALLS_PER_ITEM = 10
+GAP_RETRY_MAX_CHECKS_PER_ITEM = 2
+GAP_RETRY_RESERVE_SECONDS = 90.0
+GAP_RETRY_CONFIDENCE = 0.7
+GAP_RETRY_TILE_OVERLAP = 0.25
+GAP_RETRY_DESCRIPTION_CHARS = 200
+GAP_RETRY_SOURCE = "gap-retry"  # the entry's ``box_source`` when a retry found its box
 FRAME_JPEG_QUALITY = 90
 # Zoomed second look: the close-up's margin around the located box, the smallest short side the model sees, the
 # confidence a correction needs before it is applied, and the flag that turns the second look off.
@@ -158,6 +173,31 @@ _FALSE_FLAG_VALUES = frozenset({"0", "false", "no", "off"})
 def zoom_names_enabled() -> bool:
     """Whether the zoomed second look runs: ``INCIDENT_ZOOM_NAMES_ENABLED`` unset or anything but 0/false/no/off."""
     return os.getenv(ZOOM_NAMES_ENV, "1").strip().lower() not in _FALSE_FLAG_VALUES
+
+
+def gap_retry_enabled() -> bool:
+    """Whether the gap retry runs: off unless ``INCIDENT_GAP_RETRY_ENABLED`` is 1/true/yes/on (read per request)."""
+    return (os.getenv(GAP_RETRY_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+@dataclass(frozen=True)
+class BoxCheck:
+    """The video model's answer to "does this box show the item": ``seen`` is what it says the box contains."""
+
+    match: bool
+    confidence: float
+    seen: str
+
+
+def parse_box_check(data: dict[str, Any]) -> BoxCheck:
+    """A strict ``{match, confidence, seen}`` object; anything else raises ``ValueError``."""
+    match = data.get("match")
+    seen = data.get("seen")
+    if not isinstance(match, bool):
+        raise ValueError(f"box check match is not a boolean: {match!r}")
+    if not isinstance(seen, str):
+        raise ValueError("box check has no seen text")
+    return BoxCheck(match=match, confidence=_confidence(data.get("confidence")), seen=" ".join(seen.split()))
 
 
 @dataclass(frozen=True)
@@ -884,7 +924,9 @@ class DefaultDetector:
 
     def _chat_url(self) -> str:
         if not self.base_url:
-            raise RuntimeError("VLM_GATEWAY_BASE_URL (or VLM_BASE_URL) is not set: the detector has no endpoint to call")
+            raise RuntimeError(
+                "VLM_GATEWAY_BASE_URL (or VLM_BASE_URL) is not set: the detector has no endpoint to call"
+            )
         root = self.base_url[: -len("/v1")] if self.base_url.endswith("/v1") else self.base_url
         return f"{root}/v1/chat/completions"
 
@@ -1129,6 +1171,24 @@ class DefaultDetector:
                 return fast_result
             raise
 
+    def verify_box(
+        self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None
+    ) -> BoxCheck:
+        """Whether the boxed region (the close-up ``jpeg``, and ``context_jpeg``: the frame with the box drawn) shows the item.
+
+        One call with the ``zoom/verify-box`` prompt, on the same endpoint as the zoomed second look (``_chat_json``,
+        outside any ``CropCallBudget``). Raises ``httpx.HTTPError`` on transport or status errors and ``ValueError``
+        on a reply that is not the strict JSON asked for.
+        """
+        prompt = incident_contract.render_prompt(
+            "zoom/verify-box",
+            item_type="person" if item_type == "entity" else item_type,
+            name=name,
+            description=description,
+        )
+        images = [context_jpeg, jpeg] if context_jpeg is not None else [jpeg]
+        return self._chat_json(images, prompt, parse_box_check, max_tokens=256, thinking=False)
+
     def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
         if not self.is_available():
             return []
@@ -1192,9 +1252,13 @@ class FakeZoomNamer:
     ``ZoomVerdict`` or an exception to raise. An item with no reply is confirmed unchanged at confidence 1. Every call is recorded.
     """
 
-    def __init__(self, replies: dict[str, Any] | None = None) -> None:
+    def __init__(self, replies: dict[str, Any] | None = None, box_checks: dict[str, Any] | None = None) -> None:
         self.replies = dict(replies or {})
+        self.box_checks = dict(
+            box_checks or {}
+        )  # per item name: a parsed dict, a ``BoxCheck`` or an exception to raise
         self.calls: list[dict[str, Any]] = []
+        self.checks: list[dict[str, Any]] = []
 
     def zoom_name(
         self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None
@@ -1216,6 +1280,24 @@ class FakeZoomNamer:
         if isinstance(reply, ZoomVerdict):
             return reply
         return parse_zoom_reply(parse_json_object(reply) if isinstance(reply, str) else reply)
+
+    def verify_box(
+        self,
+        jpeg: bytes,  # noqa: ARG002
+        *,
+        item_type: str,
+        name: str,
+        description: str,
+        context_jpeg: bytes | None = None,  # noqa: ARG002
+    ) -> BoxCheck:
+        """The retried box's check: a canned ``BoxCheck`` (or exception) for ``name``, else a confident yes naming it."""
+        self.checks.append({"item_type": item_type, "name": name, "description": description})
+        reply = self.box_checks.get(name)
+        if isinstance(reply, Exception):
+            raise reply
+        if reply is None:
+            return BoxCheck(match=True, confidence=1.0, seen=name)
+        return reply if isinstance(reply, BoxCheck) else parse_box_check(reply)
 
 
 def _not_located_result(frame: np.ndarray, seconds: int | float, gap: str | None = None) -> CropResult | None:
@@ -1409,6 +1491,224 @@ def crop_evidence_item(
         )
         return _not_located_result(first_frame, timestamp_seconds, gap)
     return None
+
+
+def gap_retry_kind(gap: str | None) -> str | None:
+    """Which retry an unlocated item's ``CropResult.gap`` calls for, or None when a retry cannot help.
+
+    ``missed`` (the detector found nothing), ``small`` and ``large`` (it found a box that cannot be the object, see
+    :func:`box_problem`) and ``error`` (a transport failure at every second). Time budget, stopped detector, call cap
+    and unreadable frame gaps are not retried: the retry would meet the same limit.
+    """
+    if gap is None:
+        return "missed"
+    if gap.startswith("detector failed at"):
+        return "error"
+    if gap.startswith("no usable box"):
+        return "small" if "too small" in gap else "large"
+    return None
+
+
+def tile_boxes(overlap: float = GAP_RETRY_TILE_OVERLAP) -> list[tuple[float, float, float, float]]:
+    """The four overlapping quarters of a frame as ``(ymin, xmin, ymax, xmax)`` fractions (each ``0.5 + overlap`` wide)."""
+    size = 0.5 + overlap
+    start = 1.0 - size
+    return [(y, x, y + size, x + size) for y in (0.0, start) for x in (0.0, start)]
+
+
+def locate_in_tiles(
+    frame: np.ndarray,
+    seconds: int | float,
+    detector: Any,
+    label: str,
+    item_type: str | None,
+    min_score: float = 0.0,
+    on_call: Callable[[], None] | None = None,
+) -> CropResult | None:
+    """Ask the detector for ``label`` in each of the frame's four overlapping tiles, taking the first usable box.
+
+    A small object fills more of a tile than of the frame, which the grounding model can see. The tile's box is mapped
+    back to the whole frame and judged there (:func:`_locate_in_frame`), so a box that is still too small, or too large,
+    is refused as it would be in the locate step. ``on_call`` runs before each detector call (the caller's call count;
+    it may raise to stop the search). A detector error ends the search with the error.
+    """
+    frame_h, frame_w = frame.shape[:2]
+    for ymin, xmin, ymax, xmax in tile_boxes():
+        top, left, bottom, right = (
+            round(ymin * frame_h),
+            round(xmin * frame_w),
+            round(ymax * frame_h),
+            round(xmax * frame_w),
+        )
+        tile = np.ascontiguousarray(frame[top:bottom, left:right])
+        if tile.size == 0:
+            continue
+        if on_call is not None:
+            on_call()
+        raw = detector.detect(tile, label) if hasattr(detector, "detect") else detector(tile, label)
+        mapped: list[Detection] = []
+        for detection in parse_detections(raw, label):
+            if len(detection.box) != 4:
+                continue
+            t_ymin, t_xmin, t_ymax, t_xmax = detection.box
+            box = [
+                round((top + t_ymin / 1000 * (bottom - top)) / frame_h * 1000),
+                round((left + t_xmin / 1000 * (right - left)) / frame_w * 1000),
+                round((top + t_ymax / 1000 * (bottom - top)) / frame_h * 1000),
+                round((left + t_xmax / 1000 * (right - left)) / frame_w * 1000),
+            ]
+            mapped.append(Detection(box=box, score=detection.score, label=detection.label))
+        found = _locate_in_frame(frame, seconds, mapped, label, min_score, item_type)
+        if found is not None:
+            return found
+    return None
+
+
+def gap_retry_description_query(description: str, label: str) -> str | None:
+    """The item's description as a detector label (first sentence, cut short), or None when it adds nothing."""
+    first = re.split(r"(?<=[.!?])\s", description.strip(), maxsplit=1)[0].strip()
+    query = first[:GAP_RETRY_DESCRIPTION_CHARS].strip()
+    return query if query and query.lower() != label.strip().lower() else None
+
+
+def box_check_accepts(check: BoxCheck, item_type: str, name: str) -> bool:
+    """Whether a model check lets a retried box stand: a yes it is sure of, and for an instrument or asset a ``seen``
+    that names the same kind of thing (:func:`refines_name`), because the prompt carries the report's name and a
+    model leans towards confirming it. A name the code cannot compare (not English) is not accepted.
+    """
+    if not check.match or check.confidence < GAP_RETRY_CONFIDENCE:
+        return False
+    if item_type == "entity":
+        return True
+    return is_english_name(check.seen) and is_english_name(name) and refines_name(name, check.seen)
+
+
+def retry_gap_item(
+    video_ref: str | Path | np.ndarray,
+    timestamp_seconds: int | float,
+    *,
+    label: str,
+    item_type: str,
+    name: str,
+    description: str,
+    gap: str | None,
+    detector: Any,
+    checker: Any,
+    stop_at: float | None = None,
+    max_calls: int = GAP_RETRY_MAX_CALLS_PER_ITEM,
+    max_checks: int = GAP_RETRY_MAX_CHECKS_PER_ITEM,
+) -> CropResult | None:
+    """Look again for one item the locate step left without a box; the new box, or None to keep the original gap.
+
+    The steps depend on the gap (:func:`gap_retry_kind`): a transport error is tried once more at the same second;
+    otherwise the seconds in :data:`GAP_RETRY_OFFSETS`, the item's description as the label and a tiled search
+    (:func:`locate_in_tiles`), the tiled search first when the box was too small. Each step stops at the first box
+    that passes :func:`box_problem`, and that box is kept only after ``checker.verify_box`` (the video model) says
+    it shows the item (:func:`box_check_accepts`). At most ``max_calls`` detector calls and ``max_checks`` model
+    checks are made, none after ``stop_at`` (a ``time.monotonic()`` value). A check that fails rejects its box and a
+    failed detector call skips its step; a stopped detector or the time limit ends the search with None.
+
+    Raises:
+        CropCallCapReachedError: when the budgeted detector has no calls left (propagated, never swallowed).
+    """
+    kind = gap_retry_kind(gap)
+    if kind is None:
+        return None
+    calls = 0
+    checks = 0
+
+    def on_call() -> None:
+        nonlocal calls
+        if calls >= max_calls or (stop_at is not None and time.monotonic() >= stop_at):
+            raise _GapRetryStoppedError
+        calls += 1
+
+    def frame_at(seconds: int | float) -> np.ndarray | None:
+        if seconds < 0:
+            return None
+        frame = video_ref if isinstance(video_ref, np.ndarray) else extract_frame(video_ref, seconds)
+        return None if frame is None or frame.size == 0 or min(frame.shape[:2]) <= 0 else frame
+
+    def whole_frame(seconds: int | float, query: str) -> CropResult | None:
+        frame = frame_at(seconds)
+        if frame is None:
+            return None
+        on_call()
+        try:
+            raw = detector.detect(frame, query) if hasattr(detector, "detect") else detector(frame, query)
+        except (CropCallCapReachedError, DetectorStoppedError, _GapRetryStoppedError):
+            raise
+        except Exception as exc:
+            logger.warning("Gap retry detector call failed for query '%s': %s", query, exc)
+            return None
+        return _locate_in_frame(frame, seconds, raw, query, 0.0, item_type)
+
+    def tiled(seconds: int | float, query: str) -> CropResult | None:
+        frame = frame_at(seconds)
+        if frame is None:
+            return None
+        try:
+            return locate_in_tiles(frame, seconds, detector, query, item_type, on_call=on_call)
+        except (CropCallCapReachedError, DetectorStoppedError, _GapRetryStoppedError):
+            raise
+        except Exception as exc:
+            logger.warning("Gap retry tiled search failed for query '%s': %s", query, exc)
+            return None
+
+    def confirmed(found: CropResult | None) -> CropResult | None:
+        nonlocal checks
+        if found is None or found.zoom_bytes is None or checks >= max_checks:
+            return None
+        checks += 1
+        try:
+            check = checker.verify_box(
+                found.zoom_bytes,
+                item_type=item_type,
+                name=name,
+                description=description,
+                context_jpeg=found.zoom_frame_bytes,
+            )
+        except CropCallCapReachedError:
+            raise
+        except Exception as exc:
+            logger.warning("Gap retry box check failed: %s", exc)
+            return None
+        if box_check_accepts(check, item_type, name):
+            return found
+        logger.info(
+            "Gap retry box at %ss refused: match=%s confidence=%.2f seen=%r",
+            found.box_seconds,
+            check.match,
+            check.confidence,
+            check.seen,
+        )
+        return None
+
+    described = gap_retry_description_query(description, label)
+    steps: list[Callable[[], CropResult | None]] = []
+    if kind == "error":
+        steps.append(lambda: whole_frame(timestamp_seconds, label))
+    else:
+        offsets = [lambda o=o: whole_frame(timestamp_seconds + o, label) for o in GAP_RETRY_OFFSETS]
+        by_description = [lambda: whole_frame(timestamp_seconds, described)] if described else []
+        by_tiles = [lambda: tiled(timestamp_seconds, label)] if kind != "large" else []
+        steps.extend(
+            [*by_tiles, *offsets, *by_description] if kind == "small" else [*offsets, *by_description, *by_tiles]
+        )
+    try:
+        for step in steps:
+            if checks >= max_checks:
+                break
+            found = confirmed(step())
+            if found is not None:
+                return found
+    except (_GapRetryStoppedError, DetectorStoppedError):
+        return None
+    return None
+
+
+class _GapRetryStoppedError(Exception):
+    """A gap retry reached its per-item call cap or the time it may use."""
 
 
 DUPLICATE_BOX_IOU = 0.8
@@ -1804,6 +2104,7 @@ class CropEvidenceService:
         object_tracking: track_evidence.ObjectTrackingRequest | None = None,
         namer: Any | None = None,
         deadline: float | None = None,
+        gap_retry: bool | None = None,
     ) -> list[dict[str, Any]]:
         """Locate every entity, instrument and asset of a report and upload its frame and crop.
 
@@ -1828,6 +2129,14 @@ class CropEvidenceService:
         correcting, beside the person tracking run. The resulting track is stored like a person track
         (``track``, ``track_first_seen_seconds``, ``track_last_seen_seconds``) with ``track_source`` set to
         ``object-tracker``, and the item's frame is re-cut at the track's first sample (the second it is first seen).
+
+        Gap retry (``gap_retry``, default :func:`gap_retry_enabled`, read per call): after the locate step, an item left
+        without a box (not located, no usable box, or a transport error) is looked for again by :func:`retry_gap_item`,
+        before tracking uses the boxes. It runs only while more than :data:`GAP_RETRY_RESERVE_SECONDS` of ``deadline``
+        remain, makes at most :data:`GAP_RETRY_MAX_CALLS` detector calls (and none beyond the request's own
+        ``CropCallBudget``), and keeps a new box only when the second-look client's ``verify_box`` confirms it
+        (``box_source`` is then ``gap-retry``). Without such a client nothing is retried. Any other outcome leaves
+        the item's gap as the locate step wrote it; the stage never fails the analysis.
 
         When person tracking was requested, a person left without a track keeps ``track_gap``, the reason (the run's
         skip reason, else that no track overlapped the box or that the person was not located).
@@ -1857,6 +2166,11 @@ class CropEvidenceService:
         if isinstance(active_detector, DefaultDetector) and deadline is not None:
             active_detector = active_detector.with_deadline(deadline)  # a stalled request ends with the budget
         zoom_on = zoom_names_enabled() if zoom_names is None else zoom_names
+        retry_on = gap_retry_enabled() if gap_retry is None else gap_retry
+        # The box check uses the second look's client even with the zoomed second look off.
+        checker = namer if namer is not None else self.namer
+        if isinstance(checker, DefaultDetector) and deadline is not None:
+            checker = checker.with_deadline(deadline)
         # ``namer`` overrides the shared one for this call (an experiment's zoom-capped copy).
         namer = (namer if namer is not None else self.namer) if zoom_on else None
         if isinstance(namer, DefaultDetector):
@@ -1872,6 +2186,7 @@ class CropEvidenceService:
         semaphore = asyncio.Semaphore(EVIDENCE_CROP_CONCURRENCY)
         crops: dict[str, CropResult] = {}
         time_matched: set[str] = set()  # people with no box whose track was matched by on-screen time
+        retried: dict[str, CropResult] = {}  # items whose box the gap retry found
         crop_breaker = DetectorBreaker("Evidence crop", cooldown_seconds=DETECTOR_COOLDOWN_SECONDS)
         crop_detector = GuardedDetector(active_detector, crop_breaker, deadline)
 
@@ -1939,6 +2254,64 @@ class CropEvidenceService:
                 return
             crops[entry["item_id"]] = crop
 
+        async def _retry_gaps() -> None:
+            """Look again for items the locate step left without a box (see :func:`retry_gap_item`). Never raises."""
+            if checker is None or not hasattr(checker, "verify_box"):
+                return
+            if hasattr(checker, "is_available") and not checker.is_available():
+                return
+            stop_at = None if deadline is None else deadline - GAP_RETRY_RESERVE_SECONDS
+            pending = [
+                (entry, crop)
+                for entry in entries
+                if (crop := crops.get(entry["item_id"])) is not None
+                and not crop.located
+                and gap_retry_kind(crop.gap) is not None
+            ]
+            if not pending:
+                return
+            retry_detector = BudgetedDetector(crop_detector, CropCallBudget(GAP_RETRY_MAX_CALLS))
+
+            async def _one(entry: dict[str, Any], crop: CropResult) -> None:
+                async with semaphore:
+                    timeout = None if stop_at is None else stop_at - time.monotonic()
+                    if timeout is not None and timeout <= 0:
+                        return
+                    try:
+                        found = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                retry_gap_item,
+                                video_ref,
+                                entry["timestamp_seconds"],
+                                label=entry["label"],
+                                item_type=entry["item_type"],
+                                name=entry["item_name"],
+                                description=entry["description"],
+                                gap=crop.gap,
+                                detector=retry_detector,
+                                checker=checker,
+                                stop_at=stop_at,
+                            ),
+                            timeout=timeout,
+                        )
+                    except (TimeoutError, CropCallCapReachedError):
+                        return
+                    except Exception as exc:
+                        logger.warning("Gap retry failed for %s %s: %s", video_id, entry["item_id"], exc)
+                        return
+                if found is not None:
+                    logger.info(
+                        "Gap retry found a box for %s %s at %ss (was: %s)",
+                        video_id,
+                        entry["item_id"],
+                        found.box_seconds,
+                        crop.gap or "not located",
+                    )
+                    crops[entry["item_id"]] = found
+                    retried[entry["item_id"]] = found
+
+            await asyncio.gather(*(_one(entry, crop) for entry, crop in pending))
+
         async def _upload(
             entry: dict[str, Any], track: track_evidence.Track | None, same_as: dict[str, Any] | None = None
         ) -> None:
@@ -1985,6 +2358,8 @@ class CropEvidenceService:
             entry["located"] = crop.located
             if crop.located and crop.image_bytes is not None:
                 entry["image"] = key
+                if retried.get(entry["item_id"]) is crop:  # still the retry's box: no track re-cut or move replaced it
+                    entry["box_source"] = GAP_RETRY_SOURCE
                 if track is not None and entry["item_id"] in time_matched:
                     # No detector found this person: the box is the track's first sample (``box_source``, like
                     # ``track_source``, is set only when it is not the detector's), so the locate failure is moot.
@@ -2296,6 +2671,8 @@ class CropEvidenceService:
         entries = blank_evidence_entries(report, image_gap=None)
         by_id = {entry["item_id"]: entry for entry in entries}
         await asyncio.gather(*(_crop(entry) for entry in entries))
+        if retry_on:
+            await _retry_gaps()
 
         # Beside the person tracking run: the seeds need only the locate step, not the people.
         object_task = asyncio.create_task(_track_objects()) if object_tracking is not None else None
