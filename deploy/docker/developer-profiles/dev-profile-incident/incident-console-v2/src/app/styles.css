@@ -247,3 +247,17 @@ video::-webkit-media-controls-volume-slider,
 video::-webkit-media-controls-volume-slider-container {
   display: none;
 }
+
+/* The hovered chart mark scales in over 150 ms; under reduced motion it just appears, in its darker colour. */
+@media (prefers-reduced-motion: no-preference) {
+  .chart-pop {
+    animation: chart-pop 150ms ease-out;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  @keyframes chart-pop {
+    from {
+      transform: scale(0.9);
+    }
+  }
+}

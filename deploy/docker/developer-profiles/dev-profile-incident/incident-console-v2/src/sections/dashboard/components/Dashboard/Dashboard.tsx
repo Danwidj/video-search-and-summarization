@@ -2,7 +2,7 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import type { DateRange } from 'react-day-picker';
 import { HistoryIcon, RotateCcwIcon } from 'lucide-react';
@@ -42,6 +42,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { darken, DimSector, PopBar, PopSector } from '@/sections/dashboard/components/Dashboard/chart-hover';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { cn } from 'cn';
 import { formatCalendarDay } from '@/modules/dashboard/domain/charts';
@@ -477,6 +478,7 @@ function SplitBars({ rows, emptyText, hrefFor }: { rows: BarRow[]; emptyText: st
         {split ? (
           <>
             <Bar
+              activeBar={PopBar}
               className={hrefFor ? 'cursor-pointer' : undefined}
               dataKey="official"
               fill="var(--color-official)"
@@ -485,6 +487,7 @@ function SplitBars({ rows, emptyText, hrefFor }: { rows: BarRow[]; emptyText: st
               stackId="split"
             />
             <Bar
+              activeBar={PopBar}
               className={hrefFor ? 'cursor-pointer' : undefined}
               dataKey="notOfficial"
               fill="var(--color-notOfficial)"
@@ -496,6 +499,7 @@ function SplitBars({ rows, emptyText, hrefFor }: { rows: BarRow[]; emptyText: st
           </>
         ) : (
           <Bar
+            activeBar={PopBar}
             className={hrefFor ? 'cursor-pointer' : undefined}
             dataKey="total"
             fill="var(--color-total)"
@@ -542,13 +546,15 @@ function SeverityDonut({
           <PieChart>
             <ChartTooltip content={<ChartTooltipContent hideLabel />} />
             <Pie
+              activeShape={PopSector}
               cursor="default"
               data={rows}
               dataKey="total"
+              inactiveShape={DimSector}
               innerRadius="62%"
               {...motion}
               nameKey="key"
-              outerRadius="96%"
+              outerRadius="82%"
               stroke="var(--card)"
               strokeWidth={2}
             >
@@ -621,7 +627,7 @@ function Heatmap({
   const max = Math.max(1, ...data.map((x) => x[series]));
   return (
     <TooltipProvider delayDuration={100}>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto p-2">
         <div className="min-w-[640px]">
           <div className="grid grid-cols-[32px_repeat(24,1fr)] gap-0.5 text-[10px] text-ink-caption">
             <span />
@@ -635,6 +641,7 @@ function Heatmap({
               {HOURS_OF_DAY.map((h) => {
                 const cell = map.get(`${d}-${h}`);
                 const value = cell?.[series] ?? 0;
+                const share = value ? 20 + (value / max) * 80 : 4;
                 const summary = `${name} ${h}:00 ${timeZone}: ${cell?.count ?? 0} reports, ${cell?.official ?? 0} official, ${cell?.notOfficial ?? 0} not yet official`;
                 return (
                   <Tooltip key={`hour-${h}`}>
@@ -642,13 +649,16 @@ function Heatmap({
                       <button
                         aria-label={summary}
                         className={cn(
-                          'h-4 rounded-xs transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          'relative h-4 rounded-xs transition duration-150 hover:z-10 hover:bg-(--cell-hover) hover:ring-2 hover:ring-ink motion-safe:hover:scale-150 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                           selected === `${d}-${h}` ? 'ring-2 ring-ink' : '',
                         )}
                         onClick={() => onSelect(d, h)}
-                        style={{
-                          background: `color-mix(in srgb, ${SERIES_COLOR[series]} ${value ? 20 + (value / max) * 80 : 4}%, transparent)`,
-                        }}
+                        style={
+                          {
+                            background: `color-mix(in srgb, ${SERIES_COLOR[series]} ${share}%, transparent)`,
+                            '--cell-hover': darken(`color-mix(in srgb, ${SERIES_COLOR[series]} ${share}%, white)`),
+                          } as CSSProperties
+                        }
                         type="button"
                       />
                     </TooltipTrigger>
