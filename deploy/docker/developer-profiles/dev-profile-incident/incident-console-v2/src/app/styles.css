@@ -58,7 +58,7 @@
   --border: rgba(18, 33, 27, 0.1);
   --input: rgba(18, 33, 27, 0.12);
   --ring: #76b900;
-  --card-hover: #2563eb;
+  --card-hover: var(--ring);
   --chart-1: #174f3b;
   --chart-2: #76b900;
   --chart-3: #d9754c;
