@@ -169,19 +169,7 @@ export function IncidentCard({
             </div>
           </div>
 
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <h2 className="line-clamp-1 text-[15px] font-semibold leading-snug tracking-tight text-ink">{displayTitle}</h2>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{displayTitle}</p>
-                <p className="text-xs opacity-70" data-testid="video-name">
-                  {item.filename} · Added {formatTimestamp(item.uploadedAt)}
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <h2 className="line-clamp-1 text-[15px] font-semibold leading-snug tracking-tight text-ink">{displayTitle}</h2>
 
           <p className="truncate text-[13px] leading-5 text-ink/60">{item.description}</p>
         </div>
