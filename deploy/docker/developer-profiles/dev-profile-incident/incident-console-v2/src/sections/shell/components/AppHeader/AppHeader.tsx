@@ -3,6 +3,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRef } from 'react';
 
 import { CheckIcon, MenuIcon } from 'lucide-react';
 
@@ -11,6 +12,7 @@ import { NavigationMenu, NavigationMenuItem, NavigationMenuLink, NavigationMenuL
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from 'cn';
 import { forgetLibraryState } from '@/lib/library/remembered-state';
+import { useSlidingIndicator } from '@/lib/ui/use-sliding-indicator';
 
 const NAV_ITEMS = [
   { href: '/', key: 'analyze', label: 'Analyse' },
@@ -32,6 +34,9 @@ export function AppHeader({
   /** Edge to edge with small side padding (the report page), instead of the centred max-width container. */
   fullWidth?: boolean;
 }) {
+  const navRef = useRef<HTMLElement>(null);
+  const indicator = useSlidingIndicator(navRef, active ?? '');
+
   return (
     <header className="print-hidden relative z-40 shrink-0 border-b border-ink/10 bg-white">
       <div
@@ -44,7 +49,7 @@ export function AppHeader({
           <div className="flex items-center gap-3 empty:hidden" id={HEADER_START_SLOT} />
           <span className="min-w-0 truncate text-lg font-semibold tracking-tight text-ink capitalize">{subtitle}</span>
         </div>
-        <NavigationMenu aria-label="Primary navigation" className="hidden flex-none sm:flex" viewport={false}>
+        <NavigationMenu aria-label="Primary navigation" className="hidden flex-none sm:flex" ref={navRef} viewport={false}>
           <NavigationMenuList className="gap-0.5 rounded-full border border-ink/10 bg-[#dfe6d6] p-1">
             {NAV_ITEMS.map((item) => (
               <NavigationMenuItem key={item.key}>
@@ -52,11 +57,12 @@ export function AppHeader({
                   asChild
                   active={active === item.key}
                   className={cn(
-                    'h-8 justify-center rounded-full px-4 py-0 text-sm font-medium transition-colors duration-150',
+                    'relative z-10 h-8 justify-center rounded-full px-4 py-0 text-sm font-medium transition-colors duration-150',
                     active === item.key
-                      ? 'bg-moss font-semibold text-white hover:bg-moss focus:bg-moss data-[active=true]:bg-moss data-[active=true]:text-white data-[active=true]:hover:bg-moss data-[active=true]:focus:bg-moss'
+                      ? 'font-semibold text-white hover:text-white focus:text-white'
                       : 'text-ink/70 hover:bg-white/60 hover:text-ink focus:bg-white/60 focus:text-ink',
                   )}
+                  data-indicator-key={item.key}
                 >
                   <Link
                     aria-current={active === item.key ? 'page' : undefined}
@@ -69,6 +75,14 @@ export function AppHeader({
               </NavigationMenuItem>
             ))}
           </NavigationMenuList>
+          {/* After the list, so it paints over the list's own background; the links are z-10 and stay above it. */}
+          {indicator && (
+            <span
+              aria-hidden
+              className="sliding-indicator rounded-full bg-moss"
+              style={{ transform: `translate(${indicator.left}px, ${indicator.top}px)`, width: indicator.width, height: indicator.height }}
+            />
+          )}
         </NavigationMenu>
         <div className="flex items-center justify-end gap-2">
           <div className="flex items-center gap-2 empty:hidden" id={HEADER_END_SLOT} />
