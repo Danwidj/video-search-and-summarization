@@ -202,6 +202,12 @@ Request: `{"question": <1-500 chars>}` (other keys are `422`). Response `200`: `
 - **Tools** (`functions:` in `dev-profile-base/vss-agent/configs/config.yml`, the `investigator` entry's `tool_names`): `incident_read_report` (official version, else the newest, cut at 8000 characters) and `incident_list_versions`.
 - **Status codes:** `404` flag off, `422` bad body, `501` the profile does not declare `investigator`.
 
+## `POST /api/v1/incidents/{video_id}/draft-edits`
+
+Checks proposed edits against the reviewer's unsaved draft. Off unless `INCIDENT_DRAFT_EDITS_ENABLED` is set: a request is then a `404`. It writes nothing; the console applies the proposals and the reviewer saves. Code: [`incident_draft_edits.py`](../../../../../services/agent/src/vss_agents/api/incident_draft_edits.py), tools in [`draft_edits.py`](../../../../../services/agent/src/vss_agents/utils/draft_edits.py).
+
+Request: `{"draft": <snapshot>, "calls": [{"tool", "args"}]}`, 1-6 calls. The snapshot carries each item's draft `key`, which is the only way a call names an item; `E#`, `I#` and `A#` ids are rejected as unknown keys. Tools: `set_incident_fields`, `set_timeline_item`, `upsert_entity`, `upsert_instrument`, `upsert_asset`, `set_instrument_holder`, `delete_item`. Seconds must lie inside the incident window when it is set. Response `200`: `{"proposals": [{"tool", "args", "summary", "also_removes"}], "rejected": [{"tool", "reason"}]}`; `also_removes` lists the instruments a deleted entity takes with it. Any other unknown key or field is `422`.
+
 ## `POST /api/v1/incidents/chart-requests`
 
 Reads one dashboard chart request with the agent's own LLM: the `llms:` entry named by `chart_generator.llm_name` in `dev-profile-base/vss-agent/configs/config.yml` (`${LLM_MODEL_TYPE:-nim}_llm`). The console sends the two messages the model gets, and the route passes them to that LLM unchanged. It returns the JSON object the model wrote. It validates nothing else: the console checks the object against its allowlist and refuses anything else.
