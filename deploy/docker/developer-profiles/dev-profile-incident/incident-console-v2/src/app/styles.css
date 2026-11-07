@@ -285,28 +285,26 @@ video::-webkit-media-controls-volume-slider-container {
   }
 }
 
-/* Severity and threat pills: the band token for the text, a tint and border derived from it. */
-@layer components {
-  .sev-pill-high,
-  .sev-pill-medium,
-  .sev-pill-low {
-    border-width: 1px;
-    border-style: solid;
-  }
-  .sev-pill-high {
-    --sev: var(--color-sev-high);
-  }
-  .sev-pill-medium {
-    --sev: var(--color-sev-medium);
-  }
-  .sev-pill-low {
-    --sev: var(--color-sev-low);
-  }
-  .sev-pill-high,
-  .sev-pill-medium,
-  .sev-pill-low {
-    color: var(--sev);
-    background-color: color-mix(in oklab, var(--sev) 12%, white);
-    border-color: color-mix(in oklab, var(--sev) 38%, white);
-  }
+/* Severity and threat pills: the band token for the text, a tint and border derived from it. Unlayered, so they win over a Badge's own utility colours. */
+.sev-pill-high,
+.sev-pill-medium,
+.sev-pill-low {
+  border-width: 1px;
+  border-style: solid;
+}
+.sev-pill-high {
+  --sev: var(--color-sev-high);
+}
+.sev-pill-medium {
+  --sev: var(--color-sev-medium);
+}
+.sev-pill-low {
+  --sev: var(--color-sev-low);
+}
+.sev-pill-high,
+.sev-pill-medium,
+.sev-pill-low {
+  color: var(--sev);
+  background-color: color-mix(in oklab, var(--sev) 12%, white);
+  border-color: color-mix(in oklab, var(--sev) 38%, white);
 }
