@@ -17,8 +17,8 @@
 
 A reply may name one calendar month (``{"month": "YYYY-MM"}``), one day (``{"day": "YYYY-MM-DD"}``) or the days from
 one date to another (``{"from": ..., "to": ...}``, both included). The console counts it only when it is a real date,
-not after today in the viewer's time zone, not reversed and at most ``maxRangeDays`` (366) long. A month that is still
-running counts up to today. :func:`calendar_days` and :func:`parse_period` are that rule; the figures run from local
+not starting after today in the viewer's time zone, not reversed and at most ``maxRangeDays`` (366) long. A month or range
+that ends after today counts up to today (the span is measured on those days). :func:`calendar_days` and :func:`parse_period` are that rule; the figures run from local
 midnight in the viewer's time zone (:func:`start_of_day`), as the fixed ranges do.
 
 Every evaluation scores against one pinned day, :data:`REFERENCE_TODAY` in :data:`REFERENCE_TIMEZONE`, so a reference
@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 
 REFERENCE_TODAY = "2026-11-06"
 REFERENCE_TIMEZONE = "UTC"
-DATASET = "dashboard-calendar-development-v0"
+DATASET = "dashboard-calendar-development-v1"
 
 _DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _MONTH = re.compile(r"[0-9]{4}-[0-9]{2}")
@@ -83,8 +83,9 @@ def calendar_days(period: Any, today: str, max_days: int) -> tuple[str, str] | N
         day = period["day"]
         return (day, day) if is_real_day(day) and day <= today else None
     first, last = period["from"], period["to"]
-    if not (is_real_day(first) and is_real_day(last)) or first > last or last > today:
+    if not (is_real_day(first) and is_real_day(last)) or first > last or first > today:
         return None
+    last = min(last, today)
     span = (date.fromisoformat(last) - date.fromisoformat(first)).days + 1
     return None if span > max_days else (first, last)
 
@@ -121,10 +122,15 @@ def development_requests() -> list[dict[str, Any]]:
         {"request": "incident types in December", "expected": {
             "metric": "incidents", "dimension": "incident_type", "period": {"month": "2025-12"}, **severity}},
         {"request": "incident types in December 2026", "expected": None},
+        # A range that ends after the reference day counts up to it: 1 October to 6 November 2026.
+        {"request": "reports per day from October to December", "expected": {
+            "metric": "incidents", "dimension": "report_day", "period": {"from": "2026-10-01", "to": "2026-12-31"},
+            **severity}},
         # A running month counts up to the reference day: 1 to 6 November 2026.
         {"request": "severity breakdown in November", "expected": {
             "metric": "incidents", "dimension": "severity", "period": {"month": "2026-11"}, **severity}},
         {"request": "assault severity on 12 November", "expected": None},
         {"request": "reports per day from 20 to 10 October", "expected": None},
         {"request": "reports per day from 1 September 2025 to 1 October 2026", "expected": None},
+        {"request": "incidents next month", "expected": None},
     ]
