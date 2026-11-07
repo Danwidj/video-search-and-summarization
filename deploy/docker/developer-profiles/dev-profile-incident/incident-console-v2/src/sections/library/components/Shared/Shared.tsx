@@ -113,9 +113,13 @@ export function FilterChip({ label, onRemove }: { label: React.ReactNode; onRemo
   );
 }
 
-export function CardSkeleton({ count = 6, label }: { count?: number; label: string }) {
+/** `fill` takes the Library page's own grid (three rows, two on a wide screen, filling the page), so nothing jumps when the cards arrive. */
+export function CardSkeleton({ count = 6, fill = false, label }: { count?: number; fill?: boolean; label: string }) {
   return (
-    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3" role="status">
+    <div
+      className={cn('mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3', fill && 'lg:min-h-0 lg:flex-1 lg:grid-rows-3 xl:grid-rows-2')}
+      role="status"
+    >
       <span className="sr-only">{label}</span>
       {Array.from({ length: count }, (_, i) => `skeleton-${label}-${i}`).map((key) => (
         <div className="flex flex-col overflow-hidden rounded-xl border border-ink/10 bg-white" key={key}>

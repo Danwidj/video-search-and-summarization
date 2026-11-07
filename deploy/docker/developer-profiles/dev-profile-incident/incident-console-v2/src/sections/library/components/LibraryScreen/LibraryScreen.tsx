@@ -384,7 +384,7 @@ export function Library() {
                   </p>
                 )}
                 {loading ? (
-                  <CardSkeleton label="Loading incidents" />
+                  <CardSkeleton fill label="Loading incidents" />
                 ) : error ? (
                   <ErrorPanel message={error} onRetry={() => void load()} />
                 ) : reports.length === 0 ? (

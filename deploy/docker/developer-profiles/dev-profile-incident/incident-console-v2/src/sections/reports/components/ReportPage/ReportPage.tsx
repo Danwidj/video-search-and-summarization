@@ -260,24 +260,32 @@ export function ReportPage({
 
   if (state.status === 'loading') {
     return (
-      <div className="pb-16" role="status">
-        <div className="overflow-hidden border-y border-border bg-card shadow-panel">
-          <div className="h-12 border-b border-border bg-muted/40" />
-          <div className="grid gap-px bg-border lg:grid-cols-[1fr_22rem]">
-            <Skeleton className="aspect-video w-full rounded-none" />
-            <div className="space-y-3 p-4 bg-card">
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
+      <div className="h-full min-h-0 overflow-hidden" role="status">
+        <article className="report-sheet flex h-full min-h-0 flex-col overflow-hidden border-y border-border bg-card shadow-panel">
+          <div className="flex min-h-0 flex-1">
+            <div className="hidden min-h-0 w-[38%] flex-col border-r border-border lg:flex">
+              <Skeleton className="min-h-0 flex-[45] rounded-none" />
+              <div className="flex min-h-0 flex-[27.5] flex-col gap-3 border-t border-border p-4">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+              <div className="flex min-h-0 flex-[27.5] flex-col gap-3 border-t border-border p-4">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+            </div>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <Skeleton className="aspect-video w-full rounded-none lg:hidden" />
+              <div className="flex flex-col gap-3 p-5">
+                <Skeleton className="h-6 w-1/2" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-3/4" />
+              </div>
             </div>
           </div>
-          <div className="space-y-3 p-8">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-5/6" />
-            <Skeleton className="h-4 w-3/4" />
-          </div>
           <span className="sr-only">Loading incident report</span>
-        </div>
+        </article>
       </div>
     );
   }
