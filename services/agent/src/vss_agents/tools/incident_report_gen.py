@@ -804,12 +804,14 @@ async def collect_evidence(
     tracking: track_evidence.TrackingRequest | None = None,
     object_tracking: track_evidence.ObjectTrackingRequest | None = None,
     deadline: float | None = None,
+    gap_retry: bool | None = None,
 ) -> list[dict[str, Any]]:
     """Crop and upload every evidence item. Never raises: a failure becomes an ``image_gap`` reason.
 
     ``store`` and ``detector`` override the service's own (R2 and the shared detector in production) for this
     call only. ``object_tracking`` receives the summary of the instrument and asset tracks. ``deadline`` is the
     request's ``time.monotonic()`` budget end: past it, items are left with an ``image_gap`` or ``zoom_gap``.
+    ``gap_retry`` overrides ``INCIDENT_GAP_RETRY_ENABLED`` for this call (None reads it).
     """
     try:
         return await crop_evidence.get_crop_evidence_service().process_incident_report(
@@ -823,6 +825,7 @@ async def collect_evidence(
             tracking=tracking,
             object_tracking=object_tracking,
             deadline=deadline,
+            gap_retry=gap_retry,
         )
     except Exception as exc:
         logger.warning("incident_report_gen: evidence cropping failed for %s: %s", incident_id, exc)
@@ -1392,6 +1395,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 detector=detector,
                 namer=namer,
                 object_tracking=objects,
+                gap_retry=False,  # an experiment compares settings under its own call caps
             )
             experiment["evidence_store"] = EXPERIMENT_EVIDENCE_STORE
             experiment["crop"] = crop_telemetry(evidence, budget, time.perf_counter() - crop_started)
