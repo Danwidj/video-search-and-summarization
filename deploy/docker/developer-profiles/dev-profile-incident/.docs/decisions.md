@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: Dashboard charts draw slowly once, then quickly on a filter change
+- **Decision:** 1500 ms (`CHART_ANIMATION_MS`) the first time a chart has data, 400 ms (`CHART_FILTER_ANIMATION_MS`) when a filter changes its data; reduced motion stays off.
+- **Why:** the slow draw is a pleasant first impression but made every filter click feel laggy.
+- **Alternatives rejected:** one shorter duration for both; no animation on filter changes (the change is harder to follow).
+- **Links:** [console-reference](console-reference.md#dashboard-analytics-and-cross-filtering), `useChartMotion` in `Dashboard.tsx`.
+
 ### 2026-11-07: The Dashboard takes the approved mockup: treemap, donut, waffle, risk ladder and icon array
 - **Decision:** built the approved mockup (round 26) into the console with no RPC change: Top assets as a slate treemap, Severity donut with the legend beneath, Evidence by kind as a 10x10 waffle, Entity types as an icon array, Instruments by threat level as a risk ladder, "Total: N" on cards, tilted two-line labels on Incidents by type, the legend in the top row, no Ask button and chips only while filtering. Colours come from the tokens; the asset size scale got its own token, `--color-asset-size`, and threat level uses `levelBand`. The mock's fake data and no-op links were left out.
 - **Why:** the captain approved the mockup; the shared tokens keep one meaning per colour.

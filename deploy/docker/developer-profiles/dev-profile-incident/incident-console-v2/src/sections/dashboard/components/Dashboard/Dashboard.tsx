@@ -2,7 +2,7 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, Treemap, XAxis, YAxis } from 'recharts';
 import type { DateRange } from 'react-day-picker';
 import { PawPrintIcon, RotateCcwIcon, UserRoundIcon } from 'lucide-react';
@@ -438,11 +438,22 @@ function IncidentsChip({ count, versions }: { count: number; versions: number })
   );
 }
 
-/** How long every chart takes to draw, on load and on a filter change. */
+/** How long every chart takes to draw the first time it has data. */
 const CHART_ANIMATION_MS = 1500;
+/** How long a chart takes to redraw when a filter changes its data (quicker, so filtering stays responsive). */
+const CHART_FILTER_ANIMATION_MS = 400;
 
-/** Recharts' own start-up animation, eased out, and off when the viewer asks for reduced motion. */
-function useChartMotion() {
+/**
+ * Recharts' own animation, eased out, and off when the viewer asks for reduced motion. It draws over `CHART_ANIMATION_MS` the first
+ * time `data` is non-empty and over `CHART_FILTER_ANIMATION_MS` each time `data` changes after that.
+ */
+function useChartMotion(data: readonly unknown[]) {
+  const drawn = useRef(false);
+  const previous = useRef(data);
+  const duration = useRef(CHART_ANIMATION_MS);
+  if (drawn.current && previous.current !== data) duration.current = CHART_FILTER_ANIMATION_MS;
+  previous.current = data;
+  if (data.length) drawn.current = true;
   const [reduce, setReduce] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   );
@@ -453,7 +464,7 @@ function useChartMotion() {
     query.addEventListener('change', sync);
     return () => query.removeEventListener('change', sync);
   }, []);
-  return { animationDuration: CHART_ANIMATION_MS, animationEasing: 'ease-out' as const, isAnimationActive: !reduce };
+  return { animationDuration: duration.current, animationEasing: 'ease-out' as const, isAnimationActive: !reduce };
 }
 
 const MAX_TICK_LENGTH = 18;
@@ -781,7 +792,7 @@ function SplitBars({
   incidents?: number;
 }) {
   const router = useRouter();
-  const motion = useChartMotion();
+  const motion = useChartMotion(rows);
   if (!rows.length) return <NoData text={emptyText} />;
   const byLabel = new Map(rows.map((row) => [row.label, row]));
   const activate = (index: number) => {
@@ -903,7 +914,7 @@ function SeverityDonut({
   onSelect: (row: SplitRow) => void;
   unrated: number;
 }) {
-  const motion = useChartMotion();
+  const motion = useChartMotion(rows);
   const rated = rows.reduce((sum, row) => sum + row.total, 0);
   if (!rated) return <NoData text={unrated ? 'These reports have no severity.' : emptyText} />;
   const summary = rows.map((row) => `${row.label} ${row.total}`).join(', ');
