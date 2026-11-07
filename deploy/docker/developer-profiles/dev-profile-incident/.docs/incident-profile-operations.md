@@ -134,6 +134,8 @@ Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_ur
 
 The primary UI (`incident-console-v2`) runs locally on developer laptops. Running `./start.sh --mode vm` is THE canonical way to set up everything from your laptop: it checks the VM deploy state over SSH, automatically self-heals any missing Docker or native services, opens the backgrounded SSH tunnel, and launches the console.
 
+**Production console:** `./start.sh --mode vm --prod` replaces `npm run dev` with `next build` then `next start` (same host `127.0.0.1`, port 3200 and env); it prints the mode it is in, and a failed build stops start.sh before anything is served. Without the flag nothing changes. Use it for a long session: `next dev` grew to 7 GB after hours. `next start` prints a warning that it does not work with `output: standalone` (the config is kept for a container build); it serves `.next` correctly and the analysis job loop starts (checked on a spare port). Ctrl-C and `kill` stop it as before.
+
 ### SSH Port Tunneling (Manual / Standalone)
 
 `start.sh --mode vm` manages the tunnel automatically. It forwards only `localhost:8000` to the agent on the VM loopback, so no VM address is needed. If you need to open or test the tunnel manually for debugging (do **not** run this on `kwanz-ws` itself):

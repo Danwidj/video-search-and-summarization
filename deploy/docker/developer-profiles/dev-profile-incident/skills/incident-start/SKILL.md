@@ -55,7 +55,10 @@ Details of each path: [launch modes and connectivity](../../.docs/architecture.m
 ./start.sh --mode vm        # VM backend (default; use for all UI and backend work)
 ./start.sh --mode mock      # a mock that mimics the backend; verify UI and backend work on the VM
 ./start.sh --mode vm --no-console   # VM side only: backend + tunnel, no Next.js console
+./start.sh --mode vm --prod         # console as a production build (next build, then next start) on the same port 3200
 ```
+
+`--prod` prints which console mode it is in, runs `next build` (about 30 to 60 s; a failed build stops start.sh with the build's exit code) and then `next start` on the same host, port and env as the default `next dev`. A production build starts faster per page and uses far less memory over a long session, but does not hot-reload. `next start` warns that it does not work with `output: standalone`; the console still serves and the analysis job loop still runs.
 
 `start.sh` waits on the console. Ctrl-C, closing the terminal or `kill <start.sh pid>` stops it, along with the backgrounded mock, gateway and tunnel, including the servers those wrappers started (no `next-server` or `uvicorn` is left listening). In vm mode, exiting stops nothing on the VM: the shared `vss-agent`, Phoenix and tracking stack keep running for everyone (stop them by hand with `native-services.sh stop` and `tracking-stack.sh stop`, see `incident-operate-vm`).
 
