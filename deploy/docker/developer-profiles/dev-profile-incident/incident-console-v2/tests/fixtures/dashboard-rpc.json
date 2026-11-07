@@ -46,7 +46,8 @@
       ],
       "assets": [],
       "official": 1,
-      "notOfficial": 1
+      "notOfficial": 1,
+      "evidence": 3
     },
     {
       "type": "road accident",
@@ -74,7 +75,8 @@
         }
       ],
       "official": 0,
-      "notOfficial": 1
+      "notOfficial": 1,
+      "evidence": 3
     }
   ],
   "trend": [
@@ -218,5 +220,28 @@
       "medium": 0,
       "high": 1
     }
-  }
+  },
+  "severityEvidence": [
+    {
+      "severity": 2,
+      "evidenceItems": 3,
+      "count": 1,
+      "official": 0,
+      "notOfficial": 1
+    },
+    {
+      "severity": 4,
+      "evidenceItems": 1,
+      "count": 1,
+      "official": 1,
+      "notOfficial": 0
+    },
+    {
+      "severity": 5,
+      "evidenceItems": 2,
+      "count": 1,
+      "official": 0,
+      "notOfficial": 1
+    }
+  ]
 }

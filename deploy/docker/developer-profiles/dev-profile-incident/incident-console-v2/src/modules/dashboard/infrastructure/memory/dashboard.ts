@@ -29,6 +29,7 @@ const NO_INCIDENTS: DashboardAnalytics = {
     { kind: 'instruments', count: 0, official: 0, notOfficial: 0 },
     { kind: 'assets', count: 0, official: 0, notOfficial: 0 },
   ],
+  severityEvidence: [],
   entityTypes: [],
   topInstruments: [],
   topAssets: [],

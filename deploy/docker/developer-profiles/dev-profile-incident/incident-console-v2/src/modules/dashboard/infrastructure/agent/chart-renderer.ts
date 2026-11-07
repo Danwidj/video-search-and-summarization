@@ -22,14 +22,39 @@ class ChartServiceHttpError extends ChartRenderError {
   }
 }
 
-/** The figures as the agent's chartjs input: labels and one value list per series, exactly the rows' figures. */
-function chartJsData({ chartKind, title, categoryLabel, valueLabel, series, rows, sliceColors }: ChartDrawing) {
+/**
+ * The figures as the agent's chartjs input: labels and one value list per series, exactly the rows' figures. A bubble
+ * sends one point per row instead: its severity level as x, its evidence item count as y, and its reports as count (the
+ * agent scales the radius from that count).
+ */
+function chartJsData(drawing: ChartDrawing) {
+  const { chartKind, title, categoryLabel, valueLabel, secondValueLabel, series, rows, sliceColors } = drawing;
+  if (chartKind === 'bubble') {
+    const countKey = series[0]?.key ?? '';
+    return {
+      output: 'chartjs',
+      kind: 'bubble',
+      title,
+      x_label: categoryLabel,
+      y_label: valueLabel,
+      series_label: series[0]?.label ?? 'Reports',
+      points: rows.map((row, index) => ({
+        label: row.category,
+        x: row.values.severity ?? 0,
+        y: row.values.evidence ?? 0,
+        count: row.values[countKey] ?? 0,
+        color: sliceColors?.[index] ?? undefined,
+      })),
+    };
+  }
   return {
     output: 'chartjs',
     kind: chartKind,
     title,
     x_label: categoryLabel,
     y_label: valueLabel,
+    // Only a dual-axis chart has a second axis; the agent refuses a title for any other kind.
+    y2_label: chartKind === 'combo_dual_axis' ? (secondValueLabel ?? '') : '',
     labels: rows.map((row) => row.category),
     series: series.map(({ key, label, color }) => ({ label, values: rows.map((row) => row.values[key] ?? 0), color })),
     slice_colors: sliceColors,

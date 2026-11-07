@@ -27,6 +27,7 @@ from vss_agents.tools.chart_generator import ChartGeneratorConfig
 from vss_agents.tools.chart_generator import ChartGeneratorInput
 from vss_agents.tools.chart_generator import chart_generator
 from vss_agents.tools.chartjs_config import DEFAULT_COLORS
+from vss_agents.tools.chartjs_config import ChartJsBubbleData
 from vss_agents.tools.chartjs_config import ChartJsChartData
 from vss_agents.tools.chartjs_config import chartjs_config
 
@@ -188,3 +189,184 @@ async def test_the_tool_returns_a_config_without_needing_an_object_store():
     assert outputs[0].object_store_key is None
     assert outputs[0].chart_config is not None
     assert outputs[0].chart_config["data"]["datasets"][0]["data"] == [3, 0]
+
+
+# --- dual-axis combo, stacked by severity, and bubble -------------------------------------------
+
+HIGH, MEDIUM, LOW = "#991b1b", "#765300", "#174f3b"
+SEVERITY_STACK = [
+    {"label": "High", "values": [2, 0, 1], "color": HIGH},
+    {"label": "Medium", "values": [3, 4, 0], "color": MEDIUM},
+    {"label": "Low", "values": [1, 5, 2], "color": LOW},
+]
+
+
+def test_combo_puts_the_bar_on_the_left_axis_and_the_line_on_the_right():
+    config = chartjs_config(
+        chart(
+            "combo_dual_axis",
+            [
+                {"label": "Reports", "values": [9, 4, 1], "color": OFFICIAL},
+                {"label": "Evidence per report", "values": [2.5, 0.0, 3.33], "color": NOT_OFFICIAL},
+            ],
+            LABELS,
+            title="Reports and evidence per report",
+            x_label="Incident type",
+            y_label="Reports",
+            y2_label="Evidence items per report",
+        )
+    )
+    assert config["type"] == "bar"
+    assert config["data"]["labels"] == LABELS
+    bar, line = config["data"]["datasets"]
+    assert bar["data"] == [9, 4, 1] and "type" not in bar and bar["yAxisID"] == "y"
+    assert bar["backgroundColor"] == OFFICIAL
+    assert line["type"] == "line" and line["yAxisID"] == "y1"
+    assert line["data"] == [2.5, 0.0, 3.33]
+    assert line["borderColor"] == NOT_OFFICIAL
+    scales = config["options"]["scales"]
+    assert scales["y"]["position"] == "left" and scales["y"]["title"] == {"display": True, "text": "Reports"}
+    assert scales["y1"]["position"] == "right"
+    assert scales["y1"]["title"] == {"display": True, "text": "Evidence items per report"}
+    assert scales["y1"]["grid"] == {"drawOnChartArea": False}
+    assert config["options"]["plugins"]["title"]["text"] == "Reports and evidence per report"
+    json.dumps(config)
+
+
+def test_combo_needs_exactly_a_bar_series_and_a_line_series():
+    one = [{"label": "Reports", "values": [1, 2, 3]}]
+    with pytest.raises(ValidationError):
+        ChartJsChartData.model_validate(
+            {"output": "chartjs", "kind": "combo_dual_axis", "labels": LABELS, "series": one}
+        )
+    three = [*one, {"label": "B", "values": [1, 1, 1]}, {"label": "C", "values": [1, 1, 1]}]
+    with pytest.raises(ValidationError):
+        ChartJsChartData.model_validate(
+            {"output": "chartjs", "kind": "combo_dual_axis", "labels": LABELS, "series": three}
+        )
+
+
+def test_y2_label_is_for_the_dual_axis_chart_only():
+    with pytest.raises(ValidationError):
+        ChartJsChartData.model_validate(
+            {
+                "output": "chartjs",
+                "kind": "bar",
+                "labels": ["a"],
+                "series": [{"label": "R", "values": [1]}],
+                "y2_label": "x",
+            }
+        )
+
+
+def test_stacked_by_severity_stacks_three_series_in_the_severity_colours():
+    config = chartjs_config(chart("stacked_by_severity", SEVERITY_STACK, LABELS, y_label="Reports"))
+    assert config["type"] == "bar"
+    assert [d["label"] for d in config["data"]["datasets"]] == ["High", "Medium", "Low"]
+    assert [d["data"] for d in config["data"]["datasets"]] == [[2, 0, 1], [3, 4, 0], [1, 5, 2]]
+    assert [d["backgroundColor"] for d in config["data"]["datasets"]] == [HIGH, MEDIUM, LOW]
+    assert config["options"]["scales"]["x"]["stacked"] is True
+    assert config["options"]["scales"]["y"]["stacked"] is True
+
+
+def test_stacked_by_severity_needs_three_series():
+    with pytest.raises(ValidationError):
+        ChartJsChartData.model_validate(
+            {"output": "chartjs", "kind": "stacked_by_severity", "labels": LABELS, "series": SEVERITY_STACK[:2]}
+        )
+
+
+def test_bubble_places_x_and_y_exactly_and_scales_the_radius_from_the_counts():
+    points = [
+        {"label": "Severity 1", "x": 1, "y": 0, "count": 4, "color": LOW},
+        {"label": "Severity 3", "x": 3, "y": 2.5, "count": 16, "color": MEDIUM},
+        {"label": "Severity 5", "x": 5, "y": 7, "count": 0},
+    ]
+    config = chartjs_config(
+        ChartJsBubbleData.model_validate(
+            {
+                "output": "chartjs",
+                "kind": "bubble",
+                "title": "Severity against evidence",
+                "x_label": "Severity level",
+                "y_label": "Evidence items",
+                "points": points,
+            }
+        )
+    )
+    assert config["type"] == "bubble"
+    assert "labels" not in config["data"]
+    dataset = config["data"]["datasets"][0]
+    assert [(p["x"], p["y"]) for p in dataset["data"]] == [(1, 0), (3, 2.5), (5, 7)]
+    radii = [p["r"] for p in dataset["data"]]
+    # The largest count (16) gets the largest radius, and the radius grows with the square root of the count.
+    assert radii[1] == pytest.approx(24.0)
+    assert radii[0] == pytest.approx(4.0 + 20.0 * 0.5)
+    assert radii[2] == pytest.approx(4.0)
+    assert dataset["borderColor"] == [LOW, MEDIUM, DEFAULT_COLORS[0]]
+    assert dataset["backgroundColor"][1] == f"{MEDIUM}B3"
+    assert config["options"]["scales"]["x"]["title"] == {"display": True, "text": "Severity level"}
+    assert config["options"]["scales"]["x"]["grace"] == "10%", "a bubble at the edge of the data is not cut off"
+    assert config["options"]["scales"]["y"]["title"] == {"display": True, "text": "Evidence items"}
+    json.dumps(config)
+
+
+def test_bubble_with_no_reports_at_all_uses_the_smallest_radius():
+    config = chartjs_config(
+        ChartJsBubbleData.model_validate(
+            {"output": "chartjs", "kind": "bubble", "points": [{"label": "a", "x": 1, "y": 1, "count": 0}]}
+        )
+    )
+    assert config["data"]["datasets"][0]["data"][0]["r"] == pytest.approx(4.0)
+
+
+@pytest.mark.parametrize(
+    "point",
+    [
+        {"label": "a", "x": 1, "y": 1, "count": -1},
+        {"label": "a", "x": float("inf"), "y": 1, "count": 1},
+        {"label": "a", "x": 1, "y": 1, "count": 1, "r": 30},
+        {"label": "a", "x": 1, "y": 1, "count": 1, "color": "red;}"},
+    ],
+)
+def test_bubble_points_refuse_negative_counts_nonfinite_figures_and_model_radii(point):
+    with pytest.raises(ValidationError):
+        ChartJsBubbleData.model_validate({"output": "chartjs", "kind": "bubble", "points": [point]})
+
+
+def test_a_bubble_payload_is_routed_to_the_bubble_model_in_the_tool_input():
+    parsed = ChartGeneratorInput.model_validate(
+        {
+            "charts_data": [
+                {"output": "chartjs", "kind": "bubble", "points": [{"label": "a", "x": 1, "y": 1, "count": 2}]}
+            ]
+        }
+    )
+    assert isinstance(parsed.charts_data[0], ChartJsBubbleData)
+
+
+@pytest.mark.asyncio
+async def test_the_tool_draws_the_new_kinds_as_configurations_without_an_object_store():
+    config = ChartGeneratorConfig(object_store_name=None)
+    generator = chart_generator.__wrapped__(config, AsyncMock())
+    function_info = await generator.__anext__()
+    request = ChartGeneratorInput.model_validate(
+        {
+            "charts_data": [
+                {
+                    "output": "chartjs",
+                    "kind": "stacked_by_severity",
+                    "labels": ["a"],
+                    "series": [
+                        {"label": "High", "values": [1]},
+                        {"label": "Medium", "values": [2]},
+                        {"label": "Low", "values": [3]},
+                    ],
+                },
+                {"output": "chartjs", "kind": "bubble", "points": [{"label": "a", "x": 2, "y": 3, "count": 1}]},
+            ]
+        }
+    )
+    outputs = await function_info.single_fn(request)
+    assert [o.chart_config["type"] for o in outputs] == ["bar", "bubble"]
+    assert all(o.object_store_key is None and o.success for o in outputs)

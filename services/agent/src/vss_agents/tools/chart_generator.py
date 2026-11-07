@@ -42,6 +42,7 @@ from pydantic import HttpUrl
 from pydantic import UrlConstraints
 from pydantic import field_validator
 
+from vss_agents.tools.chartjs_config import ChartJsBubbleData
 from vss_agents.tools.chartjs_config import ChartJsChartData
 from vss_agents.tools.chartjs_config import chartjs_config
 
@@ -120,7 +121,7 @@ class ChartGeneratorConfig(FunctionBaseConfig, name="chart_generator"):
 class ChartGeneratorInput(BaseModel):
     """Input for the chart generation tool"""
 
-    charts_data: list[BarChartData | PieChartData | ChartJsChartData]
+    charts_data: list[BarChartData | PieChartData | ChartJsChartData | ChartJsBubbleData]
     output_dir: str | None = None
     file_prefix: str = "chart_"
 
@@ -264,7 +265,7 @@ async def chart_generator(config: ChartGeneratorConfig, builder: Builder) -> Asy
     async def generate_chart(chart_generator_input: ChartGeneratorInput) -> list[ChartGenExecOutput]:
         exec_outputs = []
         for i, chart_data in enumerate(chart_generator_input.charts_data):
-            if isinstance(chart_data, ChartJsChartData):
+            if isinstance(chart_data, ChartJsChartData | ChartJsBubbleData):
                 # No image and no object store: the figures are placed into a configuration the browser draws.
                 exec_outputs.append(
                     ChartGenExecOutput(success=True, error_message=None, chart_config=chartjs_config(chart_data))
