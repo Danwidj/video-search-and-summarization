@@ -429,6 +429,75 @@ with tempfile.TemporaryDirectory() as tmp:
         none = dashboard_of(p_type="burglary", p_severity="high")
         assert none["total"] == 0 and [row["count"] for row in none["evidence"]] == [0, 0, 0], none["evidence"]
 
+    @test("the dashboard counts evidence items per incident type and per severity level and item count (20261107110000)")
+    def _():
+        # Each counted report has one entity, one instrument and one asset, so three items each.
+        dashboard = dashboard_of()
+        assert {t["type"]: t["evidence"] for t in dashboard["types"]} == {"assault": 6, "burglary": 3}, dashboard["types"]
+        assert sum(t["evidence"] for t in dashboard["types"]) == sum(row["count"] for row in dashboard["evidence"]) == 9
+        cells = dashboard["severityEvidence"]
+        assert all(cell["evidenceItems"] == 3 for cell in cells), cells
+        assert sum(cell["count"] for cell in cells) == dashboard["total"] == 3, cells
+        assert all(cell["official"] + cell["notOfficial"] == cell["count"] for cell in cells), cells
+        assert sum(cell["official"] for cell in cells) == dashboard["official"], cells
+        for band, low, high in (("low", 1, 2), ("medium", 3, 3), ("high", 4, 5)):
+            assert sum(cell["count"] for cell in cells if low <= cell["severity"] <= high) == dashboard["severity"][band], (band, cells)
+        assert sum(cell["count"] for cell in dashboard_of(p_scope="official")["severityEvidence"]) == 1
+        assert sum(cell["count"] for cell in dashboard_of(p_type="burglary")["severityEvidence"]) == 1
+        assert dashboard_of(p_type="burglary", p_severity="high")["severityEvidence"] == [] or all(
+            cell["severity"] >= 4 for cell in dashboard_of(p_type="burglary", p_severity="high")["severityEvidence"])
+
+    @test("the dashboard counts instruments by holder type and threat band, with a none row for an instrument with no holder (20261107120000)")
+    def _():
+        holders = lambda d: {row["holder"]: row for row in d["threatByHolder"]}
+        # Four rows, always, in order, even with no counted report.
+        empty = dashboard_of(p_type="burglary", p_severity="high")["threatByHolder"]
+        assert [row["holder"] for row in empty] == ["human", "animal", "unknown", "none"], empty
+        assert all(row["high"] + row["medium"] + row["low"] + row["official"] + row["notOfficial"] == 0 for row in empty), empty
+        # Every fixture instrument is held by E1 (a human) and rated 3, so the bands must agree with threatLevels.
+        everything = dashboard_of()
+        by_level = {row["level"]: row["count"] for row in everything["threatLevels"]}
+        holder_rows = holders(everything)
+        assert sum(row["medium"] for row in holder_rows.values()) == by_level.get(3, 0), holder_rows
+        assert sum(row["high"] for row in holder_rows.values()) == by_level.get(4, 0) + by_level.get(5, 0), holder_rows
+        assert sum(row["low"] for row in holder_rows.values()) == by_level.get(1, 0) + by_level.get(2, 0), holder_rows
+        for row in holder_rows.values():
+            assert row["official"] + row["notOfficial"] == row["high"] + row["medium"] + row["low"], row
+
+        def instrument(name, holder, threat, number):
+            return {"instrument_id": f"I{number}", "entity_id": holder, "name": name, "description": "d",
+                    "threat_level": threat, "timestamp_seconds": 1, "label": name}
+
+        def entity(entity_id, kind):
+            return {"entity_id": entity_id, "type": kind, "description": "d", "timestamp_seconds": 1, "label": "l"}
+
+        payload = report(kind="assault", severity=4)
+        payload["entities"] = [entity("E1", "human"), entity("E2", "animal"), entity("E3", "")]
+        payload["instruments"] = [
+            instrument("knife", "E2", 5, 1),      # animal, high
+            instrument("bottle", "E1", 3, 2),     # human, medium
+            instrument("club", "E9", 4, 3),       # names no entity of the report: none, high
+            instrument("rock", None, 1, 4),       # no holder: none, low
+            instrument("stick", "E3", 2, 5),      # blank entity type: unknown, low
+            instrument("knife", "E1", 5, 6),      # human, high (a different holder from I1)
+            instrument("knife", "E2", 5, 7),      # the same name, holder and level as I1: counted once
+            instrument("   ", "E1", 5, 8),        # no name: not counted
+            instrument("bat", "E1", None, 9),     # no threat level: in no band
+            instrument("chain", "E1", 0, 10),     # outside 1 to 5: in no band
+        ]
+        expected = {"human": (1, 1, 0), "animal": (1, 0, 0), "unknown": (0, 0, 1), "none": (1, 0, 1)}  # high, medium, low
+        with conn.transaction(force_rollback=True):
+            before = holders(dashboard_of())
+            conn.execute("""INSERT INTO public.videos (id, filepath, uploaded_datetime) VALUES ('v-holders', 'uploads/holders.mp4', now())""")
+            conn.execute("""INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, payload, evidence,
+                incident_type, severity_level, start_seconds, end_seconds)
+                VALUES ('v-holders', 1, 'ai', 'm1', %s, '[]', 'assault', 4, 1, 2)""", (json.dumps(payload),))
+            after = holders(dashboard_of())
+            for holder in ("human", "animal", "unknown", "none"):
+                high, medium, low = expected[holder]
+                delta = {band: after[holder][band] - before[holder][band] for band in ("high", "medium", "low", "official", "notOfficial")}
+                assert delta == {"high": high, "medium": medium, "low": low, "official": 0, "notOfficial": high + medium + low}, (holder, delta)
+
     @test("the dashboard filters by report status, and leaves the video and model counts alone")
     def _():
         everything = dashboard_of()

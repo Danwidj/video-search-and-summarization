@@ -29,10 +29,17 @@ const NO_INCIDENTS: DashboardAnalytics = {
     { kind: 'instruments', count: 0, official: 0, notOfficial: 0 },
     { kind: 'assets', count: 0, official: 0, notOfficial: 0 },
   ],
+  severityEvidence: [],
   entityTypes: [],
   topInstruments: [],
   topAssets: [],
   threatLevels: [],
+  threatByHolder: [
+    { holder: 'human', high: 0, medium: 0, low: 0, official: 0, notOfficial: 0 },
+    { holder: 'animal', high: 0, medium: 0, low: 0, official: 0, notOfficial: 0 },
+    { holder: 'unknown', high: 0, medium: 0, low: 0, official: 0, notOfficial: 0 },
+    { holder: 'none', high: 0, medium: 0, low: 0, official: 0, notOfficial: 0 },
+  ],
   modelCoverage: [],
 };
 

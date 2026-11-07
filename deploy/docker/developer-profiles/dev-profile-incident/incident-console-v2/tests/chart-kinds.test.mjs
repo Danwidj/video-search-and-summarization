@@ -98,7 +98,8 @@ describe('which kinds suit which dimension', () => {
   });
 
   test('a donut needs a true whole, the same rule as the pie', () => {
-    for (const dimension of Object.keys(CHART_DIMENSIONS)) {
+    // A chart view is drawn in its own kind whatever the picker says, so only the ordinary dimensions take the picker's rule.
+    for (const dimension of Object.keys(CHART_DIMENSIONS).filter((name) => CHART_DIMENSIONS[name].viewKind === null)) {
       assert.equal(kindFitsDimension('donut', dimension), CHART_DIMENSIONS[dimension].pie, dimension);
     }
   });

@@ -53,6 +53,8 @@ period: one of ${Object.keys(CHART_PERIODS).join(', ')}, or a calendar period wr
 incidentType: null or one of ${INCIDENT_TYPES.join(', ')}.
 severity: null or one of ${CHART_SEVERITIES.join(', ')}.
 
+A threat level of an instrument ("high-threat instruments", "dangerous instruments") is the instruments metric, never the severity filter, which is for reports only.
+
 The user picks bar or pie separately, so ignore any chart type named in the request.
 
 If any part of the request cannot be expressed with exactly these values, reply {"unsupported": true} and nothing else. That covers a period no form above can express (a span over 366 days, a day or period that starts after today, a time of day), a location, camera, person or free text filter, a field not listed, when incidents actually happened (only report dates and times are known), a request to change, invent or add figures, and anything that is not a chart request.
@@ -63,6 +65,11 @@ Examples:
 "trends over time" -> {"metric":"incidents","dimension":"report_day","period":"all_time","incidentType":null,"severity":null}
 "monthly high severity incidents" -> {"metric":"incidents","dimension":"report_month","period":"all_time","incidentType":null,"severity":"high"}
 "how many reports are official" -> {"metric":"incidents","dimension":"report_status","period":"all_time","incidentType":null,"severity":null}
+"evidence per report by incident type" -> {"metric":"evidence_per_report","dimension":"incident_type_evidence","period":"all_time","incidentType":null,"severity":null}
+"severity within each incident type" -> {"metric":"incidents","dimension":"incident_type_severity","period":"all_time","incidentType":null,"severity":null}
+"distribution of high-threat instruments among entities" -> {"metric":"instruments","dimension":"threat_by_holder","period":"all_time","incidentType":null,"severity":null}
+"which entity type carries the most dangerous instruments" -> {"metric":"instruments","dimension":"threat_by_holder","period":"all_time","incidentType":null,"severity":null}
+"do more severe incidents have more evidence" -> {"metric":"evidence_items","dimension":"severity_evidence","period":"all_time","incidentType":null,"severity":null}
 "number of incident types in October 2026" -> {"metric":"incidents","dimension":"incident_type","period":{"month":"2026-10"},"incidentType":null,"severity":null}
 "severity breakdown on 6 November 2026" -> {"metric":"incidents","dimension":"severity","period":{"day":"2026-11-06"},"incidentType":null,"severity":null}
 "reports per day from 1 to 15 October 2026" -> {"metric":"incidents","dimension":"report_day","period":{"from":"2026-10-01","to":"2026-10-15"},"incidentType":null,"severity":null}

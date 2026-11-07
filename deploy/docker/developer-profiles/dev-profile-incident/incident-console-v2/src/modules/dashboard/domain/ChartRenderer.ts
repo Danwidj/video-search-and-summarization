@@ -4,11 +4,11 @@
 // It chooses nothing about the data: it places the figures it is given, in a Chart.js configuration
 // the browser draws, or as a static PNG when no configuration comes back.
 
-import type { ChartKind, GeneratedChart } from '@/modules/dashboard/domain/generated-chart';
+import type { DrawnKind, GeneratedChart } from '@/modules/dashboard/domain/generated-chart';
 
-export type ChartDrawing = Pick<GeneratedChart, 'title' | 'categoryLabel' | 'valueLabel' | 'series' | 'rows'> & {
-  chartKind: ChartKind;
-  /** One colour per donut slice, in row order; null for every other kind. */
+export type ChartDrawing = Pick<GeneratedChart, 'title' | 'categoryLabel' | 'valueLabel' | 'secondValueLabel' | 'series' | 'rows'> & {
+  chartKind: DrawnKind;
+  /** One colour per donut slice or bubble, in row order; null for every other kind. */
   sliceColors: string[] | null;
 };
 

@@ -33,6 +33,11 @@ export interface SeverityCounts {
 export interface TypeDetail extends OfficialSplit {
   type: string;
   count: number;
+  /**
+   * Evidence items (one per entity, instrument or asset entry) of the type's counted reports, from
+   * 20261107110000; null when the RPC does not return it, so evidence per report is not available.
+   */
+  evidence: number | null;
   severity: SeverityCounts;
   /** Canonical entity types (human / animal / unknown), counted per incident. */
   entities: RankedValue[];
@@ -48,6 +53,25 @@ export type EvidenceKind = 'entities' | 'instruments' | 'assets';
 export interface EvidenceTotal extends OfficialSplit {
   kind: EvidenceKind;
   count: number;
+}
+
+/** Counted reports with one severity level and one evidence item count, from 20261107110000. */
+export interface SeverityEvidenceCell extends OfficialSplit {
+  /** The report's severity level, 1 to 5. */
+  severity: number;
+  evidenceItems: number;
+  count: number;
+}
+
+/** Who holds an instrument: a canonical entity type, or none when the instrument names no holder in its report. */
+export type HolderType = 'human' | 'animal' | 'unknown' | 'none';
+
+/** The counted reports' instruments of one holder type, by threat band (low 1-2, medium 3, high 4-5), from 20261107120000. */
+export interface ThreatByHolder extends OfficialSplit {
+  holder: HolderType;
+  high: number;
+  medium: number;
+  low: number;
 }
 
 export interface ModelCoverage {
@@ -97,9 +121,19 @@ export interface DashboardAnalytics {
    * RPC does not return it (a definition older than 20261106140000).
    */
   evidence: EvidenceTotal[] | null;
+  /**
+   * Counted reports by (severity level, evidence item count), for severity against evidence. null when the RPC does not
+   * return it (a definition older than 20261107110000).
+   */
+  severityEvidence: SeverityEvidenceCell[] | null;
   entityTypes: MaybeSplitRankedValue[];
   topInstruments: MaybeSplitRankedValue[];
   topAssets: SplitRankedValue[];
   threatLevels: Array<{ level: number; count: number }>;
+  /**
+   * Instruments of the counted reports by holder type (human, animal, unknown, none; always four rows, in that order) and threat
+   * band. null when the RPC does not return it (a definition older than 20261107120000).
+   */
+  threatByHolder: ThreatByHolder[] | null;
   modelCoverage: ModelCoverage[];
 }

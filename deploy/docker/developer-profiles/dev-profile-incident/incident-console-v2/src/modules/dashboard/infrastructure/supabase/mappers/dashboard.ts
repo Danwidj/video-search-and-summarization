@@ -11,12 +11,15 @@ import type {
   DashboardAnalytics,
   EvidenceKind,
   EvidenceTotal,
+  HolderType,
   MaybeSplitRankedValue,
   ModelCoverage,
   OfficialSplit,
   RankedValue,
   SeverityCounts,
   SplitRankedValue,
+  SeverityEvidenceCell,
+  ThreatByHolder,
   TypeDetail,
 } from '@/modules/dashboard/domain/types';
 import type { DashboardQuery } from '@/modules/dashboard/domain/DashboardRepository';
@@ -33,6 +36,10 @@ const ranked = (value: unknown): RankedValue[] => asRows(value).map((item) => ({
 const EVIDENCE_KINDS: readonly EvidenceKind[] = ['entities', 'instruments', 'assets'];
 /** The kinds the RPC returns; anything else is a malformed result and is read as the first kind with no count. */
 const evidenceKind = (value: unknown): EvidenceKind => EVIDENCE_KINDS.find((kind) => kind === value) ?? 'entities';
+
+const HOLDER_TYPES: readonly HolderType[] = ['human', 'animal', 'unknown', 'none'];
+/** The holder types the RPC returns; anything else is a malformed result and is read as no holder (as evidenceKind does). */
+const holderType = (value: unknown): HolderType => HOLDER_TYPES.find((holder) => holder === value) ?? 'none';
 
 const split = (item: Row): OfficialSplit => ({ official: count(item.official), notOfficial: count(item.notOfficial) });
 const splitRanked = (value: unknown): SplitRankedValue[] =>
@@ -105,6 +112,7 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
         type: text(item.type),
         count: count(item.count),
         ...split(item),
+        evidence: typeof item.evidence === 'number' ? count(item.evidence) : null,
         severity: severityCounts(item.severity),
         entities: ranked(item.entities),
         instruments: ranked(item.instruments),
@@ -122,10 +130,31 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
     evidence: Array.isArray(result.evidence)
       ? asRows(result.evidence).map((item): EvidenceTotal => ({ kind: evidenceKind(item.kind), count: count(item.count), ...split(item) }))
       : null,
+    severityEvidence: Array.isArray(result.severityEvidence)
+      ? asRows(result.severityEvidence).map(
+          (item): SeverityEvidenceCell => ({
+            severity: count(item.severity),
+            evidenceItems: count(item.evidenceItems),
+            count: count(item.count),
+            ...split(item),
+          }),
+        )
+      : null,
     entityTypes: maybeSplitRanked(result.entityTypes),
     topInstruments: maybeSplitRanked(result.topInstruments),
     topAssets: splitRanked(result.topAssets),
     threatLevels: asRows(result.threatLevels).map((item) => ({ level: count(item.level), count: count(item.count) })),
+    threatByHolder: Array.isArray(result.threatByHolder)
+      ? asRows(result.threatByHolder).map(
+          (item): ThreatByHolder => ({
+            holder: holderType(item.holder),
+            high: count(item.high),
+            medium: count(item.medium),
+            low: count(item.low),
+            ...split(item),
+          }),
+        )
+      : null,
     modelCoverage: asRows(result.modelCoverage).map(
       (item): ModelCoverage => ({
         model: text(item.model),

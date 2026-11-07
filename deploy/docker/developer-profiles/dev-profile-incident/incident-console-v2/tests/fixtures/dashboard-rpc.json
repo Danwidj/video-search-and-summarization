@@ -46,7 +46,8 @@
       ],
       "assets": [],
       "official": 1,
-      "notOfficial": 1
+      "notOfficial": 1,
+      "evidence": 3
     },
     {
       "type": "road accident",
@@ -74,7 +75,8 @@
         }
       ],
       "official": 0,
-      "notOfficial": 1
+      "notOfficial": 1,
+      "evidence": 3
     }
   ],
   "trend": [
@@ -179,6 +181,12 @@
       "count": 1
     }
   ],
+  "threatByHolder": [
+    { "holder": "human", "high": 1, "medium": 0, "low": 0, "official": 0, "notOfficial": 1 },
+    { "holder": "animal", "high": 0, "medium": 0, "low": 0, "official": 0, "notOfficial": 0 },
+    { "holder": "unknown", "high": 0, "medium": 0, "low": 0, "official": 0, "notOfficial": 0 },
+    { "holder": "none", "high": 0, "medium": 0, "low": 0, "official": 0, "notOfficial": 0 }
+  ],
   "modelCoverage": [
     {
       "model": "qwen/qwen3-vl-8b-instruct",
@@ -218,5 +226,28 @@
       "medium": 0,
       "high": 1
     }
-  }
+  },
+  "severityEvidence": [
+    {
+      "severity": 2,
+      "evidenceItems": 3,
+      "count": 1,
+      "official": 0,
+      "notOfficial": 1
+    },
+    {
+      "severity": 4,
+      "evidenceItems": 1,
+      "count": 1,
+      "official": 1,
+      "notOfficial": 0
+    },
+    {
+      "severity": 5,
+      "evidenceItems": 2,
+      "count": 1,
+      "official": 0,
+      "notOfficial": 1
+    }
+  ]
 }
