@@ -98,9 +98,9 @@ export function answerSourceLine(source: AnswerSource | undefined, label: string
   return `Answered from the stored report: ${label}`;
 }
 
-/** The turns the report chat sends: a fresh video check stays out, so a report answer never reads it as the report. */
-export function chatHistory<T extends { source?: AnswerSource }>(messages: T[]): T[] {
-  return messages.filter((message) => message.source !== 'video');
+/** The turns the report chat sends: a fresh video check stays out, so a report answer never reads it as the report, and a blank assistant reply is left out. */
+export function chatHistory<T extends { role: string; content: string; source?: AnswerSource }>(messages: T[]): T[] {
+  return messages.filter((message) => message.source !== 'video' && !(message.role === 'assistant' && message.content.trim() === ''));
 }
 
 /** Whether a check can be offered: an offer about what came after a moment needs footage after it. */

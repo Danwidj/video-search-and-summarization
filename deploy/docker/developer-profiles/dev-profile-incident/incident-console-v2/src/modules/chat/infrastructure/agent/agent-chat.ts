@@ -155,6 +155,22 @@ export async function sendVideoCheck(
   return { content: body.content, source: 'video' };
 }
 
+const STOPPED_REASONS = new Map<string, string>([
+  ['cap_reached', 'The agent reached its tool step limit before it could answer'],
+  ['aborted:step_budget', 'The agent reached its tool step limit before it could answer'],
+  ['timeout', 'The agent ran out of time before it could answer'],
+  ['busy', 'The model is busy, so the agent could not answer'],
+  ['error', 'The agent hit an error before it could answer'],
+]);
+
+/** One plain sentence for a run that ended with no answer, saying how many changes it proposed. Same wording as the agent route. */
+export function blankInvestigateAnswer(status: string, proposed: number): string {
+  const reason = STOPPED_REASONS.get(status) ?? 'The agent stopped before it could answer';
+  const changes =
+    proposed === 0 ? 'no changes were proposed' : proposed === 1 ? '1 change was proposed' : `${proposed} changes were proposed`;
+  return `${reason}; ${changes}.`;
+}
+
 export function fromAgentInvestigateResponse(payload: unknown, sessionId?: string): ChatResponse {
   const body = (payload ?? {}) as {
     status?: string;
@@ -166,11 +182,17 @@ export function fromAgentInvestigateResponse(payload: unknown, sessionId?: strin
   if (typeof body.answer !== 'string' || !Array.isArray(body.steps)) {
     throw new Error('Agent returned an invalid investigate response');
   }
+  const actions = Array.isArray(body.actions)
+    ? body.actions.map((a) => ({
+        tool: String(a.tool ?? ''),
+        args: (typeof a.args === 'object' && a.args !== null ? a.args : {}) as Record<string, unknown>,
+      }))
+    : [];
   return {
     sessionId: sessionId || `investigate-${Date.now()}`,
     message: {
       role: 'assistant',
-      content: body.answer,
+      content: body.answer.trim() ? body.answer : blankInvestigateAnswer(body.status || 'ok', actions.length),
       citations: [],
       source: 'investigator',
       status: body.status || 'ok',
@@ -181,12 +203,7 @@ export function fromAgentInvestigateResponse(payload: unknown, sessionId?: strin
         ms: typeof s.ms === 'number' ? s.ms : 0,
         error: typeof s.error === 'string' ? s.error : null,
       })),
-      actions: Array.isArray(body.actions)
-        ? body.actions.map((a) => ({
-            tool: String(a.tool ?? ''),
-            args: (typeof a.args === 'object' && a.args !== null ? a.args : {}) as Record<string, unknown>,
-          }))
-        : [],
+      actions,
       wallMs: typeof body.wall_ms === 'number' ? body.wall_ms : 0,
     },
   };

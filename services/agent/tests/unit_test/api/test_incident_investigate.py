@@ -17,14 +17,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import httpx
+import openai
 import pytest
 
+from vss_agents.api.incident_investigate import create_incident_investigate_router
 from vss_agents.api.incident_investigate import register_incident_investigate_routes
 from vss_agents.utils import agent_loop
 
@@ -160,3 +164,59 @@ def test_a_draft_with_a_repeated_key_is_a_422() -> None:
     client, _, _ = _client(lambda: _calls())
     twin = {"incident": {}, "entities": [{"key": "a"}, {"key": "a"}]}
     assert client.post(URL, json={**BODY, "draft": twin}).status_code == 422
+
+
+def _client_with_wall(script, *, wall_seconds: float) -> TestClient:
+    manager = _SessionManager(script)
+    app = FastAPI()
+    app.include_router(
+        create_incident_investigate_router(MagicMock(), AsyncMock(return_value=manager), wall_seconds=wall_seconds)
+    )
+    return TestClient(app)
+
+
+def test_a_run_that_hits_the_step_limit_answers_with_a_sentence_counting_its_changes() -> None:
+    client, _, _ = _client(lambda: _calls(*[("propose_rename", {"key": f"k{i}", "label": "van"}) for i in range(8)]))
+    data = client.post(URL, json=BODY).json()
+    assert data["status"] == "aborted:step_budget"
+    assert data["answer"] == "The agent reached its tool step limit before it could answer; 5 changes were proposed."
+    assert len(data["actions"]) == 5
+
+
+def test_a_run_past_the_wall_clock_answers_with_a_sentence() -> None:
+    async def stalled() -> str:
+        await asyncio.sleep(30)
+        return "never"
+
+    data = _client_with_wall(stalled, wall_seconds=0.05).post(URL, json=BODY).json()
+    assert data["status"] == "timeout"
+    assert data["answer"] == "The agent ran out of time before it could answer; no changes were proposed."
+
+
+def test_a_busy_model_answers_with_a_sentence() -> None:
+    async def busy() -> str:
+        raise openai.RateLimitError(
+            "slow down", response=httpx.Response(429, request=httpx.Request("POST", "http://m")), body=None
+        )
+
+    data = _client(busy)[0].post(URL, json=BODY).json()
+    assert data["status"] == "busy"
+    assert data["answer"] == "The model is busy, so the agent could not answer; no changes were proposed."
+
+
+def test_an_error_answers_with_a_sentence_and_the_next_question_is_answered() -> None:
+    outcomes = [RuntimeError("tool crashed"), "Two people."]
+
+    async def script() -> str:
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    client, _, _ = _client(script)
+    first = client.post(URL, json=BODY).json()
+    assert first["status"] == "error"
+    assert first["answer"] == "The agent hit an error before it could answer; no changes were proposed."
+    second = client.post(URL, json=BODY)
+    assert second.status_code == 200
+    assert second.json()["answer"] == "Two people."

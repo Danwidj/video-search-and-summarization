@@ -192,7 +192,7 @@ Request: `{"question": <1-500 chars>, "stored_answer": <1-4000 chars>}`. Respons
 
 An agent that chooses its own tools to answer one question about one video. Off unless `INCIDENT_INVESTIGATE_ENABLED` is set (read on every request): a request is then a `404` and no model is called. It writes nothing. Code: [`incident_investigate.py`](../../../../../services/agent/src/vss_agents/api/incident_investigate.py), [`utils/agent_loop.py`](../../../../../services/agent/src/vss_agents/utils/agent_loop.py), [`tools/incident_investigator.py`](../../../../../services/agent/src/vss_agents/tools/incident_investigator.py).
 
-Request: `{"question": <1-500 chars>}` (other keys are `422`). Response `200`: `{"status", "answer", "steps", "actions", "wall_ms"}`.
+Request: `{"question": <1-500 chars>}` (other keys are `422`). Response `200`: `{"status", "answer", "steps", "actions", "wall_ms"}`. A run that ends with no answer (step limit, time limit, busy model, error) gets one plain sentence in `answer` that says how many changes it proposed, so the console's history never holds a blank assistant turn; the console applies the same sentence to an older agent's blank answer.
 
 - **`status`:** `ok`, `cap_reached` (the agent ran out of iterations; `answer` is the toolkit's give-up sentence, not a result), `timeout` (90 s), `busy` (the model endpoint still answered 429 after its retries), `aborted:step_budget`, `aborted:tool_failed:<tool>` (a tool failed for a reason the model cannot fix, such as the database being down) or `error`. All are HTTP `200`.
 - **`steps`:** every tool that ran, in order: `{tool, args, ok, ms, error?}`. A call whose arguments failed validation never reached the tool and is not listed.
