@@ -260,15 +260,12 @@ export function Dashboard() {
                 {filterText}
               </Badge>
             ))}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto font-semibold text-moss hover:bg-moss/10 hover:text-moss"
-            onClick={() => setFilters(NONE)}
-          >
-            Reset
-          </Button>
         </div>
+      )}
+      {active && (
+        <Button className="fixed right-6 bottom-6 z-40 shadow-lg" onClick={() => setFilters(NONE)} size="lg">
+          Reset filters
+        </Button>
       )}
       {error && (
         <Alert variant="destructive" className="mt-6">
@@ -301,6 +298,7 @@ export function Dashboard() {
           </Panel>
           <Panel
             className="lg:col-span-2 xl:col-span-8"
+            compact
             title="Activity by day and hour"
             subtitle={`Report time (${timeZone}); select a cell to filter this page`}
           >
@@ -384,14 +382,26 @@ export function Dashboard() {
   );
 }
 
-function Panel({ title, subtitle, className, children }: { title: string; subtitle: string; className?: string; children: ReactNode }) {
+function Panel({
+  title,
+  subtitle,
+  className,
+  compact,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  className?: string;
+  compact?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <Card className={cn('min-w-0 rounded-3xl border-ink/10 bg-white p-6 shadow-none', className)}>
+    <Card className={cn('min-w-0 rounded-3xl border-ink/10 bg-white p-6 shadow-none', compact && 'gap-2', className)}>
       <CardHeader className="gap-1 p-0">
         <CardTitle className="text-lg font-semibold text-ink">{title}</CardTitle>
         <CardDescription className="text-xs text-ink-caption">{subtitle}</CardDescription>
       </CardHeader>
-      <CardContent className="mt-5 min-w-0 p-0">{children}</CardContent>
+      <CardContent className={cn('min-w-0 p-0', compact ? 'mt-1' : 'mt-5')}>{children}</CardContent>
     </Card>
   );
 }
@@ -708,7 +718,7 @@ function Heatmap({
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
-      <div className="mt-4 overflow-x-auto">
+      <div className="overflow-x-auto">
         <div className="min-w-[640px]">
           <div className="grid grid-cols-[32px_repeat(24,1fr)] gap-1 text-[10px] text-ink-caption">
             <span />
