@@ -39,8 +39,10 @@ export function isChartJsConfig(value: unknown): value is ChartJsConfig {
 
 /**
  * True when the configuration carries exactly this chart's figures. A bar, line, doughnut or dual-axis chart needs these
- * labels, series names and figures, in this order. A bubble needs one dataset, named as the series, with each row's x
- * (severity level), y (evidence items) and a radius; the radius is a size, not a figure, so only its presence is checked.
+ * labels, series names and figures, in this order; a stack by severity has its series in reverse order, so low is drawn
+ * at the bottom and high on top. A bubble needs one dataset, named as the series, with each row's label, x (severity
+ * level), y (evidence items), count (reports) and a radius; the radius is a size, not a figure, so only its presence is
+ * checked.
  */
 export function configMatchesChart(config: ChartJsConfig, chart: Pick<GeneratedChart, 'chartKind' | 'rows' | 'series'>): boolean {
   const { datasets } = config.data;
@@ -48,7 +50,8 @@ export function configMatchesChart(config: ChartJsConfig, chart: Pick<GeneratedC
   const labels = config.data.labels ?? [];
   if (labels.length !== chart.rows.length || datasets.length !== chart.series.length) return false;
   if (!chart.rows.every((row, index) => labels[index] === row.category)) return false;
-  return chart.series.every((series, index) => {
+  const drawnSeries = chart.chartKind === 'stacked_by_severity' ? [...chart.series].reverse() : chart.series;
+  return drawnSeries.every((series, index) => {
     const dataset = datasets[index];
     return dataset !== undefined && dataset.label === series.label && sameFigures(dataset.data, chart.rows, series.key);
   });
@@ -64,6 +67,8 @@ function bubbleMatches(config: ChartJsConfig, chart: Pick<GeneratedChart, 'rows'
       const point = dataset.data[index];
       return (
         isRecord(point) &&
+        point.label === row.category &&
+        point.count === (row.values[series.key] ?? 0) &&
         point.x === (row.values.severity ?? 0) &&
         point.y === (row.values.evidence ?? 0) &&
         isFiniteNumber(point.r) &&
@@ -75,4 +80,25 @@ function bubbleMatches(config: ChartJsConfig, chart: Pick<GeneratedChart, 'rows'
 
 function sameFigures(data: unknown[], rows: ChartRow[], key: string): boolean {
   return data.length === rows.length && rows.every((row, index) => data[index] === (row.values[key] ?? 0));
+}
+
+/**
+ * The tooltip line of one bubble: its label and its report count, for example "Severity 3, 2 evidence items: 5 reports".
+ * The radius is a size and never shown as a figure.
+ */
+export function bubbleTooltipText(point: unknown): string {
+  if (!isRecord(point) || !isFiniteNumber(point.count)) return '';
+  const reports = `${point.count} ${point.count === 1 ? 'report' : 'reports'}`;
+  return typeof point.label === 'string' && point.label ? `${point.label}: ${reports}` : reports;
+}
+
+/** The options the browser draws a configuration with: a bubble's tooltip shows its report count, not its radius. */
+export function chartJsOptions(config: ChartJsConfig): Record<string, unknown> {
+  if (config.type !== 'bubble') return config.options;
+  const plugins = isRecord(config.options.plugins) ? config.options.plugins : {};
+  const tooltip = isRecord(plugins.tooltip) ? plugins.tooltip : {};
+  return {
+    ...config.options,
+    plugins: { ...plugins, tooltip: { ...tooltip, callbacks: { label: (item: { raw: unknown }) => bubbleTooltipText(item.raw) } } },
+  };
 }

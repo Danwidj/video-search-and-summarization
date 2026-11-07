@@ -429,7 +429,7 @@ with tempfile.TemporaryDirectory() as tmp:
         none = dashboard_of(p_type="burglary", p_severity="high")
         assert none["total"] == 0 and [row["count"] for row in none["evidence"]] == [0, 0, 0], none["evidence"]
 
-    @test("the dashboard counts evidence items per incident type and per severity level and item count (20261107090000)")
+    @test("the dashboard counts evidence items per incident type and per severity level and item count (20261107110000)")
     def _():
         # Each counted report has one entity, one instrument and one asset, so three items each.
         dashboard = dashboard_of()

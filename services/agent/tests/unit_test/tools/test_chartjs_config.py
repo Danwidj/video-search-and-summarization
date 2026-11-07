@@ -280,9 +280,11 @@ def test_y2_label_is_for_the_dual_axis_chart_only():
 def test_stacked_by_severity_stacks_three_series_in_the_severity_colours():
     config = chartjs_config(chart("stacked_by_severity", SEVERITY_STACK, LABELS, y_label="Reports"))
     assert config["type"] == "bar"
-    assert [d["label"] for d in config["data"]["datasets"]] == ["High", "Medium", "Low"]
-    assert [d["data"] for d in config["data"]["datasets"]] == [[2, 0, 1], [3, 4, 0], [1, 5, 2]]
-    assert [d["backgroundColor"] for d in config["data"]["datasets"]] == [HIGH, MEDIUM, LOW]
+    # Chart.js stacks the first dataset at the bottom, so low is first and high is drawn on top.
+    assert [d["label"] for d in config["data"]["datasets"]] == ["Low", "Medium", "High"]
+    assert [d["data"] for d in config["data"]["datasets"]] == [[1, 5, 2], [3, 4, 0], [2, 0, 1]]
+    assert [d["backgroundColor"] for d in config["data"]["datasets"]] == [LOW, MEDIUM, HIGH]
+    assert config["options"]["plugins"]["legend"]["reverse"] is True, "the legend still reads high, medium, low"
     assert config["options"]["scales"]["x"]["stacked"] is True
     assert config["options"]["scales"]["y"]["stacked"] is True
 
@@ -316,6 +318,12 @@ def test_bubble_places_x_and_y_exactly_and_scales_the_radius_from_the_counts():
     assert "labels" not in config["data"]
     dataset = config["data"]["datasets"][0]
     assert [(p["x"], p["y"]) for p in dataset["data"]] == [(1, 0), (3, 2.5), (5, 7)]
+    # Each point carries its report count and label as given, so the tooltip can show the count instead of the radius.
+    assert [(p["label"], p["count"]) for p in dataset["data"]] == [
+        ("Severity 1", 4),
+        ("Severity 3", 16),
+        ("Severity 5", 0),
+    ]
     radii = [p["r"] for p in dataset["data"]]
     # The largest count (16) gets the largest radius, and the radius grows with the square root of the count.
     assert radii[1] == pytest.approx(24.0)

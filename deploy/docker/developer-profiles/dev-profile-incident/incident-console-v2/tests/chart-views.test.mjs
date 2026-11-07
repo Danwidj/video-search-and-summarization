@@ -15,7 +15,9 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { CHART_DIMENSIONS, CHART_METRICS, parseChartSpec } = await import('../src/modules/dashboard/domain/chart-spec.ts');
 const { drawnKind, kindFitsDimension } = await import('../src/modules/dashboard/domain/chart-kinds.ts');
-const { configMatchesChart, isChartJsConfig } = await import('../src/modules/dashboard/domain/chart-config.ts');
+const { bubbleTooltipText, chartJsOptions, configMatchesChart, isChartJsConfig } = await import(
+  '../src/modules/dashboard/domain/chart-config.ts'
+);
 const { sliceColors, severityLevelColor } = await import('../src/modules/dashboard/domain/chart-palette.ts');
 const { evidencePerReport, generateChart, viewRows } = await import('../src/modules/dashboard/application/generate-chart/index.ts');
 const { AgentChartRenderer } = await import('../src/modules/dashboard/infrastructure/agent/chart-renderer.ts');
@@ -76,7 +78,21 @@ function faithfulCombo(drawing) {
   };
 }
 
-/** The configuration a correct agent returns for the bubble view: x and y as ours, and a radius it scaled itself. */
+/** The configuration a correct agent returns for the severity stack: our figures, low first so high is drawn on top. */
+function faithfulSeverityStack(drawing) {
+  return {
+    type: 'bar',
+    data: {
+      labels: drawing.rows.map((row) => row.category),
+      datasets: [...drawing.series]
+        .reverse()
+        .map((series) => ({ label: series.label, data: drawing.rows.map((row) => row.values[series.key] ?? 0) })),
+    },
+    options: { plugins: { legend: { reverse: true } } },
+  };
+}
+
+/** The configuration a correct agent returns for the bubble view: label, x, y and count as ours, and a radius it scaled itself. */
 function faithfulBubble(drawing) {
   return {
     type: 'bubble',
@@ -84,7 +100,13 @@ function faithfulBubble(drawing) {
       datasets: [
         {
           label: drawing.series[0].label,
-          data: drawing.rows.map((row) => ({ x: row.values.severity, y: row.values.evidence, r: 9 })),
+          data: drawing.rows.map((row) => ({
+            x: row.values.severity,
+            y: row.values.evidence,
+            r: 9,
+            count: row.values.reports,
+            label: row.category,
+          })),
         },
       ],
     },
@@ -206,7 +228,7 @@ describe('generateChart draws each view in its own kind, or says it is not avail
   });
 
   test('severity within each type is a stacked bar in the severity colours, whatever the picker', async () => {
-    const renderer = recorder(faithfulCombo);
+    const renderer = recorder(faithfulSeverityStack);
     const { chart } = await generateChart(
       { interpreter: { interpret: async () => viewSpec('incident_type_severity') }, dashboard: dashboardWith(), renderer },
       { request: 'severity by incident type', chartType: 'line', timezone: 'UTC', now: NOW },
@@ -245,7 +267,7 @@ describe('generateChart draws each view in its own kind, or says it is not avail
       ['incident_type_severity', {}],
       ['severity_evidence', { severityEvidence: null }],
     ]) {
-      const renderer = recorder(faithfulCombo);
+      const renderer = recorder(dimension === 'incident_type_severity' ? faithfulSeverityStack : faithfulCombo);
       const answer = await generateChart(
         { interpreter: { interpret: async () => viewSpec(dimension) }, dashboard: dashboardWith(missing), renderer },
         { request: 'a view', chartType: 'bar', timezone: 'UTC', now: NOW },
@@ -305,7 +327,44 @@ describe('the configuration of each view is checked against our rows', () => {
     assert.equal(configMatchesChart(moved, chart), false, 'a rounded or changed evidence per report is refused');
   });
 
-  test('a bubble configuration needs x and y as ours and a radius; a changed x or a missing radius is refused', async () => {
+  test('a severity stack is drawn low first, so high is on top; a stack in legend order is refused', async () => {
+    const { chart } = await generateChart(
+      { interpreter: { interpret: async () => viewSpec('incident_type_severity') }, dashboard: dashboardWith(), renderer: recorder() },
+      { request: 'x', chartType: 'bar', timezone: 'UTC', now: NOW },
+    );
+    const good = faithfulSeverityStack(chart);
+    assert.deepEqual(
+      good.data.datasets.map((dataset) => dataset.label),
+      ['Low', 'Medium', 'High'],
+    );
+    assert.ok(configMatchesChart(good, chart));
+    const legendOrder = structuredClone(good);
+    legendOrder.data.datasets.reverse();
+    assert.equal(configMatchesChart(legendOrder, chart), false, 'high would be drawn at the bottom');
+  });
+
+  test('a bubble tooltip shows its label and report count, never the radius', async () => {
+    const { chart } = await generateChart(
+      { interpreter: { interpret: async () => viewSpec('severity_evidence') }, dashboard: dashboardWith(), renderer: recorder() },
+      { request: 'x', chartType: 'bar', timezone: 'UTC', now: NOW },
+    );
+    const config = faithfulBubble(chart);
+    const label = chartJsOptions(config).plugins.tooltip.callbacks.label;
+    config.data.datasets[0].data.forEach((point, index) => {
+      const row = chart.rows[index];
+      const count = row.values.reports;
+      const text = label({ raw: point });
+      assert.equal(text, `${row.category}: ${count} ${count === 1 ? 'report' : 'reports'}`);
+      assert.ok(!text.includes(String(point.r)), 'the radius is not a figure');
+    });
+    const point = { x: 3, y: 2, r: 17.856406460551018, count: 5, label: 'Severity 3, 2 evidence items' };
+    assert.equal(bubbleTooltipText(point), 'Severity 3, 2 evidence items: 5 reports');
+    assert.equal(bubbleTooltipText({ ...point, count: 1 }), 'Severity 3, 2 evidence items: 1 report');
+    const bar = faithfulCombo({ ...chart, sliceColors: null });
+    assert.equal(chartJsOptions(bar), bar.options, 'only a bubble gets its own tooltip');
+  });
+
+  test('a bubble configuration needs label, x, y and count as ours and a radius; a changed figure or a missing radius is refused', async () => {
     const { chart } = await generateChart(
       { interpreter: { interpret: async () => viewSpec('severity_evidence') }, dashboard: dashboardWith(), renderer: recorder() },
       { request: 'x', chartType: 'bar', timezone: 'UTC', now: NOW },
@@ -316,6 +375,9 @@ describe('the configuration of each view is checked against our rows', () => {
     const moved = structuredClone(good);
     moved.data.datasets[0].data[1].x = 3;
     assert.equal(configMatchesChart(moved, chart), false, 'a moved severity level');
+    const recounted = structuredClone(good);
+    recounted.data.datasets[0].data[0].count += 1;
+    assert.equal(configMatchesChart(recounted, chart), false, 'a changed report count');
     const radiusless = structuredClone(good);
     delete radiusless.data.datasets[0].data[0].r;
     assert.equal(configMatchesChart(radiusless, chart), false, 'no radius');

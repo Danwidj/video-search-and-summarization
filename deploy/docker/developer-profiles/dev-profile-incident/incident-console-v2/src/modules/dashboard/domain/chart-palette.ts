@@ -12,7 +12,10 @@ import type { ChartDimensionName } from '@/modules/dashboard/domain/chart-spec';
 export const OFFICIAL_SERIES = { key: 'official', label: 'Official', color: CHART_COLORS.official } as const;
 export const NOT_OFFICIAL_SERIES = { key: 'not_official', label: 'Not official', color: CHART_COLORS.notOfficial } as const;
 
-/** A stacked bar by severity: high on top of medium on top of low, in the severity badge colours. */
+/**
+ * A stacked bar by severity: high on top of medium on top of low, in the severity badge colours. Listed high first, as the
+ * legend and table read; the agent draws the stack from low at the bottom.
+ */
 export const SEVERITY_SERIES: ChartSeries[] = [
   { key: 'high', label: 'High', color: severityChartColor.high },
   { key: 'medium', label: 'Medium', color: severityChartColor.medium },

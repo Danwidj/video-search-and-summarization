@@ -112,7 +112,7 @@ class ChartJsChartData(BaseModel):
 
 
 class BubblePoint(BaseModel):
-    """One bubble: its figures are x and y as given; count (the reports behind it) only sets the radius."""
+    """One bubble: its figures are x, y and count (the reports behind it) as given; the radius is scaled from count."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -164,12 +164,21 @@ def _linear_axis(title: str, *, begin_at_zero: bool) -> dict[str, Any]:
 
 
 def bubble_config(data: ChartJsBubbleData) -> dict[str, Any]:
-    """The Chart.js bubble configuration: each point's x and y as given, its radius scaled from its count."""
+    """The Chart.js bubble configuration: each point's x, y, count and label as given, its radius scaled from its count."""
     largest = max(point.count for point in data.points)
     colors = [point.color or DEFAULT_COLORS[0] for point in data.points]
     dataset = {
         "label": data.series_label,
-        "data": [{"x": point.x, "y": point.y, "r": bubble_radius(point.count, largest)} for point in data.points],
+        "data": [
+            {
+                "x": point.x,
+                "y": point.y,
+                "r": bubble_radius(point.count, largest),
+                "count": point.count,
+                "label": point.label,
+            }
+            for point in data.points
+        ],
         "backgroundColor": [f"{color}{BUBBLE_FILL_SUFFIX}" for color in colors],
         "borderColor": colors,
         "borderWidth": 1,
@@ -322,6 +331,10 @@ def chartjs_config(data: ChartJsChartData | ChartJsBubbleData) -> dict[str, Any]
             }
         datasets.append(dataset)
 
+    severity_stack = data.kind is ChartJsKind.STACKED_BY_SEVERITY
+    if severity_stack:
+        # Chart.js stacks the first dataset at the bottom: low is drawn first, so high is on top.
+        datasets.reverse()
     horizontal = data.kind is ChartJsKind.HORIZONTAL_BAR
     value_axis, category_axis = ("x", "y") if horizontal else ("y", "x")
     scales: dict[str, Any] = {
@@ -340,6 +353,9 @@ def chartjs_config(data: ChartJsChartData | ChartJsBubbleData) -> dict[str, Any]
         "plugins": {"legend": {"position": "bottom"}, "title": _text_option(data.title)},
         "scales": scales,
     }
+    if severity_stack:
+        # The legend still reads high, medium, low.
+        options["plugins"]["legend"]["reverse"] = True
     if horizontal:
         options["indexAxis"] = "y"
     return {
