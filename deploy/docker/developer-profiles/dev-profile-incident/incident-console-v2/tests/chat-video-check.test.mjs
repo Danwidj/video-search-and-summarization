@@ -57,7 +57,9 @@ test('checks switched off on the agent, or a failed look, reach the panel as an 
   assert.match((await off.json()).error, /not enabled/);
   upstream.status = 502;
   upstream.body = { detail: 'The video check timed out, so nothing was learned from the video.' };
-  assert.equal((await post(check)).status, 502);
+  const failed = await post(check);
+  assert.equal(failed.status, 502);
+  assert.match((await failed.json()).error, /timed out, so nothing was learned/);
 });
 
 test('a reply that is not a video check is refused rather than shown', async () => {

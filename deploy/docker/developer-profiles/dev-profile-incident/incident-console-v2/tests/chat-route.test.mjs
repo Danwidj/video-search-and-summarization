@@ -84,27 +84,42 @@ test('no messages is a 400 and never reaches the agent', async () => {
   assert.equal(upstream.calls.length, 0);
 });
 
-test("an agent 4xx is kept with the agent's message, and an agent 5xx is a 502", async () => {
+test("an agent 4xx is kept with the agent's reason, and an agent 5xx is a plain 502 with no internals", async () => {
   for (const [agentStatus, routeStatus] of [
     [422, 422],
     [409, 409],
     [400, 400],
-    [502, 502],
-    [503, 502],
   ]) {
     upstream.status = agentStatus;
-    upstream.body = { detail: 'bad' };
+    upstream.body = { detail: 'Incident V1 has no official report version; send version_id' };
     const response = await post({ messages: [{ role: 'user', content: 'Hi' }] });
     assert.equal(response.status, routeStatus, `agent ${agentStatus}`);
-    assert.match((await response.json()).error, new RegExp(`HTTP ${agentStatus}`));
+    assert.equal((await response.json()).error, 'Incident V1 has no official report version; send version_id');
+  }
+  for (const agentStatus of [500, 502, 503]) {
+    upstream.status = agentStatus;
+    upstream.body = { detail: 'Traceback in http://internal-host:8000' };
+    const response = await post({ messages: [{ role: 'user', content: 'Hi' }] });
+    assert.equal(response.status, 502, `agent ${agentStatus}`);
+    const { error } = await response.json();
+    assert.match(error, /unavailable right now/);
+    assert.doesNotMatch(error, /HTTP|internal-host|Traceback|\{/);
   }
 });
 
-test('a malformed agent response is a 500', async () => {
+test('a 4xx whose detail is not text never shows raw JSON', async () => {
+  upstream.status = 422;
+  upstream.body = { detail: [{ loc: ['body'], msg: 'bad' }] };
+  const response = await post({ messages: [{ role: 'user', content: 'Hi' }] });
+  assert.equal(response.status, 422);
+  assert.match((await response.json()).error, /couldn't be sent/);
+});
+
+test('a malformed agent response is a plain 500', async () => {
   upstream.body = { session_id: 's', message: { role: 'assistant', content: 'x' } };
   const response = await post({ messages: [{ role: 'user', content: 'Hi' }] });
   assert.equal(response.status, 500);
-  assert.match((await response.json()).error, /invalid chat response/);
+  assert.match((await response.json()).error, /unavailable right now/);
 });
 
 test('a version and an unsaved draft are forwarded as version_id and draft_report', async () => {

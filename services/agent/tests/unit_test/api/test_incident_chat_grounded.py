@@ -27,6 +27,7 @@ import jsonschema
 import pytest
 
 from vss_agents import incident_contract
+from vss_agents.api.incident_chat import CHAT_MODEL_UNAVAILABLE
 from vss_agents.api.incident_chat import create_incident_chat_router
 from vss_agents.utils import grounded_chat
 
@@ -187,7 +188,7 @@ def test_the_conversation_history_reaches_the_model_without_system_turns():
 def test_a_model_failure_or_a_malformed_answer_is_a_502(failure):
     client, _ = _client(failure)
     response = _ask(client, version_id=7)
-    assert response.status_code == 502 and "Chat model error" in response.json()["detail"]
+    assert response.status_code == 502 and response.json()["detail"] == CHAT_MODEL_UNAVAILABLE
 
 
 def test_a_version_of_another_incident_is_refused():
@@ -329,7 +330,7 @@ def test_a_console_draft_is_overlaid_so_the_model_still_sees_the_timeline_and_ti
 def test_an_empty_answer_is_a_model_failure_not_a_turn(answer):
     client, _ = _client({"answer": answer, "citations": [], "insufficient_evidence": False})
     response = _ask(client, version_id=7)
-    assert response.status_code == 502 and "empty answer" in response.json()["detail"]
+    assert response.status_code == 502 and response.json()["detail"] == CHAT_MODEL_UNAVAILABLE
 
 
 def test_an_invented_id_in_the_prose_is_neutral_and_recorded():

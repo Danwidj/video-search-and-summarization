@@ -18,17 +18,20 @@ export function rejectionResponse(error: unknown): NextResponse | null {
 /** An upstream service answered with an error status; `status` lets a route pass a 4xx on. */
 export class UpstreamError extends Error {
   readonly status: number;
+  /** The upstream's own response text, for a route that shows only part of it. */
+  readonly body: string;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, body = '') {
     super(message);
     this.name = 'UpstreamError';
     this.status = status;
+    this.body = body;
   }
 }
 
 export async function readUpstream(response: Response, label: string): Promise<unknown> {
   const text = await response.text();
-  if (!response.ok) throw new UpstreamError(`${label} returned HTTP ${response.status}: ${text.slice(0, 400)}`, response.status);
+  if (!response.ok) throw new UpstreamError(`${label} returned HTTP ${response.status}: ${text.slice(0, 400)}`, response.status, text);
   if (!text) return null;
   try {
     return JSON.parse(text) as unknown;

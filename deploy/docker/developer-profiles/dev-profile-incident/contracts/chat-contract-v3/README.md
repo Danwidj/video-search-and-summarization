@@ -18,6 +18,7 @@ The routed answer of `POST /api/v1/incidents/chat` when the agent runs with `INC
 - `message.citations` on an insufficient answer: unlike v2 it is not always empty. An item the answer itself names from the report keeps its card, because a model often flags a useful partial answer as insufficient.
 - `grounding.unknown_times`: times in the answer that the report does not hold, or that cannot be tied to the event they stand beside. A client must not link them.
 - `grounding.model` is `null` when no model answered, and `grounding.mode` may be `routed`.
+- **A failed model is not an error response.** The agent answers `200` with `source: "report"`, `grounding.model: null` and `grounding.route_reason: "model_unavailable"`. `message.content` holds what the report settles and says so, or asks the reviewer to try again (`route: "insufficient"`). The note is in the content because the console does not show `route_reason`.
 
 ## Read more
 

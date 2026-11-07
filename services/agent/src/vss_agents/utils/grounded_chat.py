@@ -50,6 +50,7 @@ import httpx
 
 from vss_agents import incident_contract
 from vss_agents.utils import chat_attribution
+from vss_agents.utils import chat_questions
 from vss_agents.utils import report_answers
 
 if TYPE_CHECKING:
@@ -143,12 +144,12 @@ class OpenAIChatModel:
         if response.status_code >= 400:
             # The provider's body can hold account details, and this message reaches the browser.
             raise ChatModelError(f"chat model returned HTTP {response.status_code}")
-        body = response.json()
-        self.last_usage = {**(body.get("usage") or {}), "elapsed_ms": round((self.clock() - started) * 1000.0, 1)}
         try:
+            body = response.json()
+            self.last_usage = {**(body.get("usage") or {}), "elapsed_ms": round((self.clock() - started) * 1000.0, 1)}
             content = body["choices"][0]["message"]["content"]
             parsed = json.loads(content)
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
             raise ChatModelError(f"chat model reply is not the strict JSON answer: {exc}") from exc
         if not isinstance(parsed, dict):
             raise ChatModelError("chat model reply is not a JSON object")
@@ -161,18 +162,20 @@ def report_context(report: Mapping[str, Any], evidence: Sequence[Mapping[str, An
     The timeline is sorted by start second (stable for ties) and each event carries its start and end as ``m:ss``,
     so a chronological answer needs no arithmetic.
     """
-    seconds = {str(e.get("item_id")): e.get("box_seconds", e.get("timestamp_seconds")) for e in evidence}
+    entries = report_answers.dict_rows(evidence)
+    seconds = {str(e.get("item_id")): e.get("box_seconds", e.get("timestamp_seconds")) for e in entries}
     items: list[dict[str, Any]] = []
     for kind, (id_field, item_type) in ITEM_KINDS.items():
-        for item in report.get(kind) or []:
+        for item in report_answers.dict_rows(report.get(kind)):
             item_id = str(item.get(id_field) or "")
             if item_id:
                 fields = {k: v for k, v in item.items() if k != id_field and v not in (None, "", [])}
                 items.append(
                     {"item_id": item_id, "item_type": item_type, **fields, "evidence_second": seconds.get(item_id)}
                 )
-    incident = {k: v for k, v in (report.get("incident") or {}).items() if v not in (None, "")}
-    events = [e for e in report.get("timeline") or [] if isinstance(e, dict)]
+    raw_incident = report.get("incident")
+    incident = {k: v for k, v in raw_incident.items() if v not in (None, "")} if isinstance(raw_incident, dict) else {}
+    events = report_answers.dict_rows(report.get("timeline"))
     events.sort(key=lambda e: (_seconds(e.get("start_seconds")) is None, _seconds(e.get("start_seconds")) or 0.0))
     timeline = [
         {
@@ -217,17 +220,14 @@ ROUTED_SCHEMA: dict[str, Any] = {
         "video_could_answer": {"type": "boolean"},
     },
 }
-# A video time as the console reads one: m:ss or h:mm:ss, not inside a longer token.
-_TIME = re.compile(r"(?<![\w:./])(?:(\d{1,2}):([0-5]\d):([0-5]\d)|(\d{1,3}):([0-5]\d))(?:\.\d+)?(?![\w:])")
-
-
-_SECONDS_IN_TEXT = re.compile(r"(?<![\w.:])(\d+(?:\.\d+)?)(?:\s*[-\u2013]\s*(\d+(?:\.\d+)?))?\s*(?:s|secs?|seconds?)\b")
+_TIME = chat_questions.TIME
+_SECONDS_IN_TEXT = chat_questions.SECONDS_IN_TEXT
 
 
 def routed_context(report: Mapping[str, Any], evidence: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """:func:`report_context` with the report's uncertainties, and each item's evidence second as a card shows it."""
     context = report_context(report, evidence)
-    entries = {str(e.get("item_id")): e for e in evidence}
+    entries = {str(e.get("item_id")): e for e in report_answers.dict_rows(evidence)}
     for item in context["items"]:
         entry = entries.get(item["item_id"], {})
         item["evidence_second"] = next(
@@ -238,7 +238,9 @@ def routed_context(report: Mapping[str, Any], evidence: Sequence[Mapping[str, An
             ),
             None,
         )
-    context["uncertainties"] = [u for u in report.get("uncertainties") or [] if isinstance(u, str) and u.strip()]
+    context["uncertainties"] = [
+        u for u in report_answers.safe_list(report.get("uncertainties")) if isinstance(u, str) and u.strip()
+    ]
     return context
 
 
