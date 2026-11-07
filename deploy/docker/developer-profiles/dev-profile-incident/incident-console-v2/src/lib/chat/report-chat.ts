@@ -8,6 +8,14 @@ import type { EditDraft } from '@/modules/reports/domain/edit-draft';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import type { StructuredAsset, StructuredEntity, StructuredInstrument } from '@/modules/reports/domain/report-view';
 
+/**
+ * Fixed prefix returned when the chat report editor refuses an unsupported edit request
+ * (re-tracking, box change, setting an image, adding new evidence, or unsupported incident types)
+ * instead of running proposal tools or improvising.
+ * Matches the refusal instructions in report_editor's system_prompt in config.yml.
+ */
+export const CHAT_EDITOR_REFUSAL_PREFIX = "I can't do that in chat:";
+
 export interface ChatTarget {
   /** The saved version the question is about (the draft's base when there is a draft). */
   versionId: number;
