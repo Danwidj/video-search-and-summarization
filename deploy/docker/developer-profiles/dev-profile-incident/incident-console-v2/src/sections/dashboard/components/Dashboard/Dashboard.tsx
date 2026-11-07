@@ -35,7 +35,7 @@ import {
   presetWindow,
 } from '@/modules/dashboard/domain/filter-bar';
 import { getViewerTimeZone } from '@/lib/time';
-import { severityChartColor } from '@/lib/ui/severity';
+import { severityVar } from '@/lib/ui/severity';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -56,7 +56,7 @@ const ABOUT =
 
 const splitConfig = {
   official: { label: 'Official', color: 'var(--color-version-official)' },
-  notOfficial: { label: 'Not yet official', color: 'var(--chart-3)' },
+  notOfficial: { label: 'Not yet official', color: 'var(--color-not-official)' },
 } satisfies ChartConfig;
 
 const totalConfig = {
@@ -64,9 +64,9 @@ const totalConfig = {
 } satisfies ChartConfig;
 
 const severityConfig = {
-  high: { label: SEVERITY_LABELS.high, color: severityChartColor.high },
-  medium: { label: SEVERITY_LABELS.medium, color: severityChartColor.medium },
-  low: { label: SEVERITY_LABELS.low, color: severityChartColor.low },
+  high: { label: SEVERITY_LABELS.high, color: severityVar.high },
+  medium: { label: SEVERITY_LABELS.medium, color: severityVar.medium },
+  low: { label: SEVERITY_LABELS.low, color: severityVar.low },
 } satisfies ChartConfig;
 
 export function Dashboard() {
@@ -179,7 +179,7 @@ export function Dashboard() {
                 <RotateCcwIcon className="size-4" />
                 Reset
                 {active && (
-                  <span className="absolute -top-1.5 -right-1.5 grid min-w-[18px] place-items-center rounded-full bg-chart-3 px-1 text-[10px] font-bold text-white">
+                  <span className="absolute -top-1.5 -right-1.5 grid min-w-[18px] place-items-center rounded-full bg-moss px-1 text-[10px] font-bold text-white">
                     {chips.length}
                   </span>
                 )}
@@ -559,7 +559,7 @@ function SeverityDonut({
               strokeWidth={2}
             >
               {rows.map((row) => (
-                <Cell fill={severityChartColor[row.key as keyof typeof severityChartColor]} key={row.key} />
+                <Cell fill={severityVar[row.key as keyof typeof severityVar]} key={row.key} />
               ))}
             </Pie>
           </PieChart>
@@ -587,7 +587,7 @@ function SeverityDonut({
                 <span
                   aria-hidden="true"
                   className="size-3 shrink-0 rounded-xs"
-                  style={{ background: severityChartColor[row.key as keyof typeof severityChartColor] }}
+                  style={{ background: severityVar[row.key as keyof typeof severityVar] }}
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block text-xs font-medium text-ink">{row.label}</span>
@@ -604,7 +604,11 @@ function SeverityDonut({
 }
 
 const HOURS_OF_DAY = Array.from({ length: 24 }, (_, h) => h);
-const SERIES_COLOR = { count: 'var(--chart-5)', official: 'var(--color-version-official)', notOfficial: 'var(--chart-3)' } as const;
+const SERIES_COLOR = {
+  count: 'var(--chart-5)',
+  official: 'var(--color-version-official)',
+  notOfficial: 'var(--color-not-official)',
+} as const;
 
 function Heatmap({
   data,

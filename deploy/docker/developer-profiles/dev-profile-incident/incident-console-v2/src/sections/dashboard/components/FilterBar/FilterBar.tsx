@@ -7,7 +7,7 @@ import { formatCalendarDay } from '@/modules/dashboard/domain/charts';
 import type { DashboardScope, DashboardSeverity } from '@/modules/dashboard/domain/DashboardRepository';
 import { type FilterChip, PERIOD_PRESETS, SCOPE_LABELS } from '@/modules/dashboard/domain/filter-bar';
 import { INCIDENT_TYPES } from '@/modules/contract/domain/types';
-import { severityChartColor } from '@/lib/ui/severity';
+import { severityVar } from '@/lib/ui/severity';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -196,7 +196,7 @@ export function FilterBar({
             >
               {SEVERITIES.map(({ value, label }) => (
                 <ToggleGroupItem className={SEGMENT} key={value} value={value}>
-                  <span aria-hidden="true" className="size-2 rounded-xs" style={{ background: severityChartColor[value] }} />
+                  <span aria-hidden="true" className="size-2 rounded-xs" style={{ background: severityVar[value] }} />
                   {label}
                 </ToggleGroupItem>
               ))}
@@ -254,7 +254,7 @@ export function FilterBar({
             Official
           </span>
           <span className="flex items-center gap-1.5">
-            <span aria-hidden="true" className="size-2.5 rounded-xs bg-chart-3" />
+            <span aria-hidden="true" className="size-2.5 rounded-xs bg-not-official" />
             Not yet official
           </span>
         </span>

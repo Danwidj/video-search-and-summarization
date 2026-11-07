@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: Colour meanings are tokens in styles.css, with one band mapping for severity and threat
+- **Decision:** version model/human/official, not yet official (`#8cc5cf`, replacing the orange in charts, legends and split bars), the severity bands and card hover are semantic CSS variables in `styles.css` with a comment table. One helper (`levelBand`) maps 5 and 4 to high, 3 to medium, 2 and 1 to low for severity and threat; severity pills derive tint and border from the band token with `color-mix`. The official star in History uses the official token. A test fails if a meaning hex appears outside `styles.css` and the two canvas mirrors. Severity 4 is now the high band (it was a separate orange).
+- **Why:** the same meaning had several hexes across pages; the Dashboard redesign will use this one set.
+- **Alternatives rejected:** a generated tokens file (more machinery than one CSS file and a test); recolouring the destructive orange and amber notices (they carry no one of these meanings).
+- **Links:** [console-reference](console-reference.md#colour-meanings), `tests/colour-tokens.test.mjs`.
+
 ### 2026-11-07: Reviewers cannot save an unknown entity
 - **Decision:** the edit row dropdown offers only Human and Animal, the box tool's add dialog asks for Human or Animal, and an entity still `unknown` (an older version) must be set before Save. `validateStructuredEdit` refuses an entity of type `unknown` (422), so no human version holds one. Stored older reports still display and filter as they were.
 - **Why:** a reviewer always knows whether an entity is a person or an animal; no AI version has ever produced `unknown` (0 of 942).

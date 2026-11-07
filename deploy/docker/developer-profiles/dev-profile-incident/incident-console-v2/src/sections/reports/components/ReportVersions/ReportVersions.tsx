@@ -169,7 +169,7 @@ export function ReportVersions({
                           aria-label={starLabel}
                           aria-busy={busy}
                           aria-pressed={official}
-                          className="relative z-10 h-7 w-7 self-center p-0 text-base leading-none text-amber-600 hover:text-amber-700 disabled:opacity-40"
+                          className="relative z-10 h-7 w-7 self-center p-0 text-base leading-none text-version-official hover:text-version-official/80 disabled:opacity-40"
                           data-testid={official ? 'clear-official' : 'make-official'}
                           disabled={busyId !== null}
                           onClick={() => void toggleOfficial(revision)}

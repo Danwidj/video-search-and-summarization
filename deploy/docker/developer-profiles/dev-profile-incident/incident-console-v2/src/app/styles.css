@@ -11,9 +11,32 @@
   --color-moss: #174f3b;
   --color-clay: #d9754c;
   --color-ink-caption: #5b6761;
+
+  /*
+    Colour meanings: the one source of truth. Use these tokens (never the hex) wherever the meaning shows, in a class
+    (bg-version-model, text-sev-high), in a style (var(--color-sev-high)) or in a chart. tests/colour-tokens.test.mjs fails
+    if one of these hex values appears elsewhere in src/; lib/ui/severity.ts and lib/ui/chart-colors.ts mirror them for
+    canvases that cannot read CSS variables, and the same test keeps those mirrors equal.
+
+    token                    hex      meaning
+    --color-version-model    #3f5f8a  an AI (model) version
+    --color-version-human    #7a4e8c  a human (reviewer) version
+    --color-version-official #0b7a8f  the official version, always with a star
+    --color-not-official     #8cc5cf  a version not yet official (labels on it stay dark)
+    --color-sev-high         #991b1b  severity or threat 4-5
+    --color-sev-medium       #765300  severity or threat 3
+    --color-sev-low          #174f3b  severity or threat 1-2
+    --color-signal           #76b900  card hover and focus (also --card-hover and --ring)
+
+    Severity pills derive their tint and border from the band token with color-mix (.sev-pill-*, below).
+  */
   --color-version-model: #3f5f8a;
   --color-version-human: #7a4e8c;
   --color-version-official: #0b7a8f;
+  --color-not-official: #8cc5cf;
+  --color-sev-high: #991b1b;
+  --color-sev-medium: #765300;
+  --color-sev-low: #174f3b;
 
   --font-sans: Arial, Helvetica, sans-serif;
   --font-mono: "SFMono-Regular", Consolas, monospace;
@@ -57,11 +80,11 @@
   --destructive-foreground: #ffffff;
   --border: rgba(18, 33, 27, 0.1);
   --input: rgba(18, 33, 27, 0.12);
-  --ring: #76b900;
+  --ring: var(--color-signal);
   --card-hover: var(--ring);
-  --chart-1: #174f3b;
+  --chart-1: var(--color-version-official);
   --chart-2: #76b900;
-  --chart-3: #d9754c;
+  --chart-3: var(--color-not-official);
   --chart-4: #f59e0b;
   --chart-5: #12211b;
   --radius: 0.625rem;
@@ -72,7 +95,7 @@
   --sidebar-accent: #e9ece4;
   --sidebar-accent-foreground: #12211b;
   --sidebar-border: rgba(18, 33, 27, 0.1);
-  --sidebar-ring: #76b900;
+  --sidebar-ring: var(--color-signal);
 }
 
 /*
@@ -259,5 +282,31 @@ video::-webkit-media-controls-volume-slider-container {
     from {
       transform: scale(0.9);
     }
+  }
+}
+
+/* Severity and threat pills: the band token for the text, a tint and border derived from it. */
+@layer components {
+  .sev-pill-high,
+  .sev-pill-medium,
+  .sev-pill-low {
+    border-width: 1px;
+    border-style: solid;
+  }
+  .sev-pill-high {
+    --sev: var(--color-sev-high);
+  }
+  .sev-pill-medium {
+    --sev: var(--color-sev-medium);
+  }
+  .sev-pill-low {
+    --sev: var(--color-sev-low);
+  }
+  .sev-pill-high,
+  .sev-pill-medium,
+  .sev-pill-low {
+    color: var(--sev);
+    background-color: color-mix(in oklab, var(--sev) 12%, white);
+    border-color: color-mix(in oklab, var(--sev) 38%, white);
   }
 }

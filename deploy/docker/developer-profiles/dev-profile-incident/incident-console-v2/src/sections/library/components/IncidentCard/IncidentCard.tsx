@@ -144,7 +144,7 @@ export function IncidentCard({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span
-                        className="inline-flex items-center gap-1 rounded-full border border-[#f3cc68] bg-[#fff1c7] px-1.5 py-0.5 text-[11px] font-bold text-[#765300]"
+                        className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-800"
                         data-testid="library-repair-marker"
                       >
                         <WrenchIcon className="size-3" />

@@ -4,6 +4,10 @@ Pages, routes, behaviour and configuration of `incident-console-v2`, the reviewe
 
 Contents: [Console middle layer](#console-middle-layer-ports-and-adapters), [Console configuration](#console-configuration), [Console pages](#console-pages), [Background analysis jobs](#background-analysis-jobs), [Report library pagination](#report-library-pagination-and-deferred-report-loading), [Dashboard analytics](#dashboard-analytics-and-cross-filtering), [Report versions](#report-versions-view-edit-and-history), [Re-generation and the official version](#re-generation-and-the-official-version).
 
+## Colour meanings
+
+`incident-console-v2/src/app/styles.css` is the one source: semantic tokens exposed as Tailwind theme colours, with a comment table saying what each means. Version model `#3f5f8a`, human `#7a4e8c`, official `#0b7a8f` (always with a star), not yet official `#8cc5cf` (labels on it stay dark), severity and threat high `#991b1b`, medium `#765300`, low `#174f3b`, card hover and focus `#76b900` (`--color-signal`). Use the token (`bg-version-model`, `text-sev-high`, `var(--color-not-official)`), never the hex. `levelBand` in `lib/ui/severity.ts` is the one number-to-band mapping for severity and threat level (5 and 4 high, 3 medium, 2 and 1 low); severity pills take their tint and border from the band token with `color-mix` (`.sev-pill-*`). `lib/ui/severity.ts` and `lib/ui/chart-colors.ts` hold hex mirrors for canvases and the agent; `tests/colour-tokens.test.mjs` fails if a meaning hex appears elsewhere in `src/` or a mirror drifts. Left on purpose: the destructive and incomplete-track orange (`clay`), amber repair and no-official notices, instrument and asset outline colours, the generic categorical chart palette and neutrals.
+
 ## Console middle layer (ports and adapters)
 
 `incident-console-v2` reaches Supabase, R2, the gateway and the agent through ports and adapters; the layout and dependency rules are in [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md).

@@ -121,14 +121,16 @@ describe('which kinds suit which dimension', () => {
 });
 
 describe('colours', () => {
-  test('official and not yet official are the --chart-1 and --chart-3 tokens', () => {
+  test('official and not yet official are the --color-version-official and --color-not-official tokens', () => {
     const css = readFileSync(join(process.cwd(), 'src', 'app', 'styles.css'), 'utf8');
-    assert.ok(css.includes(`--chart-1: ${CHART_COLORS.official};`), 'official colour drifted from --chart-1');
-    assert.ok(css.includes(`--chart-3: ${CHART_COLORS.notOfficial};`), 'not yet official colour drifted from --chart-3');
+    assert.ok(css.includes(`--color-version-official: ${CHART_COLORS.official};`), 'official colour drifted from its token');
+    assert.ok(css.includes(`--color-not-official: ${CHART_COLORS.notOfficial};`), 'not yet official colour drifted from its token');
   });
 
-  test('every chart colour passes the 3:1 non-text contrast rule against white', () => {
-    const colours = [CHART_COLORS.official, CHART_COLORS.notOfficial, CHART_COLORS.total, ...CHART_COLORS.categorical];
+  // The captain-set not yet official colour (#8cc5cf) is a light tint by design (about 2:1 against white): it is always named
+  // in text beside the chart, and labels on it stay dark, so it is the one colour exempt from the 3:1 rule.
+  test('every other chart colour passes the 3:1 non-text contrast rule against white', () => {
+    const colours = [CHART_COLORS.official, CHART_COLORS.total, ...CHART_COLORS.categorical];
     for (const colour of colours) assert.ok(contrastWithWhite(colour) >= 3, `${colour} is ${contrastWithWhite(colour).toFixed(2)}:1`);
   });
 
