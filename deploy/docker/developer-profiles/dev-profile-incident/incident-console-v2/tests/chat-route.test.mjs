@@ -263,3 +263,36 @@ test('an editor run that used no tool was not an edit: the usual chat answers, a
     ['investigate', 'chat'],
   );
 });
+
+test('an editor run that used no tool and returned a refusal prefix is returned to the user without falling through', async () => {
+  const refusalAnswer =
+    "I can't do that in chat: re-tracking and images are done in the box tool in Edit, and new evidence with + Add evidence.";
+  upstream.body = { status: 'ok', answer: refusalAnswer, steps: [], actions: [], wall_ms: 4 };
+  const response = await post({
+    messages: [{ role: 'user', content: 'Re-track the person in purple' }],
+    incidentId: 'V1',
+    editDraft: { incident: {} },
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(upstream.calls.length, 1);
+  assert.match(upstream.calls[0].url, /\/api\/v1\/incidents\/V1\/investigate$/);
+  assert.equal(body.message.content, refusalAnswer);
+  assert.deepEqual(body.message.actions, []);
+});
+
+test('an editor run that used no tool and returned a type refusal prefix is returned to the user without falling through', async () => {
+  const refusalAnswer =
+    "I can't do that in chat: allowed incident types are road accident, burglary, explosion, assault and animal attack.";
+  upstream.body = { status: 'ok', answer: refusalAnswer, steps: [], actions: [], wall_ms: 4 };
+  const response = await post({
+    messages: [{ role: 'user', content: 'Change the type to robbery' }],
+    incidentId: 'V1',
+    editDraft: { incident: {} },
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(upstream.calls.length, 1);
+  assert.match(upstream.calls[0].url, /\/api\/v1\/incidents\/V1\/investigate$/);
+  assert.equal(body.message.content, refusalAnswer);
+});
