@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: The Dashboard takes the approved mockup: treemap, donut, waffle, risk ladder and icon array
+- **Decision:** built the approved mockup (round 26) into the console with no RPC change: Top assets as a slate treemap, Severity donut with the legend beneath, Evidence by kind as a 10x10 waffle, Entity types as an icon array, Instruments by threat level as a risk ladder, "Total: N" on cards, tilted two-line labels on Incidents by type, the legend in the top row, no Ask button and chips only while filtering. Colours come from the tokens; the asset size scale got its own token, `--color-asset-size`, and threat level uses `levelBand`. The mock's fake data and no-op links were left out.
+- **Why:** the captain approved the mockup; the shared tokens keep one meaning per colour.
+- **Alternatives rejected:** copying the mockup's hex values (they broke the colour guard); keeping the Ask button (the card is on the same screen at 1440x900).
+- **Links:** [console-reference](console-reference.md#dashboard-analytics-and-cross-filtering), `Dashboard.tsx`.
+
 ### 2026-11-07: Colour meanings are tokens in styles.css, with one band mapping for severity and threat
 - **Decision:** version model/human/official, not yet official (`#8cc5cf`, replacing the orange in charts, legends and split bars), the severity bands and card hover are semantic CSS variables in `styles.css` with a comment table. One helper (`levelBand`) maps 5 and 4 to high, 3 to medium, 2 and 1 to low for severity and threat; severity pills derive tint and border from the band token with `color-mix`. The official star in History uses the official token. A test fails if a meaning hex appears outside `styles.css` and the two canvas mirrors. Severity 4 is now the high band (it was a separate orange).
 - **Why:** the same meaning had several hexes across pages; the Dashboard redesign will use this one set.
