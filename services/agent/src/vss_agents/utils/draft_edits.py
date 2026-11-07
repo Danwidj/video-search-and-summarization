@@ -153,6 +153,7 @@ class UpsertEntity(_Strict):
     op: Literal["add", "edit"]
     item_key: str | None = Field(None, min_length=1)
     entity_type: Literal["human", "animal"] | None = None
+    name: str | None = None
     description: str | None = None
     first_seen_seconds: float | None = Field(None, ge=0)
     last_seen_seconds: float | None = Field(None, ge=0)
@@ -163,8 +164,8 @@ class UpsertEntity(_Strict):
         if self.op == "add":
             if self.item_key is not None:
                 raise ValueError("an added entity takes no item_key")
-            if self.entity_type is None or self.first_seen_seconds is None or self.last_seen_seconds is None:
-                raise ValueError("an added entity needs entity_type, first_seen_seconds and last_seen_seconds")
+            if not self.name or None in (self.entity_type, self.first_seen_seconds, self.last_seen_seconds):
+                raise ValueError("an added entity needs a name, entity_type, first_seen_seconds and last_seen_seconds")
         elif self.item_key is None:
             raise ValueError("editing an entity needs its item_key")
         return self
@@ -379,7 +380,7 @@ TOOLS: dict[str, Tool] = {
     "upsert_entity": Tool(
         args_model=UpsertEntity,
         propose=_upsert_entity,
-        description="Add a person or animal, or edit one, by draft key.",
+        description="Add a person or animal (with a short name), or edit one, by draft key.",
     ),
     "upsert_instrument": Tool(
         args_model=UpsertInstrument,

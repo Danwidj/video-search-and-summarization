@@ -126,6 +126,19 @@ test('adding an instrument keeps its holder and threat, and a still image sits a
   assert.deepEqual(tool.holderChoices(next), [{ key, name: 'Person 1' }], 'holders are offered by name');
 });
 
+test('a card is ready when it has a name, a description and, for a new entity, its kind', () => {
+  const card = { name: 'person in purple', description: 'A person in a purple top.', itemType: 'entity', entityType: null };
+  assert.equal(tool.cardTextReady(card, false), false, 'a new entity needs its kind');
+  assert.equal(tool.cardTextReady({ ...card, entityType: 'human' }, false), true);
+  assert.equal(tool.cardTextReady({ ...card, name: '  ' }, false), false);
+  assert.equal(tool.cardTextReady({ ...card, itemType: 'asset' }, false), true, 'only entities need a kind');
+});
+
+test('re-tracking an existing entity is ready without a kind, because its text is not touched', () => {
+  const existing = { name: 'person in purple', description: 'A person in a purple top.', itemType: 'entity', entityType: null };
+  assert.equal(tool.cardTextReady(existing, true), true);
+});
+
 test('re-tracking an existing item changes its evidence second, box and track but not its text', () => {
   const base = tool.addBoxItem(emptyDraft(), item({ itemType: 'entity', name: 'Person 1', description: 'Man in a grey hoodie' }), null);
   const key = base.entities[0].key;

@@ -141,7 +141,7 @@ _STOPPED_REASONS = {
 
 
 def _blank_answer_text(status: str, proposed: int) -> str:
-    """One plain sentence for a run that ended without an answer, saying how many changes it proposed."""
+    """One plain sentence for a run that ended without a usable answer, saying how many changes it proposed."""
     reason = _STOPPED_REASONS.get(status, "The agent stopped before it could answer")
     if proposed == 0:
         changes = "no changes were proposed"
@@ -199,7 +199,8 @@ def create_incident_investigate_router(
             "Investigated %s: %s in %d ms, %d tool steps", video_id, result.status, result.wall_ms, len(result.steps)
         )
         answer = result.answer
-        if not answer.strip():
+        # NAT's cap text names the agent's internals, so a reviewer gets the plain sentence instead.
+        if not answer.strip() or result.status == "cap_reached":
             answer = _blank_answer_text(result.status, len(result.actions))
         return InvestigateResponse(
             status=result.status,
