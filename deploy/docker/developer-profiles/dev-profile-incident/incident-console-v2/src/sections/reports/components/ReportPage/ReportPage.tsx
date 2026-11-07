@@ -73,10 +73,13 @@ export function ReportPage({
   videoId,
   revisionId,
   startSeconds = null,
+  evidenceProposals = false,
 }: {
   videoId: string;
   revisionId: number | null;
   startSeconds?: number | null;
+  /** Flag INCIDENT_EVIDENCE_PROPOSALS_ENABLED, read by the server page on each request. */
+  evidenceProposals?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
@@ -578,6 +581,7 @@ export function ReportPage({
                     baseOfficial={editBase.report.official.officialRevisionId === editBase.revisionId}
                     baseRevisionNo={editBase.revisionNo}
                     draft={draft}
+                    evidenceProposals={evidenceProposals}
                     officialMissing={!officialRevision && revisions !== null}
                     onChange={changeDraft}
                     onEditingTrack={setEditingTrackKey}
