@@ -117,7 +117,7 @@ export function ChartRequest() {
                 Charts can count reports by incident type, severity, status, version, entity type, instrument, asset or confidence, show
                 trends by day, week or month, report activity by weekday or hour, instrument threat levels, and analyses by model or
                 outcome. The period can be the last 7, 30, 90 or 365 days, all time, a calendar month, a day, or a range of up to a year
-                that ends today or earlier.
+                that starts today or earlier; one that runs past today is charted up to today.
               </AlertDescription>
             </Alert>
           )}
