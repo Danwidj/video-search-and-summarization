@@ -1,0 +1,252 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Unit tests for the report editor's proposal tools (no model, no network)."""
+
+from pathlib import Path
+
+import pytest
+import yaml
+
+from vss_agents.tools import incident_editor
+from vss_agents.utils import agent_loop
+from vss_agents.utils import draft_edits
+
+pytestmark = pytest.mark.asyncio
+
+DRAFT = draft_edits.DraftSnapshot.model_validate(
+    {
+        "incident": {"type": "assault", "title": "Fight", "start_timestamp": 0, "end_timestamp": 30},
+        "entities": [{"key": "p1", "type": "human", "first_seen_seconds": 1, "last_seen_seconds": 20}],
+        "instruments": [{"key": "k1", "name": "knife", "threat_level": 3, "holder_key": "p1"}],
+        "assets": [],
+    }
+)
+
+
+async def _run(*calls: tuple[str, dict], draft=DRAFT):
+    async def ask() -> str:
+        for tool, args in calls:
+            try:
+                await agent_loop.run_guarded_tool(
+                    f"propose_{tool}", args, lambda tool=tool, args=args: incident_editor.propose(tool, args)
+                )
+            except ValueError:
+                continue
+        return "done"
+
+    return await agent_loop.run_loop(ask, "V1", draft=draft)
+
+
+async def test_a_valid_edit_is_listed_as_an_action() -> None:
+    result = await _run(("set_incident_fields", {"severity_level": 4}))
+    assert result.status == "ok"
+    assert result.actions == [{"tool": "propose_set_incident_fields", "args": {"severity_level": 4}}]
+
+
+async def test_an_invented_key_is_an_error_the_model_reads_and_no_action() -> None:
+    result = await _run(("delete_item", {"item_key": "E1"}))
+    assert result.actions == []
+    assert result.steps[0]["ok"] is False
+    assert "No item with key 'E1'" in result.steps[0]["error"]
+
+
+async def test_an_edit_outside_the_incident_window_is_rejected() -> None:
+    result = await _run(("set_timeline_item", {"item_key": "p1", "timestamp_seconds": 99}))
+    assert result.actions == []
+    assert "within the incident" in result.steps[0]["error"]
+
+
+async def test_no_draft_means_nothing_can_be_proposed() -> None:
+    result = await _run(("set_incident_fields", {"severity_level": 4}), draft=None)
+    assert result.actions == []
+    assert "no draft" in result.steps[0]["error"]
+
+
+async def test_the_tool_is_checked_by_the_same_rules_as_the_draft_edits_route() -> None:
+    summary = await _with_draft(lambda: incident_editor.propose("delete_item", {"item_key": "p1"}))
+    assert "the 1 instrument(s) it holds" in summary
+
+
+async def _with_draft(call):
+    out: list[str] = []
+
+    async def ask() -> str:
+        out.append(await call())
+        return "done"
+
+    await agent_loop.run_loop(ask, "V1", draft=DRAFT)
+    return out[0]
+
+
+async def _run_evidence(*calls: tuple[str, dict], questions_asked: int = 0):
+    async def ask() -> str:
+        for tool, args in calls:
+            try:
+                await agent_loop.run_guarded_tool(
+                    f"propose_{tool}", args, lambda tool=tool, args=args: incident_editor.check_new_evidence(tool, args)
+                )
+            except ValueError:
+                continue
+        return "done"
+
+    return await agent_loop.run_loop(ask, "V1", draft=DRAFT, questions_asked=questions_asked)
+
+
+async def test_a_question_then_the_box_tool_are_listed_as_actions() -> None:
+    result = await _run_evidence(
+        ("ask_reviewer", {"question": "Where in the shop?"}),
+        ("open_box_tool", {"seconds": 12, "name": "Bag on floor"}),
+    )
+    assert result.actions == [
+        {"tool": "propose_ask_reviewer", "args": {"question": "Where in the shop?"}},
+        {"tool": "propose_open_box_tool", "args": {"seconds": 12, "name": "Bag on floor"}},
+    ]
+
+
+async def test_a_third_question_is_refused_so_the_box_tool_must_open() -> None:
+    result = await _run_evidence(
+        ("ask_reviewer", {"question": "Where?"}),
+        ("ask_reviewer", {"question": "When?"}),
+        ("ask_reviewer", {"question": "Who?"}),
+    )
+    assert [action["args"]["question"] for action in result.actions] == ["Where?", "When?"]
+    assert "Only 2 questions" in result.steps[2]["error"]
+
+
+async def test_the_questions_asked_before_this_request_count_towards_the_limit() -> None:
+    result = await _run_evidence(("ask_reviewer", {"question": "Who?"}), questions_asked=2)
+    assert result.actions == []
+    assert "Only 2 questions" in result.steps[0]["error"]
+
+
+async def test_no_question_follows_the_box_tool() -> None:
+    result = await _run_evidence(
+        ("open_box_tool", {"seconds": 12, "name": "Bag"}),
+        ("ask_reviewer", {"question": "Who?"}),
+    )
+    assert [action["tool"] for action in result.actions] == ["propose_open_box_tool"]
+    assert "already open" in result.steps[1]["error"]
+
+
+async def test_the_box_tool_opens_once_and_only_inside_the_incident() -> None:
+    result = await _run_evidence(
+        ("open_box_tool", {"seconds": 99, "name": "Bag"}),
+        ("open_box_tool", {"seconds": 12, "name": "Bag"}),
+        ("open_box_tool", {"seconds": 13, "name": "Bag"}),
+    )
+    assert result.actions == [{"tool": "propose_open_box_tool", "args": {"seconds": 12, "name": "Bag"}}]
+    assert "within the incident" in result.steps[0]["error"]
+    assert "already open" in result.steps[2]["error"]
+
+
+async def test_no_draft_means_no_new_evidence_can_be_proposed() -> None:
+    async def ask() -> str:
+        await agent_loop.run_guarded_tool(
+            "propose_ask_reviewer",
+            {"question": "Who?"},
+            lambda: incident_editor.check_new_evidence("ask_reviewer", {"question": "Who?"}),
+        )
+        return "done"
+
+    result = await agent_loop.run_loop(ask, "V1", draft=None)
+    assert result.actions == []
+    assert "no draft" in result.steps[0]["error"]
+
+
+async def test_a_box_tool_opening_on_a_draft_item_is_listed_by_its_key() -> None:
+    result = await _run_evidence(("open_box_tool", {"item_key": "p1"}))
+    assert result.actions == [{"tool": "propose_open_box_tool", "args": {"item_key": "p1"}}]
+
+
+async def test_an_item_key_not_in_the_draft_is_refused() -> None:
+    result = await _run_evidence(("open_box_tool", {"item_key": "E1"}))
+    assert result.actions == []
+    assert "No item with key 'E1'" in result.steps[0]["error"]
+
+
+async def test_an_item_with_no_seen_second_is_refused() -> None:
+    result = await _run_evidence(("open_box_tool", {"item_key": "k1"}))
+    assert result.actions == []
+    assert "no second it is seen at" in result.steps[0]["error"]
+
+
+async def test_an_item_opening_cannot_carry_a_second_from_the_model() -> None:
+    result = await _run_evidence(("open_box_tool", {"item_key": "p1", "seconds": 3}))
+    assert result.actions == []
+    assert "item_key alone" in result.steps[0]["error"]
+
+
+async def test_a_registered_box_tool_logs_the_second_and_the_name() -> None:
+    async with incident_editor.propose_open_box_tool(None, None) as info:
+        arguments = info.input_schema(seconds=12, name="Bag on floor")
+
+        async def ask() -> str:
+            return await info.single_fn(arguments)
+
+        result = await agent_loop.run_loop(ask, "V1", draft=DRAFT)
+    assert result.actions == [{"tool": "propose_open_box_tool", "args": {"seconds": 12, "name": "Bag on floor"}}]
+
+
+async def test_a_registered_tool_logs_the_arguments_the_model_set() -> None:
+    async with incident_editor.propose_set_instrument_holder(None, None) as info:
+        arguments = info.input_schema(instrument_key="k1", holder_key=None)
+
+        async def ask() -> str:
+            return await info.single_fn(arguments)
+
+        result = await agent_loop.run_loop(ask, "V1", draft=DRAFT)
+    assert result.actions == [
+        {"tool": "propose_set_instrument_holder", "args": {"instrument_key": "k1", "holder_key": None}}
+    ]
+
+
+def test_nulls_the_model_filled_in_are_left_out_but_a_holder_of_nobody_stays() -> None:
+    assert incident_editor._set_arguments("set_incident_fields", {"title": None, "severity_level": 4}) == {
+        "severity_level": 4
+    }
+    for nobody in (None, "None", " null "):
+        assert incident_editor._set_arguments(
+            "set_instrument_holder", {"instrument_key": "k1", "holder_key": nobody}
+        ) == {"instrument_key": "k1", "holder_key": None}
+    assert (
+        incident_editor._set_arguments("set_instrument_holder", {"instrument_key": "k1", "holder_key": "p1"})[
+            "holder_key"
+        ]
+        == "p1"
+    )
+
+
+def test_a_nobody_holder_is_left_out_of_an_upserted_instrument() -> None:
+    for nobody in (None, "nobody", " None "):
+        assert incident_editor._set_arguments(
+            "upsert_instrument", {"op": "add", "name": "knife", "holder_key": nobody}
+        ) == {"op": "add", "name": "knife"}
+    assert (
+        incident_editor._set_arguments("upsert_instrument", {"op": "edit", "item_key": "k1", "holder_key": "p1"})[
+            "holder_key"
+        ]
+        == "p1"
+    )
+
+
+def test_the_report_editor_prompt_opens_the_box_tool_on_an_item_instead_of_refusing() -> None:
+    repo = Path(__file__).resolve().parents[5]
+    config = repo / "deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml"
+    prompt = " ".join(yaml.safe_load(config.read_text())["functions"]["report_editor"]["system_prompt"].split())
+    assert "I can't do that in chat: re-tracking and images" not in prompt
+    assert "call propose_open_box_tool with that item's key alone (no seconds or name)" in prompt
+    assert "Never draw or locate a box yourself" in prompt
+    assert "I can't do that in chat: there is no such item in the draft." in prompt

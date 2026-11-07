@@ -89,6 +89,35 @@ export interface VideoCheckResult {
   source: 'video';
 }
 
+/** A step executed by a tool-calling agent (from PR 517 /api/v1/incidents/{video_id}/investigate). */
+export interface ChatStep {
+  tool: string;
+  args?: Record<string, unknown>;
+  ok: boolean;
+  ms: number;
+  error?: string | null;
+}
+
+/** Action applied to the draft. */
+export interface AppliedAction {
+  id?: string;
+  tool: string;
+  note?: string;
+}
+
+/** Action skipped when applying to draft. */
+export interface SkippedAction {
+  id?: string;
+  tool: string;
+  reason: string;
+}
+
+/** The new-evidence exchange still open in the report chat (lib/chat/evidence-ask.ts), sent with the question it leads to. */
+export interface EvidenceExchange {
+  questionsAsked: number;
+  transcript: Array<{ role: 'reviewer' | 'assistant'; text: string }>;
+}
+
 export interface ChatResponse {
   sessionId: string;
   message: {
@@ -97,9 +126,15 @@ export interface ChatResponse {
     citations: ChatCitation[];
     /** chat-contract-v2: the report cannot answer (or contradicts the question); citations are then empty. */
     insufficientEvidence?: boolean;
-    /** chat-contract-v3: composed by code, or read from the report by the chat model. */
-    source?: 'report' | 'report_llm';
+    /** chat-contract-v3: composed by code, read from the report by the chat model, or run by the investigator agent. */
+    source?: 'report' | 'report_llm' | 'video' | 'investigator';
     videoOffer?: VideoOffer;
+    steps?: ChatStep[];
+    actions?: Array<{ tool: string; args: Record<string, unknown> }>;
+    applied?: AppliedAction[];
+    skipped?: SkippedAction[];
+    wallMs?: number;
+    status?: string;
   };
   grounding?: ChatGrounding;
 }
