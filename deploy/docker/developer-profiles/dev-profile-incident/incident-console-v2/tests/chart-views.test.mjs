@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Chart views: the three views drawn in their own kind (a dual-axis combo, a stacked bar by severity and a bubble chart).
+// Chart views: the four views drawn in their own kind (a dual-axis combo, a stacked bar by severity or threat, and a bubble chart).
 // Covers the spec that asks for them, the figures they count (evidence per report is rounded in code and a type with no
 // reports is left out), the kind each is drawn in whatever the picker says, the configuration checks, the agent payloads,
 // and "not available yet" until the database change that returns their figures is applied.
@@ -30,7 +30,7 @@ const NOW = new Date('2026-10-31T12:00:00.000Z');
 const TODAY = '2026-10-31';
 const rpc = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'dashboard-rpc.json'), 'utf8'));
 const analytics = dashboardFromRpc(rpc);
-const VIEWS = ['incident_type_evidence', 'incident_type_severity', 'severity_evidence'];
+const VIEWS = ['incident_type_evidence', 'incident_type_severity', 'severity_evidence', 'threat_by_holder'];
 
 const spec = (overrides = {}) => ({
   metric: 'incidents',
@@ -92,6 +92,11 @@ function faithfulSeverityStack(drawing) {
   };
 }
 
+/** The configuration a correct agent returns for the threat stack: the same stack as severity, with our threat labels. */
+function faithfulThreatStack(drawing) {
+  return faithfulSeverityStack(drawing);
+}
+
 /** The configuration a correct agent returns for the bubble view: label, x, y and count as ours, and a radius it scaled itself. */
 function faithfulBubble(drawing) {
   return {
@@ -115,7 +120,7 @@ function faithfulBubble(drawing) {
 }
 
 describe('the spec asks for a view with its own metric', () => {
-  test('the three views are allowlisted, each with its metric and the kind it is drawn in', () => {
+  test('the four views are allowlisted, each with its metric and the kind it is drawn in', () => {
     const views = Object.keys(CHART_DIMENSIONS).filter((name) => CHART_DIMENSIONS[name].viewKind !== null);
     assert.deepEqual(views.sort(), [...VIEWS].sort());
     assert.equal(CHART_DIMENSIONS.incident_type_evidence.metric, 'evidence_per_report');
@@ -123,6 +128,8 @@ describe('the spec asks for a view with its own metric', () => {
     assert.equal(CHART_DIMENSIONS.incident_type_severity.viewKind, 'stacked_by_severity');
     assert.equal(CHART_DIMENSIONS.severity_evidence.metric, 'evidence_items');
     assert.equal(CHART_DIMENSIONS.severity_evidence.viewKind, 'bubble');
+    assert.equal(CHART_DIMENSIONS.threat_by_holder.metric, 'instruments');
+    assert.equal(CHART_DIMENSIONS.threat_by_holder.viewKind, 'stacked_by_severity');
     assert.ok(CHART_METRICS.includes('evidence_per_report') && CHART_METRICS.includes('evidence_items'));
   });
 
@@ -204,6 +211,37 @@ describe('the figures a view counts', () => {
   test('severity against evidence is not available until the severity pairs are returned', () => {
     assert.equal(viewRows('severity_evidence', { ...analytics, severityEvidence: null }), null);
   });
+
+  test('instrument threat by holder type is one row per holder, split into the three threat bands', () => {
+    const holders = [
+      { holder: 'human', high: 2, medium: 1, low: 0, official: 1, notOfficial: 2 },
+      { holder: 'animal', high: 1, medium: 0, low: 0, official: 1, notOfficial: 0 },
+      { holder: 'unknown', high: 0, medium: 0, low: 3, official: 0, notOfficial: 3 },
+      { holder: 'none', high: 0, medium: 0, low: 0, official: 0, notOfficial: 0 },
+    ];
+    assert.deepEqual(viewRows('threat_by_holder', { ...analytics, threatByHolder: holders }), [
+      { category: 'Human', values: { high: 2, medium: 1, low: 0 } },
+      { category: 'Animal', values: { high: 1, medium: 0, low: 0 } },
+      { category: 'Unknown', values: { high: 0, medium: 0, low: 3 } },
+    ]);
+  });
+
+  test('"no holder" is a row only when some instrument has no holder, so a zero never stands for it', () => {
+    const none = { holder: 'none', high: 1, medium: 0, low: 2, official: 1, notOfficial: 2 };
+    const rows = viewRows('threat_by_holder', {
+      ...analytics,
+      threatByHolder: [{ holder: 'human', high: 0, medium: 0, low: 0, official: 0, notOfficial: 0 }, none],
+    });
+    assert.deepEqual(
+      rows.map((row) => row.category),
+      ['Human', 'No holder'],
+    );
+    assert.deepEqual(rows[1].values, { high: 1, medium: 0, low: 2 });
+  });
+
+  test('instrument threat by holder type is not available until the holder figures are returned', () => {
+    assert.equal(viewRows('threat_by_holder', { ...analytics, threatByHolder: null }), null);
+  });
 });
 
 describe('generateChart draws each view in its own kind, or says it is not available', () => {
@@ -261,11 +299,34 @@ describe('generateChart draws each view in its own kind, or says it is not avail
     assert.deepEqual(sliceColors('bubble', 'severity_evidence', chart.rows), renderer.configures[0].sliceColors);
   });
 
+  test('instrument threat by holder type is a stacked bar in the threat bands, drawn in the stacked kind', async () => {
+    const renderer = recorder(faithfulThreatStack);
+    const { chart } = await generateChart(
+      { interpreter: { interpret: async () => viewSpec('threat_by_holder') }, dashboard: dashboardWith(), renderer },
+      { request: 'distribution of high-threat instruments among entities', chartType: 'donut', timezone: 'UTC', now: NOW },
+    );
+    assert.equal(chart.chartKind, 'stacked_by_severity', 'the picker does not apply to a view');
+    assert.equal(chart.valueLabel, 'Instruments');
+    assert.equal(chart.categoryLabel, 'Holder type');
+    assert.deepEqual(
+      chart.series.map(({ key, label, color }) => ({ key, label, color })),
+      [
+        { key: 'high', label: 'High threat', color: severityChartColor.high },
+        { key: 'medium', label: 'Medium threat', color: severityChartColor.medium },
+        { key: 'low', label: 'Low threat', color: severityChartColor.low },
+      ],
+    );
+    assert.equal(renderer.configures[0].chartKind, 'stacked_by_severity', 'the agent is sent the stacked kind it already draws');
+    assert.equal(renderer.configures[0].series.length, 3, 'three series, as the stack needs');
+    assert.ok(configMatchesChart(faithfulThreatStack(chart), chart));
+  });
+
   test('a view with its figures not returned yet answers not available, and draws nothing', async () => {
     for (const [dimension, missing] of [
       ['incident_type_evidence', { types: analytics.types.map((type) => ({ ...type, evidence: null })) }],
       ['incident_type_severity', {}],
       ['severity_evidence', { severityEvidence: null }],
+      ['threat_by_holder', { threatByHolder: null }],
     ]) {
       const renderer = recorder(dimension === 'incident_type_severity' ? faithfulSeverityStack : faithfulCombo);
       const answer = await generateChart(

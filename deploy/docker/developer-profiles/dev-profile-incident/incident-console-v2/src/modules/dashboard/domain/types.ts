@@ -63,6 +63,17 @@ export interface SeverityEvidenceCell extends OfficialSplit {
   count: number;
 }
 
+/** Who holds an instrument: a canonical entity type, or none when the instrument names no holder in its report. */
+export type HolderType = 'human' | 'animal' | 'unknown' | 'none';
+
+/** The counted reports' instruments of one holder type, by threat band (low 1-2, medium 3, high 4-5), from 20261107120000. */
+export interface ThreatByHolder extends OfficialSplit {
+  holder: HolderType;
+  high: number;
+  medium: number;
+  low: number;
+}
+
 export interface ModelCoverage {
   model: string;
   withReport: number;
@@ -119,5 +130,10 @@ export interface DashboardAnalytics {
   topInstruments: MaybeSplitRankedValue[];
   topAssets: SplitRankedValue[];
   threatLevels: Array<{ level: number; count: number }>;
+  /**
+   * Instruments of the counted reports by holder type (human, animal, unknown, none; always four rows, in that order) and threat
+   * band. null when the RPC does not return it (a definition older than 20261107120000).
+   */
+  threatByHolder: ThreatByHolder[] | null;
   modelCoverage: ModelCoverage[];
 }

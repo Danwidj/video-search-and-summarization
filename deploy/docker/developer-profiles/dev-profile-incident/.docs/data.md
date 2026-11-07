@@ -354,7 +354,7 @@ stored. It never returns `payload`, notes, signed URLs or video content.
 #### `get_incident_dashboard`
 
 Counts each video once through `searchable_revision_id`: its **official revision, else its newest**,
-the same rule as the library and search (migration `20261031090000_dashboard_official_else_newest.sql`). The latest applied definition is `20261106140000_dashboard_versions_and_evidence.sql` (applied to finals on 2026-11-06; it also carries the byte-order ties of `20261101120000`, which are live through it); the pending one is listed below.
+the same rule as the library and search (migration `20261031090000_dashboard_official_else_newest.sql`). The latest applied definition is `20261107090000_dashboard_all_versions.sql` (applied to finals on 2026-11-07; it carries `20261106140000` and the byte-order ties of `20261101120000`); the pending ones, `20261107110000` and then `20261107120000`, are listed below.
 Ranked lists and types sort by count, then by label, type or model name in byte order (`COLLATE "C"`,
 migration `20261101120000`), so ties rank the same on every database.
 It only reads `videos.official_revision_id`, to report the split, and never sets it. Filtered by the
@@ -372,6 +372,8 @@ carries `official` and `notOfficial`. `versions` (migration `20261107090000`) co
 `modelCoverage` follows the period. A `type` of `Unclassified` selects a NULL `incident_type`.
 
 **Pending (not applied to finals; applying is ask-first):** `20261107110000_dashboard_chart_evidence.sql` extends this function, same signature and filters, read-only. Each `types` entry gains `evidence`, the evidence items of the type's counted reports (the chart views divide it by the type's reports for evidence per report). A new top-level `severityEvidence` lists the counted reports with a severity by `(severity, evidenceItems)`, each with `count`, `official` and `notOfficial`, for the severity-against-evidence bubble; a report with no severity is not in it. Until it is applied those two chart views answer "not available yet" and no figure is invented. The SQL harness checks it, and the eval recount matches it.
+
+**Pending (not applied to finals; applying is ask-first, and after `20261107110000`):** `20261107120000_dashboard_threat_by_holder.sql` extends this function again, same signature and filters, read-only. A new top-level `threatByHolder` lists the counted reports' instruments by holder type: always four rows in the order `human`, `animal`, `unknown`, `none`, each with `high` (threat 4-5), `medium` (3), `low` (1-2), and `official` and `notOfficial` (the rated instruments, split by whether the counted revision is official, so they sum to `high + medium + low`). An instrument's holder is the entity of the same report whose `entity_id` it names (its canonical type; a type other than human or animal counts as `unknown`); an instrument naming no entity, or a null `entity_id`, is `none`. An instrument counts once per counted report for each distinct (normalised name, holder type, threat level), and one with no name, no threat level or a level outside 1 to 5 is left out of the bands. Until it is applied the holder chart view answers "not available yet". The SQL harness checks it, and the eval recount matches it.
 
 ---
 

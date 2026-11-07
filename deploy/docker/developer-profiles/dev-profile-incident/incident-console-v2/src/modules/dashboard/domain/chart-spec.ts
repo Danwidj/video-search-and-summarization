@@ -236,9 +236,9 @@ export const CHART_DIMENSIONS = {
     categoryLabel: 'Outcome',
     meaning: 'analysis attempts per outcome: valid, repaired, failed',
   },
-  // The chart views. Each is drawn in its own kind (VIEW_KINDS) and needs figures the dashboard returns per type or per
-  // severity and evidence count (generate-chart); until the database change that returns them is applied, a view
-  // answers "not available yet".
+  // The chart views. Each is drawn in its own kind (VIEW_KINDS) and needs figures the dashboard returns per type, per
+  // severity and evidence count, or per holder type and threat band (generate-chart); until the database change that
+  // returns them is applied, a view answers "not available yet".
   incident_type_evidence: {
     metric: 'evidence_per_report',
     pie: false,
@@ -274,6 +274,18 @@ export const CHART_DIMENSIONS = {
     categoryLabel: 'Severity level',
     meaning:
       'evidence items against severity level, one bubble per level and item count, sized by reports: "do more severe incidents have more evidence", "severity against evidence"',
+  },
+  threat_by_holder: {
+    metric: 'instruments',
+    pie: false,
+    splits: false,
+    filterable: true,
+    viewKind: 'stacked_by_severity',
+    title: 'Instrument threat by holder type',
+    description: `Instruments in the counted reports, by the type of entity holding each one, split into high, medium and low threat. Low is threat level 1-2, medium is 3, high is 4-5. An instrument with no holder is shown as no holder.`,
+    categoryLabel: 'Holder type',
+    meaning:
+      'instruments per holder type (human, animal, unknown, or no holder), one stacked bar each, split into high, medium and low threat: "distribution of high-threat instruments among entities", "which entity type carries the most dangerous instruments"; never the plain count of instruments per threat level, which is the threat_level dimension, and never the report severity filter',
   },
 } as const satisfies Record<string, ChartDimension>;
 
