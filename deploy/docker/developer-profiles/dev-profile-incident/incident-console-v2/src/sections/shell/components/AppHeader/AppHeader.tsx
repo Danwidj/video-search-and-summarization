@@ -42,7 +42,7 @@ export function AppHeader({
       >
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex items-center gap-3 empty:hidden" id={HEADER_START_SLOT} />
-          <span className="min-w-0 truncate text-lg font-semibold tracking-tight text-ink">{subtitle}</span>
+          <span className="min-w-0 truncate text-lg font-semibold tracking-tight text-ink capitalize">{subtitle}</span>
         </div>
         <NavigationMenu aria-label="Primary navigation" className="hidden flex-none sm:flex" viewport={false}>
           <NavigationMenuList className="gap-0.5 rounded-full border border-ink/10 bg-[#dfe6d6] p-1">
