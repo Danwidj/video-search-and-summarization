@@ -23,6 +23,7 @@ import type { LibrarySearchResponse } from '@/lib/library/search';
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { LIBRARY_STATE_KEY } from '@/lib/library/remembered-state';
 import { pageItems } from '@/lib/library/pages';
+import { useSlidingIndicator } from '@/lib/ui/use-sliding-indicator';
 import { getViewerTimeZone } from '@/lib/time';
 import { cn } from 'cn';
 import { Button } from '@/components/ui/button';
@@ -61,6 +62,9 @@ export function Library() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
   const searchSequence = useRef(0);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const indicator = useSlidingIndicator(tabsRef, tab);
+  const tabSwitched = useRef(false);
 
   function apply(next: Partial<IncidentFilters>, keepPage = false) {
     setFilters((current) => ({ ...current, ...next, page: keepPage ? (next.page ?? current.page) : 1 }));
@@ -189,6 +193,8 @@ export function Library() {
   }
 
   function chooseTab(next: Tab) {
+    // Set before the render that shows the new tab, so its content fades in only once the person has switched.
+    tabSwitched.current = true;
     setTab(next);
     // The incident scope is temporary: it lasts only while the person stays in the evidence tab.
     if (next === 'incidents') clearScope();
@@ -227,7 +233,18 @@ export function Library() {
     <div className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
       <Tabs className="gap-0" onValueChange={(val) => chooseTab(val as Tab)} value={tab}>
         <div className="flex justify-center bg-[#dfe4da] pt-1.5">
-          <TabsList className="h-auto gap-3 rounded-none bg-transparent p-0 group-data-horizontal/tabs:h-auto">
+          <TabsList className="relative h-auto gap-3 rounded-none bg-transparent p-0 group-data-horizontal/tabs:h-auto" ref={tabsRef}>
+            {indicator && (
+              <span
+                aria-hidden
+                className={cn(
+                  'sliding-indicator h-[34px] rounded-t-lg bg-canvas',
+                  "before:absolute before:-left-2 before:bottom-0 before:size-2 before:content-[''] before:[background:radial-gradient(circle_at_0_0,transparent_8px,var(--color-canvas)_8.5px)]",
+                  "after:absolute after:-right-2 after:bottom-0 after:size-2 after:content-[''] after:[background:radial-gradient(circle_at_100%_0,transparent_8px,var(--color-canvas)_8.5px)]",
+                )}
+                style={{ transform: `translate(${indicator.left}px, ${indicator.top}px)`, width: indicator.width }}
+              />
+            )}
             {(
               [
                 ['incidents', 'Find incidents'],
@@ -236,11 +253,10 @@ export function Library() {
             ).map(([value, text]) => (
               <TabsTrigger
                 className={cn(
-                  'relative h-[34px] flex-none rounded-t-lg rounded-b-none border-0 px-5 py-0 text-sm font-semibold text-ink/60 shadow-none transition-colors duration-150 hover:bg-white/40 hover:text-ink motion-reduce:transition-none group-data-[variant=default]/tabs-list:data-active:shadow-none',
-                  'data-active:bg-canvas data-active:text-ink data-active:hover:bg-canvas',
-                  "before:absolute before:-left-2 before:bottom-0 before:size-2 before:opacity-0 before:transition-opacity before:duration-150 before:content-[''] before:[background:radial-gradient(circle_at_0_0,transparent_8px,var(--color-canvas)_8.5px)] data-active:before:opacity-100",
-                  "after:absolute after:bg-transparent group-data-horizontal/tabs:after:inset-x-auto group-data-horizontal/tabs:after:-right-2 group-data-horizontal/tabs:after:bottom-0 group-data-horizontal/tabs:after:h-2 after:w-2 after:opacity-0 after:transition-opacity after:duration-150 after:content-[''] after:[background:radial-gradient(circle_at_100%_0,transparent_8px,var(--color-canvas)_8.5px)] data-active:after:opacity-100",
+                  'relative z-10 h-[34px] flex-none rounded-t-lg rounded-b-none border-0 px-5 py-0 text-sm font-semibold text-ink/60 shadow-none transition-colors duration-150 hover:bg-white/40 hover:text-ink motion-reduce:transition-none group-data-[variant=default]/tabs-list:data-active:shadow-none',
+                  'data-active:bg-transparent data-active:text-ink data-active:hover:bg-transparent',
                 )}
+                data-indicator-key={value}
                 key={value}
                 value={value}
               >
@@ -253,7 +269,7 @@ export function Library() {
 
       <div className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto">
         <div className="mx-auto w-full max-w-[1500px] px-6 pb-6 pt-2 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:px-12">
-          <section className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+          <section className={cn('lg:flex lg:min-h-0 lg:flex-1 lg:flex-col', tabSwitched.current && 'content-fade')} key={tab}>
             {tab === 'evidence' ? (
               <EvidenceTab
                 error={searchError}

@@ -203,6 +203,34 @@
   }
 }
 
+/*
+  The highlight behind the active nav pill and Library tab slides to it (box from useSlidingIndicator) over 225 ms; under
+  reduced motion it jumps. The content of a tab, switched by the person, fades in over 175 ms (.content-fade).
+*/
+.sliding-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sliding-indicator {
+    transition:
+      transform 225ms ease-out,
+      width 225ms ease-out,
+      height 225ms ease-out;
+  }
+  .content-fade {
+    animation: content-fade 175ms ease-out;
+  }
+  @keyframes content-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
 @media print {
   @page {
     margin: 12mm;
