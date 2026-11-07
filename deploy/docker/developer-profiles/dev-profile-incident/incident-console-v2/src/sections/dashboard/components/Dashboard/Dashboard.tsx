@@ -396,6 +396,24 @@ function RevisedChip({ count }: { count: number }) {
   );
 }
 
+/** How long every chart takes to draw, on load and on a filter change. */
+const CHART_ANIMATION_MS = 1500;
+
+/** Recharts' own start-up animation, eased out, and off when the viewer asks for reduced motion. */
+function useChartMotion() {
+  const [reduce, setReduce] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => setReduce(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+  return { animationDuration: CHART_ANIMATION_MS, animationEasing: 'ease-out' as const, isAnimationActive: !reduce };
+}
+
 const MAX_TICK_LENGTH = 18;
 
 function RowTick({ x = 0, y = 0, row, href: url }: { x?: number; y?: number; row: BarRow; href?: string }) {
@@ -429,6 +447,7 @@ function EvidenceBars({ rows, emptyText }: { rows: SplitRow[] | null; emptyText:
  */
 function SplitBars({ rows, emptyText, hrefFor }: { rows: BarRow[]; emptyText: string; hrefFor?: (row: BarRow) => string }) {
   const router = useRouter();
+  const motion = useChartMotion();
   if (!rows.length) return <NoData text={emptyText} />;
   const byLabel = new Map(rows.map((row) => [row.label, row]));
   const activate = (index: number) => {
@@ -462,14 +481,14 @@ function SplitBars({ rows, emptyText, hrefFor }: { rows: BarRow[]; emptyText: st
               dataKey="official"
               fill="var(--color-official)"
               onClick={(_entry, index) => activate(index)}
-              isAnimationActive={false}
+              {...motion}
               stackId="split"
             />
             <Bar
               className={hrefFor ? 'cursor-pointer' : undefined}
               dataKey="notOfficial"
               fill="var(--color-notOfficial)"
-              isAnimationActive={false}
+              {...motion}
               onClick={(_entry, index) => activate(index)}
               radius={[0, 4, 4, 0]}
               stackId="split"
@@ -480,7 +499,7 @@ function SplitBars({ rows, emptyText, hrefFor }: { rows: BarRow[]; emptyText: st
             className={hrefFor ? 'cursor-pointer' : undefined}
             dataKey="total"
             fill="var(--color-total)"
-            isAnimationActive={false}
+            {...motion}
             onClick={(_entry, index) => activate(index)}
             radius={[0, 4, 4, 0]}
             stackId="split"
@@ -512,6 +531,7 @@ function SeverityDonut({
   onSelect: (row: SplitRow) => void;
   unrated: number;
 }) {
+  const motion = useChartMotion();
   const rated = rows.reduce((sum, row) => sum + row.total, 0);
   if (!rated) return <NoData text={unrated ? 'These reports have no severity.' : emptyText} />;
   const summary = rows.map((row) => `${row.label} ${row.total}`).join(', ');
@@ -526,7 +546,7 @@ function SeverityDonut({
               data={rows}
               dataKey="total"
               innerRadius="62%"
-              isAnimationActive={false}
+              {...motion}
               nameKey="key"
               outerRadius="96%"
               stroke="var(--card)"
