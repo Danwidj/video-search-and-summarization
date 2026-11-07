@@ -59,6 +59,27 @@ test('no source file outside styles.css spells a colour-meaning hex', () => {
   );
 });
 
+test('no source file spells a colour-meaning as rgb() or a Tailwind palette class', () => {
+  const rgbs = Object.values(MEANINGS).map((hex) =>
+    hex
+      .match(/../g)
+      .map((x) => Number.parseInt(x, 16))
+      .join('[ ,]+'),
+  );
+  // amber is the repair and no-official notice colour (no token); every other palette family is a meaning or a mistake.
+  const palette =
+    /\b(?:bg|text|border|ring|fill|stroke|from|to|via|shadow|outline|decoration|accent)-(?:red|orange|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/;
+  const offenders = [];
+  for (const path of files(SRC)) {
+    const name = relative(SRC, path);
+    if (ALLOWED.has(name) || !/\.(tsx?|css)$/.test(name)) continue;
+    const text = readFileSync(path, 'utf8');
+    if (palette.test(text)) offenders.push(`${name}: Tailwind palette class`);
+    for (const rgb of rgbs) if (new RegExp(`rgba?\\(\\s*${rgb}`).test(text)) offenders.push(`${name}: rgb(${rgb})`);
+  }
+  assert.deepEqual(offenders, [], 'use the colour token instead');
+});
+
 test('the canvas mirrors equal the tokens', () => {
   assert.deepEqual(severityChartColor, { high: MEANINGS['sev-high'], medium: MEANINGS['sev-medium'], low: MEANINGS['sev-low'] });
   assert.equal(CHART_COLORS.official, MEANINGS['version-official']);
