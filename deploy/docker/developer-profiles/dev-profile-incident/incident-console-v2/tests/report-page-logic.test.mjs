@@ -184,3 +184,14 @@ test('the report workspace fits the viewport and keeps its action bar outside th
   assert.match(page, /min-h-0 flex-1 overflow-y-auto" data-testid="report-details-pane"/);
   assert.match(page, /data-testid="report-details-pane"[\s\S]*?Edit from v\{report\.revision\.revisionNo\}/);
 });
+
+test('the report controls render into the shared header slots, and the nav is a centred three-column grid', async () => {
+  const page = await readFile(new URL('../src/sections/reports/components/ReportPage/ReportPage.tsx', import.meta.url), 'utf8');
+  const header = await readFile(new URL('../src/sections/shell/components/AppHeader/AppHeader.tsx', import.meta.url), 'utf8');
+  assert.match(page, /createPortal\([\s\S]*?slots\.start/);
+  assert.match(page, /createPortal\([\s\S]*?<Tabs onValueChange[\s\S]*?slots\.end/);
+  assert.doesNotMatch(page, /report-sticky/, 'no toolbar row of its own');
+  assert.match(header, /sm:grid-cols-\[1fr_auto_1fr\]/);
+  assert.match(header, /id=\{HEADER_START_SLOT\}/);
+  assert.match(header, /id=\{HEADER_END_SLOT\}/);
+});

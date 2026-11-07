@@ -18,6 +18,10 @@ const NAV_ITEMS = [
   { href: '/dashboard', key: 'dashboard', label: 'Dashboard' },
 ] as const;
 
+/** Where a page may portal its own controls into the bar: left of the brand, and the far right. */
+export const HEADER_START_SLOT = 'app-header-start';
+export const HEADER_END_SLOT = 'app-header-end';
+
 export function AppHeader({
   active,
   subtitle = 'Video intelligence',
@@ -27,18 +31,21 @@ export function AppHeader({
 }) {
   return (
     <header className="print-hidden relative z-40 shrink-0 border-b border-ink/10 bg-white">
-      <div className="mx-auto flex min-h-14 w-full max-w-[1500px] items-center justify-between gap-3 px-4 py-2 sm:gap-4 sm:px-6 lg:px-12">
-        <Link
-          className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          href="/"
-          aria-label="Incident Studio home"
-        >
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">IS</span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold tracking-tight">Incident Studio</span>
-            <span className="block truncate text-[11px] uppercase tracking-[0.2em] text-ink/50">{subtitle}</span>
-          </span>
-        </Link>
+      <div className="mx-auto flex min-h-14 w-full max-w-[1500px] items-center justify-between gap-3 px-4 py-2 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:gap-4 sm:px-6 lg:px-12">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex items-center gap-3 empty:hidden" id={HEADER_START_SLOT} />
+          <Link
+            className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            href="/"
+            aria-label="Incident Studio home"
+          >
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">IS</span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold tracking-tight">Incident Studio</span>
+              <span className="block truncate text-[11px] uppercase tracking-[0.2em] text-ink/50">{subtitle}</span>
+            </span>
+          </Link>
+        </div>
         <NavigationMenu aria-label="Primary navigation" className="hidden flex-none sm:flex" viewport={false}>
           <NavigationMenuList className="gap-0.5 rounded-full border border-ink/10 bg-[#dfe6d6] p-1">
             {NAV_ITEMS.map((item) => (
@@ -65,31 +72,35 @@ export function AppHeader({
             ))}
           </NavigationMenuList>
         </NavigationMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button aria-label="Open navigation menu" className="shrink-0 sm:hidden" size="icon" variant="outline">
-              <MenuIcon aria-hidden="true" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {NAV_ITEMS.map((item) => (
-              <DropdownMenuItem asChild key={item.key}>
-                <Link
-                  aria-current={active === item.key ? 'page' : undefined}
-                  className={cn(
-                    'flex items-center justify-between gap-3',
-                    active === item.key && 'bg-primary font-bold text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground',
-                  )}
-                  href={item.href}
-                  onClick={item.key === 'library' ? () => forgetLibraryState() : undefined}
-                >
-                  {item.label}
-                  {active === item.key && <CheckIcon aria-hidden="true" className="size-4" />}
-                </Link>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center gap-2 empty:hidden" id={HEADER_END_SLOT} />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button aria-label="Open navigation menu" className="shrink-0 sm:hidden" size="icon" variant="outline">
+                <MenuIcon aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {NAV_ITEMS.map((item) => (
+                <DropdownMenuItem asChild key={item.key}>
+                  <Link
+                    aria-current={active === item.key ? 'page' : undefined}
+                    className={cn(
+                      'flex items-center justify-between gap-3',
+                      active === item.key &&
+                        'bg-primary font-bold text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground',
+                    )}
+                    href={item.href}
+                    onClick={item.key === 'library' ? () => forgetLibraryState() : undefined}
+                  >
+                    {item.label}
+                    {active === item.key && <CheckIcon aria-hidden="true" className="size-4" />}
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </header>
   );

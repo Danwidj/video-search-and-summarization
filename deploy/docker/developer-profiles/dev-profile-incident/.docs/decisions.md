@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: The report controls live in the shared app header, which centres the nav
+- **Decision:** the app header is a `1fr auto 1fr` grid, so the pill nav is centred on every page. The report page portals its controls into two header slots (left of the brand, far right) and has no toolbar row. State and handlers stay in `ReportPage`; the View / Edit `Tabs` markup is unchanged from main.
+- **Why:** the captain wanted one navbar row with the nav truly centred; a portal keeps behaviour with the page that owns it.
+- **Alternatives rejected:** lifting report state into a layout context (more moving parts); a second header component for reports (two navs to keep in step).
+- **Links:** [console-reference](console-reference.md), `AppHeader.tsx`, `ReportPage.tsx`.
+
 ### 2026-11-07: Dashboard charts draw slowly once, then quickly on a filter change
 - **Decision:** 1500 ms (`CHART_ANIMATION_MS`) the first time a chart has data, 400 ms (`CHART_FILTER_ANIMATION_MS`) when a filter changes its data; reduced motion stays off.
 - **Why:** the slow draw is a pleasant first impression but made every filter click feel laggy.
