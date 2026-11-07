@@ -148,8 +148,11 @@ How a question is answered (template mode: no model):
   - what could cause harm, or weapons: the instruments, most threatening first, each with its threat level of 5;
   - a question asking both ("What was taken, or what could cause harm?"): both parts, in that order;
   - when, or how long: the incident window, or a named item's time;
-  - severity and type.
-  A question the report cannot answer gets "This report doesn't mention ..." and no citations.
+  - severity and type;
+  - where: `incident.location` as written;
+  - a time in the question ("what happened at 0:30?", "after 0:30", "between 0:10 and 0:20"): the events at it, else the nearest one, labelled as nearest;
+  - a role, name, injury or cause: the report's own wording, else that it does not establish it. Nobody is called the attacker or the victim by the code.
+  A question the report cannot answer gets "This report doesn't mention ..." and no citations. A greeting or a plainly unrelated question is redirected to the incident. A follow-up uses the conversation: "what happened next?" follows the last event told, and a pronoun that could mean more than one person gets a question back ([how](mvp2/chat-routing.md#how-code-reads-a-question)).
 - **Prose and citations:** items are named by their labels or descriptions. The ids the P1 timeline uses as references are resolved first, so the prose holds no item or incident id unless the question asks for ids. The citations are the items the answer relies on, each with its evidence entry's crop and the second that crop was found at (`box_seconds`, else `timestamp_seconds`). A chronology cites only the items its events refer to, by id or by whole name; text that could mean several items cites none, and an item with no stored second gets no citation ([decision](decisions.md#2026-11-06-a-template-chat-answer-cites-the-items-its-report-text-names-matched-by-id-or-by-name)).
 - **A library question** (no version): also goes to the search client, so it gets "This chat mode doesn't answer questions across the whole library yet". The canned client's demo incidents are no longer served.
 - **An injected search client** (tests, or a later real one): its hits read as prose grouped by incident (type and title, item names and times), with the ids only in the citations.
@@ -167,7 +170,7 @@ Response `200`: `{"session_id", "message": {"role": "assistant", "content", "cit
 - **Citations:** checked against the version's item ids. An unknown id is dropped and listed in `grounding.dropped_citations`.
 - **Insufficient evidence:** the model sets `insufficient_evidence` when the version cannot answer or contradicts the question's premise. Citations are then empty.
 - **Response:** follows [`chat-contract-v2`](../contracts/chat-contract-v2/README.md): the v1 answer plus `message.insufficient_evidence` and `grounding` `{mode, model, version_id, official, draft, dropped_citations, ids_resolved, prompt_sha256, usage}`.
-- **Errors:** a model failure or a malformed answer is a `502`.
+- **Errors:** a model failure or a malformed answer is a `502` with a plain `detail`. Routed mode instead answers `200` ([failures](mvp2/chat-routing.md#when-something-fails)). No `detail` holds an exception's text.
 - **Library scope** (grounded mode, no incident and no version):
   - **Plan:** the model turns the question into a plan with `chat/library-plan`: incident type, severity band, instrument, asset, `group_by` (`incident_type` or `severity`), whether a count is wanted, and a search phrase holding only what the filters leave. A type, severity or breakdown the library does not use is not applied and is listed in `plan.dropped`.
   - **Filtering:** code reads every incident's searchable version (official, else newest; `IncidentDBLibraryIndex`, three requests whatever the library's size, cached 60 s and shared by concurrent turns) and filters it exactly. An instrument or asset filter matches whole words, or a compound's head ("gun" in "handgun"), in the name, label or description of any instrument or asset.

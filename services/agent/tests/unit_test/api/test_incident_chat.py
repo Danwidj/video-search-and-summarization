@@ -15,14 +15,17 @@ from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 import pytest
 
-from vss_agents.api.incident_chat import NEEDS_NAME
+from vss_agents.api.incident_chat import COULD_NOT_READ
 from vss_agents.api.incident_chat import NOT_SEARCHED
+from vss_agents.api.incident_chat import SEARCH_UNAVAILABLE
+from vss_agents.api.incident_chat import VIDEO_UNAVAILABLE
 from vss_agents.api.incident_chat import AssistantMessage
 from vss_agents.api.incident_chat import ChatRequest
 from vss_agents.api.incident_chat import ChatResponse
 from vss_agents.api.incident_chat import InMemorySearchClient
 from vss_agents.api.incident_chat import RevisionStoreUnavailableError
 from vss_agents.api.incident_chat import register_incident_chat_routes
+from vss_agents.utils import report_answers
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[5] / "deploy/docker/developer-profiles/dev-profile-incident/contracts"
 CHAT_RESPONSE_SCHEMA = json.loads(
@@ -225,7 +228,8 @@ def test_chat_search_client_error_returns_502():
         json={"messages": [{"role": "user", "content": "Any knives?"}]},
     )
     assert resp.status_code == 502
-    assert "Evidence search error" in resp.json()["detail"]
+    assert resp.json()["detail"] == SEARCH_UNAVAILABLE
+    assert "Connection refused" not in resp.text
 
 
 def test_chat_missing_user_message_returns_400():
@@ -675,7 +679,7 @@ def test_a_people_question_describes_the_people():
 @pytest.mark.parametrize(
     ("question", "expected"),
     [
-        ("What is the weather like?", 'This report doesn\'t mention "weather".'),
+        ("What was the weather like during the incident?", 'This report doesn\'t mention "weather".'),
         ("Is there a knife?", 'This report doesn\'t mention "knife".'),
     ],
 )
@@ -767,7 +771,49 @@ def test_a_follow_up_that_needs_the_conversation_says_so_in_template_mode():
     resp = _make_client(revision_store=store).post(
         "/api/v1/incidents/chat", json={"messages": messages, "version_id": 7}
     )
-    assert resp.json()["message"] == {"role": "assistant", "content": NEEDS_NAME, "citations": []}
+    message = resp.json()["message"]
+    assert message["content"].startswith("After which moment?") and message["citations"] == []
+
+
+def _ask_turns(store: FakeRevisionStore, *turns: str) -> dict[str, Any]:
+    roles = ("user", "assistant")
+    messages = [{"role": roles[n % 2], "content": text} for n, text in enumerate(turns)]
+    resp = _make_client(revision_store=store).post(
+        "/api/v1/incidents/chat", json={"messages": messages, "version_id": 7}
+    )
+    assert resp.status_code == 200
+    return resp.json()["message"]
+
+
+def test_template_answers_keep_the_v1_keys() -> None:
+    message = _ask_turns(FakeRevisionStore(revisions={7: _robbery_revision()}), "Where did this happen?")
+    assert set(message) == {"role", "content", "citations"}
+
+
+def test_an_ambiguous_pronoun_gets_a_question_in_template_mode() -> None:
+    message = _ask_turns(FakeRevisionStore(revisions={7: _robbery_revision()}), "What happened to him?")
+    assert message["content"].startswith("Which person do you mean:") and message["citations"] == []
+
+
+def test_what_happened_next_uses_the_conversation_in_template_mode() -> None:
+    store = FakeRevisionStore(revisions={7: _robbery_revision()})
+    first = _ask_turns(store, "What happened?")["content"]
+    message = _ask_turns(store, "What happened?", first, "What happened next?")
+    assert message["content"] == "The report records nothing after that."
+
+
+def test_a_report_detail_nobody_can_answer_says_the_video_cannot_be_checked() -> None:
+    message = _ask_turns(FakeRevisionStore(revisions={7: _robbery_revision()}), "What colour was the zebra?")
+    assert message["content"].endswith(VIDEO_UNAVAILABLE)
+
+
+def test_an_unexpected_failure_while_composing_is_a_plain_reply(monkeypatch: pytest.MonkeyPatch) -> None:
+    def explode(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("secret internal state")
+
+    monkeypatch.setattr(report_answers, "compose", explode)
+    message = _ask_turns(FakeRevisionStore(revisions={7: _robbery_revision()}), "Who is involved?")
+    assert message == {"role": "assistant", "content": COULD_NOT_READ, "citations": []}
 
 
 def _animal_revision(revision_id: int, *, vase_image: str | None = "evidence/rev/A1.jpg") -> dict[str, Any]:

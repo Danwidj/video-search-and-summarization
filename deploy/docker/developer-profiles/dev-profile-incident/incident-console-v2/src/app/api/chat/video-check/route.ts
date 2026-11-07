@@ -2,8 +2,8 @@
 
 import { NextResponse } from 'next/server';
 import { sendVideoCheck } from '@/modules/chat/infrastructure/agent/agent-chat';
+import { chatErrorResponse } from '@/modules/chat/infrastructure/agent/chat-errors';
 import { getServiceConfiguration } from '@/lib/env';
-import { errorResponse, UpstreamError } from '@/lib/http';
 
 export const maxDuration = 120;
 
@@ -23,8 +23,6 @@ export async function POST(request: Request) {
     );
     return NextResponse.json(result);
   } catch (error) {
-    if (error instanceof UpstreamError)
-      return NextResponse.json({ error: error.message }, { status: error.status >= 400 && error.status < 500 ? error.status : 502 });
-    return errorResponse(error, 'Video check failed');
+    return chatErrorResponse(error, 'Video check', { keepAgentReason: true });
   }
 }

@@ -4,12 +4,12 @@ How `INCIDENT_CHAT_MODE=routed` answers a question about one report version, wha
 
 ## Routes
 
-The selected report version is the source of truth. `utils/chat_routing.py` decides from the question alone, with no model call.
+The selected report version is the source of truth. `utils/chat_routing.py` decides with no model call, from the question and what the report's composed answer turns out to be. The conversation does not change the route: a follow-up that reaches the model carries its history.
 
 | Route | Used for | Calls | Source label |
 |---|---|---|---|
-| 1. Deterministic | A question asking only for a kind of report field: the timeline, who, objects, taken, weapons, severity, type, when | None | Answered from the stored report |
-| 2. Report-grounded model | Anything that names something, reasons, leans on the conversation or points at one moment | One text call on the report | AI reading of the stored report |
+| 1. Deterministic | A question asking only for a kind of report field: the timeline, who, where, a time in the video, objects, taken, weapons, severity, type, when. Also greetings and plainly unrelated questions | None | Answered from the stored report |
+| 2. Report-grounded model | Anything that names something, reasons, leans on the conversation or points at a described moment. Also roles (attacker, victim, who started it), names, injuries, causes, and people found only in the report's text | One text call on the report | AI reading of the stored report |
 | 3. Video check | Only on the reviewer's click, after an offer | One blind vision call, one text comparison | Fresh video check |
 | 4. Insufficient | The report cannot answer and no check can help (a motive, or checks are off) | As route 1 or 2 | As route 1 or 2, with `grounding.route: insufficient` |
 
@@ -18,7 +18,36 @@ An offer of a video check is made when checks are on and:
 - the model says the missing detail is something visible;
 - the question is what followed the incident, the timeline has nothing after it, and footage remains.
 
-A motive is never offered a check: footage cannot show one.
+A motive is never offered a check: footage cannot show one. With checks off, an answer missing a visible detail says a check of the video isn't available.
+
+## How code reads a question
+
+`utils/chat_questions.py` reads the wording first:
+- "Take place" reads as "happen", so it can never be a taking. This is what turned "where the incident take place" into a theft answer.
+- A typo is corrected only towards a fixed list of intent words. Correcting towards everyday words changed 14 frozen questions wrongly ("battle" to "bottle").
+- A time in the question ("0:30", "at 30 seconds", "after 0:30", "between 0:10 and 0:20") is a moment. A bare number is not ("longer than 30 seconds").
+
+`utils/report_answers.py` then answers without guessing:
+- **Who:** an entity of type `unknown` is a person when its label or description says so. An empty people list is not a statement that nobody was there: the events that mention people are listed, uncounted, because "a man ... the man" cannot be counted. Animals are shown instead of "no people".
+- **Where:** `incident.location` as written.
+- **A role, name, injury or cause:** the report's own wording, else a plain statement that it does not establish it. Nobody is called the attacker or the victim by the code.
+- **Unrelated questions:** a greeting or a small list of topics (weather, jokes, news) the report does not mention gets a redirect. Anything else the report cannot answer says so.
+- **Conflicts:** code flags only a reversed incident window. A check of location against description wording flagged 40 of the 256 stored revisions, and the flags read were all false ("shop" against "store"), so conflicts of meaning are left to the routed prompt.
+
+`utils/chat_followups.py` serves template mode and the failed-model fallback. "What happened next?" follows the last event an earlier answer told. A pronoun resolves only when one person fits, by the report, the last turn that named someone, or the label's he or she; otherwise a short question names the candidates.
+
+## When something fails
+
+| Failure | What the reviewer sees |
+|---|---|
+| Chat model timeout, 429, invalid or empty reply (routed) | `200`. What the report settles, with a note that the AI reader is unavailable, or a request to try again |
+| Same, for a motive, a dispute, a video request, or an answer that found nothing | `200`. A request to try again: a composed "doesn't mention hit" for "why did he hit him?" could be false |
+| Chat model failure (grounded, library) | `502` with a plain `detail` |
+| Report store failure | `503` or `502` with a plain `detail` |
+| Unexpected error while composing (template) | `200`. A request to try again |
+| Malformed report field | The field counts as empty, and the rest of the report answers |
+
+The real error goes to the agent or console log. The console shows the agent's `detail` for a 4xx, and a plain message for anything else, except that a video check's own reason is kept.
 
 ## What keeps each source apart
 
@@ -42,6 +71,7 @@ Method: template answers composed by this code for the frozen C3 questions and c
 | Routed to the model | 0/20 | 20/20 | 0/17 | 15/17 |
 
 Reading it:
+- **Correction (2026-11-07):** the "scorer artefact" below is only part of the window gap. 3 of the 10 window rows on each corpus were "Between which timestamps does the incident take place?", which template answered as a theft. That is fixed, and the question now gets the window.
 - **Grounded beats template on all questions, because template cannot refuse.** Every unanswerable and false-premise question scored 0 on template, and the router sends all of them to the model.
 - **On the questions routed to code, the two are level.** Oracle's one-point gap includes a scorer artefact: code writes `1:34` where the scorer wants 94 seconds (window 5/10 against 10/10). Without the window class, code leads 46/49 to 42/49.
 - **Routing keeps the model's accuracy for about a quarter of its tokens:** 26% to 30% of the tokens went on questions the router still sends to the model. Projected exact: oracle 71/79, system 28/71.
@@ -124,12 +154,24 @@ The figures above predate the attribution fix, which only touches times and card
 - Whether a human reviewer agrees with these readings.
 - Route 3 has never run on a real VLM.
 
+## Question-understanding smoke test (2026-11-07, paid, owner-approved)
+
+The prompt changed on 7 Nov, so **the 6 Nov pilot's figures describe the earlier prompt**. It now reads the whole report, keeps role labels to the report's own text, allows partial answers, redirects unrelated questions, asks when a reference is unclear, and flags conflicts.
+
+Real calls to Nemotron 3 Ultra through the real router, from an isolated local process, on four stored reports (assault, explosion, animal, attempted break-in). 25 questions, 46,541 tokens, 0 failed calls, one reader (Claude, unvalidated), criteria not fixed in advance. This is a smoke test, not an evaluation.
+
+- **Pass 23, partial 2, fail 0.** No answer named an attacker or a victim the report did not.
+- **Partial:** "Is this the man from yesterday's incident?" was refused as unrelated, when "the report doesn't say" is the better reply. One answer wrote "(9-34 s)", which is not clickable.
+- **Still seen:** the model often flags a useful partial answer as insufficient, so its text is right and `route` reads `insufficient`.
+
+Frozen questions replayed through the code with no model call: **no route changed** on 188 rows. 13 composed answers changed kind: the 6 window rows above, 6 name questions now say no name is given, and one "what did the person do" now tells events instead of listing objects.
+
 ## Before switching on
 
 **Routed mode is not ready for shared users yet.** The deterministic route is. The model route has no answer-quality blocker, but:
 
 1. **Re-run the frozen questions on the final prompt** (about 72,000 tokens), and run the judged checks or a human review.
-2. **Plan for the shared key:** its limit of 4 parallel requests was hit during this work. A rate limit shows as an error, with no fallback answer.
+2. **Plan for the shared key:** its limit of 4 parallel requests was hit during this work. A rate limit now gets the report's own answer or a request to try again.
 3. **Video pilot (paid, needs approval):** see below.
 4. **Turn on:** set `INCIDENT_CHAT_MODE=routed` in `generated.env.remote` (ask first) and restart `vss-agent`. It needs a chat endpoint (`INCIDENT_CHAT_BASE_URL`, else `LLM_BASE_URL`). Video checks need `INCIDENT_VIDEO_CHECK_ENABLED=1` too.
 5. **Roll back:** unset the settings and restart. Template mode needs no console change.
