@@ -80,3 +80,51 @@ test('a key the agent invented is skipped with a reason and changes nothing', ()
   assert.equal(result.skipped.length, 1);
   assert.deepEqual(result.changedKeys, []);
 });
+
+test('a delete-only request removes the item, reports it as a removed change, and names it as a delete', () => {
+  const draft = base();
+  const entity = draft.entities[0];
+  const result = applyChatEdit(draft, draft, [propose('delete_item', { item_key: entity.key })]);
+  assert.equal(
+    result.draft.entities.some((item) => item.key === entity.key),
+    false,
+  );
+  assert.equal(result.skipped.length, 0);
+  const held = draft.instruments.filter((item) => item.holderKey === entity.key).map((item) => item.key);
+  assert.deepEqual(result.removedKeys, [entity.key, ...held]);
+  assert.equal(result.applied[0].tool, 'delete_item');
+  assert.match(result.applied[0].note, new RegExp(`^deleted "${entity.label || entity.key}"`));
+});
+
+test('a delete plus a rename of another item applies both as one result', () => {
+  const draft = base();
+  const [removed, renamed] = draft.entities;
+  const result = applyChatEdit(draft, draft, [
+    propose('delete_item', { item_key: removed.key }),
+    propose('set_timeline_item', { item_key: renamed.key, label: 'Renamed' }),
+  ]);
+  assert.equal(
+    result.draft.entities.some((item) => item.key === removed.key),
+    false,
+  );
+  assert.equal(result.draft.entities.find((item) => item.key === renamed.key).label, 'Renamed');
+  const held = draft.instruments.filter((item) => item.holderKey === removed.key).map((item) => item.key);
+  assert.deepEqual(result.removedKeys, [removed.key, ...held]);
+  assert.deepEqual(result.changedKeys, [renamed.key]);
+  assert.deepEqual(
+    result.applied.map((action) => action.tool),
+    ['delete_item', 'set_timeline_item'],
+  );
+});
+
+test('a no-op action is skipped with its reason, not reported as applied', () => {
+  const draft = base();
+  const result = applyChatEdit(draft, draft, [propose('set_incident_fields', { title: draft.incident.title })]);
+  assert.equal(result.applied.length, 0);
+  assert.deepEqual(
+    result.skipped.map((action) => action.reason),
+    ['no change: the draft already had this'],
+  );
+  assert.deepEqual(result.changedKeys, []);
+  assert.deepEqual(result.removedKeys, []);
+});
