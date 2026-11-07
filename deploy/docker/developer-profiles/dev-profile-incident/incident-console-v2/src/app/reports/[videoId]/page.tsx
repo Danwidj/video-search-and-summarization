@@ -2,6 +2,7 @@
 
 import { AppHeader } from '@/sections/shell/components/AppHeader';
 import { ReportPage as ReportView } from '@/sections/reports/components/ReportPage';
+import { isEvidenceProposalsEnabled } from '@/lib/env';
 import { parseStartSeconds } from '@/lib/library/search';
 
 export default async function ReportPage({
@@ -23,7 +24,12 @@ export default async function ReportPage({
         <AppHeader fullWidth subtitle="Report workspace" />
       </div>
       <div className="min-h-0 flex-1">
-        <ReportView revisionId={revisionId} startSeconds={startSeconds} videoId={videoId} />
+        <ReportView
+          evidenceProposals={isEvidenceProposalsEnabled()}
+          revisionId={revisionId}
+          startSeconds={startSeconds}
+          videoId={videoId}
+        />
       </div>
     </main>
   );

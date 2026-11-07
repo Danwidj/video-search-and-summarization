@@ -8,6 +8,18 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Alternatives rejected:** leaving discrepancies in place or deferring them.
 - **Links:** [architecture.md](architecture.md), [status.md](status.md), [skills/incident-operate-vm/SKILL.md](../skills/incident-operate-vm/SKILL.md), [figures/figure-4-analysis.drawio.svg](figures/figure-4-analysis.drawio.svg).
 
+### 2026-11-07: An evidence change the chat proposes is held beside the item until the reviewer confirms it
+- **Decision:** a re-track or set-image change for an existing item is stored as `proposal` on the draft item, not as `reviewer` or `imagePick`. Confirm runs `retrackDraftItem` or `setImagePick`; Adjust reuses the Edit track or Set image dialog and its Done confirms; `draftProblems` blocks Save while any proposal is open. Behind `INCIDENT_EVIDENCE_PROPOSALS_ENABLED`, read by the report page on each request.
+- **Why:** the detector cannot signal doubt (a car was boxed as "person near billboard"), so a box the chat chose must be seen by the reviewer; a rule in `draftProblems` makes "cannot be saved unconfirmed" a code fact. Confirm reusing the hand-edit functions means Save cuts crops exactly as before.
+- **Alternatives rejected:** applying the change straight into `reviewer` (an unseen box could be saved); a confirm dialog only (Save would not be blocked); a flag in the agent (the agent only proposes, the console applies).
+- **Links:** [console-reference](console-reference.md#report-versions-view-edit-and-history), `evidence-proposals.ts`.
+
+### 2026-11-07: Fixed edit and clip request test set and offline scorer under services/agent/tests
+- **Decision:** Plan B Phase 1 Item 1D provides the canonical 20-case test set (`cases.json`) and an offline scorer (`scorer.py`, `cases.py`) under `services/agent/tests/edit_test_set/`, unit-tested by `services/agent/tests/unit_test/test_edit_test_set.py`.
+- **Why:** enables offline verification of tool selection, arguments, and refusal behavior for both investigator (clip QA) and editor (report edits) agents without calling hosted models or spending model tokens.
+- **Alternatives rejected:** placing under `eval/` (forbidden by Plan B worker rules); using live LLM judges (slow, expensive, non-deterministic; rule-based matching with numeric tolerances and regexes gives immediate, repeatable evaluation).
+- **Links:** `services/agent/tests/edit_test_set/`, `services/agent/tests/unit_test/test_edit_test_set.py`.
+
 ### 2026-11-07: The investigator is the toolkit's `tool_calling_agent`, run through `SessionManager`, with limits added around it
 - **Decision:** `investigator` is a `tool_calling_agent` under `functions:` in the agent config, with its tools in `tool_names`. The route runs it through `FastApiFrontEndPluginWorker._create_session_manager` and wraps the run in `utils/agent_loop.py`: a step log written by the tools, a 5-step budget, a 90 s wall clock, and detection of the toolkit's give-up string (`cap_reached`). The model-call timeout (30 s) and retries (2) sit on the `investigator_llm` entry. The video id is bound by the route in a per-request context, not filled in by the model. A tool error that is not a `ValueError` stops the run. The route is behind `INCIDENT_INVESTIGATE_ENABLED`, checked per request.
 - **Why:** `SessionManager` is the only path that writes Phoenix tool spans (measured: spans appear in the project). The agent returns one string and no steps, and at its iteration cap it returns a normal-looking sentence and runs one tool more, so the route has to log steps itself and detect the cap. The toolkit defaults (10 retries, no timeout) would let one slow model call run past the wall clock.
