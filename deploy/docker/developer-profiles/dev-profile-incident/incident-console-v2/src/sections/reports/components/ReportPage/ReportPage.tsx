@@ -361,6 +361,14 @@ export function ReportPage({
   const officialLabel = officialRevision ? `v${officialRevision.revisionNo}` : 'none';
   // Only in Edit mode: a draft kept while the reviewer looks back at View does not change what View's timeline shows.
   const draftStructured = mode === 'edit' && draft ? draftToStructured(draft, videoId, overlay.frames) : null;
+  // In View mode, reflect draft changes to fields and title if viewing the revision being edited before Save.
+  const viewReport =
+    draft && editBase && report.revisionId === editBase.revisionId
+      ? {
+          ...report,
+          structured: draftToStructured(draft, videoId, overlay.frames),
+        }
+      : report;
 
   // A request in flight may still change the draft, so Save waits for it.
   const chatBusy = Object.values(chatThreads).some((thread) => thread.busy);
@@ -644,7 +652,7 @@ export function ReportPage({
                     onSeek={seek}
                     onSelectTrack={selectTrack}
                     playerDuration={playerDuration}
-                    report={report}
+                    report={viewReport}
                     selectedTrackId={selectedTrackId}
                   />
                 ) : draft && editBase ? (

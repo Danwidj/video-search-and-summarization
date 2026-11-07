@@ -265,7 +265,7 @@ export function ReportEditPane({
           )}
           <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1fr)] border-b border-border/70 text-xs" data-testid="compare-header">
             <span aria-hidden />
-            <span className="px-3 py-2.5 font-semibold text-foreground">
+            <span className="border-l border-border px-3 py-2.5 font-semibold text-foreground">
               v{aRevisionNo} <span className="font-normal text-muted-foreground">saved · read-only</span>
             </span>
             <span className="border-l border-border px-3 py-2.5 font-semibold text-foreground">
@@ -437,7 +437,7 @@ export function ReportEditPane({
         ) : (
           <div className="px-4 pt-3 pb-1">
             <EvidenceCarousel controlsTarget={null} label="Saved and draft evidence items" lanes>
-              <div className="sticky left-0 z-10 row-span-2 grid grid-rows-subgrid gap-y-2 bg-background pr-3">
+              <div className="row-span-2 grid grid-rows-subgrid gap-y-2 bg-background pr-3">
                 <div className="flex min-h-20 items-start pt-3 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
                   v{aRevisionNo}
                 </div>
@@ -563,7 +563,7 @@ function PairField({
   return (
     <div className={`grid border-b border-border/70 last:border-b-0 ${FIELD_COLUMNS}`} data-changed={changed || undefined}>
       <dt className={`px-3 pt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground ${saved}`}>{label}</dt>
-      <dd className={`m-0 min-w-0 px-3 py-2.5 text-sm leading-6 text-foreground ${saved}`}>{left}</dd>
+      <dd className={`m-0 min-w-0 border-l border-border px-3 py-2.5 text-sm leading-6 text-foreground ${saved}`}>{left}</dd>
       {changed ? <div aria-hidden className="col-span-2 row-start-2 bg-signal/15" /> : null}
       <dd
         className={`m-0 min-w-0 border-l border-border px-3 py-2.5 text-sm leading-6 text-foreground ${changed ? 'row-start-2 col-start-3 bg-signal/15' : ''}`}

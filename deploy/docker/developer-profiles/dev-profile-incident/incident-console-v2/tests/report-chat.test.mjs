@@ -171,10 +171,11 @@ test('an answer sits on the muted bubble, so its times, citation titles and vers
   assert.match(chat, /<Message align="start"[^>]*>\s*<Bubble variant="muted">/);
 });
 
-test('the panel leads with the timeline question and says answers come from the stored report', () => {
+test('the panel leads with the timeline question and tool suggestions', () => {
   const chat = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportChat', 'ReportChat.tsx'), 'utf8');
-  assert.match(chat, /SUGGESTIONS = \['Show the timeline of events'\];/, 'one suggestion: the panel stays short (PR 491)');
-  assert.match(chat, /stored report for the version you have\s+open, not from a new look at the video/);
+  assert.match(chat, /Show the timeline of events/);
+  assert.match(chat, /Draw the box for an entity/);
+  assert.match(chat, /Look for an item in the clip/);
   assert.match(chat, /answerSourceLine\(message\.source, message\.answeredFrom \?\? ''\)/);
   assert.doesNotMatch(chat, /Searching evidence/, 'nothing is searched, so the panel does not say so');
 });
@@ -231,7 +232,9 @@ test('a video check runs only from its button, and its result is shown apart wit
   assert.match(chat, /does not\s+change the report/);
   assert.match(chat, /message\.source === 'video' \?/);
   assert.match(chat, /videoOffer: undefined/, 'an offer is spent once it runs');
-  assert.match(chat, /SUGGESTIONS = \['Show the timeline of events'\];/, 'still one chip');
+  assert.match(chat, /Show the timeline of events/);
+  assert.match(chat, /Draw the box for an entity/);
+  assert.match(chat, /Look for an item in the clip/);
 });
 
 test('the editor gets the last six user and assistant turns before the question, blanks and video checks left out', () => {

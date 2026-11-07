@@ -144,7 +144,7 @@ test('the report page offers re-analysis', async () => {
 test('report chat uses the same title band as report sections', async () => {
   const chat = await readFile(new URL('reports/components/ReportChat/ReportChat.tsx', components), 'utf8');
   assert.doesNotMatch(chat, /border-l-primary/);
-  assert.match(chat, /text-lg font-bold tracking-tight/);
+  assert.match(chat, /text-base font-bold tracking-tight/);
   assert.match(chat, /onClick=\{onClose\}/, 'the chat has an explicit close control');
   assert.match(chat, /className="absolute top-3 right-3"/, 'the close control sits at the top-right');
   assert.match(chat, /rounded-none/, 'the chat title surface is flush with the browser edge');
