@@ -17,6 +17,16 @@ export interface EvidenceOpening {
   name: string;
 }
 
+/** An existing draft item the chat asked to redraw (re-track or set image): the box tool opens on it at its own seen second. */
+export interface ItemOpening {
+  itemKey: string;
+  name: string;
+}
+
+export type BoxOpening = EvidenceOpening | ItemOpening;
+
+export const isItemOpening = (opening: BoxOpening): opening is ItemOpening => 'itemKey' in opening;
+
 /** How far one "Extend" button reaches, and the window either side of a fresh box. */
 export const TRACK_WINDOW_SECONDS = 3;
 /** Milliseconds of waiting on the AI before the box tool says it is still looking. */

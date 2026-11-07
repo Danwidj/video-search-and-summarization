@@ -15,7 +15,10 @@
 
 """Unit tests for the report editor's proposal tools (no model, no network)."""
 
+from pathlib import Path
+
 import pytest
+import yaml
 
 from vss_agents.tools import incident_editor
 from vss_agents.utils import agent_loop
@@ -163,6 +166,29 @@ async def test_no_draft_means_no_new_evidence_can_be_proposed() -> None:
     assert "no draft" in result.steps[0]["error"]
 
 
+async def test_a_box_tool_opening_on_a_draft_item_is_listed_by_its_key() -> None:
+    result = await _run_evidence(("open_box_tool", {"item_key": "p1"}))
+    assert result.actions == [{"tool": "propose_open_box_tool", "args": {"item_key": "p1"}}]
+
+
+async def test_an_item_key_not_in_the_draft_is_refused() -> None:
+    result = await _run_evidence(("open_box_tool", {"item_key": "E1"}))
+    assert result.actions == []
+    assert "No item with key 'E1'" in result.steps[0]["error"]
+
+
+async def test_an_item_with_no_seen_second_is_refused() -> None:
+    result = await _run_evidence(("open_box_tool", {"item_key": "k1"}))
+    assert result.actions == []
+    assert "no second it is seen at" in result.steps[0]["error"]
+
+
+async def test_an_item_opening_cannot_carry_a_second_from_the_model() -> None:
+    result = await _run_evidence(("open_box_tool", {"item_key": "p1", "seconds": 3}))
+    assert result.actions == []
+    assert "item_key alone" in result.steps[0]["error"]
+
+
 async def test_a_registered_box_tool_logs_the_second_and_the_name() -> None:
     async with incident_editor.propose_open_box_tool(None, None) as info:
         arguments = info.input_schema(seconds=12, name="Bag on floor")
@@ -214,3 +240,13 @@ def test_a_nobody_holder_is_left_out_of_an_upserted_instrument() -> None:
         ]
         == "p1"
     )
+
+
+def test_the_report_editor_prompt_opens_the_box_tool_on_an_item_instead_of_refusing() -> None:
+    repo = Path(__file__).resolve().parents[5]
+    config = repo / "deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml"
+    prompt = " ".join(yaml.safe_load(config.read_text())["functions"]["report_editor"]["system_prompt"].split())
+    assert "I can't do that in chat: re-tracking and images" not in prompt
+    assert "call propose_open_box_tool with that item's key alone (no seconds or name)" in prompt
+    assert "Never draw or locate a box yourself" in prompt
+    assert "I can't do that in chat: there is no such item in the draft." in prompt

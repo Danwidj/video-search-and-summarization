@@ -53,14 +53,27 @@ async def propose(tool: str, args: dict[str, Any]) -> str:
     return result.proposals[0].summary
 
 
+def _seen_seconds(draft: draft_edits.DraftSnapshot) -> dict[str, float | None]:
+    """Each draft item's key and the second it is seen at: an entity's first sight, else its timestamp."""
+    seen: dict[str, float | None] = {}
+    for entity in draft.entities:
+        seen[entity.key] = (
+            entity.first_seen_seconds if entity.first_seen_seconds is not None else entity.timestamp_seconds
+        )
+    seen.update({instrument.key: instrument.timestamp_seconds for instrument in draft.instruments})
+    seen.update({asset.key: asset.timestamp_seconds for asset in draft.assets})
+    return seen
+
+
 async def check_new_evidence(tool: str, args: dict[str, Any]) -> str:
-    """Check one new-evidence call against the incident window, the questions already asked and this run's earlier calls.
+    """Check one new-evidence call against the incident window, the draft's items, the questions already asked and this run's
+    earlier calls.
 
     A rejected call is a ``ValueError``. The earlier calls are the ones that passed in this run, from the step log.
     """
     run = agent_loop.current()
     if run.draft is None:
-        raise ValueError("there is no draft to add evidence to")
+        raise ValueError("there is no draft to change")
     earlier = [
         evidence_asks.Call(tool=step["tool"].removeprefix(agent_loop.PROPOSAL_PREFIX), args=step["args"])
         for step in run.steps
@@ -70,7 +83,12 @@ async def check_new_evidence(tool: str, args: dict[str, Any]) -> str:
     window = evidence_asks.IncidentWindow(
         start_timestamp=incident.start_timestamp, end_timestamp=incident.end_timestamp
     )
-    result = evidence_asks.propose(window, run.questions_asked, [*earlier, evidence_asks.Call(tool=tool, args=args)])
+    result = evidence_asks.propose(
+        window,
+        run.questions_asked,
+        [*earlier, evidence_asks.Call(tool=tool, args=args)],
+        items=_seen_seconds(run.draft),
+    )
     if result.rejected:
         raise ValueError(result.rejected[-1].reason)
     return result.proposals[-1].summary
@@ -179,7 +197,7 @@ propose_open_box_tool = _proposal(
     ProposeOpenBoxToolConfig,
     "open_box_tool",
     evidence_asks.OpenBoxTool,
-    "Opens the box tool for new evidence at the second it is best seen, with its short name, once. "
-    "Proposes only; the reviewer draws the box.",
+    "Opens the box tool once: for new evidence at the second it is best seen, with its short name; or on an item already in "
+    "the draft, by its item_key alone, to redraw its box or set its image. Proposes only; the reviewer draws the box.",
     check_new_evidence,
 )

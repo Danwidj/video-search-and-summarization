@@ -31,7 +31,7 @@ import {
 import { evidenceRows, pendingEvidenceExchange, splitEvidenceActions } from '@/lib/chat/evidence-ask';
 import { segmentChatText } from '@/lib/chat/timestamps';
 import { draftSnapshot, type ProposedAction } from '@/lib/edits/chat-edit';
-import type { EvidenceOpening } from '@/lib/evidence/box-tool';
+import type { BoxOpening } from '@/lib/evidence/box-tool';
 import type { EditDraft } from '@/modules/reports/domain/edit-draft';
 import type { AppliedAction, ChatCitation, ChatResponse, ChatStep, SkippedAction, VideoOffer } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
@@ -68,7 +68,7 @@ type ChatMessage = {
   /** The reply is the editor's question to the reviewer about new evidence (its content is that question). */
   askedReviewer?: boolean;
   /** The reply opened the box tool for new evidence at this second, with this name. */
-  openedBox?: EvidenceOpening;
+  openedBox?: BoxOpening;
 };
 
 /** One conversation. The report page holds it, so closing the panel does not lose it. */
@@ -147,11 +147,7 @@ export function ReportChat({
    */
   edits?: {
     current: () => EditDraft;
-    apply: (
-      sent: EditDraft,
-      proposals: ProposedAction[],
-      opening?: EvidenceOpening,
-    ) => { applied: AppliedAction[]; skipped: SkippedAction[] };
+    apply: (sent: EditDraft, proposals: ProposedAction[], opening?: BoxOpening) => { applied: AppliedAction[]; skipped: SkippedAction[] };
   };
 }) {
   const { messages, sessionId, busy, failed } = thread;
@@ -188,7 +184,7 @@ export function ReportChat({
       // A question for the reviewer is the reply; a box opening goes to the page; the other edits join the draft in one
       // change (one Undo), then the message says what happened to each.
       const actions = payload.message.actions ?? [];
-      const { question, opening, rest } = splitEvidenceActions(actions);
+      const { question, opening, rest } = splitEvidenceActions(actions, sent ?? null);
       const outcome = edits && sent && actions.length ? edits.apply(sent, rest, opening) : undefined;
       messageSequence += 1;
       onThreadChange({

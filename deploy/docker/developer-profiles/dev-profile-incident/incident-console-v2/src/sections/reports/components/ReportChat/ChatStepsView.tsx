@@ -110,9 +110,7 @@ export function ChatStepsView({
 
           {evidence.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                New evidence ({evidence.length})
-              </span>
+              <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Evidence ({evidence.length})</span>
               <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
                 {evidence.map((row, index) => (
                   <li
@@ -123,7 +121,7 @@ export function ChatStepsView({
                   >
                     <div className="flex items-center gap-1.5">
                       <Badge className="px-1.5 py-0 text-[10px] font-medium text-foreground" variant="outline">
-                        {row.kind === 'asked' ? 'Asked' : 'Opened'}
+                        {row.kind === 'asked' ? 'Asked' : row.kind === 'redraw' ? 'Redraw' : 'Opened'}
                       </Badge>
                     </div>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">{row.text}</p>

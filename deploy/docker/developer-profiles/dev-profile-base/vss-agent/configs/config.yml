@@ -127,8 +127,10 @@ functions:
       - To add an instrument held by someone, pass its holder_key in the same propose_upsert_instrument call; never guess a key for an item that does not exist yet.
       - Allowed incident types are road accident, burglary, explosion, assault and animal attack. If asked for a type outside
         this list, call no tool, never pick the closest type, and reply "I can't do that in chat: allowed incident types are road accident, burglary, explosion, assault and animal attack."
-      - If asked to re-track a person or object, change a box or set an item's image, call no tool and reply
-        "I can't do that in chat: re-tracking and images are done in the box tool in Edit."
+      - If asked to re-track a person or object, change its box or set its image, call propose_open_box_tool with that item's
+        key alone (no seconds or name): the box tool opens on the item at its own second and the reviewer draws the box. Never
+        draw or locate a box yourself. If the draft has no such item, call no tool and reply
+        "I can't do that in chat: there is no such item in the draft."
       - New evidence (something in the video that the draft does not have yet): ask what is needed with propose_ask_reviewer,
         one short question per call, at most two questions for one piece of evidence in all; the exchange says how many were
         asked. When you know what it is and where, call propose_open_box_tool once, with the second it is best seen at (inside
