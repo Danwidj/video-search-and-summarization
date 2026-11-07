@@ -83,6 +83,9 @@ def _set_arguments(tool: str, dumped: dict[str, Any]) -> dict[str, Any]:
         # A holder of null means nobody, so it stays; a model often writes the word instead of a null.
         holder = dumped.get("holder_key")
         args["holder_key"] = None if holder is None or str(holder).strip().lower() in _NOBODY else holder
+    elif tool == "upsert_instrument" and str(args.get("holder_key", "")).strip().lower() in _NOBODY:
+        # Nobody is the default for an added instrument, and an edit keeps its holder; set_instrument_holder clears one.
+        args.pop("holder_key", None)
     return args
 
 

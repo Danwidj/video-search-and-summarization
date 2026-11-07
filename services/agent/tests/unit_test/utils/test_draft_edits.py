@@ -133,6 +133,41 @@ def test_holder_must_be_an_entity_and_null_means_nobody() -> None:
     assert wrong.proposals == []
 
 
+def test_an_instrument_can_name_its_holder_when_added_or_edited() -> None:
+    add = _one(
+        {
+            "tool": "upsert_instrument",
+            "args": {"op": "add", "name": "knife", "threat_level": 4, "holder_key": "entity-1"},
+        }
+    )
+    edit = _one(
+        {"tool": "upsert_instrument", "args": {"op": "edit", "item_key": "instrument-1", "holder_key": "entity-0"}}
+    )
+    assert add.rejected == []
+    assert add.proposals[0].args["holder_key"] == "entity-1"
+    assert add.proposals[0].summary == "Add instrument knife, held by entity-1"
+    assert edit.rejected == []
+    assert edit.proposals[0].args == {"op": "edit", "item_key": "instrument-1", "holder_key": "entity-0"}
+
+
+def test_an_upserted_instrument_holder_must_be_an_existing_entity() -> None:
+    invented = _one(
+        {
+            "tool": "upsert_instrument",
+            "args": {"op": "add", "name": "knife", "threat_level": 4, "holder_key": "entity-9"},
+        }
+    )
+    not_an_entity = _one(
+        {
+            "tool": "upsert_instrument",
+            "args": {"op": "add", "name": "knife", "threat_level": 4, "holder_key": "asset-0"},
+        }
+    )
+    assert invented.proposals == []
+    assert "entity-9" in invented.rejected[0].reason
+    assert not_an_entity.proposals == []
+
+
 def test_deleting_an_entity_reports_the_instruments_it_takes_with_it() -> None:
     result = _one({"tool": "delete_item", "args": {"item_key": "entity-0"}})
     assert result.rejected == []
