@@ -256,9 +256,8 @@ export function ReportEditPane({
             <PairField
               label="Title"
               left={
-                <div className="flex items-start justify-between gap-3">
-                  <span>{title}</span>
-                  <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                <div className="flex flex-col gap-2">
+                  <span className="flex flex-wrap items-center justify-end gap-1.5">
                     <VersionPill kind={baseKind} official={baseOfficial} />
                     {a?.incident.confidenceScore != null && (
                       <Badge className="font-mono text-[11px]" data-testid="confidence-tag" variant="secondary">
@@ -266,6 +265,7 @@ export function ReportEditPane({
                       </Badge>
                     )}
                   </span>
+                  <span>{title}</span>
                 </div>
               }
               right={
