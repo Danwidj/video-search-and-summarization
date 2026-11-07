@@ -28,7 +28,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Needs:** the agent restarted to see its copy. The text-only labels follow a stored note and are not yet probed. `eval/tests/test_contract_fixtures.py` compares this list to `eval_vlm_client.MODELS`, so it fails until eval (off limits here) adds them.
 
 ### 2026-11-07: Version type is a coloured pill, one shared component
-- **Decision:** `VersionPill` shows a version's type everywhere: Model slate blue, Human plum, official the theme green with a star and the text "Official · Type". Colours are `--color-version-*` theme tokens.
+- **Decision:** `VersionPill` shows a version's type everywhere: Model slate blue, Human plum, official teal #0B7A8F with a star (green looked like the Generate and Reset buttons) and the text "Official · Type". Colours are `--color-version-*` theme tokens.
 - **Why:** type and official status were separate badges in different places; the captain chose colour by type with the text kept as a label.
 - **Alternatives rejected:** colour only (not accessible); changing Dashboard chart or severity colours (out of scope).
 
