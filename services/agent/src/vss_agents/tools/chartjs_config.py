@@ -202,6 +202,8 @@ def combo_dual_axis_config(data: ChartJsChartData) -> dict[str, Any]:
             "borderRadius": 4,
             "maxBarThickness": 48,
             "yAxisID": "y",
+            # Chart.js draws a lower order on top: the line is over the bars, so no point is hidden under its bar.
+            "order": 2,
         },
         {
             "type": "line",
@@ -213,6 +215,7 @@ def combo_dual_axis_config(data: ChartJsChartData) -> dict[str, Any]:
             "tension": 0,
             "pointRadius": 3,
             "yAxisID": "y1",
+            "order": 1,
         },
     ]
     return {
@@ -224,7 +227,8 @@ def combo_dual_axis_config(data: ChartJsChartData) -> dict[str, Any]:
             "interaction": {"mode": "index", "intersect": False},
             "plugins": {"legend": {"position": "bottom"}, "title": _text_option(data.title)},
             "scales": {
-                "x": {"title": _text_option(data.x_label)},
+                # offset centres each category between its ticks, so the line's points sit over the centres of the bars.
+                "x": {"offset": True, "title": _text_option(data.x_label)},
                 "y": {
                     "position": "left",
                     "beginAtZero": True,

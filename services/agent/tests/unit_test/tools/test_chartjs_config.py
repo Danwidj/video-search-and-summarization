@@ -233,6 +233,24 @@ def test_combo_puts_the_bar_on_the_left_axis_and_the_line_on_the_right():
     json.dumps(config)
 
 
+def test_combo_centres_each_line_point_over_its_bar():
+    config = chartjs_config(
+        chart(
+            "combo_dual_axis",
+            [
+                {"label": "Reports", "values": [9, 4, 1]},
+                {"label": "Evidence items per report", "values": [2.5, 0.0, 3.33]},
+            ],
+            LABELS,
+        )
+    )
+    # Both datasets share the category axis; without offset a line point sits on a tick, not on the bar's centre.
+    assert config["options"]["scales"]["x"]["offset"] is True
+    assert config["data"]["datasets"][1]["type"] == "line" and "yAxisID" in config["data"]["datasets"][1]
+    bar, line = config["data"]["datasets"]
+    assert line["order"] < bar["order"], "the line is drawn over the bars, so no point is hidden"
+
+
 def test_combo_needs_exactly_a_bar_series_and_a_line_series():
     one = [{"label": "Reports", "values": [1, 2, 3]}]
     with pytest.raises(ValidationError):
