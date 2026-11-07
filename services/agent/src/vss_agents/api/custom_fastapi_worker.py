@@ -30,6 +30,7 @@ from vss_agents.api.incident_box_describe import register_incident_box_describe_
 from vss_agents.api.incident_box_track import register_incident_box_track_routes
 from vss_agents.api.incident_charts import register_incident_charts_routes
 from vss_agents.api.incident_chat import register_incident_chat_routes
+from vss_agents.api.incident_draft_edits import register_incident_draft_edits_routes
 from vss_agents.api.incident_evidence_embeddings import register_incident_evidence_embeddings_routes
 from vss_agents.api.incident_revision_search import register_incident_revision_search_routes
 from vss_agents.api.incident_search import register_incident_search_routes
@@ -151,6 +152,7 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         register_incident_box_describe_routes(app)
         register_incident_box_track_routes(app)
         register_incident_video_check_routes(app)
+        register_incident_draft_edits_routes(app)
         chart_generator_cfg = (getattr(self.config, "functions", None) or {}).get("chart_generator")
         chart_llm_name = getattr(chart_generator_cfg, "llm_name", None)
         register_incident_charts_routes(app, builder, str(chart_llm_name) if chart_llm_name else None)
