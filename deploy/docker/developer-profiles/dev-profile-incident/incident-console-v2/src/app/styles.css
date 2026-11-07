@@ -37,6 +37,7 @@
   --color-version-official: #0b7a8f;
   --color-not-official: #e9ece4;
   --color-not-official-line: #7b8794;
+  --color-official-glow: color-mix(in srgb, var(--color-version-official) 70%, transparent);
   --color-sev-high: #991b1b;
   --color-sev-medium: #765300;
   --color-sev-low: #174f3b;
@@ -285,6 +286,36 @@ video::-webkit-media-controls-volume-slider-container {
   @keyframes chart-pop {
     from {
       transform: scale(0.9);
+    }
+  }
+}
+
+/*
+  The Official pill glows: a teal halo on a pseudo-element behind the pill (so it neither clips nor moves anything) that breathes
+  by opacity only, which the compositor handles without repainting a box-shadow. Under reduced motion the glow stays, steady.
+*/
+.official-glow {
+  position: relative;
+  isolation: isolate;
+}
+.official-glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  box-shadow:
+    0 0 6px 1px var(--color-official-glow),
+    0 0 16px 4px color-mix(in srgb, var(--color-version-official) 38%, transparent);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .official-glow::before {
+    animation: official-glow 4s ease-in-out infinite;
+  }
+  @keyframes official-glow {
+    50% {
+      opacity: 0.55;
     }
   }
 }
