@@ -40,9 +40,10 @@ period: one of ${Object.keys(CHART_PERIODS).join(', ')}, or a calendar period wr
   {"from":"YYYY-MM-DD","to":"YYYY-MM-DD"} for the days from one date to the other, both included.
   Use all_time when the request names no period.
   The request starts with today's date and the viewer's time zone. Dates are the viewer's calendar days. A month or a date
-  given without its year is the most recent one that is not after today: "October" in November 2026 is 2026-10. The end
-  of a range given without its year is the first such date on or after the range's start. A month that is still running counts up to today, so "November" on 6 November 2026 is {"month":"2026-11"}, and the chart covers
-  1 to 6 November. A month or range that ends after today is charted up to today, so "October to December" on 6 November
+  given without its year is the most recent one that is not after today: "October" in November 2026 is 2026-10. In a range
+  given without years, the start is the most recent such date not after today and the end is in the start's year, so a
+  range whose end comes before its start, such as "20 to 10 October", stays reversed and is refused. A month that is still running counts up to today, so
+  "November" on 6 November 2026 is {"month":"2026-11"}, and the chart covers 1 to 6 November. A month or range that ends after today is charted up to today, so "October to December" on 6 November
   2026 is {"from":"2026-10-01","to":"2026-12-31"}, and the chart covers 1 October to 6 November. A phrase such as "last
   week of October" is a from and to pair. A calendar period must not start after today, and a range may cover at most
   366 days.
