@@ -5,22 +5,33 @@ import { useId, useState } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { hasStepsOrActions, summaryLabel } from '@/lib/chat/chat-steps';
+import type { EvidenceRow } from '@/lib/chat/evidence-ask';
 import type { AppliedAction, ChatStep, SkippedAction } from '@/modules/chat/domain/chat';
 
 export interface ChatStepsViewProps {
   steps?: ChatStep[];
   applied?: AppliedAction[];
   skipped?: SkippedAction[];
+  /** The new-evidence steps: the question asked and the box tool's opening. They are not draft changes. */
+  evidence?: EvidenceRow[];
   wallMs?: number;
   className?: string;
   defaultOpen?: boolean;
 }
 
-export function ChatStepsView({ steps = [], applied = [], skipped = [], wallMs, className, defaultOpen = false }: ChatStepsViewProps) {
+export function ChatStepsView({
+  steps = [],
+  applied = [],
+  skipped = [],
+  evidence = [],
+  wallMs,
+  className,
+  defaultOpen = false,
+}: ChatStepsViewProps) {
   const [open, setOpen] = useState(defaultOpen);
   const contentId = useId();
 
-  if (!hasStepsOrActions({ steps, applied, skipped })) return null;
+  if (!hasStepsOrActions({ steps, applied, skipped, evidence })) return null;
 
   const stepCount = steps.length;
   const appliedCount = applied.length;
@@ -94,6 +105,31 @@ export function ChatStepsView({ steps = [], applied = [], skipped = [], wallMs, 
                   </li>
                 ))}
               </ol>
+            </div>
+          )}
+
+          {evidence.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                New evidence ({evidence.length})
+              </span>
+              <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+                {evidence.map((row, index) => (
+                  <li
+                    className="flex flex-col gap-0.5 rounded-lg border border-border/70 bg-card p-2 text-xs"
+                    data-testid="chat-evidence-row"
+                    // biome-ignore lint/suspicious/noArrayIndexKey: the rows are one reply's fixed list, in order
+                    key={`${row.kind}-${index}`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Badge className="px-1.5 py-0 text-[10px] font-medium text-foreground" variant="outline">
+                        {row.kind === 'asked' ? 'Asked' : 'Opened'}
+                      </Badge>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{row.text}</p>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

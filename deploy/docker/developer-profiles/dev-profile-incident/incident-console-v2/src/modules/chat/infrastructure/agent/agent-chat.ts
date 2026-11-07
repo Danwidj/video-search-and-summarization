@@ -4,7 +4,7 @@
 // camelCase ChatRequest in, camelCase ChatResponse out.
 
 import { readUpstream } from '@/lib/http';
-import type { ChatCitation, ChatRequest, ChatResponse, VideoCheckResult } from '@/modules/chat/domain/chat';
+import type { ChatCitation, ChatRequest, ChatResponse, EvidenceExchange, VideoCheckResult } from '@/modules/chat/domain/chat';
 
 export function toAgentChatBody(request: ChatRequest): Record<string, unknown> {
   const { sessionId, messages, context, versionId, draftReport } = request;
@@ -216,11 +216,17 @@ export async function sendAgentInvestigate(
   signal?: AbortSignal,
   /** The reviewer's draft snapshot: the agent then runs its report editor and returns the edits as `actions`. */
   draft?: Record<string, unknown>,
+  /** The new-evidence exchange still open in the chat, with the draft. */
+  evidence?: EvidenceExchange,
 ): Promise<ChatResponse> {
   const response = await fetch(`${agentUrl.replace(/\/$/, '')}/api/v1/incidents/${encodeURIComponent(videoId)}/investigate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, ...(draft ? { draft } : {}) }),
+    body: JSON.stringify({
+      question,
+      ...(draft ? { draft } : {}),
+      ...(evidence ? { evidence: { questions_asked: evidence.questionsAsked, transcript: evidence.transcript } } : {}),
+    }),
     signal,
   });
   return fromAgentInvestigateResponse(await readUpstream(response, 'Agent /api/v1/incidents/{video_id}/investigate'));

@@ -88,6 +88,92 @@ async def _with_draft(call):
     return out[0]
 
 
+async def _run_evidence(*calls: tuple[str, dict], questions_asked: int = 0):
+    async def ask() -> str:
+        for tool, args in calls:
+            try:
+                await agent_loop.run_guarded_tool(
+                    f"propose_{tool}", args, lambda tool=tool, args=args: incident_editor.check_new_evidence(tool, args)
+                )
+            except ValueError:
+                continue
+        return "done"
+
+    return await agent_loop.run_loop(ask, "V1", draft=DRAFT, questions_asked=questions_asked)
+
+
+async def test_a_question_then_the_box_tool_are_listed_as_actions() -> None:
+    result = await _run_evidence(
+        ("ask_reviewer", {"question": "Where in the shop?"}),
+        ("open_box_tool", {"seconds": 12, "name": "Bag on floor"}),
+    )
+    assert result.actions == [
+        {"tool": "propose_ask_reviewer", "args": {"question": "Where in the shop?"}},
+        {"tool": "propose_open_box_tool", "args": {"seconds": 12, "name": "Bag on floor"}},
+    ]
+
+
+async def test_a_third_question_is_refused_so_the_box_tool_must_open() -> None:
+    result = await _run_evidence(
+        ("ask_reviewer", {"question": "Where?"}),
+        ("ask_reviewer", {"question": "When?"}),
+        ("ask_reviewer", {"question": "Who?"}),
+    )
+    assert [action["args"]["question"] for action in result.actions] == ["Where?", "When?"]
+    assert "Only 2 questions" in result.steps[2]["error"]
+
+
+async def test_the_questions_asked_before_this_request_count_towards_the_limit() -> None:
+    result = await _run_evidence(("ask_reviewer", {"question": "Who?"}), questions_asked=2)
+    assert result.actions == []
+    assert "Only 2 questions" in result.steps[0]["error"]
+
+
+async def test_no_question_follows_the_box_tool() -> None:
+    result = await _run_evidence(
+        ("open_box_tool", {"seconds": 12, "name": "Bag"}),
+        ("ask_reviewer", {"question": "Who?"}),
+    )
+    assert [action["tool"] for action in result.actions] == ["propose_open_box_tool"]
+    assert "already open" in result.steps[1]["error"]
+
+
+async def test_the_box_tool_opens_once_and_only_inside_the_incident() -> None:
+    result = await _run_evidence(
+        ("open_box_tool", {"seconds": 99, "name": "Bag"}),
+        ("open_box_tool", {"seconds": 12, "name": "Bag"}),
+        ("open_box_tool", {"seconds": 13, "name": "Bag"}),
+    )
+    assert result.actions == [{"tool": "propose_open_box_tool", "args": {"seconds": 12, "name": "Bag"}}]
+    assert "within the incident" in result.steps[0]["error"]
+    assert "already open" in result.steps[2]["error"]
+
+
+async def test_no_draft_means_no_new_evidence_can_be_proposed() -> None:
+    async def ask() -> str:
+        await agent_loop.run_guarded_tool(
+            "propose_ask_reviewer",
+            {"question": "Who?"},
+            lambda: incident_editor.check_new_evidence("ask_reviewer", {"question": "Who?"}),
+        )
+        return "done"
+
+    result = await agent_loop.run_loop(ask, "V1", draft=None)
+    assert result.actions == []
+    assert "no draft" in result.steps[0]["error"]
+
+
+async def test_a_registered_box_tool_logs_the_second_and_the_name() -> None:
+    async with incident_editor.propose_open_box_tool(None, None) as info:
+        arguments = info.input_schema(seconds=12, name="Bag on floor")
+
+        async def ask() -> str:
+            return await info.single_fn(arguments)
+
+        result = await agent_loop.run_loop(ask, "V1", draft=DRAFT)
+    assert result.actions == [{"tool": "propose_open_box_tool", "args": {"seconds": 12, "name": "Bag on floor"}}]
+
+
 async def test_a_registered_tool_logs_the_arguments_the_model_set() -> None:
     async with incident_editor.propose_set_instrument_holder(None, None) as info:
         arguments = info.input_schema(instrument_key="k1", holder_key=None)

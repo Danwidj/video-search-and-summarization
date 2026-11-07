@@ -6,7 +6,7 @@ import { chatErrorResponse } from '@/modules/chat/infrastructure/agent/chat-erro
 import { CHAT_EDITOR_REFUSAL_PREFIX } from '@/lib/chat/report-chat';
 import { getServiceConfiguration, isChatStepsEnabled } from '@/lib/env';
 import { UpstreamError } from '@/lib/http';
-import type { ChatMessage } from '@/modules/chat/domain/chat';
+import type { ChatMessage, EvidenceExchange } from '@/modules/chat/domain/chat';
 
 export const maxDuration = 120;
 export async function POST(request: Request) {
@@ -21,6 +21,8 @@ export async function POST(request: Request) {
       steps?: boolean;
       /** The draft snapshot (lib/edits/chat-edit.ts) the page sends when the chat may edit. */
       editDraft?: Record<string, unknown>;
+      /** The new-evidence exchange still open in the chat (lib/chat/evidence-ask.ts), sent with the question. */
+      evidence?: EvidenceExchange;
     };
     if (!input.messages?.length) return NextResponse.json({ error: 'At least one message is required' }, { status: 400 });
     if (input.versionId != null && !(Number.isInteger(input.versionId) && input.versionId >= 1))
@@ -41,8 +43,16 @@ export async function POST(request: Request) {
         try {
           const { agentUrl } = config;
           const incidentId = input.incidentId as string;
+          // The new-evidence exchange goes only with the draft: only the editor takes it.
           const investigate = (draft?: Record<string, unknown>) =>
-            sendAgentInvestigate(agentUrl, incidentId, lastQuestion, AbortSignal.timeout(115000), draft);
+            sendAgentInvestigate(
+              agentUrl,
+              incidentId,
+              lastQuestion,
+              AbortSignal.timeout(115000),
+              draft,
+              draft ? input.evidence : undefined,
+            );
           const edited = editing ? await investigate(input.editDraft) : null;
           // An editor that ran no tool was not asked to edit: the question goes on to the usual routes, unchanged,
           // unless the editor explicitly refused an unsupported edit (starts with CHAT_EDITOR_REFUSAL_PREFIX).

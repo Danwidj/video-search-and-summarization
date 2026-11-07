@@ -28,8 +28,10 @@ import {
   citationTitle,
   offersVideoCheck,
 } from '@/lib/chat/report-chat';
+import { evidenceRows, pendingEvidenceExchange, splitEvidenceActions } from '@/lib/chat/evidence-ask';
 import { segmentChatText } from '@/lib/chat/timestamps';
 import { draftSnapshot, type ProposedAction } from '@/lib/edits/chat-edit';
+import type { EvidenceOpening } from '@/lib/evidence/box-tool';
 import type { EditDraft } from '@/modules/reports/domain/edit-draft';
 import type { AppliedAction, ChatCitation, ChatResponse, ChatStep, SkippedAction, VideoOffer } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
@@ -63,6 +65,10 @@ type ChatMessage = {
   applied?: AppliedAction[];
   skipped?: SkippedAction[];
   wallMs?: number;
+  /** The reply is the editor's question to the reviewer about new evidence (its content is that question). */
+  askedReviewer?: boolean;
+  /** The reply opened the box tool for new evidence at this second, with this name. */
+  openedBox?: EvidenceOpening;
 };
 
 /** One conversation. The report page holds it, so closing the panel does not lose it. */
@@ -137,10 +143,15 @@ export function ReportChat({
   /**
    * Lets a question change the draft . `current` is the draft as it is when the question
    * is sent; `apply` takes the agent's proposals, made for that draft, and returns what it applied and skipped.
+   * A box the agent opened for new evidence (`opening`) is shown in Edit, the box tool open on it.
    */
   edits?: {
     current: () => EditDraft;
-    apply: (sent: EditDraft, proposals: ProposedAction[]) => { applied: AppliedAction[]; skipped: SkippedAction[] };
+    apply: (
+      sent: EditDraft,
+      proposals: ProposedAction[],
+      opening?: EvidenceOpening,
+    ) => { applied: AppliedAction[]; skipped: SkippedAction[] };
   };
 }) {
   const { messages, sessionId, busy, failed } = thread;
@@ -168,13 +179,17 @@ export function ReportChat({
             videoId,
             target,
             ...(sent ? { editDraft: draftSnapshot(sent) } : {}),
+            evidence: pendingEvidenceExchange(next) ?? undefined,
           }),
         ),
       });
       const payload = (await readReply(response)) as Partial<ChatResponse> & { error?: string };
       if (!response.ok || !payload.message) throw new Error(payload.error || CHAT_FAILED);
-      // The edits join the draft in one change (one Undo), then the message says what happened to each.
-      const outcome = edits && sent && payload.message.actions?.length ? edits.apply(sent, payload.message.actions) : undefined;
+      // A question for the reviewer is the reply; a box opening goes to the page; the other edits join the draft in one
+      // change (one Undo), then the message says what happened to each.
+      const actions = payload.message.actions ?? [];
+      const { question, opening, rest } = splitEvidenceActions(actions);
+      const outcome = edits && sent && actions.length ? edits.apply(sent, rest, opening) : undefined;
       messageSequence += 1;
       onThreadChange({
         sessionId: payload.sessionId,
@@ -182,6 +197,7 @@ export function ReportChat({
           ...next,
           {
             ...payload.message,
+            content: question ?? payload.message.content,
             id: `msg-${messageSequence}`,
             answeredFrom: target.label,
             unknownTimes: payload.grounding?.unknownTimes,
@@ -189,6 +205,8 @@ export function ReportChat({
             applied: outcome?.applied ?? payload.message.applied,
             skipped: outcome?.skipped ?? payload.message.skipped,
             wallMs: payload.message.wallMs,
+            askedReviewer: question !== undefined,
+            openedBox: opening,
           },
         ],
       });
@@ -378,9 +396,13 @@ export function ReportChat({
                             </Button>
                           </div>
                         )}
-                        {(Boolean(message.steps?.length) || Boolean(message.applied?.length) || Boolean(message.skipped?.length)) && (
+                        {(Boolean(message.steps?.length) ||
+                          Boolean(message.applied?.length) ||
+                          Boolean(message.skipped?.length) ||
+                          evidenceRows(message).length > 0) && (
                           <ChatStepsView
                             applied={message.applied}
+                            evidence={evidenceRows(message)}
                             skipped={message.skipped}
                             steps={message.steps}
                             wallMs={message.wallMs}

@@ -15,13 +15,16 @@
 
 """Proposal tools for the report editor agent (``POST /api/v1/incidents/{video_id}/investigate`` with a ``draft``).
 
-One tool per entry of :data:`vss_agents.utils.draft_edits.TOOLS`, named ``propose_<tool>``. Each checks the model's
-arguments against the reviewer's draft, which the route binds to the run (``agent_loop.current().draft``), and returns
-the proposal's summary. A rejected edit goes back to the model as the tool's error text so it can fix the call. Nothing
-is written: the route lists the arguments of every ``propose_*`` step as ``actions``, and the console applies them.
+One tool per entry of :data:`vss_agents.utils.draft_edits.TOOLS`, named ``propose_<tool>``, and two for new evidence:
+``propose_ask_reviewer`` and ``propose_open_box_tool`` (checked by :mod:`vss_agents.utils.evidence_asks`). Each checks the
+model's arguments against the reviewer's draft, which the route binds to the run (``agent_loop.current().draft``), and
+returns the proposal's summary. A rejected edit goes back to the model as the tool's error text so it can fix the call.
+Nothing is written: the route lists the arguments of every ``propose_*`` step as ``actions``, and the console applies them.
 """
 
 from collections.abc import AsyncGenerator
+from collections.abc import Awaitable
+from collections.abc import Callable
 from typing import Any
 
 from nat.builder.builder import Builder
@@ -29,9 +32,14 @@ from nat.builder.framework_enum import LLMFrameworkEnum
 from nat.builder.function_info import FunctionInfo
 from nat.cli.register_workflow import register_function
 from nat.data_models.function import FunctionBaseConfig
+from pydantic import BaseModel
 
 from vss_agents.utils import agent_loop
 from vss_agents.utils import draft_edits
+from vss_agents.utils import evidence_asks
+
+Check = Callable[[str, dict[str, Any]], Awaitable[str]]
+NEW_EVIDENCE_TOOLS = ("ask_reviewer", "open_box_tool")
 
 
 async def propose(tool: str, args: dict[str, Any]) -> str:
@@ -43,6 +51,29 @@ async def propose(tool: str, args: dict[str, Any]) -> str:
     if result.rejected:
         raise ValueError(result.rejected[0].reason)
     return result.proposals[0].summary
+
+
+async def check_new_evidence(tool: str, args: dict[str, Any]) -> str:
+    """Check one new-evidence call against the incident window, the questions already asked and this run's earlier calls.
+
+    A rejected call is a ``ValueError``. The earlier calls are the ones that passed in this run, from the step log.
+    """
+    run = agent_loop.current()
+    if run.draft is None:
+        raise ValueError("there is no draft to add evidence to")
+    earlier = [
+        evidence_asks.Call(tool=step["tool"].removeprefix(agent_loop.PROPOSAL_PREFIX), args=step["args"])
+        for step in run.steps
+        if step["ok"] and step["tool"].removeprefix(agent_loop.PROPOSAL_PREFIX) in NEW_EVIDENCE_TOOLS
+    ]
+    incident = run.draft.incident
+    window = evidence_asks.IncidentWindow(
+        start_timestamp=incident.start_timestamp, end_timestamp=incident.end_timestamp
+    )
+    result = evidence_asks.propose(window, run.questions_asked, [*earlier, evidence_asks.Call(tool=tool, args=args)])
+    if result.rejected:
+        raise ValueError(result.rejected[-1].reason)
+    return result.proposals[-1].summary
 
 
 class ProposeSetIncidentFieldsConfig(FunctionBaseConfig, name="propose_set_incident_fields"):
@@ -73,6 +104,14 @@ class ProposeDeleteItemConfig(FunctionBaseConfig, name="propose_delete_item"):
     pass
 
 
+class ProposeAskReviewerConfig(FunctionBaseConfig, name="propose_ask_reviewer"):
+    pass
+
+
+class ProposeOpenBoxToolConfig(FunctionBaseConfig, name="propose_open_box_tool"):
+    pass
+
+
 _NOBODY = {"", "none", "null", "nobody"}
 
 
@@ -89,25 +128,37 @@ def _set_arguments(tool: str, dumped: dict[str, Any]) -> dict[str, Any]:
     return args
 
 
-def _register(tool: str, config_type: type[FunctionBaseConfig]) -> Any:
-    spec = draft_edits.TOOLS[tool]
+def _proposal(
+    config_type: type[FunctionBaseConfig], tool: str, args_model: type[BaseModel], description: str, check: Check
+) -> Any:
     name = f"{agent_loop.PROPOSAL_PREFIX}{tool}"
 
     async def build(config: FunctionBaseConfig, builder: Builder) -> AsyncGenerator[FunctionInfo]:  # noqa: ARG001
         async def run(arguments: Any) -> str:
             args = _set_arguments(tool, arguments.model_dump())
-            return await agent_loop.run_guarded_tool(name, args, lambda: propose(tool, args))
+            return await agent_loop.run_guarded_tool(name, args, lambda: check(tool, args))
 
         # The toolkit checks the argument's annotation, so it must be the model class, not Any.
-        run.__annotations__["arguments"] = spec.args_model
+        run.__annotations__["arguments"] = args_model
         yield FunctionInfo.create(
             single_fn=run,
-            description=f"{spec.description} Proposes only; the reviewer's page applies it.",
-            input_schema=spec.args_model,
+            description=description,
+            input_schema=args_model,
             single_output_schema=str,
         )
 
     return register_function(config_type=config_type, framework_wrappers=[LLMFrameworkEnum.LANGCHAIN])(build)
+
+
+def _register(tool: str, config_type: type[FunctionBaseConfig]) -> Any:
+    spec = draft_edits.TOOLS[tool]
+    return _proposal(
+        config_type,
+        tool,
+        spec.args_model,
+        f"{spec.description} Proposes only; the reviewer's page applies it.",
+        propose,
+    )
 
 
 propose_set_incident_fields = _register("set_incident_fields", ProposeSetIncidentFieldsConfig)
@@ -117,3 +168,18 @@ propose_upsert_instrument = _register("upsert_instrument", ProposeUpsertInstrume
 propose_upsert_asset = _register("upsert_asset", ProposeUpsertAssetConfig)
 propose_set_instrument_holder = _register("set_instrument_holder", ProposeSetInstrumentHolderConfig)
 propose_delete_item = _register("delete_item", ProposeDeleteItemConfig)
+propose_ask_reviewer = _proposal(
+    ProposeAskReviewerConfig,
+    "ask_reviewer",
+    evidence_asks.AskReviewer,
+    "Asks the reviewer one short question about new evidence, at most two in all. Proposes only; the report chat shows it.",
+    check_new_evidence,
+)
+propose_open_box_tool = _proposal(
+    ProposeOpenBoxToolConfig,
+    "open_box_tool",
+    evidence_asks.OpenBoxTool,
+    "Opens the box tool for new evidence at the second it is best seen, with its short name, once. "
+    "Proposes only; the reviewer draws the box.",
+    check_new_evidence,
+)

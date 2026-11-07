@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for ``POST /api/v1/incidents/{video_id}/evidence-asks`` (flag, validation, no writes)."""
+"""Unit tests for ``POST /api/v1/incidents/{video_id}/evidence-asks`` (validation, no writes)."""
 
 from __future__ import annotations
 
@@ -22,27 +22,16 @@ from fastapi.testclient import TestClient
 import pytest
 
 from vss_agents.api.incident_evidence_asks import register_incident_evidence_asks_routes
-from vss_agents.utils import evidence_asks
 
 URL = "/api/v1/incidents/vid-1/evidence-asks"
 INCIDENT = {"start_timestamp": 10, "end_timestamp": 60}
 
 
 @pytest.fixture
-def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.setenv(evidence_asks.ENABLED_ENV, "1")
+def client() -> TestClient:
     app = FastAPI()
     register_incident_evidence_asks_routes(app)
     return TestClient(app)
-
-
-def test_route_is_404_when_the_flag_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(evidence_asks.ENABLED_ENV, raising=False)
-    app = FastAPI()
-    register_incident_evidence_asks_routes(app)
-    body = {"calls": [{"tool": "ask_reviewer", "args": {"question": "Who?"}}]}
-    response = TestClient(app).post(URL, json=body)
-    assert response.status_code == 404
 
 
 def test_route_returns_proposals_and_rejections(client: TestClient) -> None:

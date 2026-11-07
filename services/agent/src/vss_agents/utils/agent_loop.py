@@ -71,6 +71,8 @@ class LoopRun:
     task: asyncio.Future[Any] | None = None
     # The reviewer's unsaved draft, for the editor agent's proposal tools. The route sets it; the model never does.
     draft: Any = None
+    # Questions already asked about the new evidence in this chat exchange, before this run. The route sets it.
+    questions_asked: int = 0
 
     def stop(self, reason: str) -> None:
         """End the run: the first reason wins, and the agent's task is cancelled."""
@@ -148,13 +150,14 @@ async def run_loop(
     wall_seconds: float = WALL_CLOCK_SECONDS,
     max_tool_steps: int = MAX_TOOL_STEPS,
     draft: Any = None,
+    questions_asked: int = 0,
 ) -> LoopResult:
     """Run ``ask`` (one call of the agent through its ``SessionManager``) under every limit and return how it ended.
 
     It never raises for a failed run: the outcome is ``LoopResult.status``, one of ``ok``, ``cap_reached``,
     ``timeout``, ``busy``, ``aborted:<reason>`` or ``error``. Only the caller's own cancellation passes through.
     """
-    run = LoopRun(video_id=video_id, max_tool_steps=max_tool_steps, draft=draft)
+    run = LoopRun(video_id=video_id, max_tool_steps=max_tool_steps, draft=draft, questions_asked=questions_asked)
     token = _CURRENT.set(run)
     started = time.perf_counter()
     status, answer = "ok", ""

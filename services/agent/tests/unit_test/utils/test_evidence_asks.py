@@ -15,8 +15,6 @@
 
 """Unit tests for the new-evidence rules: at most two questions, then one box tool opening."""
 
-import pytest
-
 from vss_agents.utils import evidence_asks as ea
 
 WINDOW = ea.IncidentWindow(start_timestamp=10, end_timestamp=60)
@@ -28,17 +26,6 @@ def ask(question: str = "Who is the man in the red hood?") -> ea.Call:
 
 def open_box(seconds: float = 24, name: str = "Red hood") -> ea.Call:
     return ea.Call(tool="open_box_tool", args={"seconds": seconds, "name": name})
-
-
-def test_flag_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(ea.ENABLED_ENV, raising=False)
-    assert ea.enabled() is False
-
-
-@pytest.mark.parametrize("value", ["1", "true", "on", "YES"])
-def test_flag_reads_truthy_values(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
-    monkeypatch.setenv(ea.ENABLED_ENV, value)
-    assert ea.enabled() is True
 
 
 def test_two_questions_then_the_box_tool_opens() -> None:

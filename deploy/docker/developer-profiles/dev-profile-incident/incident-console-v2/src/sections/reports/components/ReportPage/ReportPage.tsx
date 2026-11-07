@@ -31,6 +31,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { chatTarget, citationTitles } from '@/lib/chat/report-chat';
 import { seekTarget } from '@/lib/chat/timestamps';
 import { applyChatEdit, type ProposedAction } from '@/lib/edits/chat-edit';
+import type { EvidenceOpening } from '@/lib/evidence/box-tool';
 import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
 import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
 import {
@@ -119,6 +120,9 @@ export function ReportPage({
   const [editingTrackKey, setEditingTrackKey] = useState<string | null>(null);
   // The draft items the chat's last edit added or changed (plus 'incident'), highlighted until the reviewer edits by hand.
   const [assistantKeys, setAssistantKeys] = useState<string[]>([]);
+  // New evidence the chat asked for: the box tool opens on it in Edit, then the edit pane clears it.
+  const [evidenceOpening, setEvidenceOpening] = useState<EvidenceOpening | null>(null);
+  const clearEvidenceOpening = useCallback(() => setEvidenceOpening(null), []);
   // The chat's answer arrives after an await, so it reads the draft and the opened report from refs, not its own render.
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -336,22 +340,27 @@ export function ReportPage({
   };
 
   // The chat's edit is one change, so one Undo reverts the whole request. Asked in View, it opens the draft the question
-  // was about and shows it with the edit applied, with no step in between for the reviewer.
-  const editFromChat = (sent: EditDraft, proposals: ProposedAction[]) => {
+  // was about and shows it with the edit applied, with no step in between for the reviewer. A box the chat opens for new
+  // evidence shows the draft in Edit too, and is not a change to the draft.
+  const editFromChat = (sent: EditDraft, proposals: ProposedAction[], opening?: EvidenceOpening) => {
     const current = draftRef.current;
     const result = applyChatEdit(current ?? sent, sent, proposals);
-    if (result.changedKeys.length + result.removedKeys.length === 0) return { applied: result.applied, skipped: result.skipped };
-    if (current) {
-      setUndoStack((stack) => [...stack.slice(-49), current]);
-    } else {
+    const changed = result.changedKeys.length + result.removedKeys.length > 0;
+    if (!changed && !opening) return { applied: result.applied, skipped: result.skipped };
+    if (!current) {
       const base = shownReportRef.current;
       if (!base) return { applied: [], skipped: result.skipped };
       startEdit(base);
-      setUndoStack([sent]);
+      if (changed) setUndoStack([sent]);
+    } else if (changed) {
+      setUndoStack((stack) => [...stack.slice(-49), current]);
     }
-    setDraft(result.draft);
+    if (changed) {
+      setDraft(result.draft);
+      setAssistantKeys(result.changedKeys);
+    }
+    if (opening) setEvidenceOpening(opening);
     setMode('edit');
-    setAssistantKeys(result.changedKeys);
     return { applied: result.applied, skipped: result.skipped };
   };
 
@@ -613,8 +622,10 @@ export function ReportPage({
                     baseRevisionNo={editBase.revisionNo}
                     draft={draft}
                     assistantKeys={assistantKeys}
+                    evidenceOpening={evidenceOpening}
                     officialMissing={!officialRevision && revisions !== null}
                     onChange={changeDraft}
+                    onEvidenceOpened={clearEvidenceOpening}
                     onEditingTrack={setEditingTrackKey}
                     onSeek={seek}
                     title={reportHeading(editBase.report)}
