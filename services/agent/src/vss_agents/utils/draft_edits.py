@@ -176,6 +176,7 @@ class UpsertInstrument(_Strict):
     name: str | None = None
     description: str | None = None
     threat_level: int | None = Field(None, ge=1, le=THREAT_MAX)
+    holder_key: str | None = Field(None, min_length=1)
     timestamp_seconds: float | None = Field(None, ge=0)
 
     @model_validator(mode="after")
@@ -315,8 +316,12 @@ def _upsert_entity(draft: DraftSnapshot, args: UpsertEntity) -> Proposal:
 def _upsert_instrument(draft: DraftSnapshot, args: UpsertInstrument) -> Proposal:
     if args.op == "edit":
         _find(draft, args.item_key or "", "instrument")
+    if args.holder_key is not None:
+        _find(draft, args.holder_key, "entity")
     _check_in_incident(draft, args.timestamp_seconds, "The timestamp")
     verb = f"Add instrument {args.name}" if args.op == "add" else f"Edit {args.item_key}"
+    if args.holder_key is not None:
+        verb += f", held by {args.holder_key}"
     return Proposal(tool="upsert_instrument", args=args.model_dump(exclude_none=True), summary=verb)
 
 
