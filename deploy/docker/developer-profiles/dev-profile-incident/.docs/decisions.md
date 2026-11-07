@@ -11,6 +11,14 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - *A new feature flag for the chat path:* features are on by default on this branch (#526).
   - *Keeping jobs in a database table:* a restart loses an in-flight job; the reviewer re-asks. A table is a schema change for a rare case.
 - **Links:** [`api/incident_gap_retry.py`](../../../../../services/agent/src/vss_agents/api/incident_gap_retry.py), [`utils/gap_retry_jobs.py`](../../../../../services/agent/src/vss_agents/utils/gap_retry_jobs.py), [`src/lib/chat/gap-retry.ts`](../incident-console-v2/src/lib/chat/gap-retry.ts), [console reference](console-reference.md#report-versions-view-edit-and-history).
+### 2026-11-08: The report PDF is made on the agent from Markdown, with no browser print
+- **Decision:** a report version's PDF is built by the agent: the console builds the Markdown (overview, summary, severity rationale, evidence by People, Instruments and Assets, timeline, version history; SGT times) and posts it to `POST /api/v1/incidents/report-pdf`. The agent runs the VSS pipeline (`markdown`, the report stylesheet, `xhtml2pdf`) and returns the PDF. Nothing is stored. The old print-only CSS is removed and the dialog has no `window.print()` fallback: when the agent fails it shows the reason and Try again.
+- **Why:** the captain chose a PDF like VSS's own, made on the server (mockup B round 35); a browser print cannot give the same page, header and footer, and a server build can fetch the evidence images with the signed URLs without the reviewer's browser.
+- **Alternatives rejected:**
+  - *Browser print with a print stylesheet:* a different page per browser; the captain asked for the server path only.
+  - *Calling `video_report_gen` for the PDF:* it needs VST, which this profile removed.
+- **Links:** [`utils/incident_report_pdf.py`](../../../../services/agent/src/vss_agents/utils/incident_report_pdf.py), [`lib/reports/report-pdf-markdown.ts`](../incident-console-v2/src/lib/reports/report-pdf-markdown.ts), [`vm-api-contracts.md`](vm-api-contracts.md)
+
 ### 2026-11-08: A Library card's duration comes from the run's recorded video length
 - **Decision:** `list_incident_report_summaries` returns `durationSeconds`, read from `model_runs.notes` at `incidentConsoleV2.request.videoDurationSeconds` (the length the analysis read before validation). The card shows it as an `m:ss` or `h:mm:ss` badge, bottom-right on the thumbnail, and no badge when it is null. Migration `20261108000000_library_card_duration.sql`.
 - **Why:** `videos.duration` exists but the console never writes it (the upload row is inserted without it), so reading it would always show nothing. The run notes already hold the length and the list query already joins them, so the change is one field in the existing RPC with no per-card probe or download.

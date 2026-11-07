@@ -63,7 +63,10 @@ test('the title is the H1 and the overview table comes first, in the captain ord
   const { markdown } = buildReportMarkdown(view());
   assert.match(markdown, /^# Physical confrontation/);
   const order = ['## Overview', '## Summary', '## Severity rationale', '## Evidence', '## Timeline'].map((h) => markdown.indexOf(h));
-  assert.ok(order.every((index, i) => index >= 0 && (i === 0 || index > order[i - 1])), order.join(','));
+  assert.ok(
+    order.every((index, i) => index >= 0 && (i === 0 || index > order[i - 1])),
+    order.join(','),
+  );
   assert.match(markdown, /\| \*\*Version\*\* \| v4, Official \|/);
   assert.match(markdown, /\| \*\*Severity\*\* \| 4\/5 \|/);
 });
@@ -146,7 +149,11 @@ test('the agent client posts the Markdown and returns the PDF with its missing-i
   const original = globalThis.fetch;
   globalThis.fetch = fakeFetch;
   try {
-    const result = await requestReportPdf('http://agent.test/', { markdown: '# x', runningHeader: 'h', footer: 'f' }, AbortSignal.timeout(5000));
+    const result = await requestReportPdf(
+      'http://agent.test/',
+      { markdown: '# x', runningHeader: 'h', footer: 'f' },
+      AbortSignal.timeout(5000),
+    );
     assert.equal(result.missingImages, 2);
     assert.equal(calls[0].url, 'http://agent.test/api/v1/incidents/report-pdf');
     assert.deepEqual(calls[0].body, { markdown: '# x', runningHeader: 'h', footer: 'f' });
@@ -159,20 +166,29 @@ test('an agent failure carries its reason, and an unreachable agent says so with
   const original = globalThis.fetch;
   try {
     globalThis.fetch = async () =>
-      new Response(JSON.stringify({ detail: 'the PDF renderer reported 1 error(s)' }), { status: 502, headers: { 'content-type': 'application/json' } });
-    await assert.rejects(requestReportPdf('http://agent.test', { markdown: '#', runningHeader: '', footer: '' }, AbortSignal.timeout(5000)), (error) => {
-      assert.ok(error instanceof ReportPdfError);
-      assert.equal(error.reason, 'the PDF renderer reported 1 error(s)');
-      return true;
-    });
+      new Response(JSON.stringify({ detail: 'the PDF renderer reported 1 error(s)' }), {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      });
+    await assert.rejects(
+      requestReportPdf('http://agent.test', { markdown: '#', runningHeader: '', footer: '' }, AbortSignal.timeout(5000)),
+      (error) => {
+        assert.ok(error instanceof ReportPdfError);
+        assert.equal(error.reason, 'the PDF renderer reported 1 error(s)');
+        return true;
+      },
+    );
     globalThis.fetch = async () => {
       throw new TypeError(`fetch failed for ${SIGNED}`);
     };
-    await assert.rejects(requestReportPdf('http://agent.test', { markdown: '#', runningHeader: '', footer: '' }, AbortSignal.timeout(5000)), (error) => {
-      assert.equal(error.status, 503);
-      assert.doesNotMatch(error.message, /secret|signed\.r2/);
-      return true;
-    });
+    await assert.rejects(
+      requestReportPdf('http://agent.test', { markdown: '#', runningHeader: '', footer: '' }, AbortSignal.timeout(5000)),
+      (error) => {
+        assert.equal(error.status, 503);
+        assert.doesNotMatch(error.message, /secret|signed\.r2/);
+        return true;
+      },
+    );
   } finally {
     globalThis.fetch = original;
   }

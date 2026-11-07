@@ -182,6 +182,10 @@ Response `200`: `{"session_id", "message": {"role": "assistant", "content", "cit
   - **`grounding`:** gains `scope: "library"`, `plan`, `matching`, `count_exact`, `answered_by`, `candidates`, `versions` (each incident's version, for links), `incident_titles`, `item_names` (each cited item's name, so citations are labelled without ids) and `plan_prompt_sha256`; `usage` adds up the turn's calls. `version_id` and `official` are `null`.
 - **Unchanged:** every question in template mode (composed from the report, above) keeps exactly the v1 keys.
 
+## `POST /api/v1/incidents/report-pdf`
+
+Request: `{"markdown": <1-200000 chars>, "runningHeader": <text, up to 300>, "footer": <text, up to 300>}` (`snake_case` also accepted). The console builds the Markdown of one report version; the agent fetches each evidence image (at most 80, at most 8 MB each) over the signed URL it was given and returns the PDF: A4, 15 mm margins, the running header and a page X of Y footer. Response `200`: `application/pdf`, with `X-Missing-Images` (how many images could not be fetched; each is a note in the PDF) and `Cache-Control: no-store`. `422` for an empty report or too many images. `502` with `detail` when the PDF cannot be rendered. Nothing is stored and the report is not changed. Signed URLs are never logged: the `httpx` and `httpcore` loggers stay at WARNING in `vss_agents.utils.incident_report_pdf`.
+
 ## `POST /api/v1/incidents/{video_id}/video-check`
 
 A reviewer's confirmed fresh look at the video. Off unless `INCIDENT_VIDEO_CHECK_ENABLED` is set: a request is then a `404` and no model is called. It writes nothing. Code: [`incident_video_check.py`](../../../../../services/agent/src/vss_agents/api/incident_video_check.py).
