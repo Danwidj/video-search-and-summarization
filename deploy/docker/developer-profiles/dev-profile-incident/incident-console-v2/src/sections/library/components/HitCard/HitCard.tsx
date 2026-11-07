@@ -3,7 +3,9 @@
 
 import { useRouter } from 'next/navigation';
 
+import { cn } from 'cn';
 import { Card } from '@/components/ui/card';
+import { CARD_HOVER, CARD_ZOOM } from '@/lib/ui/card-hover';
 import { Badge } from '@/components/ui/badge';
 import { EvidenceFrame, KIND_COLOUR } from '@/sections/evidence/components/EvidenceFrame';
 import { SeverityChip } from '@/sections/library/components/Shared';
@@ -39,7 +41,10 @@ export function HitCard({
       role="link"
       tabIndex={0}
       aria-label={`Open report at ${clock}: ${title}`}
-      className="group relative flex cursor-pointer flex-col overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
+      className={cn(
+        'group relative flex cursor-pointer flex-col overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs focus-visible:outline-none',
+        CARD_HOVER,
+      )}
       onClick={() => router.push(href)}
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
@@ -49,18 +54,20 @@ export function HitCard({
       }}
     >
       <div className="relative aspect-video shrink-0 overflow-hidden bg-black">
-        <EvidenceFrame
-          aspect={16 / 9}
-          box={shown.box}
-          className="h-full w-full rounded-none !bg-black"
-          drawBox
-          frameSrc={shown.frameSrc}
-          fullFrame
-          kind={item.itemType}
-          label={title}
-          notLocated={shown.notLocated}
-          src={shown.src}
-        />
+        <div className={cn('h-full w-full', CARD_ZOOM)}>
+          <EvidenceFrame
+            aspect={16 / 9}
+            box={shown.box}
+            className="h-full w-full rounded-none !bg-black"
+            drawBox
+            frameSrc={shown.frameSrc}
+            fullFrame
+            kind={item.itemType}
+            label={title}
+            notLocated={shown.notLocated}
+            src={shown.src}
+          />
+        </div>
 
         <Badge
           variant="outline"

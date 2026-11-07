@@ -1516,3 +1516,10 @@ class TestSharedSemanticSearch:
         with pytest.raises(HTTPException) as exc_info:
             await semantic_search("q", embedder=failing, retrieve=AsyncMock())
         assert exc_info.value.status_code == 502
+
+
+class TestCriticEndpointSetting:
+    def test_a_missing_address_raises_a_clear_error(self, monkeypatch):
+        monkeypatch.delenv("VLM_BASE_URL", raising=False)
+        with pytest.raises(RuntimeError, match="VLM_BASE_URL"):
+            VlmCriticEvaluator()._chat_url()

@@ -126,13 +126,15 @@ uv pip install --python .venv/bin/python supabase opencv-python-headless setupto
 cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts
 ./native-services.sh restart vss-agent
 ```
-Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json` contains `"editable": true` and `/proc/<pid>/environ` contains the Brev Switchyard URLs (`LLM_BASE_URL=https://switchyard-13doh4lsz.brevlab.com`, `VLM_BASE_URL=https://switchyard-13doh4lsz.brevlab.com`).
+Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json` contains `"editable": true` and `/proc/<pid>/environ` contains the Brev Switchyard URLs (`LLM_BASE_URL=<the Switchyard address>`, `VLM_BASE_URL=<the Switchyard address>`).
 
 ---
 
 ## 3. Laptop-to-VM Connectivity & SSH Troubleshooting
 
 The primary UI (`incident-console-v2`) runs locally on developer laptops. Running `./start.sh --mode vm` is THE canonical way to set up everything from your laptop: it checks the VM deploy state over SSH, automatically self-heals any missing Docker or native services, opens the backgrounded SSH tunnel, and launches the console.
+
+**Production console:** `./start.sh --mode vm --prod` replaces `npm run dev` with `next build` then `next start` (same host `127.0.0.1`, port 3200 and env); it prints the mode it is in, and a failed build stops start.sh before anything is served. Without the flag nothing changes. Use it for a long session: `next dev` grew to 7 GB after hours. `next start` prints a warning that it does not work with `output: standalone` (the config is kept for a container build); it serves `.next` correctly and the analysis job loop starts (checked on a spare port). Ctrl-C and `kill` stop it as before. **Dev or prod:** the default `next dev` is for editing the console (hot reload, slower pages, memory grows over hours); use `--prod` to demo or leave it running, or to check what ships. **After a code change** a production console does not pick it up: stop `start.sh` (Ctrl-C) and run `./start.sh --mode vm --prod` again, which always rebuilds (`npm run build`, about a minute) before `next start`. Never run `npm run build` under a running `next start`; the server keeps serving the old `.next` it loaded, and a half-built one breaks pages. The port is always 3200 (`start.sh` and `package.json` fix it); a second console needs its own `npm run start -- -H 127.0.0.1 --port <port>` by hand after `npm run build`, as the verification runs do on 3210.
 
 ### SSH Port Tunneling (Manual / Standalone)
 

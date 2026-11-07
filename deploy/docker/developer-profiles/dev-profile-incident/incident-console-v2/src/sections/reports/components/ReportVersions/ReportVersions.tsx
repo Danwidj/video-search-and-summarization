@@ -17,6 +17,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { VersionPill } from '@/components/version-pill';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -138,7 +139,7 @@ export function ReportVersions({
                         />
                       ))}
                       <i
-                        className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${revision.kind === 'human' ? 'border-primary bg-primary' : 'border-muted-foreground/60 bg-card'}`}
+                        className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${official ? 'border-version-official bg-version-official' : revision.kind === 'human' ? 'border-version-human bg-version-human' : 'border-version-model bg-version-model'}`}
                         style={{ left: lane * LANE_WIDTH + LANE_WIDTH / 2 }}
                       />
                     </span>
@@ -154,16 +155,9 @@ export function ReportVersions({
                       <span className="flex flex-wrap items-center gap-x-2">
                         <b>v{revision.revisionNo}</b>
                         <span className="text-muted-foreground">{formatTimestamp(revision.createdAt, 'time unknown')}</span>
-                        {official && (
-                          <Badge className="border-amber-400 bg-amber-50 text-[10.5px] font-bold text-amber-800" variant="outline">
-                            ★ Official
-                          </Badge>
-                        )}
                       </span>
                       <span className="flex items-center gap-1.5 text-muted-foreground">
-                        <Badge className="px-1.5 text-[10.5px] font-semibold" variant="secondary">
-                          {revision.kind === 'human' ? 'Human' : 'AI'}
-                        </Badge>
+                        <VersionPill kind={revision.kind === 'human' ? 'human' : 'ai'} official={official} />
                         <span className="truncate">
                           {revision.kind === 'ai' ? (revision.model ?? 'Unknown model') : shortVersionNote(revision.note ?? '')}
                         </span>
@@ -175,7 +169,7 @@ export function ReportVersions({
                           aria-label={starLabel}
                           aria-busy={busy}
                           aria-pressed={official}
-                          className="relative z-10 h-7 w-7 self-center p-0 text-base leading-none text-amber-600 hover:text-amber-700 disabled:opacity-40"
+                          className="relative z-10 h-7 w-7 self-center p-0 text-base leading-none text-version-official hover:text-version-official/80 disabled:opacity-40"
                           data-testid={official ? 'clear-official' : 'make-official'}
                           disabled={busyId !== null}
                           onClick={() => void toggleOfficial(revision)}

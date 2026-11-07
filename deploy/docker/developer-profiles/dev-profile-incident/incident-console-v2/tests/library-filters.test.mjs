@@ -16,8 +16,8 @@ test('a dashboard link round-trips through the filters', () => {
 
 test('defaults are left out of the query and "all" means no filter', () => {
   assert.equal(String(filterParams(EMPTY_FILTERS)), '');
-  assert.deepEqual(parseFilters(new URLSearchParams('type=all&severity=all&kind=all&page=0&sort=sideways')), EMPTY_FILTERS);
-  assert.equal(String(filterParams({ ...EMPTY_FILTERS, sort: 'oldest', page: 3 })), 'sort=oldest&page=3');
+  assert.deepEqual(parseFilters(new URLSearchParams('type=all&severity=all&kind=all&page=0&sort=oldest')), EMPTY_FILTERS);
+  assert.equal(String(filterParams({ ...EMPTY_FILTERS, page: 3 })), 'page=3');
 });
 
 test('every active filter is one removable chip that clears only itself', () => {

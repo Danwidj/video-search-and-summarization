@@ -18,7 +18,7 @@ This document describes how incident analysis output is defined, validated, stor
 
 `incident-console-v2/src/modules/analysis/application/build-request.ts` builds exactly the request of `eval/scripts/eval_vlm_client.py:analyze_video_with_p1`:
 
-- **Model:** one of the allowlisted models in [`contracts/inference.json`](../contracts/inference.json): `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` (the default when `VLM_MODEL` is unset).
+- **Model:** one of the allowlisted models in [`contracts/inference.json`](../contracts/inference.json): `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` (the default when `VLM_MODEL` is unset), then the other seven models the Brev endpoint serves (`cosmos-3-auto`, `nemotron-3-nano-30b-a3b`, `nemotron-3-super-120b-a12b`, `nemotron-3-ultra`, `nemotron-3-ultra-nvfp4`, `nemotron-3-auto`, `nemotron-3.5-lightning-30b-a3b`); the Nemotron text models carry "(text only)" in their label because they are not expected to take video. The list is static, and the agent keeps its own vendored copy, so a change needs the agent restarted.
 - **`messages`:** one user message:
   1. the signed R2 video URL;
   2. the canonical extraction prompt, verbatim;
@@ -125,8 +125,8 @@ Records written before attempt statuses existed lack `status`; they are shown as
 
 | Class | Fields | Source | Editable |
 |---|---|---|---|
-| **A: structured** | type, title (editable since 2026-11-06; the model's stays in the run record), start/end (integer seconds as text), duration (derived), description, severity level, confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`), and each item's description, detail and image | `report_revisions.payload` and `.evidence` | Yes, into a new `human` revision only, except duration (recomputed) and confidence |
-| **B: model output** | severity rationale, location (shown); the model's original title (shown beside a reviewer's); timeline and uncertainties (stored in the report, not shown by the console since 2026-11-01) | the report in notes | No (read-only) |
+| **A: structured** | type, title (editable since 2026-11-06; the model's stays in the run record), start/end (integer seconds as text), duration (derived), description, severity level, severity rationale (editable since 2026-11-07; stored as `incident.severity_reason`), confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`), and each item's description, detail and image | `report_revisions.payload` and `.evidence` | Yes, into a new `human` revision only, except duration (recomputed) and confidence |
+| **B: model output** | location (shown); the model's original title (shown beside a reviewer's); timeline and uncertainties (stored in the report, not shown by the console since 2026-11-01) | the report in notes | No (read-only) |
 | **C: provenance** | model, contract version, run id, instruction, settings, fingerprints, raw response, reasoning, finish reason, usage, repair record | notes + `model_runs` | No |
 
 ### Report revisions (AI and human)
@@ -149,8 +149,7 @@ A report is a list of immutable revisions in `report_revisions`; the columns, th
 - **There is no verification status and no draft.** `kind='human'` with `created_by` and `created_at` says a person saved it; unsaved edits live only in the form.
 
 The report page:
-- shows "Model severity rationale";
-- when a human revision changed the severity, adds "Model assessed N/5; reviewer set M/5";
+- shows the version's own severity rationale (the model's on an AI version, the reviewer's once they change it) and, as a small tag beside the title, the model's confidence (no tag when the version has none);
 - shows no "Reviewer-edited after generation" line (removed 2026-11-06; `differences.fields` still tracks the changed fields). Entities, instruments and assets are compared with the stored payload of the AI revision the version derives from (its own for an AI version), not the first pass in the run notes, so the zoomed second look's corrections are never reviewer edits.
 
 ## 5. Legacy data

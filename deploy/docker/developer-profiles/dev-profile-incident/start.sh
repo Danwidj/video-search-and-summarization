@@ -4,6 +4,7 @@
 # workflow. RUN FROM YOUR LAPTOP:
 #
 #   cd deploy/docker/developer-profiles/dev-profile-incident && ./start.sh
+#   (add --prod for a production console build; it rebuilds on every run)
 #
 # Modes (via --mode or VSS_START_MODE, default: vm):
 #   vm    — real VM agent (checks/deploys <vm-host> over SSH, opens the SSH
@@ -106,6 +107,10 @@
 #   VSS_PULL_TIMEOUT         image pull/clone timeout on the VM, seconds (default: 1800)
 #   VSS_COMPOSE_UP_TIMEOUT   `docker compose up` timeout on the VM, seconds (default: 600)
 #   VSS_NATIVE_START_TIMEOUT native service start timeout on the VM, seconds (default: 300)
+#   --prod                   console step only: run `next build` then `next start` (a production
+#                            build, same host and port 3200 and same env) instead of
+#                            `npm run dev`. The build takes about a minute; a failed build stops
+#                            start.sh. Without the flag nothing changes
 #   --no-console             bring the backend and tunnel up, skip incident-console-v2,
 #                            and hold the tunnel open (for checking the VM side only)
 #   ENABLE_ANALYTICS         set to 'true' to include video-analytics-api and
@@ -131,6 +136,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse --mode / --no-console flags (--no-console: bring the backend and tunnel up, skip the Next.js console)
 NO_CONSOLE=0
+PROD=0
 VSS_START_MODE="${VSS_START_MODE:-vm}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -146,9 +152,13 @@ while [[ $# -gt 0 ]]; do
       NO_CONSOLE=1
       shift
       ;;
+    --prod)
+      PROD=1
+      shift
+      ;;
     *)
       echo "start.sh: unknown argument '$1'" >&2
-      echo "Usage: ./start.sh [--mode mock|vm] [--no-console]" >&2
+      echo "Usage: ./start.sh [--mode mock|vm] [--no-console] [--prod]" >&2
       exit 1
       ;;
   esac
@@ -534,11 +544,28 @@ fi
 cd "${SCRIPT_DIR}/incident-console-v2"
 npm install
 
-echo "  v2 running at http://localhost:3200 — Ctrl-C here (or close this terminal) stops v2 and any backgrounded local services/tunnel."
 # A background job and wait, not a foreground command: bash runs a trap only
 # after the foreground command returns, so a SIGTERM to start.sh alone would
 # wait on npm forever. wait returns as soon as a trapped signal arrives.
-npm run dev -- -H 127.0.0.1 --port 3200 &
+if [ "$PROD" = 1 ]; then
+  echo "start.sh: console mode: PRODUCTION (--prod): running 'next build' first (about a minute), then 'next start'."
+  npm run build &
+  CONSOLE_PID=$!
+  build_rc=0
+  wait "$CONSOLE_PID" || build_rc=$?
+  CONSOLE_PID=""
+  if [ "$build_rc" -ne 0 ]; then
+    echo "start.sh: 'next build' failed (exit ${build_rc}); not starting the console. Fix the build, or run without --prod." >&2
+    cleanup
+    exit "$build_rc"
+  fi
+  echo "  v2 (production build) running at http://localhost:3200 — Ctrl-C here (or close this terminal) stops v2 and any backgrounded local services/tunnel."
+  npm run start -- -H 127.0.0.1 --port 3200 &
+else
+  echo "start.sh: console mode: development (next dev); add --prod for a production build."
+  echo "  v2 running at http://localhost:3200 — Ctrl-C here (or close this terminal) stops v2 and any backgrounded local services/tunnel."
+  npm run dev -- -H 127.0.0.1 --port 3200 &
+fi
 CONSOLE_PID=$!
 console_rc=0
 wait "$CONSOLE_PID" || console_rc=$?

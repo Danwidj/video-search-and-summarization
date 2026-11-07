@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type * as React from 'react';
 import { VideoIcon } from 'lucide-react';
 import { cn } from 'cn';
+import { CARD_ZOOM } from '@/lib/ui/card-hover';
+import { useHoverPreview } from '@/lib/ui/use-hover-preview';
 
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { libraryCardThumbnail } from '@/lib/ui/thumbnail';
 import { severityClass } from '@/sections/library/components/Shared';
+import { MutedVideo } from '@/components/muted-video';
 import { Badge } from '@/components/ui/badge';
 
 export function ReportThumbnail({
@@ -17,6 +20,7 @@ export function ReportThumbnail({
   kind,
   duration,
   alt,
+  previewVideoId,
   children,
 }: {
   thumbnailUrl?: string;
@@ -24,13 +28,32 @@ export function ReportThumbnail({
   kind?: ReportLibraryItem['kind'];
   duration?: string;
   alt: string;
+  /** Plays this video, muted, over the screenshot while the card is hovered. */
+  previewVideoId?: string;
   children?: React.ReactNode;
 }) {
   const [failed, setFailed] = useState(false);
+  const figure = useRef<HTMLElement>(null);
+  const previewUrl = useHoverPreview(figure, previewVideoId);
+  const [ready, setReady] = useState(false);
+  const clip = useRef<HTMLVideoElement>(null);
+
+  // Leaving the card unmounts the clip: pause it and drop its source so the download stops, then show the screenshot again.
+  useEffect(() => {
+    const video = clip.current;
+    if (!previewUrl || !video) return;
+    return () => {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      setReady(false);
+    };
+  }, [previewUrl]);
   const { image: view, severityLabel, kindLabel } = libraryCardThumbnail({ thumbnailUrl, severity, kind: kind || 'ai' }, failed);
 
   return (
     <figure
+      ref={figure}
       aria-label="Video screenshot preview"
       className="relative h-32 shrink-0 overflow-hidden lg:h-auto lg:min-h-12 lg:flex-1 bg-[#dfe3dc]"
     >
@@ -38,7 +61,7 @@ export function ReportThumbnail({
         // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
         <img
           alt={alt}
-          className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          className={cn('size-full object-cover', CARD_ZOOM)}
           loading={view.loading}
           onError={() => setFailed(true)}
           src={view.src}
@@ -50,6 +73,20 @@ export function ReportThumbnail({
         >
           <VideoIcon className="size-7" />
         </div>
+      )}
+      {previewUrl && (
+        <MutedVideo
+          autoPlay
+          className={cn('absolute inset-0 size-full object-cover', CARD_ZOOM, ready ? 'opacity-100' : 'opacity-0')}
+          loop
+          onCanPlay={() => setReady(true)}
+          onEmptied={() => setReady(false)}
+          onError={() => setReady(false)}
+          playsInline
+          ref={clip}
+          src={previewUrl}
+          tabIndex={-1}
+        />
       )}
       <Badge
         variant="outline"

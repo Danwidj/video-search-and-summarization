@@ -310,6 +310,20 @@ with tempfile.TemporaryDirectory() as tmp:
         named = ", ".join(f"{key} => %({key})s" for key in kwargs)
         return one(conn, f"SELECT public.list_incident_report_summaries({named})", kwargs)[0]
 
+    @test("the library's official-first sort lists official reports, then the rest, each by upload date oldest first, across pages")
+    def _():
+        with conn.transaction(force_rollback=True):
+            # v1 is official and uploaded last; v2 and v3 are not yet official.
+            conn.execute("UPDATE public.videos SET uploaded_datetime = '2026-03-03' WHERE id = 'v1'")
+            conn.execute("UPDATE public.videos SET uploaded_datetime = '2026-02-02' WHERE id = 'v2'")
+            conn.execute("UPDATE public.videos SET uploaded_datetime = '2026-01-01' WHERE id = 'v3'")
+            order = lambda **kw: [r["videoId"] for r in summaries(p_sort="official-first", **kw)["reports"]]
+            assert order() == ["v1", "v3", "v2"], order()
+            assert order(p_page_size=2, p_page=1) == ["v1", "v3"] and order(p_page_size=2, p_page=2) == ["v2"]
+            assert summaries(p_sort="official-first")["totalItems"] == 3
+            assert order(p_scope="not_official") == ["v3", "v2"], "the filters still apply"
+            assert [r["videoId"] for r in summaries(p_sort="oldest")["reports"]] != order(), "other sorts are unchanged"
+
     @test("the library shows the official revision, else the newest, one card per incident")
     def _():
         result = summaries()
@@ -391,6 +405,17 @@ with tempfile.TemporaryDirectory() as tmp:
         assert dashboard_of(p_scope="not_official")["multipleVersions"] == 1, "v3 only; v2 has one version"
         assert dashboard_of(p_type="burglary")["multipleVersions"] == 0, "v2 has one version"
         assert dashboard_of(p_type="assault")["multipleVersions"] == 2
+
+    @test("the dashboard counts every version of the counted reports, split AI and human, with the same filters")
+    def _():
+        # v1: AI + human, v2: AI, v3: AI + two human. total and revisions still count one revision per video.
+        assert dashboard_of()["versions"] == {"total": 6, "ai": 3, "human": 3}, dashboard_of()["versions"]
+        assert dashboard_of()["total"] == 3 and sum(dashboard_of()["revisions"].values()) == 3
+        assert dashboard_of(p_scope="official")["versions"] == {"total": 2, "ai": 1, "human": 1}, "v1 only"
+        assert dashboard_of(p_scope="not_official")["versions"] == {"total": 4, "ai": 2, "human": 2}, "v2 and v3"
+        assert dashboard_of(p_type="burglary")["versions"] == {"total": 1, "ai": 1, "human": 0}, "v2 only"
+        none = dashboard_of(p_type="burglary", p_severity="high")["versions"]
+        assert none == {"total": 0, "ai": 0, "human": 0}, none
 
     @test("the dashboard counts evidence items by kind, split by official, for the counted reports")
     def _():

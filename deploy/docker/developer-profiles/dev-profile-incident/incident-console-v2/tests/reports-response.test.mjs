@@ -79,7 +79,7 @@ const DEFAULT_ARGS = {
   p_instruments: null,
   p_assets: null,
   p_day_of_week: null,
-  p_sort: 'newest',
+  p_sort: 'official-first',
   p_scope: 'all',
   p_entity_types: null,
   p_evidence_match: 'contains',

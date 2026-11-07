@@ -205,7 +205,7 @@ export function ReanalysisDialog({ videoId, onAttempted }: { videoId: string; on
       <DialogTrigger asChild>
         <Button
           aria-label="Re-analyse this incident"
-          className="border-primary/20 bg-primary/5 text-xs font-semibold hover:bg-primary/10"
+          className="bg-card text-xs font-semibold"
           data-testid="reanalysis-trigger"
           size="sm"
           type="button"

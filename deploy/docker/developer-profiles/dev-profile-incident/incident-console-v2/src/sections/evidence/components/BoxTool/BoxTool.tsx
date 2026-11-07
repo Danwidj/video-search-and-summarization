@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Textarea } from '@/components/ui/textarea';
 import { type BoxToolClient, boxToolClient } from '@/lib/evidence/box-tool-client';
 import { endTrackAt, extendTrack, extensionRequest, SLOW_NOTICE_MS, TRACK_WINDOW_SECONDS } from '@/lib/evidence/box-tool';
@@ -42,6 +43,8 @@ interface Card {
   description: string;
   holderKey: string | null;
   threatLevel: number | null;
+  /** An entity's kind: the reviewer must choose it (no unknown), so it starts empty. */
+  entityType: 'human' | 'animal' | null;
 }
 
 type Stage = 'box' | 'working' | 'review';
@@ -85,6 +88,7 @@ export function BoxTool({
     description: existing?.description ?? '',
     holderKey: null,
     threatLevel: existing?.threatLevel ?? null,
+    entityType: null,
   }));
   const [proposal, setProposal] = useState<BoxProposal | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -170,7 +174,14 @@ export function BoxTool({
       }
       const p = described.proposal;
       const holder = p.holder ? holders.find((h) => h.name.toLowerCase() === p.holder?.toLowerCase()) : undefined;
-      text = { itemType: p.itemType, name: p.name, description: p.description, holderKey: holder?.key ?? null, threatLevel: p.threatLevel };
+      text = {
+        ...card,
+        itemType: p.itemType,
+        name: p.name,
+        description: p.description,
+        holderKey: holder?.key ?? null,
+        threatLevel: p.threatLevel,
+      };
       setCard(text);
     }
     if (await followBox(seed, text)) setStage('review');
@@ -221,7 +232,7 @@ export function BoxTool({
   const lost = !!track?.partial && !partialKept;
   const trackless = track === null && trackFailed;
   const decided = track === undefined ? false : track === null ? !trackFailed : !lost;
-  const textReady = card.name.trim() !== '' && card.description.trim() !== '';
+  const textReady = card.name.trim() !== '' && card.description.trim() !== '' && (card.itemType !== 'entity' || card.entityType !== null);
   const canAdd = !busy && decided && textReady && seed !== null;
 
   const add = () => {
@@ -231,6 +242,7 @@ export function BoxTool({
         itemType: card.itemType,
         name: card.name.trim(),
         description: card.description.trim(),
+        ...(card.itemType === 'entity' && card.entityType ? { entityType: card.entityType } : {}),
         ...(card.itemType === 'instrument' && holderName ? { holder: holderName } : {}),
         ...(card.itemType === 'instrument' && card.threatLevel !== null ? { threatLevel: card.threatLevel } : {}),
         aiProposal: proposal,
@@ -573,6 +585,25 @@ export function BoxTool({
                     placeholder="Description"
                     value={card.description}
                   />
+                  {card.itemType === 'entity' && (
+                    <ToggleGroup
+                      aria-label="Entity type (required)"
+                      className="w-full"
+                      onValueChange={(val) => setCard({ ...card, entityType: val === 'human' || val === 'animal' ? val : null })}
+                      size="sm"
+                      spacing={0}
+                      type="single"
+                      value={card.entityType ?? ''}
+                      variant="outline"
+                    >
+                      <ToggleGroupItem className="flex-1 text-xs data-[state=on]:bg-moss data-[state=on]:text-white" value="human">
+                        Human
+                      </ToggleGroupItem>
+                      <ToggleGroupItem className="flex-1 text-xs data-[state=on]:bg-moss data-[state=on]:text-white" value="animal">
+                        Animal
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  )}
                   {card.itemType === 'instrument' && (
                     <div className="grid grid-cols-2 gap-1.5">
                       <Select

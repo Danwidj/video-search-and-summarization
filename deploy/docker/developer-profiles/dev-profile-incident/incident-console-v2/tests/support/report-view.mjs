@@ -54,6 +54,7 @@ export function unchangedEdit(rows) {
       end_timestamp: incident.endSeconds,
       description: incident.description,
       severity_level: incident.severityLevel,
+      severity_reason: incident.severityReason ?? '',
     },
     entities: structured.entities.map((e) => ({
       entity_id: e.entityId,

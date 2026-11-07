@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import test from 'node:test';
 
-import { severityClass, severityStyle } from '../src/lib/ui/severity.ts';
+import { severityChartColor, severityClass, severityStyle } from '../src/lib/ui/severity.ts';
 
 // Helper to calculate relative luminance according to WCAG 2.1 specs
 function relativeLuminance(hex) {
@@ -22,61 +24,47 @@ function contrastRatio(hex1, hex2) {
   return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
 }
 
-function extractHex(className, prefix) {
-  const match = className.match(new RegExp(`${prefix}-\\[(#?[0-9a-fA-F]+)\\]`));
-  return match ? match[1] : null;
-}
+const mixWithWhite = (hex, share) =>
+  `#${hex
+    .replace('#', '')
+    .match(/.{2}/g)
+    .map((x) =>
+      Math.round(parseInt(x, 16) * share + 255 * (1 - share))
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')}`;
 
-test('severityClass returns solid, opaque styles with border for each level 1-5', () => {
-  for (let level = 1; level <= 5; level++) {
-    const cls = severityClass(level);
-    assert.ok(cls.includes('border'), `level ${level} must have border utility`);
-    assert.ok(cls.includes('bg-['), `level ${level} must have solid hex background: ${cls}`);
-    assert.ok(!cls.includes('/'), `level ${level} must not contain alpha/opacity slash: ${cls}`);
+test('severity and threat levels map to the three bands: 5 and 4 high, 3 medium, 2 and 1 low', () => {
+  assert.deepEqual([5, 4, 3, 2, 1].map(severityClass), [
+    'sev-pill-high',
+    'sev-pill-high',
+    'sev-pill-medium',
+    'sev-pill-low',
+    'sev-pill-low',
+  ]);
+});
 
-    const bg = extractHex(cls, 'bg');
-    const border = extractHex(cls, 'border');
-    const text = extractHex(cls, 'text');
+test('each band is distinguishable from the others', () => {
+  assert.equal(new Set([5, 3, 1].map(severityClass)).size, 3);
+});
 
-    assert.ok(bg && /^#[0-9a-fA-F]{6}$/.test(bg), `level ${level} must have 6-digit hex bg: ${bg}`);
-    assert.ok(border && /^#[0-9a-fA-F]{6}$/.test(border), `level ${level} must have 6-digit hex border: ${border}`);
-    assert.ok(text && /^#[0-9a-fA-F]{6}$/.test(text), `level ${level} must have 6-digit hex text: ${text}`);
-
-    const ratio = contrastRatio(bg, text);
-    assert.ok(ratio >= 4.5, `level ${level} contrast ratio ${ratio.toFixed(2)} must satisfy WCAG AA (>= 4.5:1)`);
+test('each band pill text (its token on a 12% tint of itself) satisfies WCAG AA', () => {
+  for (const hex of Object.values(severityChartColor)) {
+    const ratio = contrastRatio(hex, mixWithWhite(hex, 0.12));
+    assert.ok(ratio >= 4.5, `${hex} on its tint is ${ratio.toFixed(2)}:1`);
   }
 });
 
-test('each severity level 1-5 is distinguishable from one another', () => {
-  const styles = [1, 2, 3, 4, 5].map((lvl) => severityClass(lvl));
-  const uniqueStyles = new Set(styles);
-  assert.equal(uniqueStyles.size, 5, 'all 5 severity levels must have distinct styles');
+test('the pill classes derive tint and border from the band token with color-mix', () => {
+  const css = readFileSync(join(process.cwd(), 'src', 'app', 'styles.css'), 'utf8');
+  for (const band of ['high', 'medium', 'low'])
+    assert.match(css, new RegExp(`\\.sev-pill-${band} \\{\\s*--sev: var\\(--color-sev-${band}\\)`));
+  assert.match(css, /background-color: color-mix\(in oklab, var\(--sev\) 12%, white\)/);
 });
 
-test('existing colour family per severity is preserved', () => {
-  // Low severity (1 and 2): green family (moss text #174f3b)
-  assert.equal(extractHex(severityClass(1), 'text'), '#174f3b');
-  assert.equal(extractHex(severityClass(2), 'text'), '#174f3b');
-
-  // Medium severity (3): amber family (#765300 text and #fff1c7 bg)
-  assert.equal(extractHex(severityClass(3), 'text'), '#765300');
-  assert.equal(extractHex(severityClass(3), 'bg'), '#fff1c7');
-
-  // High severity (4 and 5): red/coral family (#9b3518 text and #ffe8df bg for 4, deep red for 5)
-  assert.equal(extractHex(severityClass(4), 'text'), '#9b3518');
-  assert.equal(extractHex(severityClass(4), 'bg'), '#ffe8df');
-  assert.equal(extractHex(severityClass(5), 'text'), '#991b1b');
-});
-
-test('null, undefined, and non-positive levels fall back to a clean solid style', () => {
-  for (const invalid of [null, undefined, 0, -1]) {
-    const cls = severityClass(invalid);
-    assert.ok(!cls.includes('/'), `invalid level ${invalid} must not be semi-transparent`);
-    assert.ok(cls.includes('border'), `invalid level ${invalid} must have border`);
-    const bg = extractHex(cls, 'bg');
-    const text = extractHex(cls, 'text');
-    assert.ok(contrastRatio(bg, text) >= 4.5, 'fallback style must satisfy WCAG AA');
-  }
+test('null, undefined and non-positive levels fall back to a neutral style', () => {
+  for (const invalid of [null, undefined, 0, -1]) assert.ok(!severityClass(invalid).includes('sev-pill'));
 });
 
 test('severityStyle alias matches severityClass', () => {

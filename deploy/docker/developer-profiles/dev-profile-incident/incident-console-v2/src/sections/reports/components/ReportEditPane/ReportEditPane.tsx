@@ -8,6 +8,7 @@ import { PlusIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { MutedVideo } from '@/components/muted-video';
 import { Button } from '@/components/ui/button';
+import { VersionPill } from '@/components/version-pill';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -68,6 +69,8 @@ export function ReportEditPane({
   a,
   aRevisionNo,
   baseRevisionNo,
+  baseKind,
+  baseOfficial,
   draft,
   title,
   videoId,
@@ -81,6 +84,9 @@ export function ReportEditPane({
   a: Structured | null;
   aRevisionNo: number;
   baseRevisionNo: number;
+  /** The opened version's type and whether it is official, for the pill beside the title. */
+  baseKind: 'ai' | 'human';
+  baseOfficial: boolean;
   draft: EditDraft;
   title: string;
   videoId: string;
@@ -215,7 +221,10 @@ export function ReportEditPane({
           </div>
         </CardHeader>
         {officialMissing && (
-          <CardContent className="bg-amber-50/80 px-4 py-2 text-xs text-amber-950" data-testid="official-status">
+          <CardContent
+            className="border-y border-dashed border-not-official-line bg-not-official-pill/60 px-4 py-2 text-xs text-ink-caption"
+            data-testid="official-status"
+          >
             No official version has been selected for this video. Star a version to make it official.
           </CardContent>
         )}
@@ -249,7 +258,19 @@ export function ReportEditPane({
           <dl className="m-0">
             <PairField
               label="Title"
-              left={title}
+              left={
+                <div className="flex flex-col gap-2">
+                  <span className="flex flex-wrap items-center justify-end gap-1.5">
+                    <VersionPill kind={baseKind} official={baseOfficial} />
+                    {a?.incident.confidenceScore != null && (
+                      <Badge className="font-mono text-[11px]" data-testid="confidence-tag" variant="secondary">
+                        {Math.round(a.incident.confidenceScore * 100)}% confidence
+                      </Badge>
+                    )}
+                  </span>
+                  <span>{title}</span>
+                </div>
+              }
               right={
                 <Input
                   aria-label="Draft title"
@@ -312,16 +333,6 @@ export function ReportEditPane({
               }
             />
             <PairField
-              label="Confidence"
-              left={a?.incident.confidenceScore != null ? `${Math.round(a.incident.confidenceScore * 100)}%` : '—'}
-              right={
-                <span className="text-ink/55">
-                  {a?.incident.confidenceScore != null ? `${Math.round(a.incident.confidenceScore * 100)}%` : '—'}{' '}
-                  <span className="text-[11px] text-ink-caption">set by the model</span>
-                </span>
-              }
-            />
-            <PairField
               label="Time range"
               left={a?.incident.startSeconds != null ? `${clock(a.incident.startSeconds)}–${clock(a.incident.endSeconds)}` : 'Not recorded'}
               right={
@@ -369,6 +380,22 @@ export function ReportEditPane({
                   className="min-h-[92px] text-xs"
                   onChange={(event) => patchIncident({ description: event.target.value })}
                   value={draft.incident.description}
+                />
+              }
+            />
+            <PairField
+              label="Severity rationale"
+              left={
+                <span className="whitespace-pre-wrap text-foreground/75">
+                  {a?.incident.severityReason ?? 'No severity rationale was recorded.'}
+                </span>
+              }
+              right={
+                <Textarea
+                  aria-label="Draft severity rationale"
+                  className="min-h-[72px] text-xs"
+                  onChange={(event) => patchIncident({ severity_reason: event.target.value })}
+                  value={draft.incident.severity_reason}
                 />
               }
             />
@@ -771,9 +798,16 @@ function EditCard({
       seconds={item.timestampSeconds}
     >
       {isDraftEntity(item) && (
-        <Select onValueChange={(val) => patchEntity(item.key, { type: val })} value={item.type}>
-          <SelectTrigger aria-label="Entity type" className="h-8 w-full bg-white text-xs">
-            <SelectValue placeholder="Entity type" />
+        <Select
+          onValueChange={(val) => patchEntity(item.key, { type: val })}
+          value={(EDITABLE_ENTITY_TYPES as readonly string[]).includes(item.type) ? item.type : ''}
+        >
+          <SelectTrigger
+            aria-invalid={!(EDITABLE_ENTITY_TYPES as readonly string[]).includes(item.type)}
+            aria-label="Entity type"
+            className="h-8 w-full bg-white text-xs"
+          >
+            <SelectValue placeholder="Choose Human or Animal" />
           </SelectTrigger>
           <SelectContent position="popper">
             {EDITABLE_ENTITY_TYPES.map((type) => (

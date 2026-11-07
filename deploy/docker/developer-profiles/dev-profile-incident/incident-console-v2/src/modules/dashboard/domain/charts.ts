@@ -61,7 +61,7 @@ export function assetRows(data: DashboardAnalytics): SplitRow[] {
 }
 
 /** How many instrument rows the Top instruments panel shows; the RPC returns eight. */
-export const TOP_INSTRUMENT_ROWS = 5;
+export const TOP_INSTRUMENT_ROWS = 8;
 
 const EVIDENCE_LABELS: Record<EvidenceKind, string> = { entities: 'Entities', instruments: 'Instruments', assets: 'Assets' };
 
@@ -116,3 +116,10 @@ export function formatCalendarDay(date: Date): string {
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Instruments of the counted reports by threat level, lowest first. */
+export function threatLevelRows(data: DashboardAnalytics): CountRow[] {
+  return [...data.threatLevels]
+    .sort((a, b) => a.level - b.level)
+    .map(({ level, count }) => ({ key: String(level), label: `Level ${level}`, total: count }));
+}

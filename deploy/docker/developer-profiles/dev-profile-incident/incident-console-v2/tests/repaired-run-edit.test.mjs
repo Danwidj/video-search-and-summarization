@@ -34,7 +34,7 @@ test('editing repaired run m811cf2b237f50ff9812 adds a human revision; the run n
   const edit = unchangedEdit(fixture);
   edit.incident.severity_level = 2;
   edit.incident.end_timestamp = 12;
-  edit.entities[1].type = 'unknown';
+  edit.entities[1].type = 'animal';
   edit.assets.push({
     asset_id: 'A1',
     source_id: null,
@@ -98,7 +98,7 @@ test('editing repaired run m811cf2b237f50ff9812 adds a human revision; the run n
   assert.deepEqual([view.revision.kind, view.revision.createdBy, view.revision.parentId], ['human', 'Reviewer A', 1]);
   assert.equal(view.structured.incident.severityLevel, 2);
   assert.equal(view.structured.incident.endSeconds, 12);
-  assert.equal(view.structured.entities[1].type, 'unknown');
+  assert.equal(view.structured.entities[1].type, 'animal');
   assert.deepEqual(
     view.structured.assets.map((a) => a.assetId),
     ['A1'],

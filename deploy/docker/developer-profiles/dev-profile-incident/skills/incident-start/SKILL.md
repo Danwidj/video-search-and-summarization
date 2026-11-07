@@ -32,7 +32,7 @@ Details of each path: [launch modes and connectivity](../../.docs/architecture.m
    | console, mock-backend, eval | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (the **finals** project) |
    | eval, database scripts | `INCIDENT_DB_DSN` (finals session pooler, port 5432) |
    | console, mock-backend, eval | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` |
-   | vlm-gateway (mock mode only) | `VLM_GATEWAY_API_KEY`, optional `VLM_GATEWAY_BASE_URL`. Vm mode needs no gateway key: the VM agent reads dashboard chart requests with its own LLM |
+   | vlm-gateway (mock mode only) | `VLM_GATEWAY_API_KEY` and `VLM_GATEWAY_BASE_URL` (no default). Vm mode needs no gateway key: the VM agent reads dashboard chart requests with its own LLM |
 
    Check names only, without echoing values:
    ```bash
@@ -55,7 +55,10 @@ Details of each path: [launch modes and connectivity](../../.docs/architecture.m
 ./start.sh --mode vm        # VM backend (default; use for all UI and backend work)
 ./start.sh --mode mock      # a mock that mimics the backend; verify UI and backend work on the VM
 ./start.sh --mode vm --no-console   # VM side only: backend + tunnel, no Next.js console
+./start.sh --mode vm --prod         # console as a production build (next build, then next start) on the same port 3200
 ```
+
+`--prod` prints which console mode it is in, runs `next build` (about 30 to 60 s; a failed build stops start.sh with the build's exit code) and then `next start` on the same host, port and env as the default `next dev`. A production build serves pages faster and uses far less memory over a long session, but does not hot-reload. Use the default dev start while editing the console and `--prod` to demo, leave it running or check what ships. After a code change, stop start.sh (Ctrl-C) and run `./start.sh --mode vm --prod` again: it rebuilds every time, so there is no separate rebuild step. The port is 3200 in both modes. `next start` warns that it does not work with `output: standalone`; the console still serves and the analysis job loop still runs.
 
 `start.sh` waits on the console. Ctrl-C, closing the terminal or `kill <start.sh pid>` stops it, along with the backgrounded mock, gateway and tunnel, including the servers those wrappers started (no `next-server` or `uvicorn` is left listening). In vm mode, exiting stops nothing on the VM: the shared `vss-agent`, Phoenix and tracking stack keep running for everyone (stop them by hand with `native-services.sh stop` and `tracking-stack.sh stop`, see `incident-operate-vm`).
 

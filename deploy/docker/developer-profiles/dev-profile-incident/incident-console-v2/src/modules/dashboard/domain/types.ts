@@ -71,6 +71,11 @@ export interface DashboardAnalytics {
    * the RPC does not return it (a definition older than 20261106140000).
    */
   multipleVersions: number | null;
+  /**
+   * Every version of the videos behind the counted reports, split by kind (total = ai + human). null when the RPC does not
+   * return it (a definition older than 20261107090000).
+   */
+  versions: { total: number; ai: number; human: number } | null;
   /** All-time video counts, whatever the period and filters. */
   videos: { uploaded: number; withOfficial: number; awaitingSelection: number; withoutReport: number };
   previous: { total: number; human: number; ai: number; high: number } | null;

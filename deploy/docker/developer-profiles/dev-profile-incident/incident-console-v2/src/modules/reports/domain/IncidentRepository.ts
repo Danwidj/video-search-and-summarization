@@ -11,7 +11,7 @@ import type { EvidenceEntry, OfficialCrop, ReportPayload, RevisionKind, Revision
 import type { RunNotes } from '@/modules/reports/domain/run-notes';
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 
-export type ReportSort = 'newest' | 'oldest' | 'severity-high' | 'severity-low' | 'confidence-high' | 'confidence-low';
+export type ReportSort = 'official-first' | 'newest' | 'oldest' | 'severity-high' | 'severity-low' | 'confidence-high' | 'confidence-low';
 
 /** The report library's filters, validated by the route; null means no filter. */
 export interface ReportListQuery {

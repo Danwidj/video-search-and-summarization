@@ -79,6 +79,7 @@ function smokeEdit() {
       end_timestamp: 9,
       description: 'Reviewer: one person pushes the other over.',
       severity_level: 3,
+      severity_reason: 'Reviewer: a fall with no injury.',
     },
     entities: [
       {
@@ -196,6 +197,7 @@ for (const [name, make] of Object.entries(implementations)) {
         duration: 8,
         description: 'Reviewer: one person pushes the other over.',
         severityLevel: 3,
+        severityReason: 'Reviewer: a fall with no injury.',
         confidenceScore: null,
       });
       assert.deepEqual(

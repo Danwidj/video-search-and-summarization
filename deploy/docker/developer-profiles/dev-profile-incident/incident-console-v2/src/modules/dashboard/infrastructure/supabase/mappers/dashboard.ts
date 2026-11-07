@@ -4,7 +4,7 @@
 // DashboardAnalytics field by field. For every result its SQL can build (the
 // latest definition in supabase/migrations/) the output equals the input; the
 // defaults only apply to a malformed result. A field an older definition does
-// not return (multipleVersions, evidence, the entity and instrument split) is
+// not return (multipleVersions, versions, evidence, the entity and instrument split) is
 // null, never 0, so the page never shows a figure it has not loaded.
 
 import type {
@@ -74,6 +74,7 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
   const result = asRow(value);
   const videos = asRow(result.videos);
   const revisions = asRow(result.revisions);
+  const versions = asRow(result.versions);
   const severityByScope = asRow(result.severityByScope);
   // NULL for an all-time period, else one row of counts.
   const previous = result.previous && typeof result.previous === 'object' ? asRow(result.previous) : null;
@@ -81,6 +82,7 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
     total: count(result.total),
     ...split(result),
     multipleVersions: numberOrNull(result.multipleVersions),
+    versions: 'versions' in result ? { total: count(versions.total), ai: count(versions.ai), human: count(versions.human) } : null,
     videos: {
       uploaded: count(videos.uploaded),
       withOfficial: count(videos.withOfficial),

@@ -2400,3 +2400,15 @@ class TestPersonTrackingTimeBudget:
             video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b", tracking=request
         )
         assert request.summary.skipped != TIME_BUDGET_GAP
+
+
+class TestDetectorEndpointSetting:
+    def test_a_missing_address_raises_a_clear_error(self, monkeypatch):
+        monkeypatch.delenv("VLM_BASE_URL", raising=False)
+        monkeypatch.delenv("VLM_GATEWAY_BASE_URL", raising=False)
+        with pytest.raises(RuntimeError, match="VLM_GATEWAY_BASE_URL"):
+            DefaultDetector(api_key="k")._chat_url()
+
+    def test_the_gateway_setting_wins_over_the_shared_one(self, monkeypatch):
+        monkeypatch.setenv("VLM_GATEWAY_BASE_URL", "https://gateway.example/")
+        assert DefaultDetector(api_key="k")._chat_url().startswith("https://gateway.example/")

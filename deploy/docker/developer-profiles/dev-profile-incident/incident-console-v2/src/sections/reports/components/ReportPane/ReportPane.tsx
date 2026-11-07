@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import Link from 'next/link';
 import { Fragment, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { CARD_HOVER_STILL } from '@/lib/ui/card-hover';
 import { EvidenceBadges } from '@/sections/reports/components/EvidenceBadges';
 import { Button } from '@/components/ui/button';
+import { VersionPill } from '@/components/version-pill';
 import { Card as UICard, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { evidenceDisplay } from '@/lib/evidence/evidence-view';
 import { formatTimestamp } from '@/lib/time';
@@ -47,7 +48,6 @@ export function ReportPane({
   playerDuration,
   onSeek,
   officialMissing = false,
-  compareHref = null,
   selectedTrackId = null,
   onSelectTrack = () => undefined,
 }: {
@@ -56,16 +56,12 @@ export function ReportPane({
   onSeek: (seconds: number, still?: StillBox | null) => void;
   /** True once the versions have loaded and none of them is official. */
   officialMissing?: boolean;
-  /** Link to compare this version with another AI version, when there is one. */
-  compareHref?: string | null;
   /** The item whose box the player emphasises; null for none. */
   selectedTrackId?: string | null;
   onSelectTrack?: (id: string | null) => void;
 }) {
   const { structured, modelOutput, run, differences, revision } = report;
   const { incident } = structured;
-  const windowEdited = differences.fields.includes('incident window');
-  const original = modelOutput?.original;
   const heldBy = (entityId: string) => structured.instruments.filter((instrument) => instrument.entityId === entityId);
   const heldIds = new Set(structured.entities.flatMap((entity) => heldBy(entity.entityId).map((instrument) => instrument.instrumentId)));
   const unheld = structured.instruments.filter((instrument) => !heldIds.has(instrument.instrumentId));
@@ -99,20 +95,13 @@ export function ReportPane({
           <div className="flex min-w-0 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <CardTitle className="text-base font-semibold">Now Viewing: Version {revision.revisionNo}</CardTitle>
-              {report.official.isOfficial && (
-                <Badge
-                  className="border-amber-400 bg-amber-50 text-[11px] font-bold text-amber-800"
-                  data-testid="official-status"
-                  variant="outline"
-                >
-                  ★ Official
-                </Badge>
-              )}
             </div>
             <CardDescription className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" data-testid="revision-label">
-              <Badge className="px-2 py-0.5 text-[11px] font-semibold" variant="secondary">
-                {revision.kind === 'human' ? 'Human' : 'AI'}
-              </Badge>
+              <VersionPill
+                data-testid="official-status"
+                kind={revision.kind === 'human' ? 'human' : 'ai'}
+                official={report.official.isOfficial}
+              />
               {revision.kind === 'ai' && <span>{run.model}</span>}
               <span>{formatTimestamp(revision.createdAt, 'time unknown')}</span>
               {revision.note && <span>· {revision.note}</span>}
@@ -127,19 +116,11 @@ export function ReportPane({
           )}
           {run.notesKind === 'legacy' && <p className="px-4 py-2 text-xs text-muted-foreground">Earlier prompt version</p>}
           {officialMissing && (
-            <p className="bg-amber-50/80 px-4 py-2 text-xs text-amber-950" data-testid="official-status">
+            <p
+              className="border-y border-dashed border-not-official-line bg-not-official-pill/60 px-4 py-2 text-xs text-ink-caption"
+              data-testid="official-status"
+            >
               No official version has been selected for this video. Star a version to make it official.
-            </p>
-          )}
-          {compareHref && (
-            <p className="px-4 py-2 text-xs">
-              <span className="text-muted-foreground">Another AI version is available for this video. </span>
-              <Link
-                className="font-semibold text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-                href={compareHref}
-              >
-                Compare versions side by side →
-              </Link>
             </p>
           )}
         </CardContent>
@@ -153,17 +134,22 @@ export function ReportPane({
         <CardContent className="px-4 pb-3 pt-1">
           <dl className="m-0">
             <Row label="Title">
-              {reportHeading(report)}
-              {modelOutput?.title &&
-                (modelOutput.title === reportHeading(report) ? (
-                  <span className="mt-0.5 block text-xs text-muted-foreground/80">
-                    Title generated by the model{differences.fields.length ? ' (before reviewer edits)' : ''}
-                  </span>
-                ) : (
-                  <span className="mt-0.5 block text-xs text-muted-foreground/80" data-testid="title-edited">
-                    Set by a reviewer. The model&apos;s title: {modelOutput.title}
-                  </span>
-                ))}
+              <div className="flex items-start justify-between gap-3">
+                <span>{reportHeading(report)}</span>
+                <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                  <VersionPill kind={revision.kind === 'human' ? 'human' : 'ai'} official={report.official.isOfficial} />
+                  {incident.confidenceScore !== null && (
+                    <Badge className="font-mono text-[11px]" data-testid="confidence-tag" variant="secondary">
+                      {Math.round(incident.confidenceScore * 100)}% confidence
+                    </Badge>
+                  )}
+                </span>
+              </div>
+              {modelOutput?.title && modelOutput.title !== reportHeading(report) && (
+                <span className="mt-0.5 block text-xs text-muted-foreground/80" data-testid="title-edited">
+                  Set by a reviewer. The model&apos;s title: {modelOutput.title}
+                </span>
+              )}
             </Row>
             <Row label="Incident type">
               {capitalize(incident.type)}
@@ -178,14 +164,7 @@ export function ReportPane({
               <Badge className={`px-3 py-0.5 text-xs font-bold ${severityStyle(incident.severityLevel)}`} variant="outline">
                 {incident.severityLevel ?? '—'}/5
               </Badge>
-              {differences.severity && (
-                <span className="mt-1 block text-xs font-semibold text-destructive" data-testid="severity-edited">
-                  Model assessed severity {differences.severity.model}/5; reviewer set {differences.severity.current}/5. The rationale below
-                  explains the model&apos;s assessment, not the reviewer&apos;s.
-                </span>
-              )}
             </Row>
-            {incident.confidenceScore !== null && <Row label="Confidence">{Math.round(incident.confidenceScore * 100)}%</Row>}
             <Row label="Time range">
               {incident.startSeconds !== null ? (
                 <Button
@@ -201,20 +180,14 @@ export function ReportPane({
               ) : (
                 'Not recorded'
               )}
-              {windowEdited && original && original.startSeconds !== null && original.endSeconds !== null && (
-                <span className="ml-3 text-xs font-semibold text-destructive" data-testid="window-edited">
-                  reviewer-set; model window {formatClock(original.startSeconds)}–{formatClock(original.endSeconds)}
-                </span>
-              )}
             </Row>
             <Row label="Summary">
               <span className="whitespace-pre-wrap">{incident.description ?? 'No summary was recorded.'}</span>
             </Row>
             <Row label="Severity rationale">
-              <span className="text-foreground/75">{modelOutput?.severityReason ?? 'No model rationale was retained for this run.'}</span>
-              {differences.severity && (
-                <span className="mt-0.5 block text-xs text-muted-foreground">For model severity {differences.severity.model}/5</span>
-              )}
+              <span className="text-foreground/75">
+                {incident.severityReason ?? modelOutput?.severityReason ?? 'No severity rationale was recorded.'}
+              </span>
             </Row>
           </dl>
         </CardContent>
@@ -319,7 +292,8 @@ function Card({
     <UICard
       aria-label={`Show ${item.title} in detail`}
       className={cn(
-        'w-88 max-w-full shrink-0 snap-start gap-0 overflow-hidden py-0 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'w-88 max-w-full shrink-0 snap-start gap-0 overflow-hidden py-0 text-xs focus-visible:outline-none',
+        CARD_HOVER_STILL,
         selected && 'ring-2 ring-ring',
       )}
       data-selected={selected ? 'true' : undefined}

@@ -16,7 +16,8 @@ test('report page shows structured fields without run and model-output details',
   ).join('\n');
 
   assert.match(report, /Severity rationale/);
-  assert.match(report, /reviewer set/, 'an edited severity is shown against the model severity');
+  assert.doesNotMatch(report, /Model assessed severity/, 'a reviewer-set severity carries no orange note');
+  assert.doesNotMatch(report, /reviewer-set; model window/, 'a reviewer-set window carries no orange note');
   assert.doesNotMatch(report, /Model event timeline/);
   assert.doesNotMatch(report, /Model-reported uncertainties/);
   assert.doesNotMatch(report, /timeline-inconsistent/);
@@ -27,7 +28,6 @@ test('report page shows structured fields without run and model-output details',
   assert.match(report, /ReportEditPane/, 'editing opens the side-by-side pane');
   assert.match(report, /Edit from v/, 'the report opens edit mode from the shown version');
   assert.match(report, /Model classified this as/);
-  assert.match(report, /model window/);
 });
 
 test('the report page has a History of versions, a reviewer prompt and explicit official controls, and no verification flow', async () => {
@@ -122,7 +122,7 @@ test('edit mode pairs every evidence row with A and saves the whole draft as a n
   assert.match(timeline, /Entities/);
   assert.match(timeline, /Instruments/);
   assert.match(timeline, /Assets/);
-  for (const classB of ['severity_reason', 'uncertainties', 'timeline']) {
+  for (const classB of ['uncertainties', 'timeline']) {
     assert.ok(!new RegExp(`${classB}:`).test(editor), `${classB} must not be editable`);
   }
 });
@@ -201,6 +201,17 @@ test('the new-analysis model selector shows full model names and never clips the
   const inference = JSON.parse(await readFile(new URL('../../contracts/inference.json', import.meta.url), 'utf8'));
   assert.deepEqual(
     inference.models.map((model) => model.label),
-    ['Cosmos 3 Nano Reasoner', 'Cosmos 3 Super Reasoner', 'Nemotron 3 Nano Omni Reasoning'],
+    [
+      'Cosmos 3 Nano Reasoner',
+      'Cosmos 3 Super Reasoner',
+      'Nemotron 3 Nano Omni Reasoning',
+      'Cosmos 3 Auto',
+      'Nemotron 3 Nano 30B (text only)',
+      'Nemotron 3 Super 120B (text only)',
+      'Nemotron 3 Ultra (text only)',
+      'Nemotron 3 Ultra NVFP4 (text only)',
+      'Nemotron 3 Auto (text only)',
+      'Nemotron 3.5 Lightning 30B (text only)',
+    ],
   );
 });

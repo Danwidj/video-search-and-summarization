@@ -55,7 +55,7 @@ export class InMemoryIncidentRepository implements IncidentRepository {
 
   async listReports(query: ReportListQuery): Promise<ReportList> {
     const unmodelled: string[] = UNMODELLED_FILTERS.filter((name) => query[name] !== null);
-    if (query.sort !== 'newest' && query.sort !== 'oldest') unmodelled.push(`sort ${query.sort}`);
+    if (query.sort !== 'official-first' && query.sort !== 'newest' && query.sort !== 'oldest') unmodelled.push(`sort ${query.sort}`);
     if (unmodelled.length) throw new Error(`InMemoryIncidentRepository does not model: ${unmodelled.join(', ')}`);
     const direction = query.sort === 'oldest' ? 1 : -1;
     const matching = this.summaries
@@ -65,7 +65,13 @@ export class InMemoryIncidentRepository implements IncidentRepository {
           (query.scope !== 'not_official' || !summary.isOfficial) &&
           (query.kind === null || summary.kind === query.kind),
       )
-      .sort((a, b) => direction * (a.generatedAt ?? '').localeCompare(b.generatedAt ?? '') || a.revisionId - b.revisionId);
+      .sort((a, b) =>
+        query.sort === 'official-first'
+          ? Number(b.isOfficial) - Number(a.isOfficial) ||
+            (a.uploadedAt ?? '\uffff').localeCompare(b.uploadedAt ?? '\uffff') ||
+            a.revisionId - b.revisionId
+          : direction * (a.generatedAt ?? '').localeCompare(b.generatedAt ?? '') || a.revisionId - b.revisionId,
+      );
     // The RPC clamps the page size to 1-1000 and the page to at least 1.
     const size = Math.min(Math.max(query.pageSize, 1), 1000);
     const start = (Math.max(query.page, 1) - 1) * size;

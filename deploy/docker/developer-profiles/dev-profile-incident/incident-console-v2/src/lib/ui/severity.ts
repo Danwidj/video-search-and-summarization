@@ -1,27 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
+/** The three colour bands severity and threat level share (the tokens are in app/styles.css). */
+export type LevelBand = 'high' | 'medium' | 'low';
+
+/** 5 and 4 are high, 3 medium, 2 and 1 low; null for no level. The one mapping for severity and threat level. */
+export function levelBand(level: number | null | undefined): LevelBand | null {
+  if (level === null || level === undefined || level <= 0) return null;
+  const rounded = Math.round(level);
+  if (rounded >= 4) return 'high';
+  return rounded === 3 ? 'medium' : 'low';
+}
+
 /**
- * Returns solid, opaque Tailwind utility classes (background, border, text)
- * for a severity level (1-5), designed to remain clearly readable over any
- * video frame while keeping each severity level distinguishable and meeting
- * WCAG AA text contrast (>= 4.5:1).
+ * Classes for a severity (or threat) pill: the band token for the text and a tint and border derived from it
+ * (`.sev-pill-*` in app/styles.css), readable over any video frame and WCAG AA for text.
  */
 export function severityClass(level: number | null | undefined): string {
-  if (level === null || level === undefined || level <= 0) {
-    return 'border border-[#d5ded7] bg-[#edf2ee] text-[#394a40]';
-  }
-  const rounded = Math.round(level);
-  if (rounded >= 5) return 'border border-[#f69898] bg-[#fce4e4] text-[#991b1b]';
-  if (rounded === 4) return 'border border-[#f7a992] bg-[#ffe8df] text-[#9b3518]';
-  if (rounded === 3) return 'border border-[#f3cc68] bg-[#fff1c7] text-[#765300]';
-  if (rounded === 2) return 'border border-[#a6db70] bg-[#e6f4ce] text-[#174f3b]';
-  return 'border border-[#c2e2af] bg-[#f0f7e6] text-[#174f3b]';
+  const band = levelBand(level);
+  return band ? `sev-pill-${band}` : 'border border-ink/10 bg-ink/5 text-ink/70';
 }
 
 export const severityStyle = severityClass;
 
-/**
- * Chart fills for the dashboard severity bands (high 4-5, medium 3, low 1-2): the severity badges' text colours, so the
- * donut matches the badges. Each passes WCAG AA against white, and each band is also named in text beside the chart.
- */
+/** The band colours as CSS variables, for inline styles and chart fills in the DOM. */
+export const severityVar = { high: 'var(--color-sev-high)', medium: 'var(--color-sev-medium)', low: 'var(--color-sev-low)' } as const;
+
+/** The same colours as hex for canvases and the agent, which cannot read CSS variables; a test keeps them equal to styles.css. */
 export const severityChartColor = { high: '#991b1b', medium: '#765300', low: '#174f3b' } as const;

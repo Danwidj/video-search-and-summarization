@@ -56,7 +56,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_VLM_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com"
 DEFAULT_VLM_MODEL = "nvidia/cosmos-3-super-reasoner"
 DEFAULT_CRITIC_TIMEOUT_SECONDS = 30.0
 DEFAULT_CRITIC_DELAY_SECONDS = 1.0
@@ -756,13 +755,15 @@ class VlmCriticEvaluator(CriticEvaluator):
         timeout_seconds: float = DEFAULT_CRITIC_TIMEOUT_SECONDS,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        self.base_url = (base_url or os.getenv("VLM_BASE_URL") or DEFAULT_VLM_BASE_URL).rstrip("/")
+        self.base_url = (base_url or os.getenv("VLM_BASE_URL") or "").rstrip("/")
         self.model_name = model_name or os.getenv("VLM_NAME") or DEFAULT_VLM_MODEL
         self.api_key = api_key or os.getenv("OPENAI_API_KEY") or ""
         self.timeout_seconds = timeout_seconds
         self._http_client = http_client
 
     def _chat_url(self) -> str:
+        if not self.base_url:
+            raise RuntimeError("VLM_BASE_URL is not set: the critic has no endpoint to call (set it in the agent's environment)")
         return f"{self.base_url}/v1/chat/completions"
 
     def _build_critic_prompt(self, query: str, item: ItemHit, incident: IncidentHit) -> str:
