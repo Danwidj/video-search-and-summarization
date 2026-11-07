@@ -322,6 +322,35 @@ video::-webkit-media-controls-volume-slider-container {
   }
 }
 
+/*
+  Chart entrances (Dashboard): each mark fades and scales (or grows along its width) in once, staggered by `--enter-delay` over
+  `--enter-ms`. Transform and opacity only, and `backwards` fill so the finished mark keeps its own hover transform. Off under reduced motion.
+*/
+@media (prefers-reduced-motion: no-preference) {
+  .chart-enter,
+  .chart-grow {
+    animation: var(--enter-ms, 1500ms) ease-out var(--enter-delay, 0ms) backwards chart-enter;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .chart-grow {
+    animation-name: chart-grow;
+    transform-origin: left center;
+  }
+  @keyframes chart-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+  }
+  @keyframes chart-grow {
+    from {
+      opacity: 0;
+      transform: scaleX(0);
+    }
+  }
+}
+
 /* Severity and threat pills: the band token for the text, a tint and border derived from it. Unlayered, so they win over a Badge's own utility colours. */
 .sev-pill-high,
 .sev-pill-medium,

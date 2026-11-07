@@ -379,6 +379,7 @@ function Total({ data, link }: { data: DashboardAnalytics; link: (extra?: LinkFi
       ] as const)
     : [];
   const total = versions?.total ?? data.total;
+  const entrance = useChartEntrance(versions ? [versions] : []);
   const revised = revisedReports(data);
   return (
     <div className="flex flex-1 flex-col justify-between gap-2">
@@ -390,9 +391,13 @@ function Total({ data, link }: { data: DashboardAnalytics; link: (extra?: LinkFi
       </div>
       {versions && (
         <>
-          <div aria-hidden="true" className="flex h-4 gap-0.5 overflow-hidden rounded-full bg-ink/8">
-            {parts.map(({ key, value, swatch }) => (
-              <div className={swatch} key={key} style={{ width: `${total ? (value / total) * 100 : 0}%` }} />
+          <div aria-hidden="true" className="flex h-4 gap-0.5 overflow-hidden rounded-full bg-ink/8" key={entrance.epoch}>
+            {parts.map(({ key, value, swatch }, index) => (
+              <div
+                className={cn('chart-grow', swatch)}
+                key={key}
+                style={{ width: `${total ? (value / total) * 100 : 0}%`, ...enterStyle(entrance.ms, index, parts.length) }}
+              />
             ))}
           </div>
           <dl className="grid grid-cols-2 gap-2">
@@ -467,6 +472,31 @@ function useChartMotion(data: readonly unknown[]) {
   return { animationDuration: duration.current, animationEasing: 'ease-out' as const, isAnimationActive: !reduce };
 }
 
+/**
+ * The CSS entrance for the charts Recharts does not draw: `ms` is `CHART_ANIMATION_MS` the first time `data` is non-empty and
+ * `CHART_FILTER_ANIMATION_MS` once its content changes; `epoch` changes with it, so keying a chart on it replays the entrance.
+ */
+function useChartEntrance(data: readonly unknown[]) {
+  const state = useRef({ drawn: false, signature: JSON.stringify(data), epoch: 0, ms: CHART_ANIMATION_MS });
+  const signature = JSON.stringify(data);
+  const current = state.current;
+  if (current.drawn && current.signature !== signature) {
+    current.epoch += 1;
+    current.ms = CHART_FILTER_ANIMATION_MS;
+  }
+  current.signature = signature;
+  if (data.length) current.drawn = true;
+  return { ms: current.ms, epoch: current.epoch };
+}
+
+/** Style for mark `index` of `count`: it starts after its share of the first 60% of `ms` and takes the last 40% to settle. */
+function enterStyle(ms: number, index: number, count: number): CSSProperties {
+  return {
+    '--enter-ms': `${Math.round(ms * 0.4)}ms`,
+    '--enter-delay': `${Math.round((ms * 0.6 * index) / Math.max(1, count))}ms`,
+  } as CSSProperties;
+}
+
 const MAX_TICK_LENGTH = 18;
 
 /** A threat level takes the colour of its severity band (`levelBand`), the same mapping severity uses. */
@@ -516,6 +546,7 @@ const LABEL_ANCHOR = 1e-6;
 function AssetTreemap({ rows, emptyText, hrefFor }: { rows: BarRow[]; emptyText: string; hrefFor: (row: BarRow) => string }) {
   const router = useRouter();
   const [hover, setHover] = useState<number | null>(null);
+  const entrance = useChartEntrance(rows);
   if (!rows.length) return <NoData text={emptyText} />;
   const max = Math.max(...rows.map((row) => row.total));
   const data = rows.map((row) => ({ name: row.label, size: row.total, key: row.key }));
@@ -523,11 +554,19 @@ function AssetTreemap({ rows, emptyText, hrefFor }: { rows: BarRow[]; emptyText:
     <ChartContainer config={totalConfig} className="aspect-auto w-full flex-1" style={{ minHeight: 8 * ROW_HEIGHT }}>
       <Treemap
         content={
-          <AssetCell hover={hover} max={max} onHover={setHover} onOpen={(index) => rows[index] && router.push(hrefFor(rows[index]))} />
+          <AssetCell
+            hover={hover}
+            max={max}
+            ms={entrance.ms}
+            onHover={setHover}
+            onOpen={(index) => rows[index] && router.push(hrefFor(rows[index]))}
+            tiles={rows.length}
+          />
         }
         data={data}
         dataKey="size"
         isAnimationActive={false}
+        key={entrance.epoch}
       />
     </ChartContainer>
   );
@@ -562,10 +601,27 @@ function AssetCell(props: {
   depth?: number;
   hover?: number | null;
   max?: number;
+  ms?: number;
+  tiles?: number;
   onHover?: (index: number | null) => void;
   onOpen?: (index: number) => void;
 }) {
-  const { x = 0, y = 0, width = 0, height = 0, index = 0, name = '', size = 0, depth = 0, hover = null, max = 1, onHover, onOpen } = props;
+  const {
+    x = 0,
+    y = 0,
+    width = 0,
+    height = 0,
+    index = 0,
+    name = '',
+    size = 0,
+    depth = 0,
+    hover = null,
+    max = 1,
+    ms = CHART_ANIMATION_MS,
+    tiles = 1,
+    onHover,
+    onOpen,
+  } = props;
   if (depth < 1) return <g />;
   const depthPct = SLATE_MIN + ((100 - SLATE_MIN) * size) / Math.max(1, max);
   const base = `color-mix(in srgb, ${SLATE} ${depthPct.toFixed(1)}%, white)`;
@@ -576,12 +632,13 @@ function AssetCell(props: {
     // biome-ignore lint/a11y/useSemanticElements: an SVG group cannot be an anchor; the treemap tile is also a keyboard-reachable Library link via its list
     <g
       aria-label={`${name}: ${size} reports`}
-      className="cursor-pointer"
+      className="chart-enter cursor-pointer"
       onClick={() => onOpen?.(index)}
       onMouseEnter={() => onHover?.(index)}
       onMouseLeave={() => onHover?.(null)}
       opacity={hover !== null && !active ? 0.55 : 1}
       role="link"
+      style={enterStyle(ms, index, tiles)}
     >
       <title>{`${name}: ${size} reports`}</title>
       <rect
@@ -621,6 +678,7 @@ const EVIDENCE_COLORS = ['var(--chart-1)', 'var(--chart-3)', 'var(--chart-5)'];
 /** Evidence by kind as a 10 by 10 waffle, about 1% a square, with each kind's count and share beside it. */
 function EvidenceWaffle({ rows, emptyText }: { rows: SplitRow[] | null; emptyText: string }) {
   const [hover, setHover] = useState<string | null>(null);
+  const entrance = useChartEntrance(rows ?? []);
   if (!rows) return <NoData text="Evidence counts are not available yet." />;
   const sum = rows.reduce((total, row) => total + row.total, 0);
   if (!sum) return <NoData text={emptyText} />;
@@ -638,16 +696,21 @@ function EvidenceWaffle({ rows, emptyText }: { rows: SplitRow[] | null; emptyTex
       <div
         aria-label={`Evidence items: ${rows.map((row) => `${row.label} ${row.total}`).join(', ')}`}
         className="grid size-28 shrink-0 grid-cols-10 gap-0.5"
+        key={entrance.epoch}
         role="img"
       >
         {cells.map((cell, i) => (
           // biome-ignore lint/a11y/noStaticElementInteractions: hover dims the other kinds; the same figures are in the list beside the waffle
           <span
-            className="rounded-[2px] transition-[opacity,transform] hover:scale-110"
+            className="chart-enter rounded-[2px] transition-[opacity,transform] hover:scale-110"
             // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length waffle that never reorders
             key={i}
             onMouseEnter={() => setHover(cell.key)}
-            style={{ background: cell.color, opacity: hover && hover !== cell.key ? 0.3 : 1 }}
+            style={{
+              background: cell.color,
+              opacity: hover && hover !== cell.key ? 0.3 : 1,
+              ...enterStyle(entrance.ms, i, cells.length),
+            }}
             title={`${cell.label}: ${rows.find((row) => row.key === cell.key)?.total ?? 0}`}
           />
         ))}
@@ -682,6 +745,7 @@ const REPORTS_PER_ICON = 5;
 /** Entity types as an icon array, one icon per REPORTS_PER_ICON reports. Human and animal only; a report can have both, so these are not shares. */
 function EntityIcons({ rows, emptyText }: { rows: BarRow[]; emptyText: string }) {
   const shown = rows.filter((row) => row.key === 'human' || row.key === 'animal');
+  const entrance = useChartEntrance(shown);
   if (!shown.length) return <NoData text={emptyText} />;
   return (
     <div className="flex min-h-0 flex-1 flex-col justify-center gap-3">
@@ -702,10 +766,17 @@ function EntityIcons({ rows, emptyText }: { rows: BarRow[]; emptyText: string })
               </span>
               <span className="text-base font-semibold tabular-nums text-ink">{row.total}</span>
             </div>
-            <div aria-hidden="true" className="flex min-w-0 flex-1 flex-wrap gap-0.5">
+            <div aria-hidden="true" className="flex min-w-0 flex-1 flex-wrap gap-0.5" key={entrance.epoch}>
               {Array.from({ length: count }, (_, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length list that never reorders
-                <Icon className="size-6 transition-transform hover:scale-110" fill={color} key={i} stroke={color} strokeWidth={1.5} />
+                <Icon
+                  className="chart-enter size-6 transition-transform hover:scale-110"
+                  fill={color}
+                  // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length list that never reorders
+                  key={i}
+                  stroke={color}
+                  strokeWidth={1.5}
+                  style={enterStyle(entrance.ms, i, count)}
+                />
               ))}
             </div>
           </div>
@@ -723,14 +794,21 @@ const THREAT_LEVELS = [5, 4, 3, 2, 1] as const;
  */
 function RiskLadder({ rows, emptyText }: { rows: CountRow[]; emptyText: string }) {
   const [hover, setHover] = useState<number | null>(null);
+  const entrance = useChartEntrance(rows);
   if (!rows.length) return <NoData text={emptyText} />;
   const counts = new Map(rows.map((row) => [Number(row.key), row.total]));
   const max = Math.max(1, ...counts.values());
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: mouse-leave only clears the hover dim
-    <div className="flex min-h-0 flex-1 flex-col gap-1.5" onMouseLeave={() => setHover(null)} style={{ minHeight: 8 * ROW_HEIGHT }}>
-      {THREAT_LEVELS.map((level) => {
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-1.5"
+      key={entrance.epoch}
+      onMouseLeave={() => setHover(null)}
+      style={{ minHeight: 8 * ROW_HEIGHT }}
+    >
+      {THREAT_LEVELS.map((level, step) => {
         const count = counts.get(level) ?? 0;
+        const enter = enterStyle(entrance.ms, step, THREAT_LEVELS.length);
         const color = threatLevelColor(level);
         const active = hover === level;
         return (
@@ -748,16 +826,22 @@ function RiskLadder({ rows, emptyText }: { rows: CountRow[]; emptyText: string }
                   style={{ background: `color-mix(in srgb, ${color} 18%, white)`, outline: active ? '2px solid var(--ink)' : undefined }}
                 >
                   <div
-                    className="absolute inset-y-0 left-0 transition-[filter] duration-150"
-                    style={{ width: `${(count / max) * 100}%`, background: color, filter: active ? 'brightness(0.85)' : undefined }}
+                    className="chart-grow absolute inset-y-0 left-0 transition-[filter] duration-150"
+                    style={{
+                      width: `${(count / max) * 100}%`,
+                      background: color,
+                      filter: active ? 'brightness(0.85)' : undefined,
+                      ...enter,
+                    }}
                   />
                   <span
-                    className="absolute inset-y-0 flex items-center text-lg font-semibold tabular-nums"
-                    style={
-                      count / max >= 0.2
+                    className="chart-enter absolute inset-y-0 flex items-center text-lg font-semibold tabular-nums"
+                    style={{
+                      ...(count / max >= 0.2
                         ? { right: `calc(${(1 - count / max) * 100}% + 12px)`, color: '#fff' }
-                        : { left: `calc(${(count / max) * 100}% + 10px)`, color: 'var(--ink)' }
-                    }
+                        : { left: `calc(${(count / max) * 100}% + 10px)`, color: 'var(--ink)' }),
+                      ...enter,
+                    }}
                   >
                     {count}
                   </span>
@@ -1005,12 +1089,13 @@ function Heatmap({
 }) {
   const series = heatmapSeries(scope);
   const map = useMemo(() => new Map(data.map((x) => [`${x.day}-${x.hour}`, x])), [data]);
+  const entrance = useChartEntrance(data);
   if (!data.length) return <NoData text={emptyText} />;
   const max = Math.max(1, ...data.map((x) => x[series]));
   return (
     <TooltipProvider delayDuration={100}>
       <div className="flex flex-1 flex-col overflow-x-auto p-2">
-        <div className="flex min-w-[440px] flex-1 flex-col">
+        <div className="flex min-w-[440px] flex-1 flex-col" key={entrance.epoch}>
           <div className="grid grid-cols-[32px_repeat(24,1fr)] gap-0.5 text-[10px] text-ink-caption">
             <span />
             {HOURS_OF_DAY.map((h) => (
@@ -1031,7 +1116,7 @@ function Heatmap({
                       <button
                         aria-label={summary}
                         className={cn(
-                          'relative h-full min-h-4 rounded-xs bg-(--cell) transition duration-150 hover:z-10 hover:bg-(--cell-hover) hover:ring-2 hover:ring-ink motion-safe:hover:scale-150 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          'chart-enter relative h-full min-h-4 rounded-xs bg-(--cell) transition duration-150 hover:z-10 hover:bg-(--cell-hover) hover:ring-2 hover:ring-ink motion-safe:hover:scale-150 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                           selected === `${d}-${h}` ? 'ring-2 ring-ink' : '',
                         )}
                         onClick={() => onSelect(d, h)}
@@ -1039,6 +1124,7 @@ function Heatmap({
                           {
                             '--cell': `color-mix(in srgb, ${SERIES_COLOR[series]} ${share}%, transparent)`,
                             '--cell-hover': darken(`color-mix(in srgb, ${SERIES_COLOR[series]} ${share}%, white)`),
+                            ...enterStyle(entrance.ms, d + h, DAY_NAMES.length + HOURS_OF_DAY.length),
                           } as CSSProperties
                         }
                         type="button"

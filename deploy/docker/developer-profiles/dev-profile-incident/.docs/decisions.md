@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: Every Dashboard chart enters with the same timing, by CSS where Recharts does not draw it
+- **Decision:** the treemap, waffle, icon array, risk ladder, heatmap and Total bar use `.chart-enter` / `.chart-grow` (transform and opacity, staggered by `--enter-delay`) with `useChartEntrance`, which gives 1500 ms on first data and 400 ms after a data change and replays by keying on an epoch. Off under `prefers-reduced-motion`.
+- **Why:** only the Recharts bars and donut animated; the captain asked for all charts. Recharts' treemap animation does not suit the custom cell, and `backwards` fill keeps hover transforms working.
+- **Alternatives rejected:** a motion library (new dependency); animating width or layout properties (reflow).
+- **Links:** [console-reference](console-reference.md), `Dashboard.tsx`, `styles.css`.
+
 ### 2026-11-07: The report controls live in the shared app header, which centres the nav
 - **Decision:** the app header is a `1fr auto 1fr` grid, so the pill nav is centred on every page. The report page portals its controls into two header slots (left of the brand, far right) and has no toolbar row. State and handlers stay in `ReportPage`; the View / Edit `Tabs` markup is unchanged from main.
 - **Why:** the captain wanted one navbar row with the nav truly centred; a portal keeps behaviour with the page that owns it.
