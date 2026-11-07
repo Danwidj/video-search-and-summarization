@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: Fixed edit and clip request test set and offline scorer under services/agent/tests
+- **Decision:** Plan B Phase 1 Item 1D provides the canonical 20-case test set (`cases.json`) and an offline scorer (`scorer.py`, `cases.py`) under `services/agent/tests/edit_test_set/`, unit-tested by `services/agent/tests/unit_test/test_edit_test_set.py`.
+- **Why:** enables offline verification of tool selection, arguments, and refusal behavior for both investigator (clip QA) and editor (report edits) agents without calling hosted models or spending model tokens.
+- **Alternatives rejected:** placing under `eval/` (forbidden by Plan B worker rules); using live LLM judges (slow, expensive, non-deterministic; rule-based matching with numeric tolerances and regexes gives immediate, repeatable evaluation).
+- **Links:** `services/agent/tests/edit_test_set/`, `services/agent/tests/unit_test/test_edit_test_set.py`.
+
 ### 2026-11-07: Every Dashboard chart enters with the same timing, by CSS where Recharts does not draw it
 - **Decision:** the treemap, waffle, icon array, risk ladder, heatmap and Total bar use `.chart-enter` / `.chart-grow` (transform and opacity, staggered by `--enter-delay`) with `useChartEntrance`, which gives 1500 ms on first data and 400 ms after a data change and replays by keying on an epoch. Off under `prefers-reduced-motion`.
 - **Why:** only the Recharts bars and donut animated; the captain asked for all charts. Recharts' treemap animation does not suit the custom cell, and `backwards` fill keeps hover transforms working.
