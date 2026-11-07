@@ -249,7 +249,16 @@ export function ReportEditPane({
           <dl className="m-0">
             <PairField
               label="Title"
-              left={title}
+              left={
+                <div className="flex items-start justify-between gap-3">
+                  <span>{title}</span>
+                  {a?.incident.confidenceScore != null && (
+                    <Badge className="shrink-0 font-mono text-[11px]" data-testid="confidence-tag" variant="secondary">
+                      {Math.round(a.incident.confidenceScore * 100)}% confidence
+                    </Badge>
+                  )}
+                </div>
+              }
               right={
                 <Input
                   aria-label="Draft title"
@@ -309,16 +318,6 @@ export function ReportEditPane({
                     ))}
                   </SelectContent>
                 </Select>
-              }
-            />
-            <PairField
-              label="Confidence"
-              left={a?.incident.confidenceScore != null ? `${Math.round(a.incident.confidenceScore * 100)}%` : '—'}
-              right={
-                <span className="text-ink/55">
-                  {a?.incident.confidenceScore != null ? `${Math.round(a.incident.confidenceScore * 100)}%` : '—'}{' '}
-                  <span className="text-[11px] text-ink-caption">set by the model</span>
-                </span>
               }
             />
             <PairField

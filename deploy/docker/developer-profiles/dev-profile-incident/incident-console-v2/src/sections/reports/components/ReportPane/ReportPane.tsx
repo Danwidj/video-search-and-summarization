@@ -151,7 +151,14 @@ export function ReportPane({
         <CardContent className="px-4 pb-3 pt-1">
           <dl className="m-0">
             <Row label="Title">
-              {reportHeading(report)}
+              <div className="flex items-start justify-between gap-3">
+                <span>{reportHeading(report)}</span>
+                {incident.confidenceScore !== null && (
+                  <Badge className="shrink-0 font-mono text-[11px]" data-testid="confidence-tag" variant="secondary">
+                    {Math.round(incident.confidenceScore * 100)}% confidence
+                  </Badge>
+                )}
+              </div>
               {modelOutput?.title &&
                 (modelOutput.title === reportHeading(report) ? (
                   <span className="mt-0.5 block text-xs text-muted-foreground/80">
@@ -177,7 +184,6 @@ export function ReportPane({
                 {incident.severityLevel ?? '—'}/5
               </Badge>
             </Row>
-            {incident.confidenceScore !== null && <Row label="Confidence">{Math.round(incident.confidenceScore * 100)}%</Row>}
             <Row label="Time range">
               {incident.startSeconds !== null ? (
                 <Button

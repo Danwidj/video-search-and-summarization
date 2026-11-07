@@ -149,7 +149,7 @@ A report is a list of immutable revisions in `report_revisions`; the columns, th
 - **There is no verification status and no draft.** `kind='human'` with `created_by` and `created_at` says a person saved it; unsaved edits live only in the form.
 
 The report page:
-- shows the version's own severity rationale (the model's on an AI version, the reviewer's once they change it);
+- shows the version's own severity rationale (the model's on an AI version, the reviewer's once they change it) and, as a small tag beside the title, the model's confidence (no tag when the version has none);
 - shows no "Reviewer-edited after generation" line (removed 2026-11-06; `differences.fields` still tracks the changed fields). Entities, instruments and assets are compared with the stored payload of the AI revision the version derives from (its own for an AI version), not the first pass in the run notes, so the zoomed second look's corrections are never reviewer edits.
 
 ## 5. Legacy data
