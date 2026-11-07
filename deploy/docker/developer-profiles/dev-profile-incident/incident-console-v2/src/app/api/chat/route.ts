@@ -3,7 +3,8 @@
 import { NextResponse } from 'next/server';
 import { sendAgentChat, sendAgentInvestigate } from '@/modules/chat/infrastructure/agent/agent-chat';
 import { chatErrorResponse } from '@/modules/chat/infrastructure/agent/chat-errors';
-import { CHAT_EDITOR_REFUSAL_PREFIX } from '@/lib/chat/report-chat';
+import { CHAT_EDITOR_REFUSAL_PREFIX, editorHistory } from '@/lib/chat/report-chat';
+import { labelDraftKeys } from '@/lib/edits/chat-edit';
 import { getServiceConfiguration, isChatStepsEnabled } from '@/lib/env';
 import { UpstreamError } from '@/lib/http';
 import type { ChatMessage, EvidenceExchange } from '@/modules/chat/domain/chat';
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
         try {
           const { agentUrl } = config;
           const incidentId = input.incidentId as string;
-          // The new-evidence exchange goes only with the draft: only the editor takes it.
+          // The new-evidence exchange and the recent chat go only with the draft: only the editor takes them.
           const investigate = (draft?: Record<string, unknown>) =>
             sendAgentInvestigate(
               agentUrl,
@@ -52,8 +53,14 @@ export async function POST(request: Request) {
               AbortSignal.timeout(115000),
               draft,
               draft ? input.evidence : undefined,
+              draft ? editorHistory(input.messages ?? []) : undefined,
             );
-          const edited = editing ? await investigate(input.editDraft) : null;
+          // The editor's reply shows the reviewer labels (E1), never the draft keys (entity-0) the tools use.
+          const editedReply = async () => {
+            const edited = await investigate(input.editDraft);
+            return { ...edited, message: { ...edited.message, content: labelDraftKeys(edited.message.content, input.editDraft ?? {}) } };
+          };
+          const edited = editing ? await editedReply() : null;
           // An editor that ran no tool was not asked to edit: the question goes on to the usual routes, unchanged,
           // unless the editor explicitly refused an unsupported edit (starts with CHAT_EDITOR_REFUSAL_PREFIX).
           if (edited?.message.steps?.length) return NextResponse.json(edited);
