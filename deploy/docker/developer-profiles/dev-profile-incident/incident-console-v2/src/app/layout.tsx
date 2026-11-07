@@ -8,7 +8,7 @@ import { Toaster } from '@/components/ui/sonner';
 import './styles.css';
 
 export const metadata: Metadata = {
-  title: 'Rise Up!',
+  title: 'Incident Studio',
   description: 'Video-first incident analysis and reporting.',
 };
 
