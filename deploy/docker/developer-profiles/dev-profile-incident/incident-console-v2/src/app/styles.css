@@ -22,7 +22,8 @@
     --color-version-model    #3f5f8a  an AI (model) version
     --color-version-human    #7a4e8c  a human (reviewer) version
     --color-version-official #0b7a8f  the official version, always with a star
-    --color-not-official     #8cc5cf  a version not yet official (labels on it stay dark)
+    --color-not-official     #e9ece4  a version not yet official: light grey fill, always drawn with the dashed outline below
+    --color-not-official-line #7b8794 the dashed outline of a not yet official mark (pill, bar, legend swatch)
     --color-sev-high         #991b1b  severity or threat 4-5
     --color-sev-medium       #765300  severity or threat 3
     --color-sev-low          #174f3b  severity or threat 1-2
@@ -34,7 +35,8 @@
   --color-version-model: #3f5f8a;
   --color-version-human: #7a4e8c;
   --color-version-official: #0b7a8f;
-  --color-not-official: #8cc5cf;
+  --color-not-official: #e9ece4;
+  --color-not-official-line: #7b8794;
   --color-sev-high: #991b1b;
   --color-sev-medium: #765300;
   --color-sev-low: #174f3b;

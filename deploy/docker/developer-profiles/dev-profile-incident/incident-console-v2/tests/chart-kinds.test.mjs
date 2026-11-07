@@ -127,10 +127,10 @@ describe('colours', () => {
     assert.ok(css.includes(`--color-not-official: ${CHART_COLORS.notOfficial};`), 'not yet official colour drifted from its token');
   });
 
-  // The captain-set not yet official colour (#8cc5cf) is a light tint by design (about 2:1 against white): it is always named
-  // in text beside the chart, and labels on it stay dark, so it is the one colour exempt from the 3:1 rule.
+  // The not yet official fill (#e9ece4) is a light grey by design (about 1.2:1 against white): its dashed outline (#7b8794, checked
+  // below) carries the shape and it is always named in text beside the chart, so only the outline has to pass 3:1.
   test('every other chart colour passes the 3:1 non-text contrast rule against white', () => {
-    const colours = [CHART_COLORS.official, CHART_COLORS.total, ...CHART_COLORS.categorical];
+    const colours = [CHART_COLORS.official, CHART_COLORS.notOfficialLine, CHART_COLORS.total, ...CHART_COLORS.categorical];
     for (const colour of colours) assert.ok(contrastWithWhite(colour) >= 3, `${colour} is ${contrastWithWhite(colour).toFixed(2)}:1`);
   });
 

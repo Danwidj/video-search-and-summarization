@@ -221,7 +221,10 @@ export function ReportEditPane({
           </div>
         </CardHeader>
         {officialMissing && (
-          <CardContent className="bg-not-official/25 px-4 py-2 text-xs text-ink" data-testid="official-status">
+          <CardContent
+            className="border-y border-dashed border-not-official-line bg-not-official/60 px-4 py-2 text-xs text-ink-caption"
+            data-testid="official-status"
+          >
             No official version has been selected for this video. Star a version to make it official.
           </CardContent>
         )}
