@@ -173,6 +173,10 @@ export function toApplierActions(draft: EditDraft, proposals: ProposedAction[]):
       case 'set_instrument_holder':
         push(tool, { instrumentKey: args.instrument_key, holderKey: args.holder_key ?? null });
         break;
+      case 'change_evidence':
+        // A gap retry's found box (set image): the reviewer confirms it, the applier only proposes it.
+        push(tool, rename(args, { op: 'op', item_key: 'itemKey', seconds: 'seconds', box: 'box', reason: 'reason' }));
+        break;
       case 'delete_item': {
         const collection = COLLECTIONS.find((name) => draft[name].some((item) => item.key === args.item_key));
         push(collection ? UPSERT_TOOL[collection] : tool, { op: 'delete', itemKey: args.item_key });
