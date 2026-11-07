@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
+import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from 'lucide-react';
 import { MIN_SIMILARITY } from '@/lib/search/min-similarity';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -18,11 +18,11 @@ import {
   videoName,
 } from '@/lib/library/search';
 import type { EvidenceItemType, EvidenceSearchHit } from '@/modules/search/domain/search';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem } from '@/components/ui/pagination';
 import { pageItems } from '@/lib/library/pages';
 
@@ -118,54 +118,60 @@ export function EvidenceTab({
   return (
     <div>
       <form
-        className="flex flex-col gap-3 sm:flex-row"
+        className="flex flex-wrap items-center gap-1.5 lg:flex-nowrap"
         onSubmit={(event) => {
           event.preventDefault();
-          if (query.trim() || scope) {
+          if ((query.trim() || scope) && !loading) {
             setPage(1);
             onSubmit();
           }
         }}
       >
-        <div className="relative flex-1">
-          <Input
-            className="h-10 bg-white"
+        <InputGroup className="h-[30px] min-w-40 flex-1 bg-white">
+          <InputGroupAddon>
+            <SearchIcon />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="Search evidence"
+            className="text-[13px]"
             maxLength={500}
             onChange={(event) => onQuery(event.target.value)}
             placeholder="Describe what you are looking for, e.g. a man holding a knife"
             type="search"
             value={query}
           />
-        </div>
-        <Button className="bg-ink font-semibold text-white hover:bg-ink/90" disabled={(!query.trim() && !scope) || loading} type="submit">
-          Search
-        </Button>
-      </form>
-      <p className="mt-2 text-xs text-ink/50">
-        One version per incident: the official version, otherwise the latest. Evidence matches of {Math.round(MIN_SIMILARITY * 100)}% or
-        better are shown.
-      </p>
+        </InputGroup>
 
-      {result && (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Tabs
-            onValueChange={(val) => {
-              setKind(val as Kind);
-              setPage(1);
-            }}
-            value={kind}
-          >
-            <TabsList className="border border-ink/10 bg-white">
+        {result && (
+          <>
+            <ToggleGroup
+              aria-label="Evidence kind"
+              className="shrink-0 bg-white"
+              onValueChange={(val) => {
+                if (!val) return;
+                setKind(val as Kind);
+                setPage(1);
+              }}
+              size="sm"
+              spacing={0}
+              type="single"
+              value={kind}
+              variant="outline"
+            >
               {ITEM_KINDS.map((value) => (
-                <TabsTrigger className="text-xs" key={value} value={value}>
+                <ToggleGroupItem
+                  className="h-[30px] px-2.5 text-[13px] data-[state=on]:bg-moss data-[state=on]:text-white"
+                  key={value}
+                  value={value}
+                >
                   {KIND_CHIP[value]}
-                </TabsTrigger>
+                </ToggleGroupItem>
               ))}
-            </TabsList>
-          </Tabs>
+            </ToggleGroup>
 
-          <div className="w-44">
             <Select
+              active={incidentType !== ''}
+              className="w-[146px]"
               label="Incident type"
               onChange={(val) => {
                 setIncidentType(val);
@@ -174,10 +180,10 @@ export function EvidenceTab({
               options={[['', 'All incident types'], ...incidentTypes.map((value): [string, string] => [value, value])]}
               value={incidentType}
             />
-          </div>
 
-          <div className="w-52">
             <Select
+              active={videoId !== ''}
+              className="w-[140px]"
               label="Video"
               onChange={(val) => {
                 setVideoId(val);
@@ -186,10 +192,9 @@ export function EvidenceTab({
               options={[['', 'All videos'], ...videos]}
               value={videoId}
             />
-          </div>
 
-          <div className="w-48">
             <Select
+              className="w-[150px]"
               label="Sort"
               onChange={(val) => {
                 setSort(val as EvidenceSort);
@@ -198,19 +203,23 @@ export function EvidenceTab({
               options={sortOptions.map(([value, label]): [string, string] => [value, `Sort: ${label}`])}
               value={sort}
             />
-          </div>
 
-          <div className="ml-auto flex items-center gap-2">
-            <Checkbox checked={grouped} id="group-by-incident" onCheckedChange={(checked) => setGrouped(checked === true)} />
-            <Label className="cursor-pointer text-sm font-normal text-ink/80" htmlFor="group-by-incident">
-              Group by incident
-            </Label>
-          </div>
-        </div>
-      )}
+            <div className="flex shrink-0 items-center gap-1.5 pl-1">
+              <Checkbox checked={grouped} id="group-by-incident" onCheckedChange={(checked) => setGrouped(checked === true)} />
+              <Label className="cursor-pointer whitespace-nowrap text-[13px] font-normal text-ink/80" htmlFor="group-by-incident">
+                Group by incident
+              </Label>
+            </div>
+          </>
+        )}
+      </form>
+      <p className="mt-1.5 text-xs text-ink/50">
+        One version per incident: the official version, otherwise the latest. Evidence matches of {Math.round(MIN_SIMILARITY * 100)}% or
+        better are shown.
+      </p>
 
       {scope && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink/55">
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink/55">
           Searching only{' '}
           <FilterChip label={scope.filename ? `${scope.title} · ${scope.filename}` : scope.title} onRemove={() => onScope(null)} />
         </div>

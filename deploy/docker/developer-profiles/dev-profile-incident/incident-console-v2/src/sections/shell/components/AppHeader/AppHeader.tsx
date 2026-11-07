@@ -26,69 +26,71 @@ export function AppHeader({
   subtitle?: string;
 }) {
   return (
-    <header className="print-hidden relative z-10 mx-auto flex w-full max-w-[1500px] items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4 lg:px-12">
-      <Link
-        className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        href="/"
-        aria-label="Incident Studio home"
-      >
-        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">IS</span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold tracking-tight">Incident Studio</span>
-          <span className="block truncate text-[11px] uppercase tracking-[0.2em] text-ink/50">{subtitle}</span>
-        </span>
-      </Link>
-      <NavigationMenu aria-label="Primary navigation" className="hidden flex-none sm:flex" viewport={false}>
-        <NavigationMenuList className="gap-2">
-          {NAV_ITEMS.map((item) => (
-            <NavigationMenuItem key={item.key}>
-              <NavigationMenuLink
-                asChild
-                active={active === item.key}
-                className={cn(
-                  'px-3 py-1.5 text-xs font-medium sm:text-sm',
-                  active === item.key
-                    ? 'bg-primary font-bold text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground data-[active=true]:bg-primary data-[active=true]:hover:bg-primary/90 data-[active=true]:focus:bg-primary'
-                    : 'text-ink/70 hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground',
-                )}
-              >
+    <header className="print-hidden relative z-40 shrink-0 border-b border-ink/10 bg-white">
+      <div className="mx-auto flex min-h-14 w-full max-w-[1500px] items-center justify-between gap-3 px-4 py-2 sm:gap-4 sm:px-6 lg:px-12">
+        <Link
+          className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          href="/"
+          aria-label="Incident Studio home"
+        >
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">IS</span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold tracking-tight">Incident Studio</span>
+            <span className="block truncate text-[11px] uppercase tracking-[0.2em] text-ink/50">{subtitle}</span>
+          </span>
+        </Link>
+        <NavigationMenu aria-label="Primary navigation" className="hidden flex-none sm:flex" viewport={false}>
+          <NavigationMenuList className="gap-0.5 rounded-full border border-ink/10 bg-[#dfe6d6] p-1">
+            {NAV_ITEMS.map((item) => (
+              <NavigationMenuItem key={item.key}>
+                <NavigationMenuLink
+                  asChild
+                  active={active === item.key}
+                  className={cn(
+                    'h-8 justify-center rounded-full px-4 py-0 text-sm font-medium transition-colors duration-150',
+                    active === item.key
+                      ? 'bg-moss font-semibold text-white hover:bg-moss focus:bg-moss data-[active=true]:bg-moss data-[active=true]:text-white data-[active=true]:hover:bg-moss data-[active=true]:focus:bg-moss'
+                      : 'text-ink/70 hover:bg-white/60 hover:text-ink focus:bg-white/60 focus:text-ink',
+                  )}
+                >
+                  <Link
+                    aria-current={active === item.key ? 'page' : undefined}
+                    href={item.href}
+                    onClick={item.key === 'library' ? () => forgetLibraryState() : undefined}
+                  >
+                    {item.label}
+                  </Link>
+                </NavigationMenuLink>
+              </NavigationMenuItem>
+            ))}
+          </NavigationMenuList>
+        </NavigationMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button aria-label="Open navigation menu" className="shrink-0 sm:hidden" size="icon" variant="outline">
+              <MenuIcon aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {NAV_ITEMS.map((item) => (
+              <DropdownMenuItem asChild key={item.key}>
                 <Link
                   aria-current={active === item.key ? 'page' : undefined}
+                  className={cn(
+                    'flex items-center justify-between gap-3',
+                    active === item.key && 'bg-primary font-bold text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground',
+                  )}
                   href={item.href}
                   onClick={item.key === 'library' ? () => forgetLibraryState() : undefined}
                 >
                   {item.label}
+                  {active === item.key && <CheckIcon aria-hidden="true" className="size-4" />}
                 </Link>
-              </NavigationMenuLink>
-            </NavigationMenuItem>
-          ))}
-        </NavigationMenuList>
-      </NavigationMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button aria-label="Open navigation menu" className="shrink-0 sm:hidden" size="icon" variant="outline">
-            <MenuIcon aria-hidden="true" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {NAV_ITEMS.map((item) => (
-            <DropdownMenuItem asChild key={item.key}>
-              <Link
-                aria-current={active === item.key ? 'page' : undefined}
-                className={cn(
-                  'flex items-center justify-between gap-3',
-                  active === item.key && 'bg-primary font-bold text-primary-foreground focus:bg-primary/90 focus:text-primary-foreground',
-                )}
-                href={item.href}
-                onClick={item.key === 'library' ? () => forgetLibraryState() : undefined}
-              >
-                {item.label}
-                {active === item.key && <CheckIcon aria-hidden="true" className="size-4" />}
-              </Link>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </header>
   );
 }

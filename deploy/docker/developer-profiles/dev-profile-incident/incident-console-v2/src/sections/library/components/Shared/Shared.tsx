@@ -52,11 +52,17 @@ export function Select({
   value,
   options,
   onChange,
+  className,
+  active = false,
 }: {
   label: string;
   value: string;
   options: [string, string][];
   onChange: (value: string) => void;
+  /** Width and the like, for the filter row. */
+  className?: string;
+  /** A filter is set: the trigger is drawn in the theme green. */
+  active?: boolean;
 }) {
   const internalValue = value === '' ? EMPTY_SENTINEL : value;
 
@@ -67,7 +73,14 @@ export function Select({
         onChange(val === EMPTY_SENTINEL ? '' : val);
       }}
     >
-      <SelectTrigger aria-label={label} className="w-full bg-white shadow-xs">
+      <SelectTrigger
+        aria-label={label}
+        className={cn(
+          'w-full bg-white shadow-xs data-[size=default]:h-[30px] data-[size=default]:py-0 text-[13px]',
+          active && 'border-moss font-semibold text-moss',
+          className,
+        )}
+      >
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent position="popper" className="bg-white">

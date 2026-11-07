@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, SearchIcon } from 'lucide-react';
 
 import { EvidenceTab, type EvidenceScope } from '@/sections/library/components/EvidenceTab';
 import { IncidentCard } from '@/sections/library/components/IncidentCard';
@@ -24,8 +24,9 @@ import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { LIBRARY_STATE_KEY } from '@/lib/library/remembered-state';
 import { pageItems } from '@/lib/library/pages';
 import { getViewerTimeZone } from '@/lib/time';
+import { cn } from 'cn';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem } from '@/components/ui/pagination';
 
@@ -223,281 +224,291 @@ export function Library() {
   const first = (filters.page - 1) * PAGE_SIZE + 1;
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] px-6 pb-6 pt-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:px-12">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-moss">Incident console</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">Incident reports</h1>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild className="bg-ink font-semibold text-white hover:bg-ink/90">
-            <Link href="/">
-              <PlusIcon className="size-4" />
-              Analyze video
-            </Link>
-          </Button>
-        </div>
-      </div>
-
-      <div className="mt-3">
-        <Tabs onValueChange={(val) => chooseTab(val as Tab)} value={tab}>
-          <TabsList className="h-auto w-full justify-start rounded-none border-b border-ink/10 p-0" variant="line">
-            <TabsTrigger className="h-auto flex-none rounded-none px-4 py-2.5 font-semibold after:bottom-0" value="incidents">
-              Find incidents
-            </TabsTrigger>
-            <TabsTrigger className="h-auto flex-none rounded-none px-4 py-2.5 font-semibold after:bottom-0" value="evidence">
-              Find evidence
-            </TabsTrigger>
+    <div className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+      <Tabs className="gap-0" onValueChange={(val) => chooseTab(val as Tab)} value={tab}>
+        <div className="flex justify-center bg-[#dfe4da] pt-1.5">
+          <TabsList className="h-auto gap-3 rounded-none bg-transparent p-0 group-data-horizontal/tabs:h-auto">
+            {(
+              [
+                ['incidents', 'Find incidents'],
+                ['evidence', 'Find evidence'],
+              ] as const
+            ).map(([value, text]) => (
+              <TabsTrigger
+                className={cn(
+                  'relative h-[34px] flex-none rounded-t-lg rounded-b-none border-0 px-5 py-0 text-sm font-semibold text-ink/60 shadow-none transition-colors duration-150 hover:bg-white/40 hover:text-ink motion-reduce:transition-none group-data-[variant=default]/tabs-list:data-active:shadow-none',
+                  'data-active:bg-canvas data-active:text-ink data-active:hover:bg-canvas',
+                  "before:absolute before:-left-2 before:bottom-0 before:size-2 before:opacity-0 before:transition-opacity before:duration-150 before:content-[''] before:[background:radial-gradient(circle_at_0_0,transparent_8px,var(--color-canvas)_8.5px)] data-active:before:opacity-100",
+                  "after:absolute after:bg-transparent group-data-horizontal/tabs:after:inset-x-auto group-data-horizontal/tabs:after:-right-2 group-data-horizontal/tabs:after:bottom-0 group-data-horizontal/tabs:after:h-2 after:w-2 after:opacity-0 after:transition-opacity after:duration-150 after:content-[''] after:[background:radial-gradient(circle_at_100%_0,transparent_8px,var(--color-canvas)_8.5px)] data-active:after:opacity-100",
+                )}
+                key={value}
+                value={value}
+              >
+                {text}
+              </TabsTrigger>
+            ))}
           </TabsList>
-        </Tabs>
-      </div>
+        </div>
+      </Tabs>
 
-      <section className="mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-        {tab === 'evidence' ? (
-          <EvidenceTab
-            error={searchError}
-            loading={searching}
-            onQuery={setEvidenceQuery}
-            onScope={(next) => (next ? setScope(next) : clearScope())}
-            onSubmit={(text) => void searchEvidence(text ?? evidenceQuery, scope?.videoId ?? null)}
-            query={evidenceQuery}
-            result={result}
-            scope={scope}
-            submitted={submitted}
-          />
-        ) : (
-          <>
-            <form
-              className="flex flex-col gap-3 sm:flex-row"
-              onSubmit={(event) => {
-                event.preventDefault();
-                apply({ search: searchText });
-              }}
-            >
-              <div className="relative flex-1">
-                <Input
-                  className="h-10 bg-white"
-                  onChange={(event) => setSearchText(event.target.value)}
-                  placeholder="Search incident titles, summaries and evidence"
-                  type="search"
-                  value={searchText}
-                />
-              </div>
-              <Button className="bg-ink font-semibold text-white hover:bg-ink/90" type="submit">
-                Search
-              </Button>
-            </form>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Select
-                label="Incident type"
-                onChange={(value) => apply({ type: value })}
-                options={[['', 'All incident types'], ...incidentTypes.map((value): [string, string] => [value, value])]}
-                value={filters.type}
+      <div className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto">
+        <div className="mx-auto w-full max-w-[1500px] px-6 pb-6 pt-2 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:px-12">
+          <section className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+            {tab === 'evidence' ? (
+              <EvidenceTab
+                error={searchError}
+                loading={searching}
+                onQuery={setEvidenceQuery}
+                onScope={(next) => (next ? setScope(next) : clearScope())}
+                onSubmit={(text) => void searchEvidence(text ?? evidenceQuery, scope?.videoId ?? null)}
+                query={evidenceQuery}
+                result={result}
+                scope={scope}
+                submitted={submitted}
               />
-              <Select
-                label="Status"
-                onChange={(value) => apply({ scope: value as IncidentFilters['scope'] })}
-                options={[
-                  ['', 'Any status'],
-                  ['official', 'Has an official version'],
-                  ['not_official', 'Not yet official'],
-                ]}
-                value={filters.scope}
-              />
-              <Select
-                label="Severity"
-                onChange={(value) => apply({ severity: value })}
-                options={[
-                  ['', 'Any severity'],
-                  ['low', 'Low (1-2)'],
-                  ['medium', 'Medium (3)'],
-                  ['high', 'High (4-5)'],
-                ]}
-                value={filters.severity}
-              />
-              <Select
-                label="Added"
-                onChange={(value) => apply({ after: presetAfter(value as DatePreset), before: '' })}
-                options={[
-                  ['any', 'Any date'],
-                  ['today', 'Today'],
-                  ['7d', 'Last 7 days'],
-                  ['30d', 'Last 30 days'],
-                  ...(datePreset === 'custom' ? [['custom', 'Custom range'] as [string, string]] : []),
-                ]}
-                value={datePreset}
-              />
-            </div>
-            {chips.length > 0 && (
-              <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="active-filters">
-                {chips.map((chip) => (
-                  <FilterChip
-                    key={chip.key}
-                    label={chip.label}
-                    onRemove={() => {
-                      apply(chip.clear);
-                      if (chip.key === 'search') setSearchText('');
-                    }}
-                  />
-                ))}
-                <Button
-                  className="h-7 px-2 text-xs font-semibold text-moss hover:bg-moss/10 hover:text-moss"
-                  onClick={() => {
-                    setFilters(EMPTY_FILTERS);
-                    setSearchText('');
-                  }}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  Clear all
-                </Button>
-              </div>
-            )}
-            {filters.entity || filters.instrument || filters.asset ? (
-              <p className="mt-2 text-xs text-ink/50">
-                {filters.exact ? 'Instrument and asset names are matched exactly.' : 'Instrument and asset names match partial text.'}
-              </p>
-            ) : null}
-            {filters.fromTime || filters.toTime ? <p className="mt-1 text-xs text-ink/50">Times are in {timeZone}.</p> : null}
-
-            <div className="sr-only">
-              {totalItems} {totalItems === 1 ? 'incident' : 'incidents'}
-            </div>
-            {searchMode === 'semantic' && (
-              <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">
-                Best match first. The usual order (official first, then oldest upload first) applies again when the search text is cleared.
-              </p>
-            )}
-            {searchMode === 'text' && (
-              <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">
-                Matched on incident text: meaning search is unavailable or found nothing.
-              </p>
-            )}
-            {loading ? (
-              <CardSkeleton label="Loading incidents" />
-            ) : error ? (
-              <ErrorPanel message={error} onRetry={() => void load()} />
-            ) : reports.length === 0 ? (
-              library === 'empty' ? (
-                <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
-                  <h2 className="text-xl font-semibold">Your library is empty.</h2>
-                  <p className="mt-2 text-sm text-ink/50">Analyze a video to create the first incident report.</p>
-                  <Button asChild className="mt-4 bg-ink font-semibold text-white hover:bg-ink/90">
-                    <Link href="/">
-                      <PlusIcon className="size-4" />
-                      Analyze video
-                    </Link>
-                  </Button>
-                </div>
-              ) : (
-                <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
-                  <h2 className="text-xl font-semibold">No incidents match.</h2>
-                  <p className="mt-2 text-sm text-ink/50">Clear the filters or search the evidence instead.</p>
-                  <div className="mt-4 flex justify-center gap-3">
-                    {chips.length > 0 && (
-                      <Button
-                        onClick={() => {
-                          setFilters(EMPTY_FILTERS);
-                          setSearchText('');
-                        }}
-                        type="button"
-                        variant="outline"
-                      >
-                        Clear all
-                      </Button>
-                    )}
-                    {filters.search.trim() && (
-                      <Button
-                        onClick={() => {
-                          setScope(null);
-                          setEvidenceQuery(filters.search.trim());
-                          setTab('evidence');
-                          void searchEvidence(filters.search);
-                        }}
-                        type="button"
-                        variant="outline"
-                      >
-                        Search evidence for &ldquo;{filters.search.trim()}&rdquo;
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )
             ) : (
               <>
-                <div className="mt-4 grid gap-4 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-rows-3 xl:grid-cols-3 xl:grid-rows-2">
-                  {reports.map((item) => (
-                    <IncidentCard
-                      busy={busy === item.videoId}
-                      item={item}
-                      key={item.videoId}
-                      onDelete={deleteReport}
-                      onOpen={rememberPosition}
-                      onSearchEvidence={searchEvidenceIn}
+                <form
+                  className="flex flex-wrap items-center gap-1.5 lg:flex-nowrap"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    apply({ search: searchText });
+                  }}
+                >
+                  <InputGroup className="h-[30px] min-w-40 flex-1 bg-white">
+                    <InputGroupAddon>
+                      <SearchIcon />
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      aria-label="Search incidents"
+                      className="text-[13px]"
+                      onChange={(event) => setSearchText(event.target.value)}
+                      placeholder="Search incident titles, summaries and evidence"
+                      type="search"
+                      value={searchText}
                     />
-                  ))}
-                </div>
-                <nav aria-label="Incident pages" className="mt-4 flex shrink-0 flex-col items-center justify-between gap-2 sm:flex-row">
-                  <p className="text-sm font-semibold text-ink/65">
-                    Showing {first}-{Math.min(filters.page * PAGE_SIZE, totalItems)} of {totalItems} incidents
+                  </InputGroup>
+                  <Select
+                    active={filters.type !== ''}
+                    className="w-[146px]"
+                    label="Incident type"
+                    onChange={(value) => apply({ type: value })}
+                    options={[['', 'All incident types'], ...incidentTypes.map((value): [string, string] => [value, value])]}
+                    value={filters.type}
+                  />
+                  <Select
+                    active={filters.scope !== ''}
+                    className="w-[150px]"
+                    label="Status"
+                    onChange={(value) => apply({ scope: value as IncidentFilters['scope'] })}
+                    options={[
+                      ['', 'Any status'],
+                      ['official', 'Has an official version'],
+                      ['not_official', 'Not yet official'],
+                    ]}
+                    value={filters.scope}
+                  />
+                  <Select
+                    active={filters.severity !== ''}
+                    className="w-[116px]"
+                    label="Severity"
+                    onChange={(value) => apply({ severity: value })}
+                    options={[
+                      ['', 'Any severity'],
+                      ['low', 'Low (1-2)'],
+                      ['medium', 'Medium (3)'],
+                      ['high', 'High (4-5)'],
+                    ]}
+                    value={filters.severity}
+                  />
+                  <Select
+                    active={datePreset !== 'any'}
+                    className="w-[118px]"
+                    label="Added"
+                    onChange={(value) => apply({ after: presetAfter(value as DatePreset), before: '' })}
+                    options={[
+                      ['any', 'Any date'],
+                      ['today', 'Today'],
+                      ['7d', 'Last 7 days'],
+                      ['30d', 'Last 30 days'],
+                      ...(datePreset === 'custom' ? [['custom', 'Custom range'] as [string, string]] : []),
+                    ]}
+                    value={datePreset}
+                  />
+                </form>
+                {chips.length > 0 && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="active-filters">
+                    {chips.map((chip) => (
+                      <FilterChip
+                        key={chip.key}
+                        label={chip.label}
+                        onRemove={() => {
+                          apply(chip.clear);
+                          if (chip.key === 'search') setSearchText('');
+                        }}
+                      />
+                    ))}
+                    <Button
+                      className="h-7 px-2 text-xs font-semibold text-moss hover:bg-moss/10 hover:text-moss"
+                      onClick={() => {
+                        setFilters(EMPTY_FILTERS);
+                        setSearchText('');
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      Clear all
+                    </Button>
+                  </div>
+                )}
+                {filters.entity || filters.instrument || filters.asset ? (
+                  <p className="mt-2 text-xs text-ink/50">
+                    {filters.exact ? 'Instrument and asset names are matched exactly.' : 'Instrument and asset names match partial text.'}
                   </p>
-                  <Pagination className="mx-0 w-auto">
-                    <PaginationContent>
-                      <PaginationItem>
-                        <Button
-                          disabled={filters.page <= 1}
-                          onClick={() => apply({ page: filters.page - 1 }, true)}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                          aria-label="Previous page"
-                        >
-                          <ChevronLeftIcon />
-                        </Button>
-                      </PaginationItem>
-                      {pageItems(filters.page, totalPages).map((value, index) =>
-                        value === 'gap' ? (
-                          // biome-ignore lint/suspicious/noArrayIndexKey: the gaps have no identity of their own
-                          <PaginationItem key={`gap-${index}`}>
-                            <PaginationEllipsis />
-                          </PaginationItem>
-                        ) : (
-                          <PaginationItem key={value}>
+                ) : null}
+                {filters.fromTime || filters.toTime ? <p className="mt-1 text-xs text-ink/50">Times are in {timeZone}.</p> : null}
+
+                <div className="sr-only">
+                  {totalItems} {totalItems === 1 ? 'incident' : 'incidents'}
+                </div>
+                {filters.search.trim() && searchMode === 'semantic' && (
+                  <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">
+                    Best match first. The usual order (official first, then oldest upload first) applies again when the search text is
+                    cleared.
+                  </p>
+                )}
+                {filters.search.trim() && searchMode === 'text' && (
+                  <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">
+                    Matched on incident text: meaning search is unavailable or found nothing.
+                  </p>
+                )}
+                {loading ? (
+                  <CardSkeleton label="Loading incidents" />
+                ) : error ? (
+                  <ErrorPanel message={error} onRetry={() => void load()} />
+                ) : reports.length === 0 ? (
+                  library === 'empty' ? (
+                    <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
+                      <h2 className="text-xl font-semibold">Your library is empty.</h2>
+                      <p className="mt-2 text-sm text-ink/50">Analyze a video to create the first incident report.</p>
+                      <Button asChild className="mt-4 bg-ink font-semibold text-white hover:bg-ink/90">
+                        <Link href="/">
+                          <PlusIcon className="size-4" />
+                          Analyze video
+                        </Link>
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
+                      <h2 className="text-xl font-semibold">No incidents match.</h2>
+                      <p className="mt-2 text-sm text-ink/50">Clear the filters or search the evidence instead.</p>
+                      <div className="mt-4 flex justify-center gap-3">
+                        {chips.length > 0 && (
+                          <Button
+                            onClick={() => {
+                              setFilters(EMPTY_FILTERS);
+                              setSearchText('');
+                            }}
+                            type="button"
+                            variant="outline"
+                          >
+                            Clear all
+                          </Button>
+                        )}
+                        {filters.search.trim() && (
+                          <Button
+                            onClick={() => {
+                              setScope(null);
+                              setEvidenceQuery(filters.search.trim());
+                              setTab('evidence');
+                              void searchEvidence(filters.search);
+                            }}
+                            type="button"
+                            variant="outline"
+                          >
+                            Search evidence for &ldquo;{filters.search.trim()}&rdquo;
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-rows-3 xl:grid-cols-3 xl:grid-rows-2">
+                      {reports.map((item) => (
+                        <IncidentCard
+                          busy={busy === item.videoId}
+                          item={item}
+                          key={item.videoId}
+                          onDelete={deleteReport}
+                          onOpen={rememberPosition}
+                          onSearchEvidence={searchEvidenceIn}
+                        />
+                      ))}
+                    </div>
+                    <nav aria-label="Incident pages" className="mt-4 flex shrink-0 flex-col items-center justify-between gap-2 sm:flex-row">
+                      <p className="text-sm font-semibold text-ink/65">
+                        Showing {first}-{Math.min(filters.page * PAGE_SIZE, totalItems)} of {totalItems} incidents
+                      </p>
+                      <Pagination className="mx-0 w-auto">
+                        <PaginationContent>
+                          <PaginationItem>
                             <Button
-                              aria-current={value === filters.page ? 'page' : undefined}
-                              aria-label={`Page ${value}`}
-                              className={value === filters.page ? 'bg-ink text-white' : ''}
-                              onClick={() => apply({ page: value }, true)}
+                              disabled={filters.page <= 1}
+                              onClick={() => apply({ page: filters.page - 1 }, true)}
                               size="sm"
                               type="button"
-                              variant={value === filters.page ? 'default' : 'outline'}
+                              variant="outline"
+                              aria-label="Previous page"
                             >
-                              {value}
+                              <ChevronLeftIcon />
                             </Button>
                           </PaginationItem>
-                        ),
-                      )}
-                      <PaginationItem>
-                        <Button
-                          disabled={filters.page >= totalPages}
-                          onClick={() => apply({ page: filters.page + 1 }, true)}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                          aria-label="Next page"
-                        >
-                          <ChevronRightIcon />
-                        </Button>
-                      </PaginationItem>
-                    </PaginationContent>
-                  </Pagination>
-                </nav>
+                          {pageItems(filters.page, totalPages).map((value, index) =>
+                            value === 'gap' ? (
+                              // biome-ignore lint/suspicious/noArrayIndexKey: the gaps have no identity of their own
+                              <PaginationItem key={`gap-${index}`}>
+                                <PaginationEllipsis />
+                              </PaginationItem>
+                            ) : (
+                              <PaginationItem key={value}>
+                                <Button
+                                  aria-current={value === filters.page ? 'page' : undefined}
+                                  aria-label={`Page ${value}`}
+                                  className={value === filters.page ? 'bg-ink text-white' : ''}
+                                  onClick={() => apply({ page: value }, true)}
+                                  size="sm"
+                                  type="button"
+                                  variant={value === filters.page ? 'default' : 'outline'}
+                                >
+                                  {value}
+                                </Button>
+                              </PaginationItem>
+                            ),
+                          )}
+                          <PaginationItem>
+                            <Button
+                              disabled={filters.page >= totalPages}
+                              onClick={() => apply({ page: filters.page + 1 }, true)}
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                              aria-label="Next page"
+                            >
+                              <ChevronRightIcon />
+                            </Button>
+                          </PaginationItem>
+                        </PaginationContent>
+                      </Pagination>
+                    </nav>
+                  </>
+                )}
               </>
             )}
-          </>
-        )}
-      </section>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
