@@ -47,6 +47,7 @@ const EXAMPLES = [
   'Reports by model',
   'Evidence per report by incident type',
   'Severity against evidence',
+  'Threat by holder type',
 ];
 const KIND_LABELS: Record<ChartKind, string> = {
   bar: 'Bar',
