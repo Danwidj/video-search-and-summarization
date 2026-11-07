@@ -78,6 +78,7 @@ export function IncidentCard({
           kind={item.kind}
           severity={item.severity}
           thumbnailUrl={item.thumbnailUrl}
+          previewVideoId={item.videoId}
         >
           <div className="absolute right-2 top-2 z-10" data-no-card-nav>
             <TooltipProvider>
