@@ -218,6 +218,8 @@ export async function sendAgentInvestigate(
   draft?: Record<string, unknown>,
   /** The new-evidence exchange still open in the chat, with the draft. */
   evidence?: EvidenceExchange,
+  /** The last few chat turns before the question, so the editor resolves "the same item" (only with the draft). */
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>,
 ): Promise<ChatResponse> {
   const response = await fetch(`${agentUrl.replace(/\/$/, '')}/api/v1/incidents/${encodeURIComponent(videoId)}/investigate`, {
     method: 'POST',
@@ -226,6 +228,7 @@ export async function sendAgentInvestigate(
       question,
       ...(draft ? { draft } : {}),
       ...(evidence ? { evidence: { questions_asked: evidence.questionsAsked, transcript: evidence.transcript } } : {}),
+      ...(draft && history?.length ? { history } : {}),
     }),
     signal,
   });
