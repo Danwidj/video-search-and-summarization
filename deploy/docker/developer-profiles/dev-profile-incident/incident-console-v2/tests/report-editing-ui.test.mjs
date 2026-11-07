@@ -122,7 +122,7 @@ test('edit mode pairs every evidence row with A and saves the whole draft as a n
   assert.match(timeline, /Entities/);
   assert.match(timeline, /Instruments/);
   assert.match(timeline, /Assets/);
-  for (const classB of ['severity_reason', 'uncertainties', 'timeline']) {
+  for (const classB of ['uncertainties', 'timeline']) {
     assert.ok(!new RegExp(`${classB}:`).test(editor), `${classB} must not be editable`);
   }
 });

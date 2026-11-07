@@ -27,6 +27,8 @@ export interface StructuredIncident {
   duration: number | null;
   description: string | null;
   severityLevel: number | null;
+  /** The version's own rationale for its severity: the model's on an AI version, the reviewer's once they change it. */
+  severityReason: string | null;
   confidenceScore: number | null;
 }
 

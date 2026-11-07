@@ -372,6 +372,22 @@ export function ReportEditPane({
                 />
               }
             />
+            <PairField
+              label="Severity rationale"
+              left={
+                <span className="whitespace-pre-wrap text-foreground/75">
+                  {a?.incident.severityReason ?? 'No severity rationale was recorded.'}
+                </span>
+              }
+              right={
+                <Textarea
+                  aria-label="Draft severity rationale"
+                  className="min-h-[72px] text-xs"
+                  onChange={(event) => patchIncident({ severity_reason: event.target.value })}
+                  value={draft.incident.severity_reason}
+                />
+              }
+            />
           </dl>
         </CardContent>
       </Card>

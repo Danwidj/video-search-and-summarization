@@ -44,7 +44,14 @@ const noEmbed = async () => assert.fail('nothing to embed');
 function editOf(record) {
   const details = (sourceId, image = null) => ({ source_id: sourceId, timestamp_seconds: 2, label: '', image });
   return {
-    incident: { type: 'assault', start_timestamp: 1, end_timestamp: 11, description: 'Edited summary.', severity_level: 4 },
+    incident: {
+      type: 'assault',
+      start_timestamp: 1,
+      end_timestamp: 11,
+      description: 'Edited summary.',
+      severity_level: 4,
+      severity_reason: 'Edited rationale.',
+    },
     entities: [
       {
         entity_id: 'E1',

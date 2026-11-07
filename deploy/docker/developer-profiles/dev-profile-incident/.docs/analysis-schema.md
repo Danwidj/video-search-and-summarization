@@ -125,8 +125,8 @@ Records written before attempt statuses existed lack `status`; they are shown as
 
 | Class | Fields | Source | Editable |
 |---|---|---|---|
-| **A: structured** | type, title (editable since 2026-11-06; the model's stays in the run record), start/end (integer seconds as text), duration (derived), description, severity level, confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`), and each item's description, detail and image | `report_revisions.payload` and `.evidence` | Yes, into a new `human` revision only, except duration (recomputed) and confidence |
-| **B: model output** | severity rationale, location (shown); the model's original title (shown beside a reviewer's); timeline and uncertainties (stored in the report, not shown by the console since 2026-11-01) | the report in notes | No (read-only) |
+| **A: structured** | type, title (editable since 2026-11-06; the model's stays in the run record), start/end (integer seconds as text), duration (derived), description, severity level, severity rationale (editable since 2026-11-07; stored as `incident.severity_reason`), confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`), and each item's description, detail and image | `report_revisions.payload` and `.evidence` | Yes, into a new `human` revision only, except duration (recomputed) and confidence |
+| **B: model output** | location (shown); the model's original title (shown beside a reviewer's); timeline and uncertainties (stored in the report, not shown by the console since 2026-11-01) | the report in notes | No (read-only) |
 | **C: provenance** | model, contract version, run id, instruction, settings, fingerprints, raw response, reasoning, finish reason, usage, repair record | notes + `model_runs` | No |
 
 ### Report revisions (AI and human)
@@ -149,8 +149,7 @@ A report is a list of immutable revisions in `report_revisions`; the columns, th
 - **There is no verification status and no draft.** `kind='human'` with `created_by` and `created_at` says a person saved it; unsaved edits live only in the form.
 
 The report page:
-- shows "Model severity rationale";
-- when a human revision changed the severity, adds "Model assessed N/5; reviewer set M/5";
+- shows the version's own severity rationale (the model's on an AI version, the reviewer's once they change it);
 - shows no "Reviewer-edited after generation" line (removed 2026-11-06; `differences.fields` still tracks the changed fields). Entities, instruments and assets are compared with the stored payload of the AI revision the version derives from (its own for an AI version), not the first pass in the run notes, so the zoomed second look's corrections are never reviewer edits.
 
 ## 5. Legacy data

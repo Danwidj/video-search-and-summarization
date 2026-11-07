@@ -198,10 +198,9 @@ export function ReportPane({
               <span className="whitespace-pre-wrap">{incident.description ?? 'No summary was recorded.'}</span>
             </Row>
             <Row label="Severity rationale">
-              <span className="text-foreground/75">{modelOutput?.severityReason ?? 'No model rationale was retained for this run.'}</span>
-              {differences.severity && (
-                <span className="mt-0.5 block text-xs text-muted-foreground">For model severity {differences.severity.model}/5</span>
-              )}
+              <span className="text-foreground/75">
+                {incident.severityReason ?? modelOutput?.severityReason ?? 'No severity rationale was recorded.'}
+              </span>
             </Row>
           </dl>
         </CardContent>

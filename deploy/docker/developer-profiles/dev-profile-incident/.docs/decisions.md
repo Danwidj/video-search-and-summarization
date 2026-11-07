@@ -1964,3 +1964,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 ### 2026-11-07: The inference endpoint address lives only in untracked env files
 
 The Switchyard address was committed in the profile `.env`, the gateway and the agent code defaults. It now comes only from settings: `VLM_BASE_URL` (critic), `VLM_GATEWAY_BASE_URL` then `VLM_BASE_URL` (evidence detector), `VLM_GATEWAY_BASE_URL` (gateway and archived eval client), and the profile `.env` keeps `LLM_BASE_URL`, `VLM_BASE_URL`, `LLM_ENDPOINT_URL` and `VLM_ENDPOINT_URL` blank. The laptop reads them from `.env.local`, the VM agent from `generated.env.remote`. A missing address raises an error naming the setting when the first call is made (not at construction, so tests and tooling that build clients still work). Git history keeps the old address and is not rewritten. `eval/scripts/eval_vlm_client.py` still holds a default and belongs to another owner.
+
+### 2026-11-07: The severity rationale is editable
+
+The rationale was model output copied into every human version, so a human report showed text nobody on the team wrote. It is now a Class A field (`incident.severity_reason`, a string the contract already defines, so no contract version change) edited in Edit mode and stored on the human version; the "For model severity N/5" line is removed. Alternative rejected: leaving it read-only and hiding it on human versions (loses the explanation).

@@ -83,6 +83,7 @@ export function structuredFromPayload(payload: ReportPayload, evidence: Evidence
       duration: num(incident.duration),
       description: text(incident.description),
       severityLevel: num(incident.severity_level),
+      severityReason: text(incident.severity_reason),
       confidenceScore: num(incident.confidence_score),
     },
     entities: rows(payload.entities)

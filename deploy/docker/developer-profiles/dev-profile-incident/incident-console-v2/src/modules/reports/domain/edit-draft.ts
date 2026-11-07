@@ -42,7 +42,15 @@ interface EditEntitySpan {
 }
 
 export interface StructuredEdit {
-  incident: { type: string; title: string; start_timestamp: number; end_timestamp: number; description: string; severity_level: number };
+  incident: {
+    type: string;
+    title: string;
+    start_timestamp: number;
+    end_timestamp: number;
+    description: string;
+    severity_level: number;
+    severity_reason: string;
+  };
   entities: Array<{ entity_id: string; type: string; description: string } & EditEntitySpan & EditItemDetails>;
   instruments: Array<
     { instrument_id: string; entity_id: string | null; name: string; description: string; threat_level: number } & EditItemDetails
@@ -81,6 +89,7 @@ export interface EditDraft {
     end_timestamp: number | null;
     description: string;
     severity_level: number | null;
+    severity_reason: string;
   };
   entities: Array<
     {
@@ -185,6 +194,7 @@ export function draftFromView(view: ReportView): EditDraft {
       description: incident.description ?? '',
       severity_level:
         incident.severityLevel !== null && incident.severityLevel >= 1 && incident.severityLevel <= 5 ? incident.severityLevel : null,
+      severity_reason: incident.severityReason ?? '',
     },
     entities: entities.map((entity, index) => ({
       ...details(`entity-${index}`, entity.entityId, entity),
@@ -275,6 +285,7 @@ export function editFromDraft(draft: EditDraft): StructuredEdit {
       end_timestamp: draft.incident.end_timestamp ?? 0,
       description: draft.incident.description,
       severity_level: draft.incident.severity_level ?? 0,
+      severity_reason: draft.incident.severity_reason,
     },
     entities: draft.entities.map((entity, index) => ({
       entity_id: `E${index + 1}`,

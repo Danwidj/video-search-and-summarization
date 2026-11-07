@@ -18,7 +18,15 @@ import type { IncidentContractReport } from '@/modules/contract/domain/types';
 import { crossFieldViolations, type ContractViolation } from '@/modules/contract/domain/validate';
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
 
-export const EDITABLE_INCIDENT_FIELDS = ['type', 'title', 'start_timestamp', 'end_timestamp', 'description', 'severity_level'] as const;
+export const EDITABLE_INCIDENT_FIELDS = [
+  'type',
+  'title',
+  'start_timestamp',
+  'end_timestamp',
+  'description',
+  'severity_level',
+  'severity_reason',
+] as const;
 export const EDITABLE_ENTITY_FIELDS = [
   'entity_id',
   'type',
