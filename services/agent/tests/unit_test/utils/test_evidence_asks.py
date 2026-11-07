@@ -99,3 +99,58 @@ def test_a_rejected_question_does_not_use_up_the_cap() -> None:
     result = ea.propose(WINDOW, 0, [ea.Call(tool="ask_reviewer", args={"question": ""}), ask("a"), ask("b")])
     assert len(result.proposals) == 2
     assert len(result.rejected) == 1
+
+
+# The draft's items: p1 is seen at 5 seconds, k1 has no second it is seen at.
+ITEMS: dict[str, float | None] = {"p1": 5.0, "k1": None}
+
+
+def open_item(key: str = "p1") -> ea.Call:
+    return ea.Call(tool="open_box_tool", args={"item_key": key})
+
+
+def test_the_box_tool_opens_on_an_existing_item_by_its_key() -> None:
+    result = ea.propose(WINDOW, 0, [open_item("p1")], ITEMS)
+    assert [p.tool for p in result.proposals] == ["open_box_tool"]
+    assert result.proposals[0].args == {"item_key": "p1"}
+    assert "redraw its box" in result.proposals[0].summary
+    assert result.rejected == []
+
+
+def test_an_item_must_be_in_the_draft() -> None:
+    result = ea.propose(WINDOW, 0, [open_item("E1")], ITEMS)
+    assert result.proposals == []
+    assert result.rejected[0].reason == "No item with key 'E1' in the draft."
+
+
+def test_no_draft_means_no_item_can_be_opened() -> None:
+    result = ea.propose(WINDOW, 0, [open_item("p1")])
+    assert result.proposals == []
+    assert "No item with key 'p1'" in result.rejected[0].reason
+
+
+def test_an_item_with_no_second_it_is_seen_at_cannot_be_opened() -> None:
+    result = ea.propose(WINDOW, 0, [open_item("k1")], ITEMS)
+    assert result.proposals == []
+    assert "no second it is seen at" in result.rejected[0].reason
+
+
+def test_an_item_opening_takes_no_seconds_or_name_from_the_model() -> None:
+    result = ea.propose(WINDOW, 0, [ea.Call(tool="open_box_tool", args={"item_key": "p1", "seconds": 6})], ITEMS)
+    assert result.proposals == []
+    assert "item_key alone" in result.rejected[0].reason
+
+
+def test_new_evidence_needs_its_seconds_and_a_name() -> None:
+    result = ea.propose(WINDOW, 0, [ea.Call(tool="open_box_tool", args={"seconds": 12})], ITEMS)
+    assert result.proposals == []
+    assert "needs its seconds and a name" in result.rejected[0].reason
+
+
+def test_an_item_opening_counts_as_the_box_tool_opening() -> None:
+    result = ea.propose(WINDOW, 0, [open_item("p1"), open_box(20, "Bag"), ask("Who?")], ITEMS)
+    assert [p.tool for p in result.proposals] == ["open_box_tool"]
+    assert [r.reason for r in result.rejected] == [
+        "The box tool is already open for this evidence.",
+        "The box tool is already open; no more questions for this evidence.",
+    ]

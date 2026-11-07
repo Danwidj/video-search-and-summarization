@@ -87,12 +87,47 @@ test('a new-evidence action without its fields is not shown or applied', () => {
   assert.deepEqual(split, { rest: [] });
 });
 
+// The draft the chat was sent with: the agent checks an item's key against it.
+const sentDraft = {
+  incident: {},
+  entities: [{ key: 'p1', type: 'human', label: 'Person in purple', timestampSeconds: 5 }],
+  instruments: [{ key: 'k1', name: 'knife', threat_level: 3, timestampSeconds: 9 }],
+  assets: [],
+};
+
+test('an opening on an existing item is found by its key in the sent draft, and is not a new-evidence opening', () => {
+  const split = splitEvidenceActions(
+    [
+      { tool: 'propose_set_incident_fields', args: { severity_level: 4 } },
+      { tool: 'propose_open_box_tool', args: { item_key: 'k1' } },
+    ],
+    sentDraft,
+  );
+  assert.deepEqual(split.opening, { itemKey: 'k1', name: 'knife' });
+  assert.deepEqual(split.rest, [{ tool: 'propose_set_incident_fields', args: { severity_level: 4 } }]);
+  assert.equal(
+    splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { item_key: 'p1' } }], sentDraft).opening.name,
+    'Person in purple',
+  );
+});
+
+test('an opening on an item the sent draft does not have, or with no draft, is not shown', () => {
+  assert.deepEqual(splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { item_key: 'E9' } }], sentDraft), { rest: [] });
+  assert.deepEqual(splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { item_key: 'p1' } }], null), { rest: [] });
+});
+
 test('each new-evidence step has its own row for What I did', () => {
   assert.deepEqual(evidenceRows({ content: 'Which shop?', askedReviewer: true, openedBox: { seconds: 75, name: 'Bag' } }), [
     { kind: 'asked', text: 'Which shop?' },
     { kind: 'opened', text: 'Opened the box tool at 1:15 as "Bag"' },
   ]);
   assert.deepEqual(evidenceRows({ content: 'Noted.' }), []);
+});
+
+test('a redraw of an existing item has its own row, not an opening of new evidence', () => {
+  assert.deepEqual(evidenceRows({ content: 'Noted.', openedBox: { itemKey: 'p1', name: 'Person in purple' } }), [
+    { kind: 'redraw', text: 'Opened the box tool on "Person in purple" to redraw its box' },
+  ]);
 });
 
 test('the request sends the pending exchange, and sends nothing when none is pending', () => {
@@ -111,10 +146,19 @@ test('the report page and its panes wire the box opening from the chat to the ed
   const page = readFileSync(join(process.cwd(), 'src/sections/reports/components/ReportPage/ReportPage.tsx'), 'utf8');
   const pane = readFileSync(join(process.cwd(), 'src/sections/reports/components/ReportEditPane/ReportEditPane.tsx'), 'utf8');
   const steps = readFileSync(join(process.cwd(), 'src/sections/reports/components/ReportChat/ChatStepsView.tsx'), 'utf8');
-  assert.match(page, /const editFromChat = \(sent: EditDraft, proposals: ProposedAction\[\], opening\?: EvidenceOpening\)/);
+  assert.match(page, /const editFromChat = \(sent: EditDraft, proposals: ProposedAction\[\], opening\?: BoxOpening\)/);
   assert.match(page, /if \(opening\) setEvidenceOpening\(opening\);/);
   assert.match(page, /evidenceOpening=\{evidenceOpening\}/);
   assert.match(page, /onEvidenceOpened=\{clearEvidenceOpening\}/);
   assert.match(pane, /onEvidenceOpened\?\.\(\);/);
-  assert.match(steps, /New evidence/);
+  assert.match(steps, /Evidence \(\{evidence\.length\}\)/);
+  assert.match(steps, /'Redraw'/);
+});
+
+test('a redraw of an existing item opens the box tool on that item and is proposed, not applied', () => {
+  const pane = readFileSync(join(process.cwd(), 'src/sections/reports/components/ReportEditPane/ReportEditPane.tsx'), 'utf8');
+  assert.match(pane, /if \(!isItemOpening\(evidenceOpening\)\) setBoxTool\(\{ row: null, opening: evidenceOpening \}\);/);
+  assert.match(pane, /setBoxTool\(\{ row: found\.item, redraw: true \}\);/);
+  assert.match(pane, /if \(target && boxTool\?\.redraw\) \{/);
+  assert.match(pane, /onChange\(proposeEvidence\(draft, target\.key, proposal\)\);/);
 });

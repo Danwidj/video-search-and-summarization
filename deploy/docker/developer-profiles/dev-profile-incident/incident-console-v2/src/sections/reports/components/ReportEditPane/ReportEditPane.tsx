@@ -16,8 +16,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { evidenceDisplay, videoFrameUrl } from '@/lib/evidence/evidence-view';
 import type { BoxToolClient } from '@/lib/evidence/box-tool-client';
-import { addBoxItem, type EvidenceOpening, holderChoices, retrackDraftItem } from '@/lib/evidence/box-tool';
-import { confirmAdjusted, confirmProposal, describeProposal, dismissProposal, findDraftItem } from '@/lib/evidence/evidence-proposals';
+import { addBoxItem, type BoxOpening, type EvidenceOpening, holderChoices, isItemOpening, retrackDraftItem } from '@/lib/evidence/box-tool';
+import {
+  confirmAdjusted,
+  confirmProposal,
+  describeProposal,
+  dismissProposal,
+  findDraftItem,
+  proposeEvidence,
+} from '@/lib/evidence/evidence-proposals';
 import { pickSeed, setImagePick } from '@/lib/evidence/image-pick';
 import {
   deleteDraftItem,
@@ -37,7 +44,12 @@ import {
 } from '@/lib/reports/compare';
 import { severityStyle } from '@/lib/ui/severity';
 import { cn } from '@/lib/utils';
-import type { ImagePick, ReviewerDraftItem as BoxToolItem, ReviewerTrack } from '@/modules/reports/domain/reviewer-item';
+import {
+  firstSeen,
+  type ImagePick,
+  type ReviewerDraftItem as BoxToolItem,
+  type ReviewerTrack,
+} from '@/modules/reports/domain/reviewer-item';
 import type { EvidenceItemType as BoxItemType } from '@/modules/reports/domain/revision';
 import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, type EditDraft } from '@/modules/reports/domain/edit-draft';
 import { formatClock } from '@/modules/reports/domain/normalize';
@@ -108,20 +120,28 @@ export function ReportEditPane({
   /** Open the existing box tool immediately when entering Edit from the View evidence section. */
   /** True once revisions have loaded and none of them is official. */
   officialMissing?: boolean;
-  /** New evidence the chat asked for (its open_box_tool proposal): opens the box tool with the name filled in. */
-  evidenceOpening?: EvidenceOpening | null;
+  /**
+   * What the chat's open_box_tool proposal asks for: new evidence (the box tool opens with the name filled in), or an existing
+   * item to redraw (the box tool opens on it in re-track mode).
+   */
+  evidenceOpening?: BoxOpening | null;
   /** Called once the box tool has opened on `evidenceOpening`, so the page does not open it again when this pane remounts. */
   onEvidenceOpened?: () => void;
   /** Keys of the items the chat's last edit added or changed, and INCIDENT_HIGHLIGHT_KEY for the report fields: shown ringed. */
   assistantKeys?: string[];
 }) {
-  // The box tool: adding new evidence, or re-tracking a card's item from a new box.
-  const [boxTool, setBoxTool] = useState<{ row: PairRow['b']; opening?: EvidenceOpening } | null>(null);
+  // The box tool: adding new evidence, or re-tracking a card's item from a new box. `redraw` is the chat's item: its new box is
+  // a proposal beside the item, not a change, until the reviewer confirms it.
+  const [boxTool, setBoxTool] = useState<{ row: PairRow['b']; opening?: EvidenceOpening; redraw?: boolean } | null>(null);
   useEffect(() => {
     if (!evidenceOpening) return;
-    setBoxTool({ row: null, opening: evidenceOpening });
+    if (!isItemOpening(evidenceOpening)) setBoxTool({ row: null, opening: evidenceOpening });
+    else {
+      const found = findDraftItem(draft, evidenceOpening.itemKey);
+      if (found) setBoxTool({ row: found.item, redraw: true });
+    }
     onEvidenceOpened?.();
-  }, [evidenceOpening, onEvidenceOpened]);
+  }, [evidenceOpening, onEvidenceOpened, draft]);
   const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLElement | null>(null);
   // The track editor: fix a card's track with keyframes. `saved` is the opened version's item, whose track it starts from.
   const [trackEditor, setTrackEditor] = useState<{
@@ -199,7 +219,13 @@ export function ReportEditPane({
   };
   const finishBoxTool = (item: BoxToolItem, holderKey: string | null) => {
     const target = boxTool?.row ?? null;
-    if (target) {
+    if (target && boxTool?.redraw) {
+      // A new box for the chat's item: a re-track when it is a track, else the item's image at that second and box.
+      const proposal = item.track
+        ? { kind: 'retrack' as const, track: item.track, reason: null }
+        : { kind: 'set_image' as const, pick: firstSeen(item), reason: null };
+      onChange(proposeEvidence(draft, target.key, proposal));
+    } else if (target) {
       const kind: BoxItemType = isDraftEntity(target) ? 'entity' : isDraftInstrument(target) ? 'instrument' : 'asset';
       onChange(retrackDraftItem(draft, kind, target.key, item));
     } else onChange(addBoxItem(draft, item, holderKey));

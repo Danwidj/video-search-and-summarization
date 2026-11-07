@@ -31,7 +31,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { chatTarget, citationTitles } from '@/lib/chat/report-chat';
 import { seekTarget } from '@/lib/chat/timestamps';
 import { applyChatEdit, type ProposedAction } from '@/lib/edits/chat-edit';
-import type { EvidenceOpening } from '@/lib/evidence/box-tool';
+import type { BoxOpening } from '@/lib/evidence/box-tool';
 import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
 import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
 import {
@@ -121,7 +121,7 @@ export function ReportPage({
   // The draft items the chat's last edit added or changed (plus 'incident'), highlighted until the reviewer edits by hand.
   const [assistantKeys, setAssistantKeys] = useState<string[]>([]);
   // New evidence the chat asked for: the box tool opens on it in Edit, then the edit pane clears it.
-  const [evidenceOpening, setEvidenceOpening] = useState<EvidenceOpening | null>(null);
+  const [evidenceOpening, setEvidenceOpening] = useState<BoxOpening | null>(null);
   const clearEvidenceOpening = useCallback(() => setEvidenceOpening(null), []);
   // The chat's answer arrives after an await, so it reads the draft and the opened report from refs, not its own render.
   const draftRef = useRef(draft);
@@ -342,7 +342,7 @@ export function ReportPage({
   // The chat's edit is one change, so one Undo reverts the whole request. Asked in View, it opens the draft the question
   // was about and shows it with the edit applied, with no step in between for the reviewer. A box the chat opens for new
   // evidence shows the draft in Edit too, and is not a change to the draft.
-  const editFromChat = (sent: EditDraft, proposals: ProposedAction[], opening?: EvidenceOpening) => {
+  const editFromChat = (sent: EditDraft, proposals: ProposedAction[], opening?: BoxOpening) => {
     const current = draftRef.current;
     const result = applyChatEdit(current ?? sent, sent, proposals);
     const changed = result.changedKeys.length + result.removedKeys.length > 0;
