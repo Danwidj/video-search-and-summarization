@@ -5,7 +5,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { MoreHorizontalIcon, SearchIcon, TagIcon, Trash2Icon, WrenchIcon } from 'lucide-react';
 
+import { cn } from 'cn';
 import { Card } from '@/components/ui/card';
+import { CARD_HOVER } from '@/lib/ui/card-hover';
 import { ReportThumbnail } from '@/sections/library/components/ReportThumbnail';
 import { DeleteIncidentDialog } from '@/sections/library/components/IncidentCard/DeleteIncidentDialog';
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
@@ -54,7 +56,10 @@ export function IncidentCard({
         role="link"
         tabIndex={0}
         aria-label={`Open report: ${displayTitle}`}
-        className="group relative flex cursor-pointer flex-col lg:h-full lg:max-h-[40vh] lg:min-h-0 gap-0 py-0 overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
+        className={cn(
+          'group relative flex cursor-pointer flex-col lg:h-full lg:max-h-[40vh] lg:min-h-0 gap-0 py-0 overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs focus-visible:outline-none',
+          CARD_HOVER,
+        )}
         id={`report-${item.revisionId}`}
         onClick={(event) => {
           if (!event.currentTarget.contains(event.target as Node)) return;

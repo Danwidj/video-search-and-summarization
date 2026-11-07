@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type * as React from 'react';
 import { VideoIcon } from 'lucide-react';
 import { cn } from 'cn';
+import { CARD_ZOOM } from '@/lib/ui/card-hover';
 
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { libraryCardThumbnail } from '@/lib/ui/thumbnail';
@@ -38,7 +39,7 @@ export function ReportThumbnail({
         // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
         <img
           alt={alt}
-          className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          className={cn('size-full object-cover', CARD_ZOOM)}
           loading={view.loading}
           onError={() => setFailed(true)}
           src={view.src}

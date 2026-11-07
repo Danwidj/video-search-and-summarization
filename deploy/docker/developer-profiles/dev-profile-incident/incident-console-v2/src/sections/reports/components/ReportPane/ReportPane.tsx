@@ -4,6 +4,7 @@
 import { Fragment, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { CARD_HOVER_STILL } from '@/lib/ui/card-hover';
 import { EvidenceBadges } from '@/sections/reports/components/EvidenceBadges';
 import { Button } from '@/components/ui/button';
 import { VersionPill } from '@/components/version-pill';
@@ -288,7 +289,8 @@ function Card({
     <UICard
       aria-label={`Show ${item.title} in detail`}
       className={cn(
-        'w-88 max-w-full shrink-0 snap-start gap-0 overflow-hidden py-0 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'w-88 max-w-full shrink-0 snap-start gap-0 overflow-hidden py-0 text-xs focus-visible:outline-none',
+        CARD_HOVER_STILL,
         selected && 'ring-2 ring-ring',
       )}
       data-selected={selected ? 'true' : undefined}
