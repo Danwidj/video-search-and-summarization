@@ -159,8 +159,9 @@ test('the conversation lives on the page, so closing the panel keeps it, and eac
 
 test('the player stays usable beside the chat, and a jump reaches the player on screen', () => {
   const page = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportPage', 'ReportPage.tsx'), 'utf8');
-  assert.match(page, /<Sheet modal=\{false\}/);
-  assert.match(page, /onInteractOutside=\{\(event\) => event\.preventDefault\(\)\}/, 'using the player does not close the chat');
+  assert.match(page, /<aside/, 'the chat is docked beside the page, not an overlay');
+  assert.match(page, /sm:w-\[28rem\]/, 'the docked panel keeps its current width');
+  assert.match(page, /<article[\s\S]*?min-w-0 flex-1/, 'the page content narrows by the panel width');
   assert.match(page, /ref=\{compactVideoRef\}/);
   assert.match(page, /\[videoRef\.current, compactVideoRef\.current\]\.find/);
 });

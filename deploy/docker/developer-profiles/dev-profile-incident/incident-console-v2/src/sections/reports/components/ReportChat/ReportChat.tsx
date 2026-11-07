@@ -12,7 +12,6 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
-import { SheetClose } from '@/components/ui/sheet';
 import {
   MessageScroller,
   MessageScrollerContent,
@@ -130,9 +129,12 @@ export function ReportChat({
   durationSeconds = null,
   titles = {},
   edits,
+  onClose,
 }: {
   videoId: string;
   target: ChatTarget;
+  /** Closes the panel from its close button. */
+  onClose: () => void;
   thread: ChatThread;
   onThreadChange: (change: Partial<ChatThread>) => void;
   onSeek: (seconds: number) => void;
@@ -274,11 +276,9 @@ export function ReportChat({
             </Badge>
           </p>
         </div>
-        <SheetClose asChild>
-          <Button aria-label="Close chat" className="absolute top-3 right-3" size="icon-sm" type="button" variant="ghost">
-            <XIcon aria-hidden="true" />
-          </Button>
-        </SheetClose>
+        <Button aria-label="Close chat" className="absolute top-3 right-3" onClick={onClose} size="icon-sm" type="button" variant="ghost">
+          <XIcon aria-hidden="true" />
+        </Button>
         <Button
           className="absolute right-4 bottom-3"
           disabled={!messages.length || busy}
