@@ -345,7 +345,7 @@ export function Dashboard() {
               'h-48',
             )}
           </Panel>
-          <Panel className="lg:col-span-2 xl:col-span-4" title="Top targeted assets" subtitle="Reports per asset (exact name)">
+          <Panel className="lg:col-span-2 xl:col-span-4" title="Top assets" subtitle="Reports per asset (exact name)">
             {panel(
               (d) => (
                 <SplitBars emptyText={emptyText} hrefFor={(row) => link({ asset: row.key })} rows={assetRows(d)} />
