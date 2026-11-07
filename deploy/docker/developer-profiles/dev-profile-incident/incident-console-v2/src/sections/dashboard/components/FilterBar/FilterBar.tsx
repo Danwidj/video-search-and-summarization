@@ -2,7 +2,7 @@
 'use client';
 import { useState } from 'react';
 import type { DateRange } from 'react-day-picker';
-import { CalendarIcon, ChartColumnIcon, InfoIcon, StarIcon, XIcon } from 'lucide-react';
+import { CalendarIcon, InfoIcon, StarIcon, XIcon } from 'lucide-react';
 import { formatCalendarDay } from '@/modules/dashboard/domain/charts';
 import type { DashboardScope, DashboardSeverity } from '@/modules/dashboard/domain/DashboardRepository';
 import { type FilterChip, PERIOD_PRESETS, SCOPE_LABELS } from '@/modules/dashboard/domain/filter-bar';
@@ -61,7 +61,6 @@ export function FilterBar({
   onType,
   chips,
   onClearChip,
-  onAsk,
 }: {
   about: string;
   days: string;
@@ -76,7 +75,6 @@ export function FilterBar({
   onType: (type: string) => void;
   chips: FilterChip[];
   onClearChip: (key: FilterChip['key']) => void;
-  onAsk: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<DateRange | undefined>(undefined);
@@ -218,16 +216,20 @@ export function FilterBar({
           </SelectContent>
         </Select>
         <span className="min-w-0 flex-1" />
-        <Button className="h-7 gap-1.5 px-2.5 text-xs font-normal" onClick={onAsk} size="sm" variant="outline">
-          <ChartColumnIcon className="size-3.5" />
-          Ask for a chart
-        </Button>
+        <span className="flex items-center gap-3 text-xs text-ink-caption">
+          <span className="flex items-center gap-1.5">
+            <StarIcon aria-hidden="true" className="size-3 fill-current text-version-official" />
+            Official
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden="true" className="size-2.5 rounded-xs bg-not-official" />
+            Not yet official
+          </span>
+        </span>
       </div>
-      <div className="mx-auto flex min-h-[26px] max-w-[1500px] flex-wrap items-center gap-1.5 pt-1.5" data-testid="dashboard-chips">
-        {chips.length === 0 ? (
-          <span className="text-xs text-ink-caption">No filters on: all reports in the last 30 days.</span>
-        ) : (
-          chips.map((chip) => (
+      {chips.length > 0 && (
+        <div className="mx-auto flex min-h-[26px] max-w-[1500px] flex-wrap items-center gap-1.5 pt-1.5" data-testid="dashboard-chips">
+          {chips.map((chip) => (
             <Badge
               className="h-[22px] gap-1 border border-ink/15 bg-white pr-1 pl-2 text-xs font-normal text-ink"
               key={chip.key}
@@ -244,21 +246,9 @@ export function FilterBar({
                 <XIcon className="size-3" />
               </button>
             </Badge>
-          ))
-        )}
-        <span className="flex-1" />
-        <span className="flex items-center gap-3 text-xs text-ink-caption">
-          <span className="flex items-center gap-1.5">
-            <span aria-hidden="true" className="size-2.5 rounded-xs bg-version-official" />
-            <StarIcon aria-hidden="true" className="size-3 fill-current text-version-official" />
-            Official
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span aria-hidden="true" className="size-2.5 rounded-xs bg-not-official" />
-            Not yet official
-          </span>
-        </span>
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

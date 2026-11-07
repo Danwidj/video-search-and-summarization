@@ -31,12 +31,20 @@ const ChartJsView = dynamic(() => import('./ChartJsView').then((module) => modul
 
 export { CHART_REQUEST_ID, CHART_REQUEST_INPUT_ID };
 
-const EXAMPLES = ['Incident distribution', 'Severity breakdown', 'Trends over time', 'Incident types in October'];
+const EXAMPLES = [
+  'Incident distribution',
+  'Severity breakdown',
+  'Trends over time',
+  'Reports by hour',
+  'Official vs not yet',
+  'Reports per weekday',
+  'Reports by model',
+];
 const KIND_LABELS: Record<ChartKind, string> = {
   bar: 'Bar',
   stacked_bar: 'Stacked bar',
-  horizontal_bar: 'Horizontal bar',
-  donut: 'Donut',
+  horizontal_bar: 'Ranking',
+  donut: 'Pie',
   line: 'Line',
   area: 'Area',
 };

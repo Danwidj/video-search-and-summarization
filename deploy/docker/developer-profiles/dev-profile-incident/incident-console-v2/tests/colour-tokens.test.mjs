@@ -26,6 +26,7 @@ const MEANINGS = {
   'sev-high': token('--color-sev-high'),
   'sev-medium': token('--color-sev-medium'),
   'sev-low': token('--color-sev-low'),
+  'asset-size': token('--color-asset-size'),
   signal: token('--color-signal'),
 };
 // styles.css defines the tokens; these two hold the hex mirrors for canvases and the agent (checked equal below).

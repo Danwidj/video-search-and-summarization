@@ -26,6 +26,7 @@
     --color-sev-high         #991b1b  severity or threat 4-5
     --color-sev-medium       #765300  severity or threat 3
     --color-sev-low          #174f3b  severity or threat 1-2
+    --color-asset-size       #5b6770  asset size scale (slate grey): the treemap, a darker mix means more reports
     --color-signal           #76b900  card hover and focus (also --card-hover and --ring)
 
     Severity pills derive their tint and border from the band token with color-mix (.sev-pill-*, below).
@@ -37,6 +38,7 @@
   --color-sev-high: #991b1b;
   --color-sev-medium: #765300;
   --color-sev-low: #174f3b;
+  --color-asset-size: #5b6770;
 
   --font-sans: Arial, Helvetica, sans-serif;
   --font-mono: "SFMono-Regular", Consolas, monospace;
@@ -82,9 +84,9 @@
   --input: rgba(18, 33, 27, 0.12);
   --ring: var(--color-signal);
   --card-hover: var(--ring);
-  --chart-1: var(--color-version-official);
+  --chart-1: #174f3b;
   --chart-2: #76b900;
-  --chart-3: var(--color-not-official);
+  --chart-3: #d9754c;
   --chart-4: #f59e0b;
   --chart-5: #12211b;
   --radius: 0.625rem;
