@@ -118,3 +118,17 @@ test('a custom calendar period needs both bounds and sends them as its window', 
   assert.equal(body.p_period_start, '2026-10-01T00:00:00.000');
   assert.equal(body.p_period_end, '2026-10-08T00:00:00.000');
 });
+
+test('a 90 day period and a status reach the RPC as the window and p_scope', async () => {
+  let body;
+  globalThis.fetch = async (_url, init) => {
+    body = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ total: 4, types: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  const response = await GET(
+    new Request('http://localhost/api/dashboard?days=90&scope=official&after=2026-08-09T00:00:00.000&before=2026-11-07T00:00:00.000'),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(body.p_scope, 'official');
+  assert.ok(body.p_period_start.startsWith('2026-08-09'));
+});

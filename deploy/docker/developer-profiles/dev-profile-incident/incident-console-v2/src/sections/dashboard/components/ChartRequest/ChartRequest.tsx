@@ -12,7 +12,7 @@ import { useChartRequest } from '@/sections/dashboard/hooks/use-chart-request';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { InfoTip } from '@/sections/dashboard/components/FilterBar';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 // Chart.js is loaded only when a chart comes back, so the dashboard page does not carry it.
@@ -54,50 +55,69 @@ export function ChartRequest() {
     if (text.trim()) void submit(text.trim(), chartKind);
   };
   return (
-    <Card className="mt-6 rounded-3xl border-ink/10 bg-white p-6 shadow-none" data-testid="chart-request" id={CHART_REQUEST_ID}>
-      <CardHeader className="gap-1 p-0">
-        <CardTitle className="text-lg font-semibold text-ink">Ask for a chart</CardTitle>
-        <CardDescription className="text-xs text-ink-caption">
-          Pick a chart type and describe one chart. AI only picks what to plot; every figure comes from the incident database. A new request
-          replaces the result.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="mt-5 flex flex-col gap-4 p-0">
-        <ToggleGroup
-          aria-label="Chart type"
-          className="flex-wrap justify-start"
-          onValueChange={(value) => {
-            if (value) setChartKind(value as ChartKind);
-          }}
-          type="single"
-          value={chartKind}
-          variant="outline"
-        >
-          {(Object.keys(KIND_LABELS) as ChartKind[]).map((kind) => (
-            <ToggleGroupItem key={kind} value={kind}>
-              {KIND_LABELS[kind]}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={onSubmit}>
-          <Label className="sr-only" htmlFor={CHART_REQUEST_INPUT_ID}>
-            Chart request
-          </Label>
-          <Input
-            id={CHART_REQUEST_INPUT_ID}
-            maxLength={CHART_REQUEST_MAX_LENGTH}
-            onChange={(event) => setText(event.target.value)}
-            placeholder="For example: high severity incidents per month"
-            value={text}
-          />
-          <Button className="shrink-0" disabled={loading || !text.trim()} type="submit">
-            {loading ? <Spinner data-icon="inline-start" /> : <ChartColumnIcon data-icon="inline-start" />}
-            Create chart
-          </Button>
-        </form>
-        <div className="flex flex-wrap gap-2">
+    <Card
+      className="mt-2.5 gap-2 rounded-[14px] border-ink/10 bg-white px-3.5 py-2.5 shadow-none"
+      data-testid="chart-request"
+      id={CHART_REQUEST_ID}
+    >
+      <CardContent className="flex flex-col gap-2 p-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-[13px] font-bold whitespace-nowrap text-ink">Ask for a chart</h2>
+            <InfoTip
+              label="About Ask for a chart"
+              text="Pick a chart type and describe one chart. AI only picks what to plot; every figure comes from the incident database. A new request replaces the result."
+            />
+          </div>
+          <ToggleGroup
+            aria-label="Chart type"
+            className="flex-wrap justify-start gap-0.5 rounded-lg bg-secondary p-0.5"
+            onValueChange={(value) => {
+              if (value) setChartKind(value as ChartKind);
+            }}
+            spacing={0}
+            type="single"
+            value={chartKind}
+          >
+            {(Object.keys(KIND_LABELS) as ChartKind[]).map((kind) => (
+              <ToggleGroupItem
+                className="h-6 rounded-md px-1.5 text-xs font-normal text-ink-caption data-[state=on]:bg-white data-[state=on]:font-semibold data-[state=on]:text-ink data-[state=on]:shadow-xs"
+                key={kind}
+                value={kind}
+              >
+                {KIND_LABELS[kind]}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <form className="flex min-w-[260px] flex-1 gap-2" onSubmit={onSubmit}>
+            <Label className="sr-only" htmlFor={CHART_REQUEST_INPUT_ID}>
+              Chart request
+            </Label>
+            <Input
+              className="h-7 text-xs"
+              id={CHART_REQUEST_INPUT_ID}
+              maxLength={CHART_REQUEST_MAX_LENGTH}
+              onChange={(event) => setText(event.target.value)}
+              placeholder="Describe one chart, for example: incident types in October"
+              value={text}
+            />
+            <Button className="h-7 shrink-0 px-3 text-xs" disabled={loading || !text.trim()} type="submit">
+              {loading ? <Spinner data-icon="inline-start" /> : <ChartColumnIcon data-icon="inline-start" />}
+              Generate
+            </Button>
+          </form>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
           {EXAMPLES.map((example) => (
-            <Button disabled={loading} key={example} onClick={() => run(example)} size="sm" type="button" variant="outline">
+            <Button
+              className="h-6 px-2 text-xs font-normal"
+              disabled={loading}
+              key={example}
+              onClick={() => run(example)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
               {example}
             </Button>
           ))}

@@ -2,10 +2,10 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import type { DateRange } from 'react-day-picker';
-import { CalendarIcon, ChartColumnIcon, HistoryIcon } from 'lucide-react';
+import { HistoryIcon, RotateCcwIcon } from 'lucide-react';
 import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
 import { href, type Filters, type LinkFilters, type Range } from '@/modules/dashboard/domain/links';
 import {
@@ -16,7 +16,6 @@ import {
   dashboardView,
   entityTypeRows,
   evidenceRows,
-  formatCalendarDay,
   instrumentRows,
   revisedReports,
   SEVERITY_LABELS,
@@ -25,36 +24,37 @@ import {
   typeRows,
   unratedReports,
 } from '@/modules/dashboard/domain/charts';
+import type { DashboardScope } from '@/modules/dashboard/domain/DashboardRepository';
+import {
+  DAY_NAMES,
+  DEFAULT_PERIOD,
+  DEFAULT_SCOPE,
+  filterChips,
+  type FilterChip,
+  heatmapSeries,
+  presetWindow,
+} from '@/modules/dashboard/domain/filter-bar';
 import { getViewerTimeZone } from '@/lib/time';
 import { severityChartColor } from '@/lib/ui/severity';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart';
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { cn } from 'cn';
+import { formatCalendarDay } from '@/modules/dashboard/domain/charts';
 import { jumpToChartRequest } from '@/sections/dashboard/chart-request-jump';
 import { ChartRequest } from '@/sections/dashboard/components/ChartRequest';
+import { FilterBar, InfoTip } from '@/sections/dashboard/components/FilterBar';
 
 const NONE: Filters = { type: '', severity: '', day: '', hour: '' };
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const ABOUT =
+  'Each video counts once, through its official report, else its newest report. A report stays not yet official until a reviewer marks it. Totals, types and assets open the matching reports in the Library; severity and the heatmap filter this page.';
 
 const splitConfig = {
-  official: { label: 'Official', color: 'var(--chart-1)' },
+  official: { label: 'Official', color: 'var(--color-version-official)' },
   notOfficial: { label: 'Not yet official', color: 'var(--chart-3)' },
 } satisfies ChartConfig;
 
@@ -72,12 +72,10 @@ export function Dashboard() {
   const [data, setData] = useState<DashboardAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [attempt, setAttempt] = useState(0);
-  // days is a preset ('7', '30', 'all') or 'custom', the calendar range in custom (applied, never a draft).
-  const [days, setDays] = useState('30');
+  // days is a preset ('7', '30', '90', 'all') or 'custom', the calendar range in custom (applied, never a draft).
+  const [days, setDays] = useState(DEFAULT_PERIOD);
   const [custom, setCustom] = useState<DateRange | undefined>(undefined);
-  const [draft, setDraft] = useState<DateRange | undefined>(undefined);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerFromSelect = useRef(false);
+  const [scope, setScope] = useState<DashboardScope>(DEFAULT_SCOPE);
   const [filters, setFilters] = useState<Filters>(NONE);
   const [error, setError] = useState('');
   const [timeZone, setTimeZone] = useState('UTC');
@@ -87,39 +85,17 @@ export function Dashboard() {
     setTimeZone(getViewerTimeZone());
   }, []);
   useEffect(() => {
-    if (days === 'all') {
-      setRange(null);
-      return;
-    }
     if (days === 'custom') {
       if (custom?.from) setRange(customWindow(custom));
       return;
     }
-    const end = new Date();
-    setRange({
-      after: new Date(end.getTime() - Number(days) * 86_400_000).toISOString().replace('Z', ''),
-      before: end.toISOString().replace('Z', ''),
-    });
+    setRange(presetWindow(days, new Date()));
   }, [days, custom]);
-  const openPicker = () => {
-    setDraft(custom);
-    setPickerOpen(true);
-  };
-  const applyRange = () => {
-    if (!draft?.from) return;
-    setCustom({ from: draft.from, to: draft.to ?? draft.from });
-    setDays('custom');
-    setPickerOpen(false);
-  };
-  const startOfToday = (() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  })();
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt re-runs the fetch for Try again.
   useEffect(() => {
     if (range === undefined) return;
     const controller = new AbortController();
-    const params = new URLSearchParams({ days, timezone: timeZone });
+    const params = new URLSearchParams({ days, timezone: timeZone, scope });
     if (range) {
       params.set('after', range.after);
       params.set('before', range.before);
@@ -142,270 +118,201 @@ export function Dashboard() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [attempt, days, filters, range, timeZone]);
+  }, [attempt, days, filters, range, scope, timeZone]);
   const view = dashboardView(data, error);
-  const active = Object.values(filters).some(Boolean);
+  const customLabel = custom?.from ? `${formatCalendarDay(custom.from)} – ${formatCalendarDay(custom.to ?? custom.from)}` : '';
+  const chips = filterChips({ days, customLabel, scope, filters, timeZone });
+  const active = chips.length > 0;
   const toggle = (key: keyof Filters, value: string) => setFilters((f) => ({ ...f, [key]: f[key] === value ? '' : value }));
-  const link = (extra: LinkFilters = {}) => href({ ...filters, ...extra }, range ?? null);
+  const clearChip = (key: FilterChip['key']) => {
+    if (key === 'period') setDays(DEFAULT_PERIOD);
+    else if (key === 'scope') setScope(DEFAULT_SCOPE);
+    else if (key === 'cell') setFilters((f) => ({ ...f, day: '', hour: '' }));
+    else setFilters((f) => ({ ...f, [key]: '' }));
+  };
+  const reset = () => {
+    setDays(DEFAULT_PERIOD);
+    setScope(DEFAULT_SCOPE);
+    setFilters(NONE);
+  };
+  const link = (extra: LinkFilters = {}) => href({ ...filters, scope, ...extra }, range ?? null);
   const emptyText = active ? 'No reports match these filters.' : days === 'all' ? 'No reports yet.' : 'No reports in this period.';
   const panel = (content: (d: DashboardAnalytics) => ReactNode, skeletonHeight: string) =>
     data ? content(data) : <Skeleton className={cn('w-full rounded-xl', skeletonHeight)} />;
   return (
-    <div className="mx-auto max-w-[1500px] px-4 pb-20 pt-8 sm:px-6 lg:px-12">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
-          <p className="font-mono text-xs uppercase tracking-[.2em] text-moss">All incidents</p>
-          <h1 className="mt-2 text-4xl font-semibold sm:text-5xl">Operations dashboard</h1>
-          <p className="mt-3 max-w-3xl text-sm text-ink/50">
-            Each video counts once, through its official report, else its newest report. A report stays not yet official until a reviewer
-            marks it. Totals, types and assets open the matching reports; severity and the heatmap filter this page.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <Button
-            className="border-ink/10 bg-white font-normal text-ink"
-            onClick={() => jumpToChartRequest(document, window)}
-            variant="outline"
-          >
-            <ChartColumnIcon data-icon="inline-start" />
-            Ask for a chart
-          </Button>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={days}
-              onOpenChange={(open) => {
-                if (open) {
-                  pickerFromSelect.current = false;
-                  return;
-                }
-                if (pickerFromSelect.current) openPicker();
-              }}
-              onValueChange={(val) => {
-                if (val !== 'custom') setDays(val);
-              }}
-            >
-              <SelectTrigger className="w-[140px] border-ink/10 bg-white text-ink">
-                <SelectValue placeholder="Select period" />
-              </SelectTrigger>
-              <SelectContent
-                onCloseAutoFocus={(event) => {
-                  if (!pickerFromSelect.current) return;
-                  pickerFromSelect.current = false;
-                  event.preventDefault();
-                }}
+    <TooltipProvider delayDuration={100}>
+      <FilterBar
+        about={ABOUT}
+        chips={chips}
+        custom={custom}
+        days={days}
+        onAsk={() => jumpToChartRequest(document, window)}
+        onClearChip={clearChip}
+        onCustom={(next) => {
+          setCustom(next);
+          setDays('custom');
+        }}
+        onPeriod={setDays}
+        onScope={setScope}
+        onSeverity={(value) => setFilters((f) => ({ ...f, severity: value }))}
+        onType={(value) => setFilters((f) => ({ ...f, type: value }))}
+        scope={scope}
+        severity={filters.severity}
+        type={filters.type}
+      />
+      <div className="mx-auto max-w-[1500px] px-4 pb-10 pt-2.5 sm:px-6 lg:px-12 lg:pr-[88px]">
+        {/* The reset sits in a rail the layout reserves on the right, so it covers no chart. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="fixed right-2.5 bottom-5 z-40">
+              <Button
+                aria-label="Reset filters"
+                className={cn(
+                  'relative h-14 w-11 flex-col gap-0.5 rounded-2xl px-0 text-[10px] shadow-lg',
+                  active && 'bg-moss text-white hover:bg-moss/90',
+                )}
+                disabled={!active}
+                onClick={reset}
+                variant="outline"
               >
-                <SelectItem value="7">Last 7 days</SelectItem>
-                <SelectItem value="30">Last 30 days</SelectItem>
-                <SelectItem value="all">All time</SelectItem>
-                <SelectItem
-                  onClick={(event) => {
-                    if (!event.defaultPrevented) pickerFromSelect.current = true;
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') pickerFromSelect.current = true;
-                  }}
-                  onPointerUp={(event) => {
-                    if (event.pointerType === 'mouse' && !event.defaultPrevented) pickerFromSelect.current = true;
-                  }}
-                  value="custom"
-                >
-                  Custom range
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <Popover onOpenChange={(open) => (open ? openPicker() : setPickerOpen(false))} open={pickerOpen}>
-              <PopoverTrigger asChild>
-                <Button className="border-ink/10 bg-white font-normal text-ink" variant="outline">
-                  <CalendarIcon data-icon="inline-start" />
-                  {days === 'custom' && custom?.from
-                    ? `${formatCalendarDay(custom.from)} – ${formatCalendarDay(custom.to ?? custom.from)}`
-                    : 'Choose dates'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-auto p-3">
-                <Calendar
-                  defaultMonth={draft?.from ?? custom?.from ?? startOfToday}
-                  disabled={{ after: startOfToday }}
-                  mode="range"
-                  numberOfMonths={1}
-                  onSelect={setDraft}
-                  selected={draft}
-                />
-                <div className="flex justify-end gap-2 border-t border-ink/10 pt-3">
-                  <Button onClick={() => setPickerOpen(false)} size="sm" variant="outline">
-                    Cancel
-                  </Button>
-                  <Button disabled={!draft?.from} onClick={applyRange} size="sm">
-                    Apply
-                  </Button>
-                </div>
-              </PopoverContent>
-            </Popover>
+                <RotateCcwIcon className="size-4" />
+                Reset
+                {active && (
+                  <span className="absolute -top-1.5 -right-1.5 grid min-w-[18px] place-items-center rounded-full bg-chart-3 px-1 text-[10px] font-bold text-white">
+                    {chips.length}
+                  </span>
+                )}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="left">Reset the period and every filter</TooltipContent>
+        </Tooltip>
+        {error && (
+          <Alert variant="destructive" className="mb-2.5">
+            <AlertTitle>{view === 'failed' ? 'Error loading dashboard' : 'Could not refresh the dashboard'}</AlertTitle>
+            <AlertDescription>{view === 'failed' ? error : `${error} These are the last figures that loaded.`}</AlertDescription>
+            <AlertAction>
+              <Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+                Try again
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
+        {view !== 'failed' && (
+          <div
+            aria-busy={loading}
+            className={cn('grid min-w-0 gap-2.5 lg:grid-cols-12', loading && data && 'opacity-60 transition-opacity')}
+            data-testid="dashboard-charts"
+          >
+            <Panel
+              className="lg:col-span-3"
+              title="Total reports"
+              subtitle="Every version of the reports in the selected period, AI and human"
+            >
+              {panel(
+                (d) => (
+                  <Total data={d} link={link} />
+                ),
+                'h-32',
+              )}
+            </Panel>
+            <Panel
+              className="lg:col-span-6"
+              title="Activity by day and hour"
+              subtitle={`Report time (${timeZone}); select a cell to filter this page`}
+            >
+              {panel(
+                (d) => (
+                  <Heatmap
+                    data={d.heatmap}
+                    emptyText={emptyText}
+                    onSelect={(day, hour) =>
+                      setFilters((f) =>
+                        f.day === String(day) && f.hour === String(hour)
+                          ? { ...f, day: '', hour: '' }
+                          : { ...f, day: String(day), hour: String(hour) },
+                      )
+                    }
+                    scope={scope}
+                    selected={`${filters.day}-${filters.hour}`}
+                    timeZone={timeZone}
+                  />
+                ),
+                'h-32',
+              )}
+            </Panel>
+            <Panel className="lg:col-span-3" title="Severity breakdown" subtitle="Select a band to filter this page">
+              {panel(
+                (d) => (
+                  <SeverityDonut
+                    emptyText={emptyText}
+                    onSelect={(row) => toggle('severity', row.key)}
+                    rows={severityRows(d)}
+                    selected={filters.severity}
+                    unrated={unratedReports(d)}
+                  />
+                ),
+                'h-32',
+              )}
+            </Panel>
+            <Panel className="lg:col-span-3" title="Incidents by type" subtitle="Open a type for its reports">
+              {panel(
+                (d) => (
+                  <SplitBars emptyText={emptyText} hrefFor={(row) => link({ type: row.key })} rows={typeRows(d)} />
+                ),
+                'h-40',
+              )}
+            </Panel>
+            <Panel className="lg:col-span-3" title="Top assets" subtitle="Reports per asset (exact name)">
+              {panel(
+                (d) => (
+                  <SplitBars emptyText={emptyText} hrefFor={(row) => link({ asset: row.key })} rows={assetRows(d)} />
+                ),
+                'h-40',
+              )}
+            </Panel>
+            <Panel className="lg:col-span-3" title="Top instruments" subtitle="Reports per instrument (exact name)">
+              {panel(
+                (d) => (
+                  <SplitBars emptyText={emptyText} rows={instrumentRows(d)} />
+                ),
+                'h-40',
+              )}
+            </Panel>
+            <div className="flex min-w-0 flex-col gap-2.5 lg:col-span-3">
+              <Panel title="Evidence by kind" subtitle="Entities, instruments and assets in the counted reports">
+                {panel(
+                  (d) => (
+                    <EvidenceBars emptyText={emptyText} rows={evidenceRows(d)} />
+                  ),
+                  'h-20',
+                )}
+              </Panel>
+              <Panel title="Entity types" subtitle="Reports per entity type">
+                {panel(
+                  (d) => (
+                    <SplitBars emptyText={emptyText} rows={entityTypeRows(d)} />
+                  ),
+                  'h-20',
+                )}
+              </Panel>
+            </div>
           </div>
-        </div>
+        )}
+        <ChartRequest />
       </div>
-      {active && (
-        <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-moss/20 bg-white p-4 text-sm">
-          <strong className="text-moss">Dashboard filters active</strong>
-          <span className="text-ink/50">·</span>
-          {[
-            filters.type && `Type: ${filters.type}`,
-            filters.severity && `Severity: ${filters.severity}`,
-            filters.day && `Day: ${DAYS[+filters.day]}`,
-            filters.hour && `Hour: ${filters.hour}:00 ${timeZone}`,
-          ]
-            .filter(Boolean)
-            .map((filterText) => (
-              <Badge key={filterText as string} variant="secondary" className="font-normal text-ink">
-                {filterText}
-              </Badge>
-            ))}
-        </div>
-      )}
-      {active && (
-        <Button className="fixed right-6 bottom-6 z-40 shadow-lg" onClick={() => setFilters(NONE)} size="lg">
-          Reset filters
-        </Button>
-      )}
-      {error && (
-        <Alert variant="destructive" className="mt-6">
-          <AlertTitle>{view === 'failed' ? 'Error loading dashboard' : 'Could not refresh the dashboard'}</AlertTitle>
-          <AlertDescription>{view === 'failed' ? error : `${error} These are the last figures that loaded.`}</AlertDescription>
-          <AlertAction>
-            <Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>
-              Try again
-            </Button>
-          </AlertAction>
-        </Alert>
-      )}
-      {view !== 'failed' && (
-        <div
-          aria-busy={loading}
-          className={cn('mt-6 grid min-w-0 gap-6 lg:grid-cols-2 xl:grid-cols-12', loading && data && 'opacity-60 transition-opacity')}
-          data-testid="dashboard-charts"
-        >
-          <Panel
-            className="lg:col-span-2 xl:col-span-4"
-            title="Total reports"
-            subtitle="Every version of the reports in the selected period, AI and human"
-          >
-            {panel(
-              (d) => (
-                <Total data={d} link={link} />
-              ),
-              'h-48',
-            )}
-          </Panel>
-          <Panel
-            className="lg:col-span-2 xl:col-span-8"
-            compact
-            title="Activity by day and hour"
-            subtitle={`Report time (${timeZone}); select a cell to filter this page`}
-          >
-            {panel(
-              (d) => (
-                <Heatmap
-                  data={d.heatmap}
-                  emptyText={emptyText}
-                  onSelect={(day, hour) =>
-                    setFilters((f) =>
-                      f.day === String(day) && f.hour === String(hour)
-                        ? { ...f, day: '', hour: '' }
-                        : { ...f, day: String(day), hour: String(hour) },
-                    )
-                  }
-                  selected={`${filters.day}-${filters.hour}`}
-                  timeZone={timeZone}
-                />
-              ),
-              'h-56',
-            )}
-          </Panel>
-          <Panel className="xl:col-span-4" title="Incidents by type" subtitle="Open a type for its reports">
-            {panel(
-              (d) => (
-                <SplitBars emptyText={emptyText} hrefFor={(row) => link({ type: row.key })} rows={typeRows(d)} />
-              ),
-              'h-40',
-            )}
-          </Panel>
-          <Panel className="xl:col-span-4" title="Severity breakdown" subtitle="Select a band to filter this page">
-            {panel(
-              (d) => (
-                <SeverityDonut
-                  emptyText={emptyText}
-                  onSelect={(row) => toggle('severity', row.key)}
-                  rows={severityRows(d)}
-                  selected={filters.severity}
-                  unrated={unratedReports(d)}
-                />
-              ),
-              'h-48',
-            )}
-          </Panel>
-          <Panel
-            className="lg:col-span-2 xl:col-span-4"
-            title="Evidence by kind"
-            subtitle="Entities, instruments and assets in the counted reports"
-          >
-            {panel(
-              (d) => (
-                <EvidenceBars emptyText={emptyText} rows={evidenceRows(d)} />
-              ),
-              'h-40',
-            )}
-          </Panel>
-          <Panel className="xl:col-span-4" title="Top assets" subtitle="Reports per asset (exact name)">
-            {panel(
-              (d) => (
-                <SplitBars emptyText={emptyText} hrefFor={(row) => link({ asset: row.key })} rows={assetRows(d)} />
-              ),
-              'h-40',
-            )}
-          </Panel>
-          <Panel className="xl:col-span-4" title="Top instruments" subtitle="Reports per instrument (exact name)">
-            {panel(
-              (d) => (
-                <SplitBars emptyText={emptyText} rows={instrumentRows(d)} />
-              ),
-              'h-40',
-            )}
-          </Panel>
-          <Panel className="lg:col-span-2 xl:col-span-4" title="Entity types" subtitle="Reports per entity type">
-            {panel(
-              (d) => (
-                <SplitBars emptyText={emptyText} rows={entityTypeRows(d)} />
-              ),
-              'h-40',
-            )}
-          </Panel>
-        </div>
-      )}
-      <ChartRequest />
-    </div>
+    </TooltipProvider>
   );
 }
 
-function Panel({
-  title,
-  subtitle,
-  className,
-  compact,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  className?: string;
-  compact?: boolean;
-  children: ReactNode;
-}) {
+function Panel({ title, subtitle, className, children }: { title: string; subtitle: string; className?: string; children: ReactNode }) {
   return (
-    <Card className={cn('min-w-0 rounded-3xl border-ink/10 bg-white p-6 shadow-none', compact && 'gap-2', className)}>
-      <CardHeader className="gap-1 p-0">
-        <CardTitle className="text-lg font-semibold text-ink">{title}</CardTitle>
-        <CardDescription className="text-xs text-ink-caption">{subtitle}</CardDescription>
+    <Card className={cn('min-w-0 gap-1.5 rounded-[14px] border-ink/10 bg-white px-3.5 py-2.5 shadow-none', className)}>
+      <CardHeader className="flex flex-row items-center gap-1.5 p-0">
+        <CardTitle className="text-[13px] font-bold text-ink">{title}</CardTitle>
+        <InfoTip label={`About ${title}`} text={subtitle} />
       </CardHeader>
-      <CardContent className={cn('min-w-0 p-0', compact ? 'mt-1' : 'mt-5')}>{children}</CardContent>
+      <CardContent className="min-w-0 p-0">{children}</CardContent>
     </Card>
   );
 }
@@ -425,45 +332,43 @@ function Total({ data, link }: { data: DashboardAnalytics; link: (extra?: LinkFi
   const { versions } = data;
   const parts = versions
     ? ([
-        { key: 'ai', label: 'AI', value: versions.ai, swatch: 'bg-chart-1' },
-        { key: 'human', label: 'Human', value: versions.human, swatch: 'bg-chart-3' },
+        { key: 'ai', label: 'AI', value: versions.ai, swatch: 'bg-version-model' },
+        { key: 'human', label: 'Human', value: versions.human, swatch: 'bg-version-human' },
       ] as const)
     : [];
   const total = versions?.total ?? data.total;
   const revised = revisedReports(data);
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3">
-        <Link className="text-5xl font-semibold text-ink hover:underline" href={link()}>
+        <Link className="text-4xl leading-none font-semibold text-ink hover:underline" href={link()}>
           {total}
         </Link>
         {revised !== null && <RevisedChip count={revised} />}
       </div>
       {versions && (
         <>
-          <div aria-hidden="true" className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-ink/8">
+          <div aria-hidden="true" className="flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-ink/8">
             {parts.map(({ key, value, swatch }) => (
               <div className={swatch} key={key} style={{ width: `${total ? (value / total) * 100 : 0}%` }} />
             ))}
           </div>
-          <dl className="grid grid-cols-2 gap-3">
+          <dl className="grid grid-cols-2 gap-2">
             {parts.map(({ key, label, value, swatch }) => (
               <div key={key}>
                 <dt className="flex items-center gap-1.5 text-xs text-ink/60">
                   <span aria-hidden="true" className={cn('size-2 rounded-xs', swatch)} />
                   {label}
                 </dt>
-                <dd className="text-2xl font-semibold text-ink tabular-nums">{value}</dd>
+                <dd className="text-lg leading-tight font-semibold text-ink tabular-nums">{value}</dd>
               </div>
             ))}
           </dl>
         </>
       )}
       <p className="text-xs text-ink-caption">
-        {data.total} {data.total === 1 ? 'incident' : 'incidents'}, one per video
-      </p>
-      <p className="text-xs text-ink-caption">
-        All time: {data.videos.uploaded} videos uploaded, {data.videos.withoutReport} without a report.
+        {data.total} {data.total === 1 ? 'incident' : 'incidents'}, one per video. All time: {data.videos.uploaded} videos uploaded,{' '}
+        {data.videos.withoutReport} without a report.
       </p>
     </div>
   );
@@ -509,8 +414,7 @@ function RowTick({ x = 0, y = 0, row, href: url }: { x?: number; y?: number; row
   );
 }
 
-const ROW_HEIGHT = 40;
-const LEGEND_HEIGHT = 36;
+const ROW_HEIGHT = 28;
 const LABEL_ANCHOR = 1e-6;
 
 /** Evidence by kind, or its not-loaded state when the RPC does not return it yet. */
@@ -533,17 +437,14 @@ function SplitBars({ rows, emptyText, hrefFor }: { rows: BarRow[]; emptyText: st
   };
   const split = allSplit(rows);
   return (
-    <ChartContainer
-      config={split ? splitConfig : totalConfig}
-      className="aspect-auto w-full"
-      style={{ height: rows.length * ROW_HEIGHT + (split ? LEGEND_HEIGHT : 0) }}
-    >
+    <ChartContainer config={split ? splitConfig : totalConfig} className="aspect-auto w-full" style={{ height: rows.length * ROW_HEIGHT }}>
       <BarChart accessibilityLayer barCategoryGap="30%" data={rows} layout="vertical" margin={{ top: 0, right: 28, left: 0, bottom: 0 }}>
         {/* Headroom past the longest bar, so its total label is not clipped at the chart's edge. */}
         <XAxis allowDecimals={false} domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.12)]} hide type="number" />
         <YAxis
           axisLine={false}
           dataKey="label"
+          interval={0}
           tick={(props) => {
             const row = byLabel.get(String(props.payload?.value));
             if (!row) return <g />;
@@ -551,12 +452,11 @@ function SplitBars({ rows, emptyText, hrefFor }: { rows: BarRow[]; emptyText: st
           }}
           tickLine={false}
           type="category"
-          width={132}
+          width={112}
         />
         <ChartTooltip content={<ChartTooltipContent />} cursor={false} />
         {split ? (
           <>
-            <ChartLegend content={<ChartLegendContent />} itemSorter={null} />
             <Bar
               className={hrefFor ? 'cursor-pointer' : undefined}
               dataKey="official"
@@ -616,8 +516,8 @@ function SeverityDonut({
   if (!rated) return <NoData text={unrated ? 'These reports have no severity.' : emptyText} />;
   const summary = rows.map((row) => `${row.label} ${row.total}`).join(', ');
   return (
-    <div className="flex flex-col gap-5 sm:flex-row sm:items-center xl:flex-col">
-      <div aria-label={`Severity of ${rated} rated reports: ${summary}`} className="relative mx-auto size-40 shrink-0" role="img">
+    <div className="flex flex-row items-center gap-3">
+      <div aria-label={`Severity of ${rated} rated reports: ${summary}`} className="relative size-28 shrink-0" role="img">
         <ChartContainer config={severityConfig} className="aspect-square size-full">
           <PieChart>
             <ChartTooltip content={<ChartTooltipContent hideLabel />} />
@@ -639,11 +539,11 @@ function SeverityDonut({
           </PieChart>
         </ChartContainer>
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-semibold text-ink">{rated}</span>
+          <span className="text-lg font-semibold text-ink">{rated}</span>
           <span className="text-xs text-ink-caption">{unrated ? 'rated' : 'reports'}</span>
         </div>
       </div>
-      <ul className="grid min-w-0 flex-1 gap-1">
+      <ul className="grid min-w-0 flex-1 gap-0.5">
         {rows.map((row) => {
           const pressed = selected === row.key;
           return (
@@ -651,10 +551,11 @@ function SeverityDonut({
               <button
                 aria-pressed={pressed}
                 className={cn(
-                  'flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  'flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   pressed && 'bg-ink/5 ring-1 ring-ink/20',
                 )}
                 onClick={() => onSelect(row)}
+                title={`${row.official} official, ${row.notOfficial} not yet official`}
                 type="button"
               >
                 <span
@@ -663,12 +564,9 @@ function SeverityDonut({
                   style={{ background: severityChartColor[row.key as keyof typeof severityChartColor] }}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-ink">{row.label}</span>
-                  <span className="block text-xs text-ink-caption">
-                    Official {row.official} · Not yet official {row.notOfficial}
-                  </span>
+                  <span className="block text-xs font-medium text-ink">{row.label}</span>
                 </span>
-                <span className="text-lg font-semibold tabular-nums text-ink">{row.total}</span>
+                <span className="text-base font-semibold tabular-nums text-ink">{row.total}</span>
               </button>
             </li>
           );
@@ -680,58 +578,39 @@ function SeverityDonut({
 }
 
 const HOURS_OF_DAY = Array.from({ length: 24 }, (_, h) => h);
-const HEATMAP_SERIES = {
-  count: { label: 'All', color: 'var(--chart-5)' },
-  official: { label: 'Official', color: 'var(--chart-1)' },
-  notOfficial: { label: 'Not yet official', color: 'var(--chart-3)' },
-} as const;
-type HeatmapSeries = keyof typeof HEATMAP_SERIES;
+const SERIES_COLOR = { count: 'var(--chart-5)', official: 'var(--color-version-official)', notOfficial: 'var(--chart-3)' } as const;
 
 function Heatmap({
   data,
   emptyText,
   selected,
   onSelect,
+  scope,
   timeZone,
 }: {
   data: DashboardAnalytics['heatmap'];
   emptyText: string;
   selected: string;
   onSelect: (d: number, h: number) => void;
+  scope: DashboardScope;
   timeZone: string;
 }) {
-  const [series, setSeries] = useState<HeatmapSeries>('count');
+  const series = heatmapSeries(scope);
   const map = useMemo(() => new Map(data.map((x) => [`${x.day}-${x.hour}`, x])), [data]);
   if (!data.length) return <NoData text={emptyText} />;
   const max = Math.max(1, ...data.map((x) => x[series]));
   return (
     <TooltipProvider delayDuration={100}>
-      <ToggleGroup
-        aria-label="Reports shown"
-        onValueChange={(value) => {
-          if (value) setSeries(value as HeatmapSeries);
-        }}
-        size="sm"
-        type="single"
-        value={series}
-        variant="outline"
-      >
-        {Object.entries(HEATMAP_SERIES).map(([key, { label }]) => (
-          <ToggleGroupItem key={key} value={key}>
-            {label}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
       <div className="overflow-x-auto">
         <div className="min-w-[640px]">
-          <div className="grid grid-cols-[32px_repeat(24,1fr)] gap-1 text-[10px] text-ink-caption">
+          <div className="grid grid-cols-[32px_repeat(24,1fr)] gap-0.5 text-[10px] text-ink-caption">
             <span />
             {HOURS_OF_DAY.map((h) => (
               <span key={`label-${h}`}>{h % 6 === 0 ? `${h}:00` : ''}</span>
             ))}
           </div>
-          {DAYS.map((name, d) => (
-            <div className="mt-1 grid grid-cols-[32px_repeat(24,1fr)] gap-1" key={name}>
+          {DAY_NAMES.map((name, d) => (
+            <div className="mt-0.5 grid grid-cols-[32px_repeat(24,1fr)] gap-0.5" key={name}>
               <span className="text-[10px]">{name}</span>
               {HOURS_OF_DAY.map((h) => {
                 const cell = map.get(`${d}-${h}`);
@@ -743,12 +622,12 @@ function Heatmap({
                       <button
                         aria-label={summary}
                         className={cn(
-                          'h-5 rounded-xs transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          'h-4 rounded-xs transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                           selected === `${d}-${h}` ? 'ring-2 ring-ink' : '',
                         )}
                         onClick={() => onSelect(d, h)}
                         style={{
-                          background: `color-mix(in srgb, ${HEATMAP_SERIES[series].color} ${value ? 20 + (value / max) * 80 : 4}%, transparent)`,
+                          background: `color-mix(in srgb, ${SERIES_COLOR[series]} ${value ? 20 + (value / max) * 80 : 4}%, transparent)`,
                         }}
                         type="button"
                       />

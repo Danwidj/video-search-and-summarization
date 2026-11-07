@@ -10,7 +10,7 @@ import { isValidTimeZone, parseStoredTimestamp } from '@/lib/time';
 export const dynamic = 'force-dynamic';
 
 // 'custom' is a calendar range: it needs both after and before (below).
-const PERIODS = new Set(['7', '30', 'all', 'custom']);
+const PERIODS = new Set(['7', '30', '90', 'all', 'custom']);
 const SEVERITIES = new Set(['low', 'medium', 'high']);
 const SCOPES = new Set(['all', 'official', 'not_official']);
 const isSeverity = (value: string): value is DashboardSeverity => SEVERITIES.has(value);

@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: The Dashboard is one sticky filter bar over a tight 12-column grid
+- **Decision:** the approved redesign: one sticky bar (period presets with a new 90d, Custom, Status, Severity, Type, Ask for a chart) with removable chips, the explanation and card subtitles as tooltips, the legend once, a floating Reset in a reserved right rail, and the Activity card's own toggle removed because Status replaces it. Status sends the existing `scope`, Type the existing `type`; the route accepts `days=90`. No asset, instrument or entity filter, no RPC change, no migration (the captain does not want RPC filters).
+- **Why:** the header and per-card text took 249 px before the first chart and the filters were scattered; the mockup's measured height was about 890 px against 2335 px.
+- **Alternatives rejected:** a More menu with asset, instrument and entity filters (needs RPC parameters); keeping the Activity toggle beside Status (two controls for one thing).
+- **Links:** [console-reference](console-reference.md#dashboard-analytics-and-cross-filtering).
+
 ### 2026-11-07: Chat answers people, place and moments from the whole report, never picks a role, and a failed model is not an error
 - **Decision:**
   - Code reads `incident.location`, a time in the question, and the people the report's text describes, not only its typed items. An entity of type `unknown` is a person when its label or description says so.
