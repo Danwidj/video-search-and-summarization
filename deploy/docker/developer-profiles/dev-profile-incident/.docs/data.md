@@ -368,7 +368,7 @@ it). Returns `total` with
 `entityTypes`, `topInstruments`, `topAssets`, `threatLevels`, a confidence histogram with
 `confidenceNotProvided`, and `modelCoverage` (attempts by outcome: failed attempts from `model_runs`,
 successful ones from AI revisions). Each `types`, `trend`, `heatmap`, `topAssets`, `entityTypes` and `topInstruments` entry also
-carries `official` and `notOfficial`. `multipleVersions` counts the counted reports whose video has more than one `report_revisions` row (AI and human alike; not part of the split). `evidence` lists the counted reports' items by kind in the order `entities`, `instruments`, `assets`, each with `count`, `official` and `notOfficial`; an item is one entry of the report payload, not a distinct name. `videos` and `modelCoverage` ignore every filter except that
+carries `official` and `notOfficial`. `versions` (migration `20261107090000`) counts every `report_revisions` row of the counted reports' videos (`total`), split by kind (`ai`, `human`); `total` and `revisions` still count one revision per video. `multipleVersions` counts the counted reports whose video has more than one `report_revisions` row (AI and human alike; not part of the split). `evidence` lists the counted reports' items by kind in the order `entities`, `instruments`, `assets`, each with `count`, `official` and `notOfficial`; an item is one entry of the report payload, not a distinct name. `videos` and `modelCoverage` ignore every filter except that
 `modelCoverage` follows the period. A `type` of `Unclassified` selects a NULL `incident_type`.
 
 ---

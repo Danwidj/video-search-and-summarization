@@ -290,7 +290,7 @@ export function Dashboard() {
           <Panel
             className="lg:col-span-2 xl:col-span-4"
             title="Total reports"
-            subtitle="One per video with a report, in the selected period"
+            subtitle="Every version of the reports in the selected period, AI and human"
           >
             {panel(
               (d) => (
@@ -408,39 +408,46 @@ function NoData({ text }: { text: string }) {
 }
 
 function Total({ data, link }: { data: DashboardAnalytics; link: (extra?: LinkFilters) => string }) {
-  const parts = [
-    { key: 'official', label: 'Official', value: data.official, swatch: 'bg-chart-1' },
-    { key: 'not_official', label: 'Not yet official', value: data.notOfficial, swatch: 'bg-chart-3' },
-  ] as const;
+  const { versions } = data;
+  const parts = versions
+    ? ([
+        { key: 'ai', label: 'AI', value: versions.ai, swatch: 'bg-chart-1' },
+        { key: 'human', label: 'Human', value: versions.human, swatch: 'bg-chart-3' },
+      ] as const)
+    : [];
+  const total = versions?.total ?? data.total;
   const revised = revisedReports(data);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <Link className="text-5xl font-semibold text-ink hover:underline" href={link()}>
-          {data.total}
+          {total}
         </Link>
         {revised !== null && <RevisedChip count={revised} />}
       </div>
-      <div aria-hidden="true" className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-ink/8">
-        {parts.map(({ key, value, swatch }) => (
-          <div className={swatch} key={key} style={{ width: `${data.total ? (value / data.total) * 100 : 0}%` }} />
-        ))}
-      </div>
-      <dl className="grid grid-cols-2 gap-3">
-        {parts.map(({ key, label, value, swatch }) => (
-          <div key={key}>
-            <dt className="flex items-center gap-1.5 text-xs text-ink/60">
-              <span aria-hidden="true" className={cn('size-2 rounded-xs', swatch)} />
-              {label}
-            </dt>
-            <dd>
-              <Link className="text-2xl font-semibold text-ink hover:underline" href={link({ scope: key })}>
-                {value}
-              </Link>
-            </dd>
+      {versions && (
+        <>
+          <div aria-hidden="true" className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-ink/8">
+            {parts.map(({ key, value, swatch }) => (
+              <div className={swatch} key={key} style={{ width: `${total ? (value / total) * 100 : 0}%` }} />
+            ))}
           </div>
-        ))}
-      </dl>
+          <dl className="grid grid-cols-2 gap-3">
+            {parts.map(({ key, label, value, swatch }) => (
+              <div key={key}>
+                <dt className="flex items-center gap-1.5 text-xs text-ink/60">
+                  <span aria-hidden="true" className={cn('size-2 rounded-xs', swatch)} />
+                  {label}
+                </dt>
+                <dd className="text-2xl font-semibold text-ink tabular-nums">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      )}
+      <p className="text-xs text-ink-caption">
+        {data.total} {data.total === 1 ? 'incident' : 'incidents'}, one per video
+      </p>
       <p className="text-xs text-ink-caption">
         All time: {data.videos.uploaded} videos uploaded, {data.videos.withoutReport} without a report.
       </p>

@@ -104,7 +104,7 @@ test('a calendar range is a zoneless UTC window from the first day to the day af
 
 test('rows without a loaded split draw from their totals alone, and missing evidence has no rows', async () => {
   const { dashboardFromRpc } = await import('../src/modules/dashboard/infrastructure/supabase/mappers/dashboard.ts');
-  const { multipleVersions, evidence, ...older } = analytics;
+  const { multipleVersions, versions, evidence, ...older } = analytics;
   const mapped = dashboardFromRpc({
     ...older,
     entityTypes: analytics.entityTypes.map(({ label, count }) => ({ label, count })),

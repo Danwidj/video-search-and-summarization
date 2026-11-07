@@ -392,6 +392,17 @@ with tempfile.TemporaryDirectory() as tmp:
         assert dashboard_of(p_type="burglary")["multipleVersions"] == 0, "v2 has one version"
         assert dashboard_of(p_type="assault")["multipleVersions"] == 2
 
+    @test("the dashboard counts every version of the counted reports, split AI and human, with the same filters")
+    def _():
+        # v1: AI + human, v2: AI, v3: AI + two human. total and revisions still count one revision per video.
+        assert dashboard_of()["versions"] == {"total": 6, "ai": 3, "human": 3}, dashboard_of()["versions"]
+        assert dashboard_of()["total"] == 3 and sum(dashboard_of()["revisions"].values()) == 3
+        assert dashboard_of(p_scope="official")["versions"] == {"total": 2, "ai": 1, "human": 1}, "v1 only"
+        assert dashboard_of(p_scope="not_official")["versions"] == {"total": 4, "ai": 2, "human": 2}, "v2 and v3"
+        assert dashboard_of(p_type="burglary")["versions"] == {"total": 1, "ai": 1, "human": 0}, "v2 only"
+        none = dashboard_of(p_type="burglary", p_severity="high")["versions"]
+        assert none == {"total": 0, "ai": 0, "human": 0}, none
+
     @test("the dashboard counts evidence items by kind, split by official, for the counted reports")
     def _():
         # Each counted report carries one entity, one instrument and one asset: official v1, not yet official v2 and v3.
