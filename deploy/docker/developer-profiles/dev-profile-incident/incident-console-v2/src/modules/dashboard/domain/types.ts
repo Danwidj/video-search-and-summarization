@@ -33,6 +33,11 @@ export interface SeverityCounts {
 export interface TypeDetail extends OfficialSplit {
   type: string;
   count: number;
+  /**
+   * Evidence items (one per entity, instrument or asset entry) of the type's counted reports, from
+   * 20261107110000; null when the RPC does not return it, so evidence per report is not available.
+   */
+  evidence: number | null;
   severity: SeverityCounts;
   /** Canonical entity types (human / animal / unknown), counted per incident. */
   entities: RankedValue[];
@@ -47,6 +52,14 @@ export type EvidenceKind = 'entities' | 'instruments' | 'assets';
 /** Evidence items of the counted reports of one kind, split by whether the counted revision is official. */
 export interface EvidenceTotal extends OfficialSplit {
   kind: EvidenceKind;
+  count: number;
+}
+
+/** Counted reports with one severity level and one evidence item count, from 20261107110000. */
+export interface SeverityEvidenceCell extends OfficialSplit {
+  /** The report's severity level, 1 to 5. */
+  severity: number;
+  evidenceItems: number;
   count: number;
 }
 
@@ -97,6 +110,11 @@ export interface DashboardAnalytics {
    * RPC does not return it (a definition older than 20261106140000).
    */
   evidence: EvidenceTotal[] | null;
+  /**
+   * Counted reports by (severity level, evidence item count), for severity against evidence. null when the RPC does not
+   * return it (a definition older than 20261107110000).
+   */
+  severityEvidence: SeverityEvidenceCell[] | null;
   entityTypes: MaybeSplitRankedValue[];
   topInstruments: MaybeSplitRankedValue[];
   topAssets: SplitRankedValue[];

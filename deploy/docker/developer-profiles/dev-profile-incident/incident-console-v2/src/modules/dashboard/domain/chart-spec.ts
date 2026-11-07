@@ -10,8 +10,9 @@ import { z } from 'zod';
 import { INCIDENT_TYPES } from '@/modules/contract/domain/types';
 import { CALENDAR_MAX_DAYS, type CalendarPeriod, calendarDays } from '@/modules/dashboard/domain/chart-period';
 import type { DashboardSeverity } from '@/modules/dashboard/domain/DashboardRepository';
+import type { ViewKind } from '@/modules/dashboard/domain/generated-chart';
 
-export const CHART_METRICS = ['incidents', 'instruments', 'analyses'] as const;
+export const CHART_METRICS = ['incidents', 'instruments', 'analyses', 'evidence_per_report', 'evidence_items'] as const;
 export type ChartMetric = (typeof CHART_METRICS)[number];
 
 export const CHART_SEVERITIES = ['low', 'medium', 'high'] as const satisfies readonly DashboardSeverity[];
@@ -47,6 +48,11 @@ interface ChartDimension {
   categoryLabel: string;
   /** How the interpreter is told to recognise this dimension. */
   meaning: string;
+  /**
+   * A chart view draws in this kind whatever the user picked, and its figures are built for it (generate-chart). Null for
+   * every ordinary dimension, which the user's picked kind draws.
+   */
+  viewKind: ViewKind | null;
 }
 
 const REPORTS = 'Each video counts once: its official report, else its newest.';
@@ -59,6 +65,7 @@ export const CHART_DIMENSIONS = {
     pie: true,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Reports by incident type',
     description: REPORTS,
     categoryLabel: 'Incident type',
@@ -69,6 +76,7 @@ export const CHART_DIMENSIONS = {
     pie: true,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Reports by severity',
     description: `${REPORTS} Low is level 1-2, medium is 3, high is 4-5.`,
     categoryLabel: 'Severity',
@@ -79,6 +87,7 @@ export const CHART_DIMENSIONS = {
     pie: true,
     splits: false,
     filterable: true,
+    viewKind: null,
     title: 'Official and not official reports',
     description: `${REPORTS} Not official means no report has been marked official yet.`,
     categoryLabel: 'Status',
@@ -89,6 +98,7 @@ export const CHART_DIMENSIONS = {
     pie: true,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Reports by version',
     description: `${REPORTS} As the model generated them, or saved by a reviewer.`,
     categoryLabel: 'Report version',
@@ -99,6 +109,7 @@ export const CHART_DIMENSIONS = {
     pie: false,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Reports per day',
     description: `${REPORTS} By report date.`,
     categoryLabel: 'Day',
@@ -109,6 +120,7 @@ export const CHART_DIMENSIONS = {
     pie: false,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Reports per week',
     description: `${REPORTS} By report date, in weeks from Monday.`,
     categoryLabel: 'Week starting',
@@ -119,6 +131,7 @@ export const CHART_DIMENSIONS = {
     pie: false,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Reports per month',
     description: `${REPORTS} By report date.`,
     categoryLabel: 'Month',
@@ -129,6 +142,7 @@ export const CHART_DIMENSIONS = {
     pie: false,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Report activity by weekday',
     description: `Reports by the weekday they were generated, in your time zone. ${NOT_INCIDENT_TIME}`,
     categoryLabel: 'Weekday',
@@ -139,6 +153,7 @@ export const CHART_DIMENSIONS = {
     pie: false,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Report activity by hour',
     description: `Reports by the hour they were generated, in your time zone. ${NOT_INCIDENT_TIME}`,
     categoryLabel: 'Hour',
@@ -149,6 +164,7 @@ export const CHART_DIMENSIONS = {
     pie: false,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Reports by entity type',
     description: 'Reports involving each entity type. A report can count under more than one.',
     categoryLabel: 'Entity type',
@@ -159,6 +175,7 @@ export const CHART_DIMENSIONS = {
     pie: false,
     splits: false,
     filterable: true,
+    viewKind: null,
     title: 'Top instruments',
     description: 'The eight most common instruments, by reports naming each. A report can count under more than one.',
     categoryLabel: 'Instrument',
@@ -169,6 +186,7 @@ export const CHART_DIMENSIONS = {
     pie: false,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Top assets',
     description: 'The eight most common assets, by reports naming each. A report can count under more than one.',
     categoryLabel: 'Asset',
@@ -179,6 +197,7 @@ export const CHART_DIMENSIONS = {
     pie: false,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Model confidence distribution',
     description: 'Reports by the confidence the model gave. Reports with no confidence value are left out.',
     categoryLabel: 'Confidence',
@@ -189,6 +208,7 @@ export const CHART_DIMENSIONS = {
     pie: false,
     splits: true,
     filterable: true,
+    viewKind: null,
     title: 'Instrument threat levels',
     description: 'Instruments in the counted reports, by rated threat.',
     categoryLabel: 'Threat level',
@@ -199,6 +219,7 @@ export const CHART_DIMENSIONS = {
     pie: false,
     splits: false,
     filterable: false,
+    viewKind: null,
     title: 'Analyses by model',
     description: ATTEMPTS,
     categoryLabel: 'Model',
@@ -209,10 +230,50 @@ export const CHART_DIMENSIONS = {
     pie: true,
     splits: false,
     filterable: false,
+    viewKind: null,
     title: 'Analyses by outcome',
     description: ATTEMPTS,
     categoryLabel: 'Outcome',
     meaning: 'analysis attempts per outcome: valid, repaired, failed',
+  },
+  // The chart views. Each is drawn in its own kind (VIEW_KINDS) and needs figures the dashboard returns per type or per
+  // severity and evidence count (generate-chart); until the database change that returns them is applied, a view
+  // answers "not available yet".
+  incident_type_evidence: {
+    metric: 'evidence_per_report',
+    pie: false,
+    splits: false,
+    filterable: true,
+    viewKind: 'combo_dual_axis',
+    title: 'Evidence per report by incident type',
+    description: `${REPORTS} Bars are the reports of each type; the line is its evidence items per report (each entity, instrument and asset item).`,
+    categoryLabel: 'Incident type',
+    meaning:
+      'reports per incident type as bars, with evidence items per report as a line on a second axis: "evidence per report by type", "which types produce the most evidence"',
+  },
+  incident_type_severity: {
+    metric: 'incidents',
+    pie: false,
+    splits: false,
+    filterable: true,
+    viewKind: 'stacked_by_severity',
+    title: 'Severity within each incident type',
+    description: `${REPORTS} Each bar is one incident type, split into high, medium and low severity. Low is level 1-2, medium is 3, high is 4-5.`,
+    categoryLabel: 'Incident type',
+    meaning:
+      'severity inside each incident type, one stacked bar per type: "severity by incident type", "severity within each type"; never the plain severity breakdown, which is the severity dimension',
+  },
+  severity_evidence: {
+    metric: 'evidence_items',
+    pie: false,
+    splits: false,
+    filterable: true,
+    viewKind: 'bubble',
+    title: 'Severity against evidence',
+    description: `${REPORTS} Each bubble is one severity level (1 to 5) and one evidence item count; its size is the number of reports with that pair.`,
+    categoryLabel: 'Severity level',
+    meaning:
+      'evidence items against severity level, one bubble per level and item count, sized by reports: "do more severe incidents have more evidence", "severity against evidence"',
   },
 } as const satisfies Record<string, ChartDimension>;
 

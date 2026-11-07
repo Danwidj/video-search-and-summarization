@@ -63,6 +63,9 @@ Examples:
 "trends over time" -> {"metric":"incidents","dimension":"report_day","period":"all_time","incidentType":null,"severity":null}
 "monthly high severity incidents" -> {"metric":"incidents","dimension":"report_month","period":"all_time","incidentType":null,"severity":"high"}
 "how many reports are official" -> {"metric":"incidents","dimension":"report_status","period":"all_time","incidentType":null,"severity":null}
+"evidence per report by incident type" -> {"metric":"evidence_per_report","dimension":"incident_type_evidence","period":"all_time","incidentType":null,"severity":null}
+"severity within each incident type" -> {"metric":"incidents","dimension":"incident_type_severity","period":"all_time","incidentType":null,"severity":null}
+"do more severe incidents have more evidence" -> {"metric":"evidence_items","dimension":"severity_evidence","period":"all_time","incidentType":null,"severity":null}
 "number of incident types in October 2026" -> {"metric":"incidents","dimension":"incident_type","period":{"month":"2026-10"},"incidentType":null,"severity":null}
 "severity breakdown on 6 November 2026" -> {"metric":"incidents","dimension":"severity","period":{"day":"2026-11-06"},"incidentType":null,"severity":null}
 "reports per day from 1 to 15 October 2026" -> {"metric":"incidents","dimension":"report_day","period":{"from":"2026-10-01","to":"2026-10-15"},"incidentType":null,"severity":null}

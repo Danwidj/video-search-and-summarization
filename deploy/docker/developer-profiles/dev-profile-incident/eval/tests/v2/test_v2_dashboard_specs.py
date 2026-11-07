@@ -42,8 +42,10 @@ def test_the_fixture_is_the_consoles_exported_allowlist():
 
 
 def test_every_valid_spec_is_enumerated_once():
+    # 1,690 ordinary specs (the 20261106 allowlist) and 360 for the three chart views: each filterable, so 5 periods
+    # x (no type or one of 5) x (no severity or one of 3) = 120 each.
     specs = dash.all_specs(ALLOWLIST)
-    assert len(specs) == 1690 and len({json.dumps(s, sort_keys=True) for s in specs}) == 1690
+    assert len(specs) == 2050 and len({json.dumps(s, sort_keys=True) for s in specs}) == 2050
     assert all(dash.parse_spec(s, ALLOWLIST) == s for s in specs)
 
 

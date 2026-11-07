@@ -121,6 +121,7 @@ describe('get_incident_dashboard mapping', () => {
         count: 0,
         official: 0,
         notOfficial: 0,
+        evidence: null,
         severity: { low: 0, medium: 0, high: 0 },
         entities: [],
         instruments: [],
@@ -135,13 +136,19 @@ describe('get_incident_dashboard mapping', () => {
   });
 
   test('a result from a definition older than 20261106140000 reads its missing figures as not loaded, never as 0', () => {
-    const { multipleVersions, versions, evidence, ...older } = analytics;
+    const { multipleVersions, versions, evidence, severityEvidence, ...older } = analytics;
     older.entityTypes = analytics.entityTypes.map(({ label, count }) => ({ label, count }));
     older.topInstruments = analytics.topInstruments.map(({ label, count }) => ({ label, count }));
+    older.types = analytics.types.map(({ evidence: _evidence, ...type }) => type);
     const mapped = dashboardFromRpc(older);
     assert.equal(mapped.multipleVersions, null);
     assert.equal(mapped.versions, null);
     assert.equal(mapped.evidence, null);
+    assert.equal(mapped.severityEvidence, null, 'the chart views are not available on this definition');
+    assert.ok(
+      mapped.types.every((type) => type.evidence === null),
+      'evidence per report is not loaded either',
+    );
     assert.deepEqual(mapped.entityTypes, [
       { label: 'human', count: 3, official: null, notOfficial: null },
       { label: 'unknown', count: 1, official: null, notOfficial: null },
@@ -156,6 +163,11 @@ describe('get_incident_dashboard mapping', () => {
     assert.equal(mapped.multipleVersions, 0);
     assert.deepEqual(mapped.versions, analytics.versions);
     assert.deepEqual(mapped.evidence, analytics.evidence);
+    assert.deepEqual(mapped.severityEvidence, analytics.severityEvidence);
+    assert.deepEqual(
+      mapped.types.map((type) => type.evidence),
+      analytics.types.map((type) => type.evidence),
+    );
     assert.deepEqual(mapped.entityTypes, analytics.entityTypes);
     assert.deepEqual(mapped.topInstruments, analytics.topInstruments);
   });

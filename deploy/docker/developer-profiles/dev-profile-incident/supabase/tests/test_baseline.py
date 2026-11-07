@@ -429,6 +429,24 @@ with tempfile.TemporaryDirectory() as tmp:
         none = dashboard_of(p_type="burglary", p_severity="high")
         assert none["total"] == 0 and [row["count"] for row in none["evidence"]] == [0, 0, 0], none["evidence"]
 
+    @test("the dashboard counts evidence items per incident type and per severity level and item count (20261107110000)")
+    def _():
+        # Each counted report has one entity, one instrument and one asset, so three items each.
+        dashboard = dashboard_of()
+        assert {t["type"]: t["evidence"] for t in dashboard["types"]} == {"assault": 6, "burglary": 3}, dashboard["types"]
+        assert sum(t["evidence"] for t in dashboard["types"]) == sum(row["count"] for row in dashboard["evidence"]) == 9
+        cells = dashboard["severityEvidence"]
+        assert all(cell["evidenceItems"] == 3 for cell in cells), cells
+        assert sum(cell["count"] for cell in cells) == dashboard["total"] == 3, cells
+        assert all(cell["official"] + cell["notOfficial"] == cell["count"] for cell in cells), cells
+        assert sum(cell["official"] for cell in cells) == dashboard["official"], cells
+        for band, low, high in (("low", 1, 2), ("medium", 3, 3), ("high", 4, 5)):
+            assert sum(cell["count"] for cell in cells if low <= cell["severity"] <= high) == dashboard["severity"][band], (band, cells)
+        assert sum(cell["count"] for cell in dashboard_of(p_scope="official")["severityEvidence"]) == 1
+        assert sum(cell["count"] for cell in dashboard_of(p_type="burglary")["severityEvidence"]) == 1
+        assert dashboard_of(p_type="burglary", p_severity="high")["severityEvidence"] == [] or all(
+            cell["severity"] >= 4 for cell in dashboard_of(p_type="burglary", p_severity="high")["severityEvidence"])
+
     @test("the dashboard filters by report status, and leaves the video and model counts alone")
     def _():
         everything = dashboard_of()

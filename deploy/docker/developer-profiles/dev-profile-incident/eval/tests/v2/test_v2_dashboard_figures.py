@@ -102,8 +102,19 @@ def test_the_recount_counts_each_video_once_by_its_official_else_newest_revision
     assert d["severity"] == {"low": 0, "medium": 1, "high": 1} and d["revisions"] == {"ai": 2, "human": 0}
     assert d["videos"] == {"uploaded": 4, "withOfficial": 1, "awaitingSelection": 2, "withoutReport": 1}
     assert d["previous"] == {"total": 1, "human": 0, "ai": 1, "high": 0}
-    assert d["entityTypes"] == [{"label": "human", "count": 1}, {"label": "vehicle", "count": 1}]
-    assert d["topInstruments"] == [{"label": "knife", "count": 2}, {"label": "baseball bat", "count": 1}]
+    assert d["entityTypes"] == [
+        {"label": "human", "count": 1, "official": 1, "notOfficial": 0},
+        {"label": "vehicle", "count": 1, "official": 1, "notOfficial": 0},
+    ]
+    assert d["topInstruments"] == [
+        {"label": "knife", "count": 2, "official": 1, "notOfficial": 1},
+        {"label": "baseball bat", "count": 1, "official": 1, "notOfficial": 0},
+    ]
+    assert d["multipleVersions"] == 2 and d["evidence"] == [
+        {"kind": "entities", "count": 3, "official": 3, "notOfficial": 0},
+        {"kind": "instruments", "count": 4, "official": 3, "notOfficial": 1},
+        {"kind": "assets", "count": 1, "official": 0, "notOfficial": 1},
+    ]
     assert d["topAssets"] == [{"label": "shop door", "count": 1, "official": 0, "notOfficial": 1}]
     assert d["threatLevels"] == [{"level": 3, "count": 1}, {"level": 4, "count": 1}], "2.5 rounds to 3, deduplicated"
     assert d["confidence"] == [{"bucket": 4, "count": 1}, {"bucket": 9, "count": 1}]

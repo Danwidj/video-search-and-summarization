@@ -11,6 +11,7 @@ export type ChartRequestState =
   | { status: 'chart'; chart: GeneratedChart }
   | { status: 'unsupported' }
   | { status: 'needs_bar' }
+  | { status: 'not_available' }
   | { status: 'error'; message: string };
 
 const FAILED = 'Could not build the chart';

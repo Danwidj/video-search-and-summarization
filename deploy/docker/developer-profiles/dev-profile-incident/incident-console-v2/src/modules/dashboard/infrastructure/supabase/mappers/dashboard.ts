@@ -17,6 +17,7 @@ import type {
   RankedValue,
   SeverityCounts,
   SplitRankedValue,
+  SeverityEvidenceCell,
   TypeDetail,
 } from '@/modules/dashboard/domain/types';
 import type { DashboardQuery } from '@/modules/dashboard/domain/DashboardRepository';
@@ -105,6 +106,7 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
         type: text(item.type),
         count: count(item.count),
         ...split(item),
+        evidence: typeof item.evidence === 'number' ? count(item.evidence) : null,
         severity: severityCounts(item.severity),
         entities: ranked(item.entities),
         instruments: ranked(item.instruments),
@@ -121,6 +123,16 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
     confidence: asRows(result.confidence).map((item) => ({ bucket: count(item.bucket), count: count(item.count) })),
     evidence: Array.isArray(result.evidence)
       ? asRows(result.evidence).map((item): EvidenceTotal => ({ kind: evidenceKind(item.kind), count: count(item.count), ...split(item) }))
+      : null,
+    severityEvidence: Array.isArray(result.severityEvidence)
+      ? asRows(result.severityEvidence).map(
+          (item): SeverityEvidenceCell => ({
+            severity: count(item.severity),
+            evidenceItems: count(item.evidenceItems),
+            count: count(item.count),
+            ...split(item),
+          }),
+        )
       : null,
     entityTypes: maybeSplitRanked(result.entityTypes),
     topInstruments: maybeSplitRanked(result.topInstruments),

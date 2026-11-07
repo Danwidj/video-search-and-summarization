@@ -161,7 +161,8 @@ def _counted(snapshot: Mapping[str, Any], tz: str) -> list[dict[str, Any]]:
                      "is_official": official is not None, "type": chosen.get("incident_type"),
                      "severity": chosen.get("severity_level"),
                      "confidence": _number((payload.get("incident") or {}).get("confidence_score")),
-                     "payload": payload, "dow": _dow(local), "hour": local.hour, "day": local.date()})
+                     "payload": payload, "version_count": len(revisions), "dow": _dow(local), "hour": local.hour,
+                     "day": local.date()})
     return rows
 
 
@@ -174,6 +175,32 @@ def _severity_class(severity: int | None, band: str) -> bool:
 def _severity(rows: Iterable[Mapping[str, Any]]) -> dict[str, int]:
     rows = list(rows)
     return {band: sum(1 for r in rows if _severity_class(r["severity"], band)) for band in ("low", "medium", "high")}
+
+
+def _items(row: Mapping[str, Any], kind: str) -> int:
+    """The evidence items of one kind in a counted report: an array's entries, and nothing for a value that is not one."""
+    value = row["payload"].get(kind)
+    return len(value) if isinstance(value, list) else 0
+
+
+def _evidence_items(payload: Mapping[str, Any]) -> int:
+    """``report_items``: one evidence item per entity, instrument or asset entry; a value that is not an array counts none."""
+    return sum(len(payload[kind]) if isinstance(payload.get(kind), list) else 0
+               for kind in ("entities", "instruments", "assets"))
+
+
+def _severity_evidence(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """``severityEvidence``: counted reports with a severity, by (severity level, evidence item count)."""
+    cells: dict[tuple[int, int], list[int]] = {}
+    for row in rows:
+        if row["severity"] is None:
+            continue
+        cell = cells.setdefault((row["severity"], _evidence_items(row["payload"])), [0, 0])
+        cell[0] += 1
+        cell[1] += 1 if row["is_official"] else 0
+    return [{"severity": severity, "evidenceItems": items, "count": count, "official": official,
+             "notOfficial": count - official}
+            for (severity, items), (count, official) in sorted(cells.items())]
 
 
 def _dimension_filter(row: Mapping[str, Any], params: Mapping[str, Any]) -> bool:
@@ -205,7 +232,7 @@ def _item_rows(rows: Sequence[Mapping[str, Any]], kind: str) -> list[tuple]:
         for item in row["payload"].get(kind) or []:
             if kind == "entities":  # a non-object element has no type (->> gives NULL): it counts as unknown
                 kind_text = item.get("type") if isinstance(item, Mapping) else None
-                out.add((row["incident_id"], row["type"], canonical_entity_type(kind_text), None, None))
+                out.add((row["incident_id"], row["type"], canonical_entity_type(kind_text), None, row["is_official"]))
                 continue
             if not isinstance(item, Mapping):
                 continue
@@ -213,8 +240,7 @@ def _item_rows(rows: Sequence[Mapping[str, Any]], kind: str) -> list[tuple]:
             if label is None:
                 continue
             level = _threat_level(item.get("threat_level")) if kind == "instruments" else None
-            official = row["is_official"] if kind == "assets" else None
-            out.add((row["incident_id"], row["type"], label, level, official))
+            out.add((row["incident_id"], row["type"], label, level, row["is_official"]))
     return sorted(out, key=lambda t: (t[0], _order(t[1]), t[2], t[3] is None, t[3] or 0))
 
 
@@ -303,7 +329,8 @@ def dashboard(snapshot: Mapping[str, Any], params: Mapping[str, Any], *, now: da
         members = [r for r in rows if r["type"] == kind]
         official = sum(1 for r in members if r["is_official"])
         types.append({"type": kind if kind is not None else "Unclassified", "count": len(members),
-                      "official": official, "notOfficial": len(members) - official, "severity": _severity(members),
+                      "official": official, "notOfficial": len(members) - official,
+                      "evidence": sum(_evidence_items(r["payload"]) for r in members), "severity": _severity(members),
                       "entities": _ranked((t for t in entities if t[1] == kind), TOP_PER_TYPE),
                       "instruments": _ranked((t for t in instruments if t[1] == kind), TOP_PER_TYPE),
                       "assets": _ranked((t for t in assets if t[1] == kind), TOP_PER_TYPE)})
@@ -324,6 +351,12 @@ def dashboard(snapshot: Mapping[str, Any], params: Mapping[str, Any], *, now: da
     official_rows = [r for r in rows if r["is_official"]]
     return {
         "total": len(rows),
+        "multipleVersions": sum(1 for r in rows if r["version_count"] > 1),
+        # The evidence items of the counted reports by kind, and how many of them come from an official report.
+        "evidence": [{"kind": kind, "count": sum(_items(r, kind) for r in rows),
+                      "official": sum(_items(r, kind) for r in official_rows),
+                      "notOfficial": sum(_items(r, kind) for r in rows if not r["is_official"])}
+                     for kind in ("entities", "instruments", "assets")],
         "official": len(official_rows),
         "notOfficial": len(rows) - len(official_rows),
         "videos": video_counts,
@@ -342,9 +375,10 @@ def dashboard(snapshot: Mapping[str, Any], params: Mapping[str, Any], *, now: da
                      "notOfficial": sum(1 for r in members if not r["is_official"])}
                     for (d, h), members in sorted(cells.items())],
         "confidence": [{"bucket": b, "count": n} for b, n in sorted(buckets.items())],
-        "entityTypes": _ranked(entities),
-        "topInstruments": _ranked(instruments, TOP_RANKED),
+        "entityTypes": _ranked(entities, split=True),
+        "topInstruments": _ranked(instruments, TOP_RANKED, split=True),
         "topAssets": _ranked(assets, TOP_RANKED, split=True),
+        "severityEvidence": _severity_evidence(rows),
         "threatLevels": [{"level": level, "count": n} for level, n in sorted(levels.items())],
         "modelCoverage": _model_coverage(snapshot, start, end),
     }
@@ -449,6 +483,44 @@ def _heatmap_rows(dashboard_: Mapping[str, Any], field: str, labels: Sequence[st
     return [_row(label, counts[i]) for i, label in enumerate(labels)]
 
 
+VIEW_SERIES = {"incident_type_evidence": ["reports", "per_report"], "incident_type_severity": ["high", "medium", "low"],
+               "severity_evidence": ["reports"]}
+
+
+def evidence_per_report(items: int, reports: int) -> float | None:
+    """``evidencePerReport``: items over reports, to two decimals with JavaScript's Math.round (ties upward)."""
+    if reports <= 0:
+        return None
+    return math.floor((items / reports) * 100 + 0.5) / 100
+
+
+def view_rows(dimension: str, dashboard_: Mapping[str, Any]) -> list[dict[str, Any]] | None:
+    """``viewRows``: a view's rows, or None when the dashboard does not return the figures it needs yet."""
+    if dimension == "incident_type_evidence":
+        if any(t.get("evidence") is None for t in dashboard_["types"]):
+            return None
+        rows = []
+        for t in dashboard_["types"]:
+            per_report = evidence_per_report(t["evidence"], t["count"])
+            if per_report is not None:
+                rows.append({"category": _capitalize(t["type"]),
+                             "values": {"reports": t["count"], "per_report": per_report}})
+        return rows
+    if dimension == "incident_type_severity":
+        return [{"category": _capitalize(t["type"]),
+                 "values": {"high": t["severity"]["high"], "medium": t["severity"]["medium"],
+                            "low": t["severity"]["low"]}} for t in dashboard_["types"]]
+    if dimension == "severity_evidence":
+        cells = dashboard_.get("severityEvidence")
+        if cells is None:
+            return None
+        return [{"category": (f"Severity {c['severity']}, {c['evidenceItems']} evidence "
+                              f"{'item' if c['evidenceItems'] == 1 else 'items'}"),
+                 "values": {"reports": c["count"], "severity": c["severity"], "evidence": c["evidenceItems"]}}
+                for c in cells]
+    return None
+
+
 def rows_for(dimension: str, dashboard_: Mapping[str, Any], reports: Mapping[str, int] | None
              ) -> list[dict[str, Any]]:
     """``rowsFor``: one dashboard as the rows of one chart dimension."""
@@ -497,13 +569,19 @@ def chart(spec: Mapping[str, Any] | None, *, chart_type: str, timezone: str, now
     if spec is None:
         return {"kind": "unsupported"}
     dimensions = allowlist["dimensions"]
-    if chart_type == "pie" and not dimensions[spec["dimension"]]["pie"]:
+    is_view = dimensions[spec["dimension"]].get("viewKind") is not None
+    if chart_type == "pie" and not is_view and not dimensions[spec["dimension"]]["pie"]:
         return {"kind": "needs_bar"}
     query = chart_query(spec, timezone=timezone, now=now, allowlist=allowlist)
     figures = fetch(query)
     reports = (None if spec["metric"] == "analyses" else
                {"total": figures["total"], "official": figures["official"], "notOfficial": figures["notOfficial"]})
     name = trend_dimension(spec["dimension"], figures["trend"])
+    if is_view:
+        rows = view_rows(name, figures)
+        if rows is None:
+            return {"kind": "not_available"}
+        return {"kind": "chart", "dimension": name, "series": VIEW_SERIES[name], "rows": rows, "reports": reports}
     rows = rows_for(name, figures, reports)
     split = chart_type == "bar" and dimensions[name]["splits"]
     if split and name == "asset":
