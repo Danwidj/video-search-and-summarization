@@ -488,6 +488,7 @@ describe('list_incident_report_summaries mapping', () => {
       thumbnail: null,
       r2Key: null,
       sensorId: null,
+      durationSeconds: null,
     });
     assert.deepEqual(reportListFromRpc({ incidentTypes: ['assault', 7] }).incidentTypes, ['assault']);
   });
