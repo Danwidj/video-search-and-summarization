@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * The one hover and keyboard-focus style for a card that opens something: a blue border (not the Official teal or the
- * Generate green), a stronger shadow, and a lift with a slight scale. The lift is dropped under prefers-reduced-motion; the
+ * The one hover and keyboard-focus style for a card that opens something: a signal-green border (`--card-hover`, the
+ * `--color-signal` token in app/styles.css, not the Official teal), a stronger shadow, and a lift with a slight scale. The lift is dropped under prefers-reduced-motion; the
  * colour and shadow stay. CARD_HOVER_STILL is the same without the lift, for a card inside a scrolling strip that would clip it. Put it on the Card, and CARD_ZOOM on the media inside its clipped frame.
  */
 export const CARD_HOVER_STILL =

@@ -139,7 +139,7 @@ export function ReportVersions({
                         />
                       ))}
                       <i
-                        className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${revision.kind === 'human' ? 'border-primary bg-primary' : 'border-muted-foreground/60 bg-card'}`}
+                        className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${official ? 'border-version-official bg-version-official' : revision.kind === 'human' ? 'border-version-human bg-version-human' : 'border-version-model bg-version-model'}`}
                         style={{ left: lane * LANE_WIDTH + LANE_WIDTH / 2 }}
                       />
                     </span>
