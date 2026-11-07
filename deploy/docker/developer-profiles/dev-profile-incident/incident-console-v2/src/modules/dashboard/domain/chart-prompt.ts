@@ -40,16 +40,22 @@ period: one of ${Object.keys(CHART_PERIODS).join(', ')}, or a calendar period wr
   {"from":"YYYY-MM-DD","to":"YYYY-MM-DD"} for the days from one date to the other, both included.
   Use all_time when the request names no period.
   The request starts with today's date and the viewer's time zone. Dates are the viewer's calendar days. A month or a date
-  given without its year is the most recent one that is not after today: "October" in November 2026 is 2026-10. A month
-  that is still running counts up to today, so "November" on 6 November 2026 is {"month":"2026-11"}, and the chart covers
-  1 to 6 November. A phrase such as "last week of October" is a from and to pair. A calendar period must not run past
-  today, and a range may cover at most 366 days.
+  given without its year is the most recent one that is not after today: "October" in November 2026 is 2026-10. In a range
+  given without years, the start is the most recent such date not after today, and the end is in the start's year, or in
+  the following year when the end's month comes before the start's month (the range crosses a new year). So on 7 November
+  2026 "December to February" is {"from":"2025-12-01","to":"2026-02-28"}, and "20 to 10 October" stays reversed and is
+  refused. A month that is still running counts up to today, so "November" on 6 November 2026 is {"month":"2026-11"}, and
+  the chart covers 1 to 6 November. A month or range that ends after today is charted up to today, so "October to
+  December" on 6 November 2026 is {"from":"2026-10-01","to":"2026-12-31"}, and the chart covers 1 October to 6 November.
+  In January 2027, "December to January" is {"from":"2026-12-01","to":"2027-01-31"}, charted up to today. A phrase such
+  as "last week of October" is a from and to pair. A calendar period must not start after today, and a range may cover at most
+  366 days.
 incidentType: null or one of ${INCIDENT_TYPES.join(', ')}.
 severity: null or one of ${CHART_SEVERITIES.join(', ')}.
 
 The user picks bar or pie separately, so ignore any chart type named in the request.
 
-If any part of the request cannot be expressed with exactly these values, reply {"unsupported": true} and nothing else. That covers a period no form above can express (a span over 366 days, a date after today, a time of day), a location, camera, person or free text filter, a field not listed, when incidents actually happened (only report dates and times are known), a request to change, invent or add figures, and anything that is not a chart request.
+If any part of the request cannot be expressed with exactly these values, reply {"unsupported": true} and nothing else. That covers a period no form above can express (a span over 366 days, a day or period that starts after today, a time of day), a location, camera, person or free text filter, a field not listed, when incidents actually happened (only report dates and times are known), a request to change, invent or add figures, and anything that is not a chart request.
 
 Examples:
 "incident distribution" -> {"metric":"incidents","dimension":"incident_type","period":"all_time","incidentType":null,"severity":null}

@@ -43,6 +43,8 @@ def test_the_allowlist_publishes_the_calendar_limit():
     ({"from": "2026-10-01", "to": "2026-10-15"}, TODAY, ("2026-10-01", "2026-10-15")),
     ({"from": "2026-10-15", "to": "2026-10-15"}, TODAY, ("2026-10-15", "2026-10-15")),
     ({"from": "2025-10-31", "to": "2026-10-31"}, TODAY, ("2025-10-31", "2026-10-31")),  # exactly 366 days
+    ({"from": "2026-10-25", "to": "2026-11-02"}, TODAY, ("2026-10-25", "2026-10-31")),  # a range past today ends today
+    ({"from": "2026-10-01", "to": "2026-12-31"}, "2026-11-06", ("2026-10-01", "2026-11-06")),
     ({"day": "2028-02-29"}, "2028-03-01", ("2028-02-29", "2028-02-29")),
 ])
 def test_a_calendar_period_that_counts_covers_its_days(period, today, days):
@@ -53,8 +55,8 @@ def test_a_calendar_period_that_counts_covers_its_days(period, today, days):
     ({"month": "2026-11"}, TODAY),  # a month that starts after today
     ({"month": "2027-01"}, TODAY),
     ({"day": "2026-11-01"}, TODAY),  # a day after today
-    ({"from": "2026-10-25", "to": "2026-11-02"}, TODAY),  # a range that runs past today
     ({"from": "2026-11-01", "to": "2026-11-03"}, TODAY),
+    ({"from": "2025-11-06", "to": "2026-12-31"}, "2026-11-07"),  # 367 days charted up to today
     ({"from": "2026-10-15", "to": "2026-10-01"}, TODAY),  # reversed
     ({"from": "2025-10-30", "to": "2026-10-31"}, TODAY),  # 367 days
     ({"day": "2026-02-30"}, TODAY),  # not a real day
