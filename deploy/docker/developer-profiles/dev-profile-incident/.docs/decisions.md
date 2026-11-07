@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: Fixed edit and clip request test set and offline scorer under services/agent/tests
+- **Decision:** Plan B Phase 1 Item 1D provides the canonical 20-case test set (`cases.json`) and an offline scorer (`scorer.py`, `cases.py`) under `services/agent/tests/edit_test_set/`, unit-tested by `services/agent/tests/unit_test/test_edit_test_set.py`.
+- **Why:** enables offline verification of tool selection, arguments, and refusal behavior for both investigator (clip QA) and editor (report edits) agents without calling hosted models or spending model tokens.
+- **Alternatives rejected:** placing under `eval/` (forbidden by Plan B worker rules); using live LLM judges (slow, expensive, non-deterministic; rule-based matching with numeric tolerances and regexes gives immediate, repeatable evaluation).
+- **Links:** `services/agent/tests/edit_test_set/`, `services/agent/tests/unit_test/test_edit_test_set.py`.
+
 ### 2026-11-07: The investigator is the toolkit's `tool_calling_agent`, run through `SessionManager`, with limits added around it
 - **Decision:** `investigator` is a `tool_calling_agent` under `functions:` in the agent config, with its tools in `tool_names`. The route runs it through `FastApiFrontEndPluginWorker._create_session_manager` and wraps the run in `utils/agent_loop.py`: a step log written by the tools, a 5-step budget, a 90 s wall clock, and detection of the toolkit's give-up string (`cap_reached`). The model-call timeout (30 s) and retries (2) sit on the `investigator_llm` entry. The video id is bound by the route in a per-request context, not filled in by the model. A tool error that is not a `ValueError` stops the run. The route is behind `INCIDENT_INVESTIGATE_ENABLED`, checked per request.
 - **Why:** `SessionManager` is the only path that writes Phoenix tool spans (measured: spans appear in the project). The agent returns one string and no steps, and at its iteration cap it returns a normal-looking sentence and runs one tool more, so the route has to log steps itself and detect the cap. The toolkit defaults (10 retries, no timeout) would let one slow model call run past the wall clock.
