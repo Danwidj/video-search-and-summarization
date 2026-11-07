@@ -94,18 +94,19 @@ export function rangeWords({ first, last }: DayRange): string {
 }
 
 /**
- * The words for a calendar period on `today`: a month is named by its month and year, anything else by its days. A period
- * that reaches past today says so: "November 2026 (to date)", "1 October to 6 November 2026 (to date)".
+ * The words for a calendar period on `today`: a whole month is named by its month and year, anything else by its days.
+ * A period that reaches past today names the days charted and says so: "1 to 6 November 2026 (to date)",
+ * "1 October to 6 November 2026 (to date)".
  */
 export function calendarWords(period: CalendarPeriod, today: string): string {
   const days = calendarDays(period, today);
   if (!days) throw new Error('calendarWords needs a period that calendarDays accepts');
-  const suffix = isToDate(period, today) ? ' (to date)' : '';
+  if (isToDate(period, today)) return `${rangeWords(days)} (to date)`;
   if ('month' in period) {
     const [year, month] = period.month.split('-').map(Number) as [number, number];
-    return `${MONTHS[month - 1]} ${year}${suffix}`;
+    return `${MONTHS[month - 1]} ${year}`;
   }
-  return `${rangeWords(days)}${suffix}`;
+  return rangeWords(days);
 }
 
 /** The calendar day in `timeZone` at `now`, as YYYY-MM-DD. */

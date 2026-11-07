@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 
 REFERENCE_TODAY = "2026-11-06"
 REFERENCE_TIMEZONE = "UTC"
-DATASET = "dashboard-calendar-development-v0"
+DATASET = "dashboard-calendar-development-v1"
 
 _DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _MONTH = re.compile(r"[0-9]{4}-[0-9]{2}")

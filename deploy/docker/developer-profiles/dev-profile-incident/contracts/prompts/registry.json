@@ -176,7 +176,7 @@
     {
       "id": "chart/system",
       "file": "chart/system.txt",
-      "sha256": "2d514bea034eecda9c0723b614a05b5912fae5650839afdc344e7950feea13fd",
+      "sha256": "d703d59879df74562be9682b74f75381950805659ab5e360aaa7f7338014c755",
       "stage": "chart",
       "placeholders": [],
       "used_by": [

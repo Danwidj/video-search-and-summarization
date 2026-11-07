@@ -400,8 +400,8 @@ describe('figures come from the dashboard data', () => {
       [dashboard.queries[0].periodStart, dashboard.queries[0].periodEnd],
       [new Date('2026-10-01T00:00:00Z'), new Date('2026-10-07T00:00:00Z')],
     );
-    assert.equal(answer.chart.title, 'Reports per day, October 2026 (to date)');
-    assert.deepEqual(answer.chart.scope, ['October 2026 (to date)']);
+    assert.equal(answer.chart.title, 'Reports per day, 1 to 6 October 2026 (to date)');
+    assert.deepEqual(answer.chart.scope, ['1 to 6 October 2026 (to date)']);
   });
 
   test('a range that runs past today is charted up to today, and its title says so', async () => {

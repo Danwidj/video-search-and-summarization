@@ -156,8 +156,9 @@ describe('the words for a period', () => {
     assert.equal(calendarWords({ from: '2025-12-29', to: '2026-01-02' }, TODAY), '29 December 2025 to 2 January 2026');
   });
 
-  test('a month still running is titled by its month, and says it is to date', () => {
-    assert.equal(calendarWords({ month: '2026-10' }, '2026-10-06'), 'October 2026 (to date)');
+  test('a month still running is titled by the days charted, and says it is to date', () => {
+    assert.equal(calendarWords({ month: '2026-10' }, '2026-10-06'), '1 to 6 October 2026 (to date)');
+    assert.equal(calendarWords({ month: '2026-11' }, '2026-11-07'), '1 to 7 November 2026 (to date)');
     assert.equal(calendarWords({ month: '2026-10' }, '2026-10-31'), 'October 2026');
   });
 
