@@ -343,7 +343,11 @@ export function Dashboard() {
               'h-48',
             )}
           </Panel>
-          <Panel className="lg:col-span-2 xl:col-span-4" title="Evidence by kind" subtitle="Entities, instruments and assets in the counted reports">
+          <Panel
+            className="lg:col-span-2 xl:col-span-4"
+            title="Evidence by kind"
+            subtitle="Entities, instruments and assets in the counted reports"
+          >
             {panel(
               (d) => (
                 <EvidenceBars emptyText={emptyText} rows={evidenceRows(d)} />
