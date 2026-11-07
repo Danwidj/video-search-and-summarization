@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { evidenceDisplay, videoFrameUrl } from '@/lib/evidence/evidence-view';
 import type { BoxToolClient } from '@/lib/evidence/box-tool-client';
-import { addBoxItem, holderChoices, retrackDraftItem } from '@/lib/evidence/box-tool';
+import { addBoxItem, type EvidenceOpening, holderChoices, retrackDraftItem } from '@/lib/evidence/box-tool';
 import { confirmAdjusted, confirmProposal, describeProposal, dismissProposal, findDraftItem } from '@/lib/evidence/evidence-proposals';
 import { pickSeed, setImagePick } from '@/lib/evidence/image-pick';
 import {
@@ -81,6 +81,7 @@ export function ReportEditPane({
   onSeek,
   boxClient,
   officialMissing = false,
+  evidenceOpening = null,
   evidenceProposals = false,
 }: {
   a: Structured | null;
@@ -102,11 +103,16 @@ export function ReportEditPane({
   /** Open the existing box tool immediately when entering Edit from the View evidence section. */
   /** True once revisions have loaded and none of them is official. */
   officialMissing?: boolean;
+  /** New evidence the chat asked for (its open_box_tool proposal): opens the box tool with the name filled in. */
+  evidenceOpening?: EvidenceOpening | null;
   /** Flag INCIDENT_EVIDENCE_PROPOSALS_ENABLED: show the Confirm, Adjust and Dismiss controls on an item with a proposed evidence change. */
   evidenceProposals?: boolean;
 }) {
   // The box tool: adding new evidence, or re-tracking a card's item from a new box.
-  const [boxTool, setBoxTool] = useState<{ row: PairRow['b'] } | null>(null);
+  const [boxTool, setBoxTool] = useState<{ row: PairRow['b']; opening?: EvidenceOpening } | null>(null);
+  useEffect(() => {
+    if (evidenceOpening) setBoxTool({ row: null, opening: evidenceOpening });
+  }, [evidenceOpening]);
   const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLElement | null>(null);
   // The track editor: fix a card's track with keyframes. `saved` is the opened version's item, whose track it starts from.
   const [trackEditor, setTrackEditor] = useState<{
@@ -526,7 +532,10 @@ export function ReportEditPane({
           client={boxClient}
           existing={boxTool.row ? existingForTool(boxTool.row) : null}
           holders={holderChoices(draft)}
-          initialSeconds={boxTool.row ? existingForTool(boxTool.row).firstSeenSeconds : (draft.incident.start_timestamp ?? 0)}
+          initialName={boxTool.opening?.name}
+          initialSeconds={
+            boxTool.row ? existingForTool(boxTool.row).firstSeenSeconds : (boxTool.opening?.seconds ?? draft.incident.start_timestamp ?? 0)
+          }
           onClose={() => setBoxTool(null)}
           onDone={finishBoxTool}
           videoId={videoId}

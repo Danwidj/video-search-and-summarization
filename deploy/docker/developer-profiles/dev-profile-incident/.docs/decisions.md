@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: New-evidence questions are proposal checks with a client-sent question count, behind their own flag
+- **Decision:** `ask_reviewer` and `open_box_tool` are proposal checks (`utils/evidence_asks.py`, route `evidence-asks`), not tools registered in the agent loop. The orchestrator sends the number of questions already asked for this evidence (0-2); the route enforces at most two in all, no question after the box tool, and one box tool opening inside the incident window. Behind `INCIDENT_EVIDENCE_ASKS_ENABLED`, checked per request. The console's box tool takes an opening with the name filled in.
+- **Why:** the draft-edit checks already work this way and write nothing, so the console keeps the decision and the reviewer keeps the save. The agent loop is stateless between reviewer replies, so the count has to come with the request. A separate flag lets the evidence flow go live without the draft edits.
+- **Alternatives rejected:** a per-process counter in a registered tool (shared across requests, so it would leak between videos and reviewers); reusing `INCIDENT_DRAFT_EDITS_ENABLED` (couples two features that go live separately).
+- **Links:** [vm-api-contracts](vm-api-contracts.md#post-apiv1incidentsvideo_idevidence-asks), `draft_edits.py`.
+
 ### 2026-11-07: An evidence change the chat proposes is held beside the item until the reviewer confirms it
 - **Decision:** a re-track or set-image change for an existing item is stored as `proposal` on the draft item, not as `reviewer` or `imagePick`. Confirm runs `retrackDraftItem` or `setImagePick`; Adjust reuses the Edit track or Set image dialog and its Done confirms; `draftProblems` blocks Save while any proposal is open. Behind `INCIDENT_EVIDENCE_PROPOSALS_ENABLED`, read by the report page on each request.
 - **Why:** the detector cannot signal doubt (a car was boxed as "person near billboard"), so a box the chat chose must be seen by the reviewer; a rule in `draftProblems` makes "cannot be saved unconfirmed" a code fact. Confirm reusing the hand-edit functions means Save cuts crops exactly as before.
