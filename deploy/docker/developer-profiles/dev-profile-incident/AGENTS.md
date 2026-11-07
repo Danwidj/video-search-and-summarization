@@ -60,7 +60,7 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 - **Console code keeps the hexagonal layout:** routes get ports from `src/lib/container.ts`; only `src/modules/*/infrastructure/supabase/` and `src/lib/postgrest/` name tables, columns and `p_*` arguments. `npm test` enforces the import boundaries. Layout and rules: [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md).
 - **Revisions are never edited.** A reviewer's edit is a new `human` revision; the official version is the video's `official_revision_id`, chosen explicitly (never infer "latest run wins").
 - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only, never reports. Count runs by outcome, not raw rows.
-- **PostgREST only from `<vm-host>`** (port 5432 is DPI-blocked). PostgREST has no client transactions, so `report_revisions` inserts retry on a `revision_no` clash (SQLSTATE 23505).
+- **PostgREST only from `<vm-host>`** (direct Postgres from the VM has been blocked on and off, so do not rely on it). PostgREST has no client transactions, so `report_revisions` inserts retry on a `revision_no` clash (SQLSTATE 23505).
 - **Storage:** R2 holds videos (`videos.filepath` is an **R2 key**, never a VST URL); Supabase holds rows; VIOS disk is only a cache.
 - **Secrets are server-side only:** never `NEXT_PUBLIC_` for a credential or URL; `/api/health` returns booleans only; the gateway owns `VLM_GATEWAY_API_KEY`.
 - **Remote models use `_type: openai`,** never `_type: nim`, with bare base URLs (no `/v1`); why: [`.docs/architecture.md`](.docs/architecture.md#model-inference).

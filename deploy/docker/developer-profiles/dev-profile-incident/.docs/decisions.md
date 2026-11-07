@@ -1986,6 +1986,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Decision:** The agent uses Supabase PostgREST over HTTPS (`utils/incident_db.py`, `supabase-py`). Report writes are single-row `report_revisions` inserts (see the 2026-10-23 revisions entry).
 - **Why:** The campus firewall on `<vm-host>` drops outbound port 5432, so raw Postgres drivers fail; PostgREST lacks client-held transactions, so each write is one row.
 - **Rejected:** direct Postgres / `asyncpg` on the VM.
+- **2026-11-07 observation:** a `select 1` through the Supabase pooler connected from both the VM and the laptop on ports 5432 and 6543. The block has come and gone and the cause is not established, so the decision stands: the agent and console stay on HTTPS, and direct access is only for one-off database work.
 - **Links:** [`data.md`](data.md); `services/agent/src/vss_agents/utils/incident_db.py`.
 
 ### 2026-11-02: `compose up --yes` in every start path

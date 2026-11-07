@@ -431,8 +431,12 @@ Database access is split across two client implementations according to operatio
      (deliberately NOT `INCIDENT_DB_DSN`, which the direct-Postgres tooling uses); unset means the
      feature is unavailable, no fallback.
    - **Network Constraint / DPI Blocking Rationale:** This split exists because the deployment VM
-     (`<vm-host>`) DPI-blocks raw Postgres wire protocol on port 5432, so only the HTTPS-based
-     PostgREST route works for the agent from there.
+     (`<vm-host>`) used to block the raw Postgres wire protocol on port 5432, so only the HTTPS-based
+     PostgREST route worked for the agent from there. On 2026-11-07 a `select 1` through the
+     Supabase connection pooler connected from both the VM and the laptop, on ports 5432 and 6543.
+     The block has come and gone and the cause of the change is not established (the VM's network
+     may have changed), so do not rely on direct access: the agent and console stay on HTTPS, and
+     direct access is only for one-off database work.
    - **Transaction Limits & RPC:** PostgREST has no client-held transactions or
      `SELECT ... FOR UPDATE`; the agent appends `report_revisions` rows with a `revision_no` of
      `max + 1` and retries when the unique key rejects a concurrent writer (SQLSTATE 23505).
