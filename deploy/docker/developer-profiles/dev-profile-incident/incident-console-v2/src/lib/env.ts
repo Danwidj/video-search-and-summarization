@@ -50,6 +50,13 @@ export function isEvidenceProposalsEnabled(): boolean {
   return /^(1|true|yes|on)$/i.test(optionalEnvironmentValue('INCIDENT_EVIDENCE_PROPOSALS_ENABLED') ?? '');
 }
 
+/** Flag INCIDENT_CHAT_STEPS_ENABLED (off unless 1, true, yes or on), read on every request. */
+export function isChatStepsEnabled(req?: Request): boolean {
+  const header = req?.headers.get('x-chat-steps')?.trim().toLowerCase();
+  if (header === '1' || header === 'true' || header === 'yes' || header === 'on') return true;
+  return /^(1|true|yes|on)$/i.test(optionalEnvironmentValue('INCIDENT_CHAT_STEPS_ENABLED') ?? '');
+}
+
 export function isSupabaseConfigured(config: ServiceConfiguration): boolean {
   return Boolean(config.supabaseUrl && config.supabaseServiceRoleKey);
 }

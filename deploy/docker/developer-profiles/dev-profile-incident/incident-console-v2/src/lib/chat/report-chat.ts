@@ -80,11 +80,12 @@ export function draftReport(draft: EditDraft): Record<string, unknown> {
   };
 }
 
-export type AnswerSource = 'report' | 'report_llm' | 'video';
+export type AnswerSource = 'report' | 'report_llm' | 'video' | 'investigator';
 
 /** Where an answer came from, under the answer. With no stated source it is the stored report, as composed answers are. */
 export function answerSourceLine(source: AnswerSource | undefined, label: string): string {
   if (source === 'video') return 'Fresh video check: not part of the report, and not saved';
+  if (source === 'investigator') return `Tool-calling agent: ${label}`;
   if (source === 'report_llm') return `AI reading of the stored report: ${label}`;
   return `Answered from the stored report: ${label}`;
 }
@@ -106,11 +107,13 @@ export function chatRequestBody({
   sessionId,
   videoId,
   target,
+  steps,
 }: {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   sessionId?: string;
   videoId: string;
   target: ChatTarget;
+  steps?: boolean;
 }) {
   return {
     messages,
@@ -118,6 +121,7 @@ export function chatRequestBody({
     incidentId: videoId,
     versionId: target.versionId,
     ...(target.draftReport ? { draftReport: target.draftReport } : {}),
+    ...(steps !== undefined ? { steps } : {}),
   };
 }
 
