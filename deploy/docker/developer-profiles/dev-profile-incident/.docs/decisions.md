@@ -2,6 +2,15 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-08: The report chat is a docked panel that narrows the page, not an overlay
+- **Decision:** on the report page the chat is a docked `aside` beside the article, `sm:w-[28rem]` (the old sheet's width), and the article takes the rest (`min-w-0 flex-1`). Closing it (close button, Escape or the toggle) restores the full width. It is no longer a Radix sheet, so no overlay, portal or focus trap; `ReportChat` takes an `onClose` prop instead of `SheetClose`. Below `sm` it takes the full width, as the sheet did.
+- **Why:** with the sheet open it covered the right side of the page, hiding the edit column and the evidence cards. Docking keeps every field and card usable while the chat is open.
+- **Alternatives rejected:**
+  - *Keeping the overlay and padding the page:* the page would need to know the sheet's state in every pane; a flex sibling does it with no extra state.
+  - *Portalled sheet with `static` overrides:* the portal leaves the page's flex row, so the content would not narrow.
+- **Amends:** [2026-11-06](#2026-11-06-the-report-chat-panel-is-not-modal-and-its-conversation-lives-on-the-report-page), where the panel was a non-modal sheet beside the player. Its conversation and non-modal behaviour still hold.
+- **Links:** [`ReportPage.tsx`](../incident-console-v2/src/sections/reports/components/ReportPage/ReportPage.tsx), [`ReportChat.tsx`](../incident-console-v2/src/sections/reports/components/ReportChat/ReportChat.tsx)
+
 ### 2026-11-07: Instrument threat by holder type is a stacked bar per holder type, drawn in the stacked kind the agent already has
 - **Decision:** a fourth chart view, `threat_by_holder` (metric `instruments`). One bar per holder type of the counted reports' instruments (Human, Animal, Unknown; "No holder" only when some instrument has no holder), each split into high, medium and low threat (low 1-2, medium 3, high 4-5, the severity bands), in the severity colours (`THREAT_SERIES`). Its figures are a new top-level `threatByHolder` from `20261107120000_dashboard_threat_by_holder.sql`, a read-only extension of `get_incident_dashboard`: four rows always, each with `high`, `medium`, `low`, `official` and `notOfficial`. The kind is `stacked_by_severity`, auto-selected like the other views.
 - **Why:** the captain asked "among entity, what is the distribution of their instrument being high threat". The dashboard had instrument threat levels and entity types, but no link between them; each report records the holder of every instrument (`entity_id`), so the link is computed from the payload in SQL, and the figures stay counted from the database.
@@ -338,7 +347,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [`incident_chat.py`](../../../../../services/agent/src/vss_agents/api/incident_chat.py), [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat)
 
 ### 2026-11-06: The report chat panel is not modal and its conversation lives on the report page
-- **Decision:** the report page's chat sheet is non-modal, has no overlay and stays open when the page behind it is used; only its close button, Escape or the toggle closes it. Each version's conversation (and its draft's) is held by `ReportPage`, so closing the panel keeps it; a new Edit draft starts a new conversation. `seek` uses the player on screen, which below the `lg` breakpoint is the compact one. The library chat sheet is unchanged.
+- **Decision:** the report page's chat panel (since 2026-11-08 docked, see that entry) is non-modal, has no overlay and stays open when the page behind it is used; only its close button, Escape or the toggle closes it. Each version's conversation (and its draft's) is held by `ReportPage`, so closing the panel keeps it; a new Edit draft starts a new conversation. `seek` uses the player on screen, which below the `lg` breakpoint is the compact one. The library chat sheet is unchanged.
 - **Why:** checked in a browser on 6 Nov against the VM agent. While the panel was open the overlay took the clicks and the player was `aria-hidden`, so a jump could not be paused or scrubbed. Closing the panel to watch unmounted the chat and lost the conversation. Below `lg`, seeks went to the hidden player, so a jump did nothing visible.
 - **Amends:** [2026-11-03](#2026-11-03-every-console-video-is-silent-play-clip-is-removed-and-the-chat-sheet-does-not-blur-the-page), where the shared overlay "still dims the page": that now applies to the library chat only.
 - **Rejected:** closing the panel on every jump (loses the place in a long answer); keeping the panel mounted while closed (a hidden sheet in the page's focus order).

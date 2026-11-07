@@ -22,7 +22,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HEADER_END_SLOT, HEADER_START_SLOT } from '@/sections/shell/components/AppHeader';
@@ -99,6 +98,15 @@ export function ReportPage({
   const startedAt = useRef(false);
 
   const [chatOpen, setChatOpen] = useState(false);
+  // Escape closes the docked chat wherever focus is, as it closed the sheet; a key a field already handled is left alone.
+  useEffect(() => {
+    if (!chatOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) setChatOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [chatOpen]);
   // The report's controls live in the shared app header: its two slots are found after mount and filled by portal.
   const [slots, setSlots] = useState<{ start: HTMLElement | null; end: HTMLElement | null } | null>(null);
   useEffect(() => {
@@ -447,9 +455,9 @@ export function ReportPage({
   }
 
   return (
-    <div className="h-full min-h-0 overflow-hidden">
+    <div className="flex h-full min-h-0 overflow-hidden">
       <article
-        className="report-sheet flex h-full min-h-0 flex-col overflow-hidden border-y border-border bg-card shadow-panel"
+        className="report-sheet flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-y border-border bg-card shadow-panel"
         data-testid="report-page"
       >
         {slots?.start &&
@@ -692,6 +700,43 @@ export function ReportPage({
         </ResizablePanelGroup>
       </article>
 
+      {/* Docked beside the page, not over it: the page content narrows by the panel's width, so nothing sits under the chat. The player stays usable, so a jump can be watched, paused or scrubbed from there. */}
+      {chatOpen && (
+        <aside
+          aria-label="Ask about this incident"
+          className="flex h-full min-h-0 w-full shrink-0 flex-col border-l border-border bg-card sm:w-[28rem]"
+        >
+          {(() => {
+            const target = chatTarget(
+              mode === 'edit' && draft && editBase
+                ? { revision: editBase.report.revision, isOfficial: editBase.report.official.isOfficial, draft }
+                : { revision: report.revision, isOfficial: report.official.isOfficial, draft: null },
+            );
+            // Keyed by the version (and whether it is a draft), so each one has its own conversation.
+            const threadKey = chatThreadKey(target.versionId);
+            return (
+              <ReportChat
+                durationSeconds={playerDuration}
+                key={threadKey}
+                onClose={() => setChatOpen(false)}
+                onSeek={seek}
+                onThreadChange={(change) =>
+                  setChatThreads((threads) => ({
+                    ...threads,
+                    [threadKey]: { ...(threads[threadKey] ?? EMPTY_CHAT_THREAD), ...change },
+                  }))
+                }
+                target={target}
+                thread={chatThreads[threadKey] ?? EMPTY_CHAT_THREAD}
+                titles={citationTitles(mode === 'edit' && draft && editBase ? editBase.report.structured : report.structured)}
+                videoId={videoId}
+                edits={{ current: () => draftRef.current ?? draftFromView(report), apply: editFromChat }}
+              />
+            );
+          })()}
+        </aside>
+      )}
+
       <AlertDialog onOpenChange={setRevertConfirmOpen} open={revertConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -764,48 +809,6 @@ export function ReportPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Not modal: the player stays usable beside the chat, so a jump can be watched, paused or scrubbed from there. */}
-      <Sheet modal={false} onOpenChange={setChatOpen} open={chatOpen}>
-        <SheetContent
-          className="flex flex-col p-0 sm:max-w-md"
-          onInteractOutside={(event) => event.preventDefault()}
-          showCloseButton={false}
-          side="right"
-        >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Ask about this incident</SheetTitle>
-            <SheetDescription>Conversational questions and answers about this incident</SheetDescription>
-          </SheetHeader>
-          {(() => {
-            const target = chatTarget(
-              mode === 'edit' && draft && editBase
-                ? { revision: editBase.report.revision, isOfficial: editBase.report.official.isOfficial, draft }
-                : { revision: report.revision, isOfficial: report.official.isOfficial, draft: null },
-            );
-            // Keyed by the version (and whether it is a draft), so each one has its own conversation.
-            const threadKey = chatThreadKey(target.versionId);
-            return (
-              <ReportChat
-                durationSeconds={playerDuration}
-                key={threadKey}
-                onSeek={seek}
-                onThreadChange={(change) =>
-                  setChatThreads((threads) => ({
-                    ...threads,
-                    [threadKey]: { ...(threads[threadKey] ?? EMPTY_CHAT_THREAD), ...change },
-                  }))
-                }
-                target={target}
-                thread={chatThreads[threadKey] ?? EMPTY_CHAT_THREAD}
-                titles={citationTitles(mode === 'edit' && draft && editBase ? editBase.report.structured : report.structured)}
-                videoId={videoId}
-                edits={{ current: () => draftRef.current ?? draftFromView(report), apply: editFromChat }}
-              />
-            );
-          })()}
-        </SheetContent>
-      </Sheet>
     </div>
   );
 }

@@ -145,12 +145,12 @@ test('report chat uses the same title band as report sections', async () => {
   const chat = await readFile(new URL('reports/components/ReportChat/ReportChat.tsx', components), 'utf8');
   assert.doesNotMatch(chat, /border-l-primary/);
   assert.match(chat, /text-lg font-bold tracking-tight/);
-  assert.match(chat, /<SheetClose asChild>/, 'the chat has an explicit close control');
+  assert.match(chat, /onClick=\{onClose\}/, 'the chat has an explicit close control');
   assert.match(chat, /className="absolute top-3 right-3"/, 'the close control sits at the top-right');
   assert.match(chat, /rounded-none/, 'the chat title surface is flush with the browser edge');
   assert.doesNotMatch(chat, /Asking about \{target\.label\}/, 'the version badge omits the redundant prefix');
   const page = await readFile(new URL('reports/components/ReportPage/ReportPage.tsx', components), 'utf8');
-  assert.match(page, /showCloseButton=\{false\}/, 'the separately positioned default close button is disabled');
+  assert.match(page, /onClose=\{\(\) => setChatOpen\(false\)\}/, 'the close control closes the docked panel');
 });
 
 test('edit evidence pairs fit the evidence-card footprint', async () => {

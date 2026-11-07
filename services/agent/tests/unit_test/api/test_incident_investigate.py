@@ -168,6 +168,40 @@ def test_a_pending_evidence_exchange_goes_into_the_editor_input_and_counts_its_q
     assert "assistant: Which shop is it in?" in manager.questions[0]
 
 
+def test_the_recent_chat_goes_into_the_editor_input_oldest_first() -> None:
+    client, manager, _ = _client(lambda: _calls(final="Done."))
+    history = [
+        {"role": "user", "text": "Who is on the left?"},
+        {"role": "assistant", "text": "E1, the person in purple."},
+    ]
+    assert client.post(URL, json={**BODY, "draft": DRAFT, "history": history}).status_code == 200
+    question = manager.questions[0]
+    assert question.index("user: Who is on the left?") < question.index("assistant: E1, the person in purple.")
+
+
+def test_a_draft_with_reviewer_labels_is_accepted_and_reaches_the_editor() -> None:
+    draft = {
+        "incident": {"title": "Fight"},
+        "entities": [{"key": "p1", "type": "human", "reviewer_label": "E1", "reviewer_name": "person in purple"}],
+    }
+    client, manager, _ = _client(lambda: _calls(final="Done."))
+    assert client.post(URL, json={**BODY, "draft": draft}).status_code == 200
+    assert '"reviewer_label":"E1"' in manager.questions[0]
+
+
+def test_the_chat_history_without_a_draft_is_not_sent_to_the_investigator() -> None:
+    client, manager, _ = _client(lambda: _calls(final="An answer."))
+    history = [{"role": "user", "text": "Earlier question"}]
+    assert client.post(URL, json={**BODY, "history": history}).status_code == 200
+    assert manager.questions[0] == BODY["question"]
+
+
+def test_more_than_six_history_turns_is_a_422() -> None:
+    client, _, _ = _client(_ok)
+    history = [{"role": "user", "text": f"turn {n}"} for n in range(7)]
+    assert client.post(URL, json={**BODY, "draft": DRAFT, "history": history}).status_code == 422
+
+
 def test_an_evidence_exchange_with_more_than_two_questions_is_a_422() -> None:
     client, _, _ = _client(lambda: _calls())
     evidence = {"questions_asked": 3, "transcript": []}
