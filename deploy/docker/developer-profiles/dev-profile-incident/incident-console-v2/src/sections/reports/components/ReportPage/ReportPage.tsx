@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { MessageSquareTextIcon, PictureInPicture2Icon } from 'lucide-react';
+import { ArrowLeftIcon, MessageSquareTextIcon, PictureInPicture2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -395,22 +395,24 @@ export function ReportPage({
         data-testid="report-page"
       >
         <div
-          className="z-30 flex flex-none flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-card px-5 py-3 text-sm sm:px-8"
+          className="z-30 flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-muted px-5 py-2.5 text-sm sm:px-8"
           data-testid="report-sticky"
         >
-          <Link className="font-semibold text-primary hover:underline" href="/library" id="back-to-library">
-            ← Library
-          </Link>
+          <Button asChild className="bg-card text-xs font-semibold" size="sm" variant="outline">
+            <Link href="/library" id="back-to-library">
+              <ArrowLeftIcon aria-hidden="true" data-icon="inline-start" />
+              Library
+            </Link>
+          </Button>
           <span className="min-w-0 flex-1" />
           <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={videoId} />
           <Button
             aria-expanded={chatOpen}
-            className="border-primary/20 bg-primary/5 text-xs font-semibold hover:bg-primary/10"
+            className="text-xs font-semibold"
             data-testid="chat-toggle"
             onClick={() => setChatOpen((open) => !open)}
             size="sm"
             type="button"
-            variant="outline"
           >
             <MessageSquareTextIcon aria-hidden="true" data-icon="inline-start" />
             Ask about this incident

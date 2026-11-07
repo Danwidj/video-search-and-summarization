@@ -173,7 +173,7 @@ test('the report page seeks to ?t once, when the player has loaded its metadata'
     page,
     /if \(startSeconds !== null && !startedAt\.current\) \{\s*startedAt\.current = true;\s*event\.currentTarget\.currentTime = startSeconds;\s*\}/,
   );
-  assert.match(page, /id="back-to-library"[^>]*>\s*← Library\s*</);
+  assert.match(page, /id="back-to-library"[^>]*>\s*<ArrowLeftIcon[^>]*\/>\s*Library\s*</);
 });
 
 test('the report workspace fits the viewport and keeps its action bar outside the details scroller', async () => {
