@@ -46,6 +46,12 @@ export function unratedReports(data: DashboardAnalytics): number {
   return Math.max(0, data.total - data.severity.high - data.severity.medium - data.severity.low);
 }
 
+/** The Total reports chip's count: null when the RPC did not return it (not loaded) or when no counted report has several versions. */
+export function revisedReports(data: DashboardAnalytics): number | null {
+  const count = data.multipleVersions;
+  return count === null || count <= 0 ? null : count;
+}
+
 export function typeRows(data: DashboardAnalytics): SplitRow[] {
   return data.types.map(({ type, count, official, notOfficial }) => ({ key: type, label: type, total: count, official, notOfficial }));
 }
@@ -110,9 +116,3 @@ export function formatCalendarDay(date: Date): string {
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** A trend date (YYYY-MM-DD, already the viewer's day) as "Oct 28"; never re-read through a Date, which would shift it. */
-export function formatDay(date: string): string {
-  const [, month, day] = date.split('-').map(Number);
-  return month && day ? `${MONTHS[month - 1]} ${day}` : date;
-}

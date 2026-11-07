@@ -12,8 +12,8 @@ import {
   entityTypeRows,
   evidenceRows,
   formatCalendarDay,
-  formatDay,
   instrumentRows,
+  revisedReports,
   severityRows,
   TOP_INSTRUMENT_ROWS,
   typeRows,
@@ -50,9 +50,12 @@ test('reports with no severity are counted apart from the severity bands', () =>
   assert.equal(unratedReports(withBands(0, 0, 0, 0)), 0);
 });
 
-test('a trend day reads as written', () => {
-  assert.equal(formatDay('2026-10-28'), 'Oct 28');
-  assert.equal(formatDay('2026-01-01'), 'Jan 1', 'never shifted by a time zone');
+test('the revised chip shows only when the RPC returned a positive count', () => {
+  const withRevised = (multipleVersions) => ({ ...analytics, multipleVersions });
+  assert.equal(revisedReports(withRevised(12)), 12);
+  assert.equal(revisedReports(withRevised(1)), 1);
+  assert.equal(revisedReports(withRevised(0)), null, 'no revised reports: no chip');
+  assert.equal(revisedReports(withRevised(null)), null, 'not loaded (older definition): no chip, never 0');
 });
 
 test('each day of the trend adds up, and the severity donut colours are readable against white', () => {

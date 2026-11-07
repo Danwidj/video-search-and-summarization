@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Area, AreaChart, Bar, BarChart, Cell, CartesianGrid, LabelList, Pie, PieChart, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, Cell, LabelList, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import type { DateRange } from 'react-day-picker';
-import { CalendarIcon, ChartColumnIcon, LayersIcon } from 'lucide-react';
+import { CalendarIcon, ChartColumnIcon, HistoryIcon } from 'lucide-react';
 import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
 import { href, type Filters, type LinkFilters, type Range } from '@/modules/dashboard/domain/links';
 import {
@@ -17,8 +17,8 @@ import {
   entityTypeRows,
   evidenceRows,
   formatCalendarDay,
-  formatDay,
   instrumentRows,
+  revisedReports,
   SEVERITY_LABELS,
   severityRows,
   type SplitRow,
@@ -301,12 +301,24 @@ export function Dashboard() {
           </Panel>
           <Panel
             className="lg:col-span-2 xl:col-span-8"
-            title="Reports generated over time"
-            subtitle={`Reports per day by report date (${timeZone}), official and not yet official`}
+            title="Activity by day and hour"
+            subtitle={`Report time (${timeZone}); select a cell to filter this page`}
           >
             {panel(
               (d) => (
-                <Trend emptyText={emptyText} points={d.trend} />
+                <Heatmap
+                  data={d.heatmap}
+                  emptyText={emptyText}
+                  onSelect={(day, hour) =>
+                    setFilters((f) =>
+                      f.day === String(day) && f.hour === String(hour)
+                        ? { ...f, day: '', hour: '' }
+                        : { ...f, day: String(day), hour: String(hour) },
+                    )
+                  }
+                  selected={`${filters.day}-${filters.hour}`}
+                  timeZone={timeZone}
+                />
               ),
               'h-56',
             )}
@@ -365,30 +377,6 @@ export function Dashboard() {
               'h-40',
             )}
           </Panel>
-          <Panel
-            className="lg:col-span-2 xl:col-span-12"
-            title="Activity by day and hour"
-            subtitle={`Report time (${timeZone}); select a cell to filter this page`}
-          >
-            {panel(
-              (d) => (
-                <Heatmap
-                  data={d.heatmap}
-                  emptyText={emptyText}
-                  onSelect={(day, hour) =>
-                    setFilters((f) =>
-                      f.day === String(day) && f.hour === String(hour)
-                        ? { ...f, day: '', hour: '' }
-                        : { ...f, day: String(day), hour: String(hour) },
-                    )
-                  }
-                  selected={`${filters.day}-${filters.hour}`}
-                  timeZone={timeZone}
-                />
-              ),
-              'h-56',
-            )}
-          </Panel>
         </div>
       )}
       <ChartRequest />
@@ -424,12 +412,14 @@ function Total({ data, link }: { data: DashboardAnalytics; link: (extra?: LinkFi
     { key: 'official', label: 'Official', value: data.official, swatch: 'bg-chart-1' },
     { key: 'not_official', label: 'Not yet official', value: data.notOfficial, swatch: 'bg-chart-3' },
   ] as const;
+  const revised = revisedReports(data);
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      <div className="flex flex-wrap items-center gap-3">
         <Link className="text-5xl font-semibold text-ink hover:underline" href={link()}>
           {data.total}
         </Link>
+        {revised !== null && <RevisedChip count={revised} />}
       </div>
       <div aria-hidden="true" className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-ink/8">
         {parts.map(({ key, value, swatch }) => (
@@ -451,17 +441,6 @@ function Total({ data, link }: { data: DashboardAnalytics; link: (extra?: LinkFi
           </div>
         ))}
       </dl>
-      {data.multipleVersions !== null && (
-        <dl className="flex items-center justify-between gap-3 rounded-xl border border-ink/10 bg-ink/5 px-3 py-2">
-          <dt className="flex min-w-0 items-center gap-1.5 text-xs text-ink/60">
-            <LayersIcon aria-hidden="true" className="size-3.5 shrink-0" />
-            Multiple versions
-          </dt>
-          <dd className="text-sm font-semibold text-ink tabular-nums" title="Counted reports whose video has more than one report version">
-            {data.multipleVersions}
-          </dd>
-        </dl>
-      )}
       <p className="text-xs text-ink-caption">
         All time: {data.videos.uploaded} videos uploaded, {data.videos.withoutReport} without a report.
       </p>
@@ -469,38 +448,25 @@ function Total({ data, link }: { data: DashboardAnalytics; link: (extra?: LinkFi
   );
 }
 
-function Trend({ points, emptyText }: { points: DashboardAnalytics['trend']; emptyText: string }) {
-  if (!points.some((x) => x.count)) return <NoData text={emptyText} />;
+/** Neutral chip beside the total: how many counted reports have several versions. Its tooltip is also its accessible label. */
+function RevisedChip({ count }: { count: number }) {
+  const explanation = `${count} of these reports ${count === 1 ? 'has' : 'have'} 2+ versions (edited or re-analysed)`;
   return (
-    <ChartContainer config={splitConfig} className="aspect-auto h-56 w-full">
-      <AreaChart accessibilityLayer data={points} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
-        <CartesianGrid vertical={false} />
-        <XAxis axisLine={false} dataKey="date" minTickGap={28} tickFormatter={formatDay} tickLine={false} tickMargin={8} />
-        <YAxis allowDecimals={false} axisLine={false} tickLine={false} width={28} />
-        <ChartTooltip content={<ChartTooltipContent labelFormatter={(value) => formatDay(String(value))} />} cursor={false} />
-        <ChartLegend content={<ChartLegendContent />} itemSorter={null} />
-        <Area
-          dataKey="official"
-          fill="var(--color-official)"
-          fillOpacity={0.35}
-          isAnimationActive={false}
-          stackId="split"
-          stroke="var(--color-official)"
-          strokeWidth={2}
-          type="monotone"
-        />
-        <Area
-          dataKey="notOfficial"
-          fill="var(--color-notOfficial)"
-          fillOpacity={0.35}
-          isAnimationActive={false}
-          stackId="split"
-          stroke="var(--color-notOfficial)"
-          strokeWidth={2}
-          type="monotone"
-        />
-      </AreaChart>
-    </ChartContainer>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            aria-label={`${count} revised: ${explanation}`}
+            className="inline-flex items-center gap-1.5 rounded-full border border-ink/10 bg-ink/5 px-2.5 py-1 text-xs font-semibold text-ink tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
+            type="button"
+          >
+            <HistoryIcon aria-hidden="true" className="size-3.5 shrink-0" />
+            {count} revised
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{explanation}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
