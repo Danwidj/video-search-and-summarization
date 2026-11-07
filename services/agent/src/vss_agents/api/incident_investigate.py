@@ -15,9 +15,8 @@
 
 """``POST /api/v1/incidents/{video_id}/investigate`` - an agent that chooses its own tools to answer one question.
 
-Off unless ``INCIDENT_INVESTIGATE_ENABLED`` is set: a request is then a ``404`` and no model is called. The setting is
-read on every request, like ``video-check``. The agent is the ``investigator`` function of the agent config (a NAT
-``tool_calling_agent``); the tools it may choose are the ``tool_names`` listed there. It writes nothing.
+The agent is the ``investigator`` function of the agent config (a NAT ``tool_calling_agent``); the tools it may choose are
+the ``tool_names`` listed there. It writes nothing.
 
 The agent runs through the toolkit's ``SessionManager`` (the only path that writes Phoenix tool spans) under the limits
 in :mod:`vss_agents.utils.agent_loop`: 4 iterations, 5 tool steps, 90 s, and a model-call timeout set on its ``llms:``
@@ -25,11 +24,10 @@ entry. The response always names how the run ended in ``status`` (HTTP 200), lis
 lists any ``propose_*`` tool's arguments as ``actions``.
 
 A request may carry the reviewer's unsaved ``draft``. It then runs the ``report_editor`` agent instead, whose tools are
-the ``propose_*`` edit checks of :mod:`vss_agents.tools.incident_editor`, and needs ``INCIDENT_DRAFT_EDITS_ENABLED`` too
-(a ``404`` when that is off). Its ``actions`` are the edits the console applies to the draft; a run with no ``steps`` was
-not an edit request.
+the ``propose_*`` edit checks of :mod:`vss_agents.tools.incident_editor`. Its ``actions`` are the edits the console
+applies to the draft; a run with no ``steps`` was not an edit request.
 
-Status codes: 200 with the outcome, 404 when the setting is off, 422 for a request that does not validate, 501 when the
+Status codes: 200 with the outcome, 422 for a request that does not validate, 501 when the
 profile does not declare the agent.
 """
 
@@ -39,7 +37,6 @@ import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
 import logging
-import os
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -58,16 +55,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-ENABLED_ENV = "INCIDENT_INVESTIGATE_ENABLED"
 AGENT_FUNCTION = "investigator"
 EDITOR_FUNCTION = "report_editor"
 
 SessionManagerFactory = Callable[[Any, str], Awaitable[Any]]
-
-
-def enabled() -> bool:
-    """Whether this agent may run the investigator. Off unless the setting says otherwise."""
-    return (os.environ.get(ENABLED_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 class InvestigateRequest(BaseModel):
@@ -135,11 +126,7 @@ def create_incident_investigate_router(
         tags=["Incident Chat"],
     )
     async def investigate(video_id: str, body: InvestigateRequest) -> InvestigateResponse:
-        if not enabled():
-            raise HTTPException(status_code=404, detail="The investigator is not enabled on this agent")
         editing = body.draft is not None
-        if editing and not draft_edits.enabled():
-            raise HTTPException(status_code=404, detail="Draft edits are not enabled on this agent")
         name = editor if editing else agent
         try:
             manager = await _session_manager(name)

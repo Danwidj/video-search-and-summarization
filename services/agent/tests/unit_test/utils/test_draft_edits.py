@@ -158,10 +158,3 @@ def test_duplicate_draft_keys_are_refused() -> None:
                 "assets": [{"key": "dup"}, {"key": "dup"}],
             }
         )
-
-
-def test_enabled_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(draft_edits.ENABLED_ENV, raising=False)
-    assert draft_edits.enabled() is False
-    monkeypatch.setenv(draft_edits.ENABLED_ENV, "true")
-    assert draft_edits.enabled() is True

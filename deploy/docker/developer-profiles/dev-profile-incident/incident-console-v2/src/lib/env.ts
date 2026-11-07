@@ -45,16 +45,6 @@ export function getServiceConfiguration(): ServiceConfiguration {
   };
 }
 
-/** Flag INCIDENT_EVIDENCE_PROPOSALS_ENABLED (off unless 1, true, yes or on), read on every call so a restart is the only change needed. */
-export function isEvidenceProposalsEnabled(): boolean {
-  return /^(1|true|yes|on)$/i.test(optionalEnvironmentValue('INCIDENT_EVIDENCE_PROPOSALS_ENABLED') ?? '');
-}
-
-/** Flag INCIDENT_CHAT_EDITS_ENABLED (off unless 1, true, yes or on), read on every call: the report chat may change the draft. */
-export function isChatEditsEnabled(): boolean {
-  return /^(1|true|yes|on)$/i.test(optionalEnvironmentValue('INCIDENT_CHAT_EDITS_ENABLED') ?? '');
-}
-
 /** Flag INCIDENT_CHAT_STEPS_ENABLED (off unless 1, true, yes or on), read on every request. */
 export function isChatStepsEnabled(req?: Request): boolean {
   const header = req?.headers.get('x-chat-steps')?.trim().toLowerCase();

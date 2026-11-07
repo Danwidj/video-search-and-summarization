@@ -15,7 +15,7 @@
 
 """``POST /api/v1/incidents/{video_id}/draft-edits`` - check proposed edits against the reviewer's unsaved draft.
 
-Off unless ``INCIDENT_DRAFT_EDITS_ENABLED`` is set: a request is then a ``404``. The route checks each call the agent
+The route checks each call the agent
 makes and returns the proposals that pass, with a reason for each that does not. It writes nothing: the console applies
 the proposals to the draft, and the reviewer saves. See :mod:`vss_agents.utils.draft_edits`.
 """
@@ -26,7 +26,6 @@ import logging
 
 from fastapi import APIRouter
 from fastapi import FastAPI
-from fastapi import HTTPException
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
@@ -55,8 +54,6 @@ def create_incident_draft_edits_router() -> APIRouter:
         tags=["Incident Chat"],
     )
     async def propose_draft_edits(video_id: str, body: DraftEditRequest) -> draft_edits.ProposalResult:
-        if not draft_edits.enabled():
-            raise HTTPException(status_code=404, detail="Draft edits are not enabled on this agent")
         result = draft_edits.propose(body.draft, body.calls)
         logger.info(
             "Draft edits for %s: %d proposed, %d rejected", video_id, len(result.proposals), len(result.rejected)

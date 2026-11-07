@@ -135,7 +135,7 @@ export function ReportChat({
   /** Each cited item's name (citationTitles), so a citation is shown without its id. */
   titles?: Record<string, string>;
   /**
-   * Lets a question change the draft (flag INCIDENT_CHAT_EDITS_ENABLED). `current` is the draft as it is when the question
+   * Lets a question change the draft . `current` is the draft as it is when the question
    * is sent; `apply` takes the agent's proposals, made for that draft, and returns what it applied and skipped.
    */
   edits?: {

@@ -227,8 +227,7 @@ test('a template (chat-contract-v1) answer has no flag and no grounding', async 
   assert.equal('grounding' in payload, false);
 });
 
-test('with chat edits on, the draft goes to the investigate route and its actions come back for the page to apply', async () => {
-  process.env.INCIDENT_CHAT_EDITS_ENABLED = '1';
+test('the draft goes to the investigate route and its actions come back for the page to apply', async () => {
   const actions = [{ tool: 'propose_set_incident_fields', args: { severity_level: 4 } }];
   upstream.body = {
     status: 'ok',
@@ -247,8 +246,7 @@ test('with chat edits on, the draft goes to the investigate route and its action
   assert.equal(body.message.applied, undefined);
 });
 
-test('an editor run that used no tool was not an edit: the usual chat answers, as it does with edits off', async () => {
-  process.env.INCIDENT_CHAT_EDITS_ENABLED = '1';
+test('an editor run that used no tool was not an edit: the usual chat answers, as it does without a draft', async () => {
   const bodies = [{ status: 'ok', answer: 'This is not an edit.', steps: [], actions: [], wall_ms: 3 }, agentResponse];
   globalThis.fetch = async (url, init) => {
     upstream.calls.push({ url: String(url), body: JSON.parse(init.body) });
@@ -264,11 +262,4 @@ test('an editor run that used no tool was not an edit: the usual chat answers, a
     upstream.calls.map((call) => call.url.split('/').slice(-1)[0]),
     ['investigate', 'chat'],
   );
-});
-
-test('with chat edits off the draft snapshot is ignored and nothing calls the investigate route', async () => {
-  delete process.env.INCIDENT_CHAT_EDITS_ENABLED;
-  await post({ messages: [{ role: 'user', content: 'Hi' }], incidentId: 'V1', editDraft: { incident: {} } });
-  assert.equal(upstream.calls.length, 1);
-  assert.match(upstream.calls[0].url, /\/incidents\/chat$/);
 });

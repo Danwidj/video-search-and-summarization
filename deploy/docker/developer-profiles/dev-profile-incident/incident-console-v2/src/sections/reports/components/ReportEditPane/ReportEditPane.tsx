@@ -86,7 +86,6 @@ export function ReportEditPane({
   boxClient,
   officialMissing = false,
   evidenceOpening = null,
-  evidenceProposals = false,
   assistantKeys = [],
 }: {
   a: Structured | null;
@@ -110,8 +109,6 @@ export function ReportEditPane({
   officialMissing?: boolean;
   /** New evidence the chat asked for (its open_box_tool proposal): opens the box tool with the name filled in. */
   evidenceOpening?: EvidenceOpening | null;
-  /** Flag INCIDENT_EVIDENCE_PROPOSALS_ENABLED: show the Confirm, Adjust and Dismiss controls on an item with a proposed evidence change. */
-  evidenceProposals?: boolean;
   /** Keys of the items the chat's last edit added or changed, and INCIDENT_HIGHLIGHT_KEY for the report fields: shown ringed. */
   assistantKeys?: string[];
 }) {
@@ -493,15 +490,11 @@ export function ReportEditPane({
                   onRemove={remove}
                   onEditTrack={editTrack}
                   onSetImage={setImage}
-                  proposals={
-                    evidenceProposals
-                      ? {
-                          onConfirm: () => row.b && onChange(confirmProposal(draft, row.b.key)),
-                          onAdjust: () => adjustProposal(row),
-                          onDismiss: () => row.b && onChange(dismissProposal(draft, row.b.key)),
-                        }
-                      : null
-                  }
+                  proposals={{
+                    onConfirm: () => row.b && onChange(confirmProposal(draft, row.b.key)),
+                    onAdjust: () => adjustProposal(row),
+                    onDismiss: () => row.b && onChange(dismissProposal(draft, row.b.key)),
+                  }}
                   onRevert={revert}
                   onSeek={onSeek}
                   patchAsset={patchAsset}

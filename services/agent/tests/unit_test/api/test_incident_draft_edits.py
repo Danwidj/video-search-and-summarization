@@ -22,7 +22,6 @@ from fastapi.testclient import TestClient
 import pytest
 
 from vss_agents.api.incident_draft_edits import register_incident_draft_edits_routes
-from vss_agents.utils import draft_edits
 
 DRAFT = {
     "incident": {"type": "burglary", "title": "Shop", "start_timestamp": 10, "end_timestamp": 60},
@@ -33,20 +32,10 @@ DRAFT = {
 
 
 @pytest.fixture
-def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.setenv(draft_edits.ENABLED_ENV, "1")
+def client() -> TestClient:
     app = FastAPI()
     register_incident_draft_edits_routes(app)
     return TestClient(app)
-
-
-def test_route_is_404_when_the_flag_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(draft_edits.ENABLED_ENV, raising=False)
-    app = FastAPI()
-    register_incident_draft_edits_routes(app)
-    body = {"draft": DRAFT, "calls": [{"tool": "delete_item", "args": {"item_key": "entity-0"}}]}
-    response = TestClient(app).post("/api/v1/incidents/vid-1/draft-edits", json=body)
-    assert response.status_code == 404
 
 
 def test_route_returns_proposals_and_rejections(client: TestClient) -> None:

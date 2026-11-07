@@ -113,8 +113,7 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         - ``POST /api/v1/incidents/{video_id}/box/describe`` — names and describes
           the box a reviewer drew on a frame (one VLM call, nothing stored).
         - ``POST /api/v1/incidents/{video_id}/investigate`` — an agent that
-          chooses its own tools to answer one question (off unless
-          ``INCIDENT_INVESTIGATE_ENABLED`` is set; 404 otherwise).
+          chooses its own tools to answer one question.
         - ``POST /api/v1/incidents/charts`` — draws the figures the console
           sends with ``chart_generator``.
 

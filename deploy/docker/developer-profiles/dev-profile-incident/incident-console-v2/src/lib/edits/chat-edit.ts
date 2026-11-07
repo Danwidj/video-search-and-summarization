@@ -7,13 +7,7 @@
 // taken is skipped rather than written over. The caller stores the result with one changeDraft, so Undo reverts the
 // whole request.
 
-import {
-  type AgentAction,
-  type AppliedAction,
-  type ApplyOptions,
-  type SkippedAction,
-  applyAgentActions,
-} from '@/lib/edits/apply-agent-actions';
+import { type AgentAction, type AppliedAction, type SkippedAction, applyAgentActions } from '@/lib/edits/apply-agent-actions';
 import type { EditDraft } from '@/modules/reports/domain/edit-draft';
 
 /** What a draft item's key stands for in the chat edit highlight; the incident header has no key of its own. */
@@ -190,7 +184,7 @@ export interface ChatEditResult {
  * Applies the agent's proposals to the draft as it is now. `sent` is the draft the agent was shown: an action on an item
  * the reviewer changed since is skipped with that reason, the others apply.
  */
-export function applyChatEdit(now: EditDraft, sent: EditDraft, proposals: ProposedAction[], options: ApplyOptions = {}): ChatEditResult {
+export function applyChatEdit(now: EditDraft, sent: EditDraft, proposals: ProposedAction[]): ChatEditResult {
   const actions = toApplierActions(sent, proposals);
   const stale: SkippedAction[] = [];
   const fresh = actions.filter((action) => {
@@ -199,7 +193,7 @@ export function applyChatEdit(now: EditDraft, sent: EditDraft, proposals: Propos
     stale.push({ id: action.id, tool: action.tool, reason: 'you changed this while the assistant was working' });
     return false;
   });
-  const result = applyAgentActions(now, fresh, options);
+  const result = applyAgentActions(now, fresh);
   const before = new Map(items(now).map((item) => [item.key, item]));
   const changedKeys = items(result.draft)
     .filter((item) => !same(before.get(item.key), item))

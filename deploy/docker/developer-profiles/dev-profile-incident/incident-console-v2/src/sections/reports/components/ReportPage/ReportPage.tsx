@@ -67,23 +67,17 @@ const SAVE_AUTHOR = 'Reviewer';
 
 const DEFAULT_VIDEO_ASPECT = 16 / 9;
 
-const chatThreadKey = (versionId: number, draft: boolean) => `${versionId}-${draft ? 'draft' : 'saved'}`;
+const chatThreadKey = (versionId: number) => `${versionId}-saved`;
 
 /** revisionId null opens the incident's official version, else its newest. startSeconds, when set, is where the player seeks once it has loaded. */
 export function ReportPage({
   videoId,
   revisionId,
   startSeconds = null,
-  evidenceProposals = false,
-  chatEdits = false,
 }: {
   videoId: string;
   revisionId: number | null;
   startSeconds?: number | null;
-  /** Flag INCIDENT_EVIDENCE_PROPOSALS_ENABLED, read by the server page on each request. */
-  evidenceProposals?: boolean;
-  /** Flag INCIDENT_CHAT_EDITS_ENABLED, read by the server page on each request: the chat may change the draft. */
-  chatEdits?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
@@ -236,24 +230,19 @@ export function ReportPage({
     [shownReport],
   );
 
-  const startEdit = useCallback(
-    (base: ReportView) => {
-      setDraft(draftFromView(base));
-      // A new draft starts a new conversation: answers about an earlier draft no longer describe it. With chat edits there is
-      // one conversation for the version, in View and in Edit, and a draft made by the chat must not delete the chat.
-      if (!chatEdits) setChatThreads(({ [chatThreadKey(base.revisionId, true)]: _earlierDraft, ...threads }) => threads);
-      setAssistantKeys([]);
-      setUndoStack([]);
-      setEditBase({ revisionId: base.revisionId, revisionNo: base.revision.revisionNo, report: base });
-      setCompareReport(base);
-      setEditVersionError(null);
-      setMode('edit');
-      setSaveOpen(false);
-      setSaveProblems([]);
-      setNote('');
-    },
-    [chatEdits],
-  );
+  const startEdit = useCallback((base: ReportView) => {
+    setDraft(draftFromView(base));
+    // There is one chat conversation for the version, in View and in Edit, and a draft made by the chat must not delete the chat.
+    setAssistantKeys([]);
+    setUndoStack([]);
+    setEditBase({ revisionId: base.revisionId, revisionNo: base.revision.revisionNo, report: base });
+    setCompareReport(base);
+    setEditVersionError(null);
+    setMode('edit');
+    setSaveOpen(false);
+    setSaveProblems([]);
+    setNote('');
+  }, []);
 
   const editVersion = async (id: number) => {
     if (editBase?.revisionId === id) return;
@@ -350,7 +339,7 @@ export function ReportPage({
   // was about and shows it with the edit applied, with no step in between for the reviewer.
   const editFromChat = (sent: EditDraft, proposals: ProposedAction[]) => {
     const current = draftRef.current;
-    const result = applyChatEdit(current ?? sent, sent, proposals, { evidenceProposals });
+    const result = applyChatEdit(current ?? sent, sent, proposals);
     if (result.changedKeys.length === 0) return { applied: result.applied, skipped: result.skipped };
     if (current) {
       setUndoStack((stack) => [...stack.slice(-49), current]);
@@ -624,7 +613,6 @@ export function ReportPage({
                     baseRevisionNo={editBase.revisionNo}
                     draft={draft}
                     assistantKeys={assistantKeys}
-                    evidenceProposals={evidenceProposals}
                     officialMissing={!officialRevision && revisions !== null}
                     onChange={changeDraft}
                     onEditingTrack={setEditingTrackKey}
@@ -785,7 +773,7 @@ export function ReportPage({
                 : { revision: report.revision, isOfficial: report.official.isOfficial, draft: null },
             );
             // Keyed by the version (and whether it is a draft), so each one has its own conversation.
-            const threadKey = chatThreadKey(target.versionId, !chatEdits && mode === 'edit' && draft !== null);
+            const threadKey = chatThreadKey(target.versionId);
             return (
               <ReportChat
                 durationSeconds={playerDuration}
@@ -801,7 +789,7 @@ export function ReportPage({
                 thread={chatThreads[threadKey] ?? EMPTY_CHAT_THREAD}
                 titles={citationTitles(mode === 'edit' && draft && editBase ? editBase.report.structured : report.structured)}
                 videoId={videoId}
-                {...(chatEdits ? { edits: { current: () => draftRef.current ?? draftFromView(report), apply: editFromChat } } : {})}
+                edits={{ current: () => draftRef.current ?? draftFromView(report), apply: editFromChat }}
               />
             );
           })()}

@@ -121,12 +121,11 @@ class CropResult:
 
 # Seconds tried, in order, around the requested one when the detector finds nothing there.
 LOCATE_RETRY_OFFSETS: tuple[int, ...] = (1, -1, 2, -2)
-# Gap retry (``INCIDENT_GAP_RETRY_ENABLED``, off by default): a second pass over items the locate step left without a
+# Gap retry (on by default, ``gap_retry=False`` skips it): a second pass over items the locate step left without a
 # box. It tries the seconds beyond LOCATE_RETRY_OFFSETS, a 2x2 tiled search, and the description as the label, and takes
 # a new box only when the video model confirms it shows the item. It runs only while more than
 # GAP_RETRY_RESERVE_SECONDS of the analysis budget remain, and at most GAP_RETRY_MAX_CALLS detector calls per
 # analysis (GAP_RETRY_MAX_CALLS_PER_ITEM per item, GAP_RETRY_MAX_CHECKS_PER_ITEM model checks per item).
-GAP_RETRY_ENV = "INCIDENT_GAP_RETRY_ENABLED"
 GAP_RETRY_OFFSETS: tuple[int, ...] = (3, -3, 4, -4)
 GAP_RETRY_MAX_CALLS = 24
 GAP_RETRY_MAX_CALLS_PER_ITEM = 10
@@ -173,11 +172,6 @@ _FALSE_FLAG_VALUES = frozenset({"0", "false", "no", "off"})
 def zoom_names_enabled() -> bool:
     """Whether the zoomed second look runs: ``INCIDENT_ZOOM_NAMES_ENABLED`` unset or anything but 0/false/no/off."""
     return os.getenv(ZOOM_NAMES_ENV, "1").strip().lower() not in _FALSE_FLAG_VALUES
-
-
-def gap_retry_enabled() -> bool:
-    """Whether the gap retry runs: off unless ``INCIDENT_GAP_RETRY_ENABLED`` is 1/true/yes/on (read per request)."""
-    return (os.getenv(GAP_RETRY_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 @dataclass(frozen=True)
@@ -2104,7 +2098,7 @@ class CropEvidenceService:
         object_tracking: track_evidence.ObjectTrackingRequest | None = None,
         namer: Any | None = None,
         deadline: float | None = None,
-        gap_retry: bool | None = None,
+        gap_retry: bool = True,
     ) -> list[dict[str, Any]]:
         """Locate every entity, instrument and asset of a report and upload its frame and crop.
 
@@ -2130,7 +2124,7 @@ class CropEvidenceService:
         (``track``, ``track_first_seen_seconds``, ``track_last_seen_seconds``) with ``track_source`` set to
         ``object-tracker``, and the item's frame is re-cut at the track's first sample (the second it is first seen).
 
-        Gap retry (``gap_retry``, default :func:`gap_retry_enabled`, read per call): after the locate step, an item left
+        Gap retry (``gap_retry``, default on): after the locate step, an item left
         without a box (not located, no usable box, or a transport error) is looked for again by :func:`retry_gap_item`,
         before tracking uses the boxes. It runs only while more than :data:`GAP_RETRY_RESERVE_SECONDS` of ``deadline``
         remain, makes at most :data:`GAP_RETRY_MAX_CALLS` detector calls (and none beyond the request's own
@@ -2166,7 +2160,7 @@ class CropEvidenceService:
         if isinstance(active_detector, DefaultDetector) and deadline is not None:
             active_detector = active_detector.with_deadline(deadline)  # a stalled request ends with the budget
         zoom_on = zoom_names_enabled() if zoom_names is None else zoom_names
-        retry_on = gap_retry_enabled() if gap_retry is None else gap_retry
+        retry_on = gap_retry
         # The box check uses the second look's client even with the zoomed second look off.
         checker = namer if namer is not None else self.namer
         if isinstance(checker, DefaultDetector) and deadline is not None:
