@@ -117,11 +117,29 @@ def test_add_entity_proposal_has_no_key() -> None:
     result = _one(
         {
             "tool": "upsert_entity",
-            "args": {"op": "add", "entity_type": "human", "first_seen_seconds": 15, "last_seen_seconds": 25},
+            "args": {
+                "op": "add",
+                "name": "person in red jacket",
+                "entity_type": "human",
+                "first_seen_seconds": 15,
+                "last_seen_seconds": 25,
+            },
         }
     )
     assert result.rejected == []
     assert "item_key" not in result.proposals[0].args
+    assert result.proposals[0].args["name"] == "person in red jacket"
+
+
+def test_adding_an_entity_needs_a_name() -> None:
+    result = _one(
+        {
+            "tool": "upsert_entity",
+            "args": {"op": "add", "entity_type": "human", "first_seen_seconds": 15, "last_seen_seconds": 25},
+        }
+    )
+    assert result.proposals == []
+    assert "name" in result.rejected[0].reason
 
 
 def test_holder_must_be_an_entity_and_null_means_nobody() -> None:

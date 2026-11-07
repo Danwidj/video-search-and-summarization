@@ -62,6 +62,17 @@ export function extensionRequest(track: ReviewerTrack, direction: 'back' | 'on')
 }
 
 /** Holder names offered on the card: the draft's entities by name, never by E1-style ids. */
+/**
+ * Whether the card's text is ready to add or track: a name, a description and, for a new entity, its kind. An existing item
+ * keeps its kind and text (only its track changes), so re-tracking it never asks for the kind again.
+ */
+export function cardTextReady(
+  card: { name: string; description: string; itemType: BoxItemType; entityType: 'human' | 'animal' | null },
+  existing: boolean,
+): boolean {
+  return card.name.trim() !== '' && card.description.trim() !== '' && (existing || card.itemType !== 'entity' || card.entityType !== null);
+}
+
 export function holderChoices(draft: EditDraft): Array<{ key: string; name: string }> {
   const names = draft.entities.map((entity) => entity.label || entity.type);
   return draft.entities.map((entity, index) => {

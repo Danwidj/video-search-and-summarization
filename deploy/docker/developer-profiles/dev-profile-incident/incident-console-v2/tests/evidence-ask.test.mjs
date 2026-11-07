@@ -12,7 +12,7 @@ const { evidenceRows, pendingEvidenceExchange, splitEvidenceActions } = await im
 const { chatRequestBody, chatTarget } = await import('../src/lib/chat/report-chat.ts');
 
 const user = (content) => ({ role: 'user', content });
-const asked = (content) => ({ role: 'assistant', content, askedReviewer: true });
+const asked = (content) => ({ role: 'assistant', content, questions: [content] });
 const answered = (content) => ({ role: 'assistant', content });
 const opened = (seconds, name) => ({ role: 'assistant', content: 'Opening the box tool.', openedBox: { seconds, name } });
 
@@ -68,13 +68,37 @@ test('once the box tool has opened the exchange is over, and a new request start
   assert.equal(pendingEvidenceExchange([user('add a bag'), opened(12, 'Bag'), user('thanks')]), null);
 });
 
-test('the question becomes the reply, the box opening is taken out, and the other edits stay', () => {
+test('a reply that asks two questions counts both, and keeps both for the reply and the transcript', () => {
+  const turns = [
+    user('a bag on the floor, near the door'),
+    { role: 'assistant', content: 'Which shop?\nWhich corner?', questions: ['Which shop?', 'Which corner?'] },
+    user('the till shop, by the door'),
+  ];
+  assert.deepEqual(pendingEvidenceExchange(turns), {
+    questionsAsked: 2,
+    transcript: [
+      { role: 'reviewer', text: 'a bag on the floor, near the door' },
+      { role: 'assistant', text: 'Which shop?\nWhich corner?' },
+    ],
+  });
+  assert.deepEqual(evidenceRows(turns[1]), [
+    { kind: 'asked', text: 'Which shop?' },
+    { kind: 'asked', text: 'Which corner?' },
+  ]);
+  const split = splitEvidenceActions([
+    { tool: 'propose_ask_reviewer', args: { question: 'Which shop?' } },
+    { tool: 'propose_ask_reviewer', args: { question: 'Which corner?' } },
+  ]);
+  assert.deepEqual(split.questions, ['Which shop?', 'Which corner?']);
+});
+
+test('the questions become the reply, the box opening is taken out, and the other edits stay', () => {
   const split = splitEvidenceActions([
     { tool: 'propose_set_incident_fields', args: { severity_level: 4 } },
     { tool: 'propose_ask_reviewer', args: { question: 'Which shop?' } },
     { tool: 'propose_open_box_tool', args: { seconds: 12, name: 'Bag on floor' } },
   ]);
-  assert.equal(split.question, 'Which shop?');
+  assert.deepEqual(split.questions, ['Which shop?']);
   assert.deepEqual(split.opening, { seconds: 12, name: 'Bag on floor' });
   assert.deepEqual(split.rest, [{ tool: 'propose_set_incident_fields', args: { severity_level: 4 } }]);
 });
@@ -84,7 +108,7 @@ test('a new-evidence action without its fields is not shown or applied', () => {
     { tool: 'propose_ask_reviewer', args: { question: '  ' } },
     { tool: 'propose_open_box_tool', args: { seconds: 12, name: '' } },
   ]);
-  assert.deepEqual(split, { rest: [] });
+  assert.deepEqual(split, { questions: [], rest: [] });
 });
 
 // The draft the chat was sent with: the agent checks an item's key against it.
@@ -112,12 +136,18 @@ test('an opening on an existing item is found by its key in the sent draft, and 
 });
 
 test('an opening on an item the sent draft does not have, or with no draft, is not shown', () => {
-  assert.deepEqual(splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { item_key: 'E9' } }], sentDraft), { rest: [] });
-  assert.deepEqual(splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { item_key: 'p1' } }], null), { rest: [] });
+  assert.deepEqual(splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { item_key: 'E9' } }], sentDraft), {
+    questions: [],
+    rest: [],
+  });
+  assert.deepEqual(splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { item_key: 'p1' } }], null), {
+    questions: [],
+    rest: [],
+  });
 });
 
 test('each new-evidence step has its own row for What I did', () => {
-  assert.deepEqual(evidenceRows({ content: 'Which shop?', askedReviewer: true, openedBox: { seconds: 75, name: 'Bag' } }), [
+  assert.deepEqual(evidenceRows({ questions: ['Which shop?'], openedBox: { seconds: 75, name: 'Bag' } }), [
     { kind: 'asked', text: 'Which shop?' },
     { kind: 'opened', text: 'Opened the box tool at 1:15 as "Bag"' },
   ]);
