@@ -6,7 +6,13 @@ import { ChartColumnIcon, SearchXIcon } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { chartSummary } from '@/modules/dashboard/domain/chart-summary';
-import { CHART_REQUEST_MAX_LENGTH, type ChartKind, type GeneratedChart } from '@/modules/dashboard/domain/generated-chart';
+import {
+  CHART_KINDS,
+  CHART_REQUEST_MAX_LENGTH,
+  type ChartKind,
+  type DrawnKind,
+  type GeneratedChart,
+} from '@/modules/dashboard/domain/generated-chart';
 import { CHART_REQUEST_ID, CHART_REQUEST_INPUT_ID } from '@/sections/dashboard/chart-request-jump';
 import { useChartRequest } from '@/sections/dashboard/hooks/use-chart-request';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -39,6 +45,8 @@ const EXAMPLES = [
   'Official vs not yet',
   'Reports per weekday',
   'Reports by model',
+  'Evidence per report by incident type',
+  'Severity against evidence',
 ];
 const KIND_LABELS: Record<ChartKind, string> = {
   bar: 'Bar',
@@ -47,6 +55,12 @@ const KIND_LABELS: Record<ChartKind, string> = {
   donut: 'Pie',
   line: 'Line',
   area: 'Area',
+};
+/** The kind a chart view is drawn in, named for the user: a view ignores the picker and says so under its title. */
+const VIEW_KIND_LABELS: Record<Exclude<DrawnKind, ChartKind>, string> = {
+  combo_dual_axis: 'a dual-axis chart (reports as bars, evidence per report as a line)',
+  stacked_by_severity: 'a stacked bar chart by severity',
+  bubble: 'a bubble chart (one bubble per severity level and evidence count)',
 };
 
 export function ChartRequest() {
@@ -144,7 +158,8 @@ export function ChartRequest() {
               <AlertDescription>
                 Charts can count reports by incident type, severity, status, version, entity type, instrument, asset or confidence, show
                 trends by day, week or month, report activity by weekday or hour, instrument threat levels, and analyses by model or
-                outcome. The period can be the last 7, 30, 90 or 365 days, all time, a calendar month, a day, or a range of up to a year
+                outcome. They can also show severity within each incident type, evidence per report by incident type, and severity against
+                evidence. The period can be the last 7, 30, 90 or 365 days, all time, a calendar month, a day, or a range of up to a year
                 that starts today or earlier; one that runs past today is charted up to today.
               </AlertDescription>
             </Alert>
@@ -155,6 +170,14 @@ export function ChartRequest() {
               <AlertDescription>
                 Bar works for every request. A donut needs parts that make one whole, a line or area needs a trend over time, and a stacked
                 bar needs reports split by status. Pick another type.
+              </AlertDescription>
+            </Alert>
+          )}
+          {state.status === 'not_available' && (
+            <Alert>
+              <AlertTitle>Not available yet</AlertTitle>
+              <AlertDescription>
+                This view needs figures the dashboard does not return yet, so no chart is drawn. Other charts are unaffected.
               </AlertDescription>
             </Alert>
           )}
@@ -173,11 +196,18 @@ export function ChartRequest() {
 
 function Result({ chart }: { chart: GeneratedChart }) {
   const drawn = chart.config ?? chart.image;
+  const isView = !(CHART_KINDS as readonly string[]).includes(chart.chartKind);
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
         <h3 className="text-base font-semibold text-ink">{chart.title}</h3>
         <p className="text-xs text-ink-caption">{chart.description}</p>
+        {isView && (
+          <p className="text-xs text-ink-caption" data-testid="chart-view-kind">
+            Drawn as {VIEW_KIND_LABELS[chart.chartKind as Exclude<DrawnKind, ChartKind>]}; the chart type picker does not apply to this
+            view.
+          </p>
+        )}
         <div className="mt-1 flex flex-wrap gap-2">
           {chart.scope.map((item) => (
             <Badge className="font-normal text-ink" key={item} variant="secondary">

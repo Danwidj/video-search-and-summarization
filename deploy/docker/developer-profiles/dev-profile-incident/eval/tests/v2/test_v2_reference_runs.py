@@ -25,6 +25,8 @@ from evalv2.references.passes import (
 )
 
 FIXTURE_ALLOWLIST = Path(__file__).resolve().parent / "fixtures" / "chart-allowlist.json"
+# RB2 is sealed: its plan and pinned counts come from the allowlist before the chart views were added (20261107).
+FIXTURE_RB2_ALLOWLIST = Path(__file__).resolve().parent / "fixtures" / "chart-allowlist-rb2.json"
 REAL_DATA_ROOT = Path(os.environ.get(registry.DATA_ROOT_ENV) or registry.DEFAULT_DATA_ROOT)
 REAL_GT = (REAL_DATA_ROOT / "ground_truth" / "ground-truth-v1.0").is_dir()
 
@@ -257,35 +259,36 @@ def test_ra2_file_handoff_writes_packets_for_the_sessions(tmp_path):
 # --- RB2 ----------------------------------------------------------------------------------------------------------
 
 ALLOWLIST = json.loads(FIXTURE_ALLOWLIST.read_text())
+RB2_ALLOWLIST = json.loads(FIXTURE_RB2_ALLOWLIST.read_text())
 
 
 def test_rb2_plan_covers_every_dimension_and_period_with_distinct_packets():
-    planned = rb2.spec_plan(ALLOWLIST, seed=1)
+    planned = rb2.spec_plan(RB2_ALLOWLIST, seed=1)
     specs = [e["expected"] for e in planned if not dashboard.is_refusal(e["expected"])]
     assert len(specs) == 14 * 4 + 2 * 2 and len(planned) - len(specs) == 15
-    assert {s["dimension"] for s in specs} == set(ALLOWLIST["dimensions"])
-    assert sorted({sum(1 for s in specs if s["period"] == p) for p in ALLOWLIST["periods"]}) == [12]
-    assert all(dashboard.parse_spec(s, ALLOWLIST) == s for s in specs)
+    assert {s["dimension"] for s in specs} == set(RB2_ALLOWLIST["dimensions"])
+    assert sorted({sum(1 for s in specs if s["period"] == p) for p in RB2_ALLOWLIST["periods"]}) == [12]
+    assert all(dashboard.parse_spec(s, RB2_ALLOWLIST) == s for s in specs)
     packets = [json.dumps(rb2._generator_packet(e), sort_keys=True) for e in planned]
     assert len(set(packets)) == len(packets), "every generator packet differs, unsupported ones too"
-    assert planned == rb2.spec_plan(ALLOWLIST, seed=1) and planned != rb2.spec_plan(ALLOWLIST, seed=2)
+    assert planned == rb2.spec_plan(RB2_ALLOWLIST, seed=1) and planned != rb2.spec_plan(RB2_ALLOWLIST, seed=2)
 
 
 def test_rb2_end_to_end_validates_exact_specs_and_flags_the_rest(tmp_path):
-    planned = rb2.spec_plan(ALLOWLIST, seed=1)
-    exact = rb2.run(ALLOWLIST, planned, generator=dry_run.dashboard_generator(),
+    planned = rb2.spec_plan(RB2_ALLOWLIST, seed=1)
+    exact = rb2.run(RB2_ALLOWLIST, planned, generator=dry_run.dashboard_generator(),
                     validator=dry_run.dashboard_validator(seed=1), out=tmp_path / "a", dataset="d")
     assert exact["records"] == 75 and exact["tiers"] == {"ai_proposed": 0, "ai_validated": 75, "human_verified": 0}
-    wrong = rb2.run(ALLOWLIST, planned, generator=dry_run.dashboard_generator(),
+    wrong = rb2.run(RB2_ALLOWLIST, planned, generator=dry_run.dashboard_generator(),
                     validator=dry_run.dashboard_validator(seed=1, error=1.0), out=tmp_path / "b", dataset="d")
     assert wrong["flags"] == {"validators_disagree": 60}, "every spec re-derived with a wrong period; refusals agree"
 
 
 def test_rb2_reports_duplicate_requests(tmp_path):
-    planned = [e for e in rb2.spec_plan(ALLOWLIST, seed=1) if dashboard.is_refusal(e["expected"])][:2]
+    planned = [e for e in rb2.spec_plan(RB2_ALLOWLIST, seed=1) if dashboard.is_refusal(e["expected"])][:2]
     same = ScriptedPass(lambda pid, packet: {"request": "Chart the weather.", "paraphrases": ["a", "b"]},
                         {"model": DRY_RUN_MODEL, "prompt": rb2.GENERATOR_PROMPT})
-    summary = rb2.run(ALLOWLIST, planned, generator=same, validator=dry_run.dashboard_validator(seed=1),
+    summary = rb2.run(RB2_ALLOWLIST, planned, generator=same, validator=dry_run.dashboard_validator(seed=1),
                       out=tmp_path / "run", dataset="d")
     assert summary["records"] == 1 and summary["problems"][0]["problem"] == "duplicate request"
 
@@ -296,7 +299,7 @@ def test_rb2_counts_specs_whose_reference_chart_has_rows(tmp_path):
               "severity": None},
              {"metric": "incidents", "dimension": "incident_type", "period": "all_time", "incidentType": "explosion",
               "severity": None}]
-    figures = rb2.corpus_figures(reports, specs, ALLOWLIST, taken_at="2026-11-01T12:00:00+00:00",
+    figures = rb2.corpus_figures(reports, specs, RB2_ALLOWLIST, taken_at="2026-11-01T12:00:00+00:00",
                                  model_name="ground-truth-v1.0", out=tmp_path)
     assert figures["rows"] == {"videos": 5, "model_runs": 5, "report_revisions": 5}
     assert figures["reference_charts"] == {"chart_with_rows": 1, "chart_empty": 1}
@@ -307,9 +310,9 @@ def test_rb2_counts_specs_whose_reference_chart_has_rows(tmp_path):
 
 
 def test_a_real_reference_run_names_the_sessions_models(tmp_path, capsys):
-    assert cli.main(["references", "rb2", "--out", str(tmp_path / "run"), "--allowlist", str(FIXTURE_ALLOWLIST)]) == 1
+    assert cli.main(["references", "rb2", "--out", str(tmp_path / "run"), "--allowlist", str(FIXTURE_RB2_ALLOWLIST)]) == 1
     assert "--generator-model" in capsys.readouterr().out
-    assert cli.main(["references", "rb2", "--out", str(tmp_path / "run"), "--allowlist", str(FIXTURE_ALLOWLIST),
+    assert cli.main(["references", "rb2", "--out", str(tmp_path / "run"), "--allowlist", str(FIXTURE_RB2_ALLOWLIST),
                      "--generator-model", "claude", "--validator-model", "claude",
                      "--dataset", "dashboard-references-v1-dryrun"]) == 1
     assert "dry" in capsys.readouterr().out
@@ -318,7 +321,7 @@ def test_a_real_reference_run_names_the_sessions_models(tmp_path, capsys):
 @pytest.mark.skipif(not REAL_GT, reason="the frozen ground truth is private and not on this machine")
 @pytest.mark.parametrize("run", ["ra1", "ra2", "rb2"])
 def test_the_dry_runs_complete_on_the_frozen_ground_truth(tmp_path, run, capsys):
-    extra = ["--allowlist", str(FIXTURE_ALLOWLIST)] if run == "rb2" else ["--half", "dev"]
+    extra = ["--allowlist", str(FIXTURE_RB2_ALLOWLIST)] if run == "rb2" else ["--half", "dev"]
     assert cli.main(["references", run, "--out", str(tmp_path / run), "--data-root", str(REAL_DATA_ROOT),
                      "--dry-run", *extra]) == 0
     summary = json.loads(capsys.readouterr().out)

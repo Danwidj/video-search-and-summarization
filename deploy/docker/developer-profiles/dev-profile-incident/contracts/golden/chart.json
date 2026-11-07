@@ -18,7 +18,7 @@
             "role": "system",
             "content": {
               "$contract_text": "prompts/chart/system.txt",
-              "sha256": "3ea30a7d6b4d8c70d2cf71777873a43dd25800dc76767fd3c0524b2cfb02a63d"
+              "sha256": "121ad38d85d1c38f519f3297f52bb3c8deace791c16e1f6418ccd277a2c09858"
             }
           },
           {

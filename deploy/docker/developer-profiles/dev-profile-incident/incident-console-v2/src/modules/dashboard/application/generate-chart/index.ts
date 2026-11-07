@@ -7,8 +7,14 @@
 import type { ChartInterpreter } from '@/modules/dashboard/domain/ChartInterpreter';
 import { ChartRenderError, type ChartDrawing, type ChartRenderer } from '@/modules/dashboard/domain/ChartRenderer';
 import { configMatchesChart, isChartJsConfig } from '@/modules/dashboard/domain/chart-config';
-import { kindFitsDimension } from '@/modules/dashboard/domain/chart-kinds';
-import { NOT_OFFICIAL_SERIES, OFFICIAL_SERIES, sliceColors } from '@/modules/dashboard/domain/chart-palette';
+import { drawnKind, kindFitsDimension } from '@/modules/dashboard/domain/chart-kinds';
+import {
+  EVIDENCE_LINE_COLOR,
+  NOT_OFFICIAL_SERIES,
+  OFFICIAL_SERIES,
+  SEVERITY_SERIES,
+  sliceColors,
+} from '@/modules/dashboard/domain/chart-palette';
 import {
   CHART_DIMENSIONS,
   CHART_PERIODS,
@@ -37,7 +43,20 @@ import type { DashboardAnalytics, RankedValue } from '@/modules/dashboard/domain
 const COUNT = 'count';
 const STATUS_SERIES: ChartSeries[] = [OFFICIAL_SERIES, NOT_OFFICIAL_SERIES];
 const TOTAL_SERIES = (label: string): ChartSeries[] => [{ key: COUNT, label, color: CHART_COLORS.total }];
-const VALUE_LABELS: Record<ChartMetric, string> = { incidents: 'Reports', instruments: 'Instruments', analyses: 'Analyses' };
+const VALUE_LABELS: Record<ChartMetric, string> = {
+  incidents: 'Reports',
+  instruments: 'Instruments',
+  analyses: 'Analyses',
+  evidence_per_report: 'Evidence items per report',
+  evidence_items: 'Evidence items',
+};
+/** A dual-axis view: the reports as bars on the left axis, and evidence items per report as a line on the right. */
+const COMBO_SERIES: ChartSeries[] = [
+  { key: 'reports', label: 'Reports', color: CHART_COLORS.total },
+  { key: 'per_report', label: 'Evidence items per report', color: EVIDENCE_LINE_COLOR, summable: false },
+];
+/** A bubble view: one bubble per severity level and evidence item count, sized by its reports. */
+const BUBBLE_SERIES: ChartSeries[] = [{ key: 'reports', label: 'Reports', color: CHART_COLORS.total }];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const PERIOD_LABELS: Record<PresetPeriod, string> = {
   last_7_days: 'Last 7 days',
@@ -45,6 +64,15 @@ const PERIOD_LABELS: Record<PresetPeriod, string> = {
   last_90_days: 'Last 90 days',
   last_365_days: 'Last 365 days',
   all_time: 'All time',
+};
+/**
+ * The views' axes and series. A view's figures are built from the dashboard data by viewRows; the kind it is drawn in
+ * is the dimension's viewKind (chart-spec.ts).
+ */
+const VIEW_FIGURES: Partial<Record<ChartDimensionName, { series: ChartSeries[]; valueLabel: string; secondValueLabel: string | null }>> = {
+  incident_type_evidence: { series: COMBO_SERIES, valueLabel: 'Reports', secondValueLabel: 'Evidence items per report' },
+  incident_type_severity: { series: SEVERITY_SERIES, valueLabel: 'Reports', secondValueLabel: null },
+  severity_evidence: { series: BUBBLE_SERIES, valueLabel: 'Evidence items', secondValueLabel: null },
 };
 const DAY_MS = 86_400_000;
 /** chart_generator labels every bar, so past this many a trend moves to the next coarser bucket. */
@@ -118,10 +146,56 @@ function heatmapRows(analytics: DashboardAnalytics, field: 'day' | 'hour', label
   return labels.map((label, index) => countRow(label, counts[index] ?? 0));
 }
 
+/**
+ * Evidence items per report, to two decimals, computed here and never by the model or the chart service. A type with
+ * no reports has no per-report figure, so it is null and the type is left out of the chart.
+ */
+export function evidencePerReport(items: number, reports: number): number | null {
+  if (reports <= 0) return null;
+  return Math.round((items / reports) * 100) / 100;
+}
+
+/**
+ * The rows of a chart view, or null when the dashboard data the view needs is not returned yet. The evidence per report
+ * needs the per-type evidence total; the severity bubbles need the severity and evidence count pairs. Until the database
+ * change that returns them is applied, a view answers "not available yet" rather than inventing a figure.
+ */
+export function viewRows(dimension: ChartDimensionName, analytics: DashboardAnalytics): ChartRow[] | null {
+  switch (dimension) {
+    case 'incident_type_evidence': {
+      if (analytics.types.some((item) => item.evidence === null)) return null;
+      return analytics.types.flatMap((item) => {
+        const perReport = evidencePerReport(item.evidence ?? 0, item.count);
+        return perReport === null ? [] : [{ category: capitalize(item.type), values: { reports: item.count, per_report: perReport } }];
+      });
+    }
+    case 'incident_type_severity':
+      return analytics.types.map((item) => ({
+        category: capitalize(item.type),
+        values: { high: item.severity.high, medium: item.severity.medium, low: item.severity.low },
+      }));
+    case 'severity_evidence': {
+      if (analytics.severityEvidence === null) return null;
+      return analytics.severityEvidence.map((cell) => ({
+        category: `Severity ${cell.severity}, ${cell.evidenceItems} evidence ${cell.evidenceItems === 1 ? 'item' : 'items'}`,
+        // severity and evidence are the bubble's x and y; reports is its size.
+        values: { reports: cell.count, severity: cell.severity, evidence: cell.evidenceItems },
+      }));
+    }
+    default:
+      return null;
+  }
+}
+
 function rowsFor(dimension: ChartDimensionName, analytics: DashboardAnalytics, reports: ReportTotals | null): ChartRow[] {
   const coverage = analytics.modelCoverage;
   const sum = (pick: (row: DashboardAnalytics['modelCoverage'][number]) => number) => coverage.reduce((total, row) => total + pick(row), 0);
   switch (dimension) {
+    case 'incident_type_evidence':
+    case 'incident_type_severity':
+    case 'severity_evidence':
+      // A view's rows come from viewRows, which generateChart calls instead.
+      return [];
     case 'incident_type':
       return analytics.types.map((item) => countRow(capitalize(item.type), item.count));
     case 'severity':
@@ -246,19 +320,25 @@ export async function generateChart(
     spec.metric === 'analyses' ? null : { total: analytics.total, official: analytics.official, notOfficial: analytics.notOfficial };
   const dimensionName = trendDimension(spec.dimension, analytics.trend);
   const dimension = CHART_DIMENSIONS[dimensionName];
-  const rows = rowsFor(dimensionName, analytics, reports);
+  // A view is always drawn in its own kind; the picker's kind is not used for it.
+  const chartKind = drawnKind(kind, dimensionName);
+  const view = VIEW_FIGURES[dimensionName];
+  const rows = dimension.viewKind === null ? rowsFor(dimensionName, analytics, reports) : viewRows(dimensionName, analytics);
+  // The views need dashboard figures this build cannot read yet: say so, rather than draw nothing or invent a figure.
+  if (rows === null) return { kind: 'not_available' };
   // A donut has no split (its parts are the whole); every other kind shows official and not yet official where the dimension has them.
-  const split = kind !== 'donut' && dimension.splits;
-  const valueLabel = VALUE_LABELS[spec.metric];
-  const series = split ? STATUS_SERIES : TOTAL_SERIES(valueLabel);
+  const split = view === undefined && kind !== 'donut' && dimension.splits;
+  const valueLabel = view?.valueLabel ?? VALUE_LABELS[spec.metric];
+  const series = view?.series ?? (split ? STATUS_SERIES : TOTAL_SERIES(valueLabel));
   const chartRows = split ? await splitRows(dimensionName, rows, analytics, query, dashboard) : rows;
   const chart: GeneratedChart = {
-    chartKind: kind,
+    chartKind,
     // A calendar period names its range in the title, so a saved or shared chart says which days it counts.
     title: typeof spec.period === 'string' ? dimension.title : `${dimension.title}, ${label}`,
     description: dimension.description,
     categoryLabel: dimension.categoryLabel,
     valueLabel,
+    secondValueLabel: view?.secondValueLabel ?? null,
     scope: [
       label,
       ...(spec.incidentType ? [capitalize(spec.incidentType)] : []),
@@ -274,13 +354,14 @@ export async function generateChart(
   if (!hasData) return { kind: 'chart', chart };
 
   const drawing: ChartDrawing = {
-    chartKind: kind,
+    chartKind,
     title: chart.title,
     categoryLabel: chart.categoryLabel,
     valueLabel: chart.valueLabel,
+    secondValueLabel: chart.secondValueLabel,
     series: chart.series,
     rows: chart.rows,
-    sliceColors: sliceColors(kind, dimensionName, chart.rows),
+    sliceColors: sliceColors(chartKind, dimensionName, chart.rows),
   };
   // The agent places our figures in a Chart.js configuration. It is shown only if its figures are exactly ours.
   const configured = await renderer.configure(drawing);
@@ -291,6 +372,6 @@ export async function generateChart(
     return { kind: 'chart', chart: { ...chart, config: configured } };
   }
   // No configuration came back: the static picture stands in for it (a donut is drawn as a pie, everything else as bars).
-  const image = await renderer.draw({ ...drawing, chartKind: kind === 'donut' ? 'donut' : 'bar' });
+  const image = await renderer.draw({ ...drawing, chartKind: chartKind === 'donut' ? 'donut' : 'bar' });
   return { kind: 'chart', chart: { ...chart, image } };
 }
