@@ -14,7 +14,7 @@ import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { cardTitle } from '@/lib/library/view';
 import { formatTimestamp } from '@/lib/time';
 import { Button } from '@/components/ui/button';
-import { VersionPill } from '@/components/version-pill';
+import { NotOfficialPill, VersionPill } from '@/components/version-pill';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -163,12 +163,7 @@ export function IncidentCard({
                 ) : (
                   <>
                     <VersionPill kind={item.kind === 'human' ? 'human' : 'ai'} />
-                    <span
-                      className="inline-flex items-center rounded-full border border-dashed border-ink/30 bg-muted px-2 py-0.5 text-[11px] font-bold text-ink/60"
-                      data-testid="library-no-official-marker"
-                    >
-                      No official version
-                    </span>
+                    <NotOfficialPill data-testid="library-no-official-marker" />
                   </>
                 )}
               </TooltipProvider>

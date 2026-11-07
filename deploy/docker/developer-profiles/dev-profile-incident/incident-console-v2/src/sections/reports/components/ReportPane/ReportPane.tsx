@@ -116,7 +116,7 @@ export function ReportPane({
           )}
           {run.notesKind === 'legacy' && <p className="px-4 py-2 text-xs text-muted-foreground">Earlier prompt version</p>}
           {officialMissing && (
-            <p className="bg-amber-50/80 px-4 py-2 text-xs text-amber-950" data-testid="official-status">
+            <p className="bg-not-official/25 px-4 py-2 text-xs text-ink" data-testid="official-status">
               No official version has been selected for this video. Star a version to make it official.
             </p>
           )}

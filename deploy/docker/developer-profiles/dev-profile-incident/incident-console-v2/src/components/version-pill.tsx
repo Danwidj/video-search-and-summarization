@@ -31,3 +31,21 @@ export function VersionPill({
     </span>
   );
 }
+
+/**
+ * The marker for a video no one has made official yet: the not-yet-official token (pale teal) with a dark label, the same shape
+ * as the version pill, so "not yet official" reads the same here as in the Dashboard legend and charts.
+ */
+export function NotOfficialPill({ className, ...props }: Omit<React.ComponentProps<'span'>, 'children'>) {
+  return (
+    <span
+      className={cn(
+        'inline-flex h-5 w-fit shrink-0 items-center rounded-full bg-not-official px-2 text-[11px] font-bold whitespace-nowrap text-ink',
+        className,
+      )}
+      {...props}
+    >
+      No official version
+    </span>
+  );
+}

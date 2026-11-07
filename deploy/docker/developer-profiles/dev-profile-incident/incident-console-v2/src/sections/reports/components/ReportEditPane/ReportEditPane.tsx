@@ -221,7 +221,7 @@ export function ReportEditPane({
           </div>
         </CardHeader>
         {officialMissing && (
-          <CardContent className="bg-amber-50/80 px-4 py-2 text-xs text-amber-950" data-testid="official-status">
+          <CardContent className="bg-not-official/25 px-4 py-2 text-xs text-ink" data-testid="official-status">
             No official version has been selected for this video. Star a version to make it official.
           </CardContent>
         )}

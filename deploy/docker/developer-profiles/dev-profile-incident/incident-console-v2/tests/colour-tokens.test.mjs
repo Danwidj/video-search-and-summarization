@@ -67,7 +67,7 @@ test('no source file spells a colour-meaning as rgb() or a Tailwind palette clas
       .map((x) => Number.parseInt(x, 16))
       .join('[ ,]+'),
   );
-  // amber is the repair and no-official notice colour (no token); every other palette family is a meaning or a mistake.
+  // amber is the repair notice colour (no token); every other palette family is a meaning or a mistake.
   const palette =
     /\b(?:bg|text|border|ring|fill|stroke|from|to|via|shadow|outline|decoration|accent)-(?:red|orange|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/;
   const offenders = [];
