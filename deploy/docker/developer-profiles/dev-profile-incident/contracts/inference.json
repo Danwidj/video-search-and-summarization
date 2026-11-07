@@ -27,6 +27,41 @@
       "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
       "label": "Nemotron 3 Nano Omni Reasoning",
       "timeout_seconds": 300
+    },
+    {
+      "id": "nvidia/cosmos-3-auto",
+      "label": "Cosmos 3 Auto",
+      "timeout_seconds": 300
+    },
+    {
+      "id": "nvidia/nemotron-3-nano-30b-a3b",
+      "label": "Nemotron 3 Nano 30B (text only)",
+      "timeout_seconds": 300
+    },
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b",
+      "label": "Nemotron 3 Super 120B (text only)",
+      "timeout_seconds": 300
+    },
+    {
+      "id": "nvidia/nemotron-3-ultra",
+      "label": "Nemotron 3 Ultra (text only)",
+      "timeout_seconds": 300
+    },
+    {
+      "id": "nvidia/nemotron-3-ultra-nvfp4",
+      "label": "Nemotron 3 Ultra NVFP4 (text only)",
+      "timeout_seconds": 300
+    },
+    {
+      "id": "nvidia/nemotron-3-auto",
+      "label": "Nemotron 3 Auto",
+      "timeout_seconds": 300
+    },
+    {
+      "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "label": "Nemotron 3.5 Lightning 30B (text only)",
+      "timeout_seconds": 300
     }
   ]
 }

@@ -201,6 +201,17 @@ test('the new-analysis model selector shows full model names and never clips the
   const inference = JSON.parse(await readFile(new URL('../../contracts/inference.json', import.meta.url), 'utf8'));
   assert.deepEqual(
     inference.models.map((model) => model.label),
-    ['Cosmos 3 Nano Reasoner', 'Cosmos 3 Super Reasoner', 'Nemotron 3 Nano Omni Reasoning'],
+    [
+      'Cosmos 3 Nano Reasoner',
+      'Cosmos 3 Super Reasoner',
+      'Nemotron 3 Nano Omni Reasoning',
+      'Cosmos 3 Auto',
+      'Nemotron 3 Nano 30B (text only)',
+      'Nemotron 3 Super 120B (text only)',
+      'Nemotron 3 Ultra (text only)',
+      'Nemotron 3 Ultra NVFP4 (text only)',
+      'Nemotron 3 Auto',
+      'Nemotron 3.5 Lightning 30B (text only)',
+    ],
   );
 });

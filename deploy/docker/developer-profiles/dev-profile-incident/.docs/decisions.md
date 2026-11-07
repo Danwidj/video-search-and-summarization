@@ -22,6 +22,11 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Evaluation:** `dashboard_calendar.py` mirrors the clamp; its tests and development requests changed with it (no live run).
 - **Links:** [`chart-period.ts`](../incident-console-v2/src/modules/dashboard/domain/chart-period.ts), [`chart-prompt.ts`](../incident-console-v2/src/modules/dashboard/domain/chart-prompt.ts), [`generate-chart/index.ts`](../incident-console-v2/src/modules/dashboard/application/generate-chart/index.ts)
 
+### 2026-11-07: Every model the Brev endpoint serves is in the allowlist
+- **Decision:** `contracts/inference.json` (and the agent's vendored copy) lists all 10 models of the endpoint, with readable labels; the models not expected to take video say "(text only)". The list is static, not fetched live. No contract version change.
+- **Why:** the captain asked for the Re-analyse dialog and the upload dropdown to show every endpoint model.
+- **Needs:** the agent restarted to see its copy. The text-only labels follow a stored note and are not yet probed. `eval/tests/test_contract_fixtures.py` compares this list to `eval_vlm_client.MODELS`, so it fails until eval (off limits here) adds them.
+
 ### 2026-11-07: Version type is a coloured pill, one shared component
 - **Decision:** `VersionPill` shows a version's type everywhere: Model slate blue, Human plum, official the theme green with a star and the text "Official · Type". Colours are `--color-version-*` theme tokens.
 - **Why:** type and official status were separate badges in different places; the captain chose colour by type with the text kept as a label.

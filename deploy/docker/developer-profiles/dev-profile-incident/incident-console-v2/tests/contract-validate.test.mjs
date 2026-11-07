@@ -73,7 +73,18 @@ test('contract version, hashes and inference settings load from contracts/', () 
   assert.match(schemaSha256(), /^[0-9a-f]{64}$/);
   assert.deepEqual(
     allowedModels().map((model) => model.id),
-    ['nvidia/cosmos-3-nano-reasoner', 'nvidia/cosmos-3-super-reasoner', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'],
+    [
+      'nvidia/cosmos-3-nano-reasoner',
+      'nvidia/cosmos-3-super-reasoner',
+      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+      'nvidia/cosmos-3-auto',
+      'nvidia/nemotron-3-nano-30b-a3b',
+      'nvidia/nemotron-3-super-120b-a12b',
+      'nvidia/nemotron-3-ultra',
+      'nvidia/nemotron-3-ultra-nvfp4',
+      'nvidia/nemotron-3-auto',
+      'nvidia/nemotron-3.5-lightning-30b-a3b',
+    ],
   );
   assert.deepEqual(inferenceSettings().p1, { temperature: 0, max_tokens: 16384, media_io_kwargs: { video: { num_frames: 64 } } });
 });

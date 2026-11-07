@@ -18,7 +18,7 @@ This document describes how incident analysis output is defined, validated, stor
 
 `incident-console-v2/src/modules/analysis/application/build-request.ts` builds exactly the request of `eval/scripts/eval_vlm_client.py:analyze_video_with_p1`:
 
-- **Model:** one of the allowlisted models in [`contracts/inference.json`](../contracts/inference.json): `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` (the default when `VLM_MODEL` is unset).
+- **Model:** one of the allowlisted models in [`contracts/inference.json`](../contracts/inference.json): `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` (the default when `VLM_MODEL` is unset), then the other seven models the Brev endpoint serves (`cosmos-3-auto`, `nemotron-3-nano-30b-a3b`, `nemotron-3-super-120b-a12b`, `nemotron-3-ultra`, `nemotron-3-ultra-nvfp4`, `nemotron-3-auto`, `nemotron-3.5-lightning-30b-a3b`); the Nemotron text models carry "(text only)" in their label because they are not expected to take video. The list is static, and the agent keeps its own vendored copy, so a change needs the agent restarted.
 - **`messages`:** one user message:
   1. the signed R2 video URL;
   2. the canonical extraction prompt, verbatim;
