@@ -109,6 +109,22 @@ test('add actions create items with the defaults the editor uses', () => {
   assert.equal(result.draft.assets.at(-1).name, 'Car');
 });
 
+test('an instrument takes its holder on add and edit, and an unknown holder is skipped', () => {
+  const draft = base();
+  const holder = draft.entities[0];
+  const edited = draft.instruments[0].key;
+  const result = applyAgentActions(draft, [
+    act('upsert_instrument', { op: 'add', name: 'Knife', threatLevel: 4, holderKey: holder.key }, 'k1'),
+    act('upsert_instrument', { op: 'add', name: 'Rope', threatLevel: 2, holderKey: 'entity-nope' }, 'k2'),
+    act('upsert_instrument', { op: 'edit', itemKey: edited, holderKey: holder.key }, 'k3'),
+  ]);
+  assert.equal(result.skipped[0].id, 'k2');
+  assert.equal(result.skipped.length, 1);
+  assert.equal(result.draft.instruments.at(-1).name, 'Knife');
+  assert.equal(result.draft.instruments.at(-1).holderKey, holder.key);
+  assert.equal(result.draft.instruments.find((instrument) => instrument.key === edited).holderKey, holder.key);
+});
+
 test('the result reports draftProblems for the draft it returns', () => {
   const draft = base();
   const result = applyAgentActions(draft, [act('upsert_entity', { op: 'add', name: 'No type yet' }, 'q1')]);

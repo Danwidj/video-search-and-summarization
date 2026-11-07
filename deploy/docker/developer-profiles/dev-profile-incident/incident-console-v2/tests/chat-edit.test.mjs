@@ -42,6 +42,17 @@ test('proposals become applier actions: names, severity as text, and a delete fo
   assert.deepEqual(actions[2].args, { instrumentKey: 'i', holderKey: null });
 });
 
+test('an instrument proposal names its holder in the applier action, and the applied add keeps it', () => {
+  const draft = base();
+  const entity = draft.entities[0];
+  const proposal = propose('upsert_instrument', { op: 'add', name: 'Knife', threat_level: 4, holder_key: entity.key });
+  const actions = toApplierActions(draft, [proposal]);
+  assert.deepEqual(actions[0].args, { op: 'add', name: 'Knife', threatLevel: 4, holderKey: entity.key });
+  const result = applyChatEdit(draft, draft, [proposal]);
+  assert.equal(result.skipped.length, 0);
+  assert.equal(result.draft.instruments.at(-1).holderKey, entity.key);
+});
+
 test('an applied edit lists the keys it changed, and the input draft is untouched', () => {
   const draft = base();
   const before = structuredClone(draft);
