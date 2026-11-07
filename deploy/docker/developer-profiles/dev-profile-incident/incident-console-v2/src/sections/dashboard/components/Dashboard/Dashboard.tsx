@@ -343,18 +343,18 @@ export function Dashboard() {
               'h-48',
             )}
           </Panel>
-          <Panel className="lg:col-span-2 xl:col-span-4" title="Top assets" subtitle="Reports per asset (exact name)">
+          <Panel className="lg:col-span-2 xl:col-span-4" title="Evidence by kind" subtitle="Entities, instruments and assets in the counted reports">
             {panel(
               (d) => (
-                <SplitBars emptyText={emptyText} hrefFor={(row) => link({ asset: row.key })} rows={assetRows(d)} />
+                <EvidenceBars emptyText={emptyText} rows={evidenceRows(d)} />
               ),
               'h-40',
             )}
           </Panel>
-          <Panel className="xl:col-span-4" title="Evidence by kind" subtitle="Entities, instruments and assets in the counted reports">
+          <Panel className="xl:col-span-4" title="Top assets" subtitle="Reports per asset (exact name)">
             {panel(
               (d) => (
-                <EvidenceBars emptyText={emptyText} rows={evidenceRows(d)} />
+                <SplitBars emptyText={emptyText} hrefFor={(row) => link({ asset: row.key })} rows={assetRows(d)} />
               ),
               'h-40',
             )}
