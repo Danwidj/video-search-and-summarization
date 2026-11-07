@@ -182,3 +182,29 @@ describe('the words for a period', () => {
     assert.equal(CALENDAR_MAX_DAYS, 366);
   });
 });
+
+describe('yearless ranges resolved as the chart prompt says', () => {
+  // The model writes these with the years the prompt's rule gives: the start is the most recent such date not after
+  // today, and the end is in the start's year, or in the next year when its month comes before the start's month.
+  test('October to December on 7 November 2026 is charted to today', () => {
+    const period = { from: '2026-10-01', to: '2026-12-31' };
+    assert.deepEqual(calendarDays(period, '2026-11-07'), { first: '2026-10-01', last: '2026-11-07' });
+    assert.equal(calendarWords(period, '2026-11-07'), '1 October to 7 November 2026 (to date)');
+  });
+
+  test('December to February on 7 November 2026 is the range that crosses into 2026', () => {
+    const period = { from: '2025-12-01', to: '2026-02-28' };
+    assert.deepEqual(calendarDays(period, '2026-11-07'), { first: '2025-12-01', last: '2026-02-28' });
+    assert.equal(calendarWords(period, '2026-11-07'), '1 December 2025 to 28 February 2026');
+  });
+
+  test('December to January in January 2027 is charted to today', () => {
+    const period = { from: '2026-12-01', to: '2027-01-31' };
+    assert.deepEqual(calendarDays(period, '2027-01-15'), { first: '2026-12-01', last: '2027-01-15' });
+    assert.equal(calendarWords(period, '2027-01-15'), '1 December 2026 to 15 January 2027 (to date)');
+  });
+
+  test('a same-month range that runs backwards, such as 20 to 10 October, is refused', () => {
+    assert.equal(calendarDays({ from: '2026-10-20', to: '2026-10-10' }, '2026-11-07'), null);
+  });
+});
