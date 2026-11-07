@@ -2,7 +2,8 @@
 
 // Which colour each chart series, donut slice and bubble gets. Official and not yet official always use the
 // status colours, and status colours go only to status series. Severity bands always use the severity colours, and
-// they go only to severity series (a donut, a severity stack or a bubble's band). No chart mixes the two sets.
+// they go only to severity series (a donut, a severity stack or a bubble's band) and threat series (a threat stack, whose
+// bands are the same). No chart mixes the two sets.
 
 import { CHART_COLORS } from '@/lib/ui/chart-colors';
 import { severityChartColor } from '@/lib/ui/severity';
@@ -20,6 +21,16 @@ export const SEVERITY_SERIES: ChartSeries[] = [
   { key: 'high', label: 'High', color: severityChartColor.high },
   { key: 'medium', label: 'Medium', color: severityChartColor.medium },
   { key: 'low', label: 'Low', color: severityChartColor.low },
+];
+
+/**
+ * A stacked bar by threat: high, medium and low threat, in the same band colours as severity (one band mapping, styles.css).
+ * Listed high first, as SEVERITY_SERIES is; the agent draws the stack from low at the bottom.
+ */
+export const THREAT_SERIES: ChartSeries[] = [
+  { key: 'high', label: 'High threat', color: severityChartColor.high },
+  { key: 'medium', label: 'Medium threat', color: severityChartColor.medium },
+  { key: 'low', label: 'Low threat', color: severityChartColor.low },
 ];
 
 /** The line of the dual-axis chart: a categorical colour, not a status colour. */

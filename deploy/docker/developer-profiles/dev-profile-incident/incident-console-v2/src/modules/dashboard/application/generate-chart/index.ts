@@ -13,6 +13,7 @@ import {
   NOT_OFFICIAL_SERIES,
   OFFICIAL_SERIES,
   SEVERITY_SERIES,
+  THREAT_SERIES,
   sliceColors,
 } from '@/modules/dashboard/domain/chart-palette';
 import {
@@ -38,7 +39,7 @@ import {
   type ReportTotals,
 } from '@/modules/dashboard/domain/generated-chart';
 import { normalizeSeverityWords } from '@/modules/dashboard/domain/severity-words';
-import type { DashboardAnalytics, RankedValue } from '@/modules/dashboard/domain/types';
+import type { DashboardAnalytics, HolderType, RankedValue } from '@/modules/dashboard/domain/types';
 
 const COUNT = 'count';
 const STATUS_SERIES: ChartSeries[] = [OFFICIAL_SERIES, NOT_OFFICIAL_SERIES];
@@ -73,7 +74,10 @@ const VIEW_FIGURES: Partial<Record<ChartDimensionName, { series: ChartSeries[]; 
   incident_type_evidence: { series: COMBO_SERIES, valueLabel: 'Reports', secondValueLabel: 'Evidence items per report' },
   incident_type_severity: { series: SEVERITY_SERIES, valueLabel: 'Reports', secondValueLabel: null },
   severity_evidence: { series: BUBBLE_SERIES, valueLabel: 'Evidence items', secondValueLabel: null },
+  threat_by_holder: { series: THREAT_SERIES, valueLabel: 'Instruments', secondValueLabel: null },
 };
+/** The category of each holder type in the threat chart. */
+const HOLDER_LABELS: Record<HolderType, string> = { human: 'Human', animal: 'Animal', unknown: 'Unknown', none: 'No holder' };
 const DAY_MS = 86_400_000;
 /** chart_generator labels every bar, so past this many a trend moves to the next coarser bucket. */
 const MAX_BUCKETS = 31;
@@ -174,6 +178,13 @@ export function viewRows(dimension: ChartDimensionName, analytics: DashboardAnal
         category: capitalize(item.type),
         values: { high: item.severity.high, medium: item.severity.medium, low: item.severity.low },
       }));
+    case 'threat_by_holder': {
+      if (analytics.threatByHolder === null) return null;
+      // The four holder types, but "no holder" only when some instrument has none, so the chart shows the holders there are.
+      return analytics.threatByHolder
+        .filter((row) => row.holder !== 'none' || row.high + row.medium + row.low > 0)
+        .map((row) => ({ category: HOLDER_LABELS[row.holder], values: { high: row.high, medium: row.medium, low: row.low } }));
+    }
     case 'severity_evidence': {
       if (analytics.severityEvidence === null) return null;
       return analytics.severityEvidence.map((cell) => ({
@@ -194,6 +205,7 @@ function rowsFor(dimension: ChartDimensionName, analytics: DashboardAnalytics, r
     case 'incident_type_evidence':
     case 'incident_type_severity':
     case 'severity_evidence':
+    case 'threat_by_holder':
       // A view's rows come from viewRows, which generateChart calls instead.
       return [];
     case 'incident_type':

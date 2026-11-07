@@ -176,7 +176,7 @@
     {
       "id": "chart/system",
       "file": "chart/system.txt",
-      "sha256": "121ad38d85d1c38f519f3297f52bb3c8deace791c16e1f6418ccd277a2c09858",
+      "sha256": "88b9e504ae0a317b954217d5a33058ae7c137493a83f2823eeab5685c3f7227c",
       "stage": "chart",
       "placeholders": [],
       "used_by": [
@@ -187,7 +187,7 @@
     {
       "id": "chart/allowlist",
       "file": "chart/allowlist.json",
-      "sha256": "5b9e5f84d79753734b1800e20233d3736f114e71cf8c418ce55b5bad8ce35a60",
+      "sha256": "87600b6e11425a462244ddc46e1a65b28d3c18464182ca550f6d2793c13b6d42",
       "stage": "chart",
       "placeholders": [],
       "used_by": [

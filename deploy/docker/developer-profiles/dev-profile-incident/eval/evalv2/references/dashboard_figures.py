@@ -161,7 +161,8 @@ def _counted(snapshot: Mapping[str, Any], tz: str) -> list[dict[str, Any]]:
                      "is_official": official is not None, "type": chosen.get("incident_type"),
                      "severity": chosen.get("severity_level"),
                      "confidence": _number((payload.get("incident") or {}).get("confidence_score")),
-                     "payload": payload, "version_count": len(revisions), "dow": _dow(local), "hour": local.hour,
+                     "payload": payload, "version_count": len(revisions), "revisions": revisions,
+                     "dow": _dow(local), "hour": local.hour,
                      "day": local.date()})
     return rows
 
@@ -285,6 +286,54 @@ def _model_coverage(snapshot: Mapping[str, Any], start: datetime | None, end: da
     return sorted(rows, key=lambda r: (-r["withReport"], r["model"]))
 
 
+HOLDER_TYPES = ("human", "animal", "unknown", "none")
+HOLDER_LABELS = {"human": "Human", "animal": "Animal", "unknown": "Unknown", "none": "No holder"}
+
+
+def _holder_instruments(rows: Sequence[Mapping[str, Any]]) -> set[tuple]:
+    """``instrument_holders``: each named instrument of a counted report, once per (name, holder type, threat level).
+
+    The holder is the first entity of the report whose entity_id the instrument names; its type is the canonical entity
+    type, and a type other than human or animal is unknown. An instrument naming no entity of the report is "none".
+    """
+    out: set[tuple] = set()
+    for row in rows:
+        payload = row["payload"]
+        entities = payload.get("entities") if isinstance(payload.get("entities"), list) else []
+        instruments = payload.get("instruments") if isinstance(payload.get("instruments"), list) else []
+        for item in instruments:
+            if not isinstance(item, Mapping):
+                continue
+            label = normalized_name(item.get("name"))
+            if label is None:
+                continue
+            holder = "none"
+            entity_id = _text(item.get("entity_id"))
+            for entity in entities:
+                if entity_id is not None and isinstance(entity, Mapping) and _text(entity.get("entity_id")) == entity_id:
+                    kind = canonical_entity_type(_text(entity.get("type")))
+                    holder = kind if kind in ("human", "animal") else "unknown"
+                    break
+            out.add((row["incident_id"], row["is_official"], label, holder, _threat_level(item.get("threat_level"))))
+    return out
+
+
+def _threat_by_holder(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """``threatByHolder``: always four rows (human, animal, unknown, none); bands low 1-2, medium 3, high 4-5."""
+    keys = _holder_instruments(rows)
+    out = []
+    for holder in HOLDER_TYPES:
+        members = [k for k in keys if k[3] == holder]
+        rated = [k for k in members if k[4] is not None and 1 <= k[4] <= 5]
+        out.append({"holder": holder,
+                    "high": sum(1 for k in members if k[4] is not None and 4 <= k[4] <= 5),
+                    "medium": sum(1 for k in members if k[4] == 3),
+                    "low": sum(1 for k in members if k[4] is not None and 1 <= k[4] <= 2),
+                    "official": sum(1 for k in rated if k[1]),
+                    "notOfficial": sum(1 for k in rated if not k[1])})
+    return out
+
+
 def dashboard(snapshot: Mapping[str, Any], params: Mapping[str, Any], *, now: datetime | None = None
               ) -> dict[str, Any]:
     """``get_incident_dashboard(params)`` recounted from the snapshot; ``now`` replaces ``CURRENT_DATE``."""
@@ -352,6 +401,10 @@ def dashboard(snapshot: Mapping[str, Any], params: Mapping[str, Any], *, now: da
     return {
         "total": len(rows),
         "multipleVersions": sum(1 for r in rows if r["version_count"] > 1),
+        # Every revision of the counted reports' videos, split by kind (total = ai + human).
+        "versions": {"total": sum(len(r["revisions"]) for r in rows),
+                     "ai": sum(1 for r in rows for v in r["revisions"] if v["kind"] == "ai"),
+                     "human": sum(1 for r in rows for v in r["revisions"] if v["kind"] == "human")},
         # The evidence items of the counted reports by kind, and how many of them come from an official report.
         "evidence": [{"kind": kind, "count": sum(_items(r, kind) for r in rows),
                       "official": sum(_items(r, kind) for r in official_rows),
@@ -380,6 +433,7 @@ def dashboard(snapshot: Mapping[str, Any], params: Mapping[str, Any], *, now: da
         "topAssets": _ranked(assets, TOP_RANKED, split=True),
         "severityEvidence": _severity_evidence(rows),
         "threatLevels": [{"level": level, "count": n} for level, n in sorted(levels.items())],
+        "threatByHolder": _threat_by_holder(rows),
         "modelCoverage": _model_coverage(snapshot, start, end),
     }
 
@@ -484,7 +538,7 @@ def _heatmap_rows(dashboard_: Mapping[str, Any], field: str, labels: Sequence[st
 
 
 VIEW_SERIES = {"incident_type_evidence": ["reports", "per_report"], "incident_type_severity": ["high", "medium", "low"],
-               "severity_evidence": ["reports"]}
+               "severity_evidence": ["reports"], "threat_by_holder": ["high", "medium", "low"]}
 
 
 def evidence_per_report(items: int, reports: int) -> float | None:
@@ -518,6 +572,14 @@ def view_rows(dimension: str, dashboard_: Mapping[str, Any]) -> list[dict[str, A
                               f"{'item' if c['evidenceItems'] == 1 else 'items'}"),
                  "values": {"reports": c["count"], "severity": c["severity"], "evidence": c["evidenceItems"]}}
                 for c in cells]
+    if dimension == "threat_by_holder":
+        holders = dashboard_.get("threatByHolder")
+        if holders is None:
+            return None
+        # "No holder" is a row only when some instrument has none.
+        return [{"category": HOLDER_LABELS[h["holder"]],
+                 "values": {"high": h["high"], "medium": h["medium"], "low": h["low"]}}
+                for h in holders if h["holder"] != "none" or h["high"] + h["medium"] + h["low"] > 0]
     return None
 
 
