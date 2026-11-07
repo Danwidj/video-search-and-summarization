@@ -65,8 +65,8 @@ type ChatMessage = {
   applied?: AppliedAction[];
   skipped?: SkippedAction[];
   wallMs?: number;
-  /** The reply is the editor's question to the reviewer about new evidence (its content is that question). */
-  askedReviewer?: boolean;
+  /** The reply's questions to the reviewer about new evidence, in order (its content is those questions, one per line). */
+  questions?: string[];
   /** The reply opened the box tool for new evidence at this second, with this name. */
   openedBox?: BoxOpening;
 };
@@ -184,7 +184,7 @@ export function ReportChat({
       // A question for the reviewer is the reply; a box opening goes to the page; the other edits join the draft in one
       // change (one Undo), then the message says what happened to each.
       const actions = payload.message.actions ?? [];
-      const { question, opening, rest } = splitEvidenceActions(actions, sent ?? null);
+      const { questions, opening, rest } = splitEvidenceActions(actions, sent ?? null);
       const outcome = edits && sent && actions.length ? edits.apply(sent, rest, opening) : undefined;
       messageSequence += 1;
       onThreadChange({
@@ -193,7 +193,7 @@ export function ReportChat({
           ...next,
           {
             ...payload.message,
-            content: question ?? payload.message.content,
+            content: questions.length ? questions.join('\n') : payload.message.content,
             id: `msg-${messageSequence}`,
             answeredFrom: target.label,
             unknownTimes: payload.grounding?.unknownTimes,
@@ -201,7 +201,7 @@ export function ReportChat({
             applied: outcome?.applied ?? payload.message.applied,
             skipped: outcome?.skipped ?? payload.message.skipped,
             wallMs: payload.message.wallMs,
-            askedReviewer: question !== undefined,
+            questions: questions.length ? questions : undefined,
             openedBox: opening,
           },
         ],

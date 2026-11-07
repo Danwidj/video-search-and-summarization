@@ -16,7 +16,7 @@ import { Slider } from '@/components/ui/slider';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Textarea } from '@/components/ui/textarea';
 import { type BoxToolClient, boxToolClient } from '@/lib/evidence/box-tool-client';
-import { endTrackAt, extendTrack, extensionRequest, SLOW_NOTICE_MS, TRACK_WINDOW_SECONDS } from '@/lib/evidence/box-tool';
+import { cardTextReady, endTrackAt, extendTrack, extensionRequest, SLOW_NOTICE_MS, TRACK_WINDOW_SECONDS } from '@/lib/evidence/box-tool';
 import { pickSeconds } from '@/lib/evidence/frame-picker';
 import { scrubberBoxAt, trackSecond, trackSpan } from '@/lib/evidence/track';
 import type { Box, BoxProposal, ReviewerDraftItem as BoxToolItem, ReviewerTrack } from '@/modules/reports/domain/reviewer-item';
@@ -235,7 +235,7 @@ export function BoxTool({
   const lost = !!track?.partial && !partialKept;
   const trackless = track === null && trackFailed;
   const decided = track === undefined ? false : track === null ? !trackFailed : !lost;
-  const textReady = card.name.trim() !== '' && card.description.trim() !== '' && (card.itemType !== 'entity' || card.entityType !== null);
+  const textReady = cardTextReady(card, existing !== null);
   const canAdd = !busy && decided && textReady && seed !== null;
 
   const add = () => {

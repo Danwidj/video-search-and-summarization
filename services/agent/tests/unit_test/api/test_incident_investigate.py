@@ -106,6 +106,7 @@ def test_reaching_the_iteration_cap_is_not_ok() -> None:
     data = client.post(URL, json=BODY).json()
     assert data["status"] == "cap_reached"
     assert len(data["steps"]) == 1
+    assert data["answer"] == "The agent reached its tool step limit before it could answer; no changes were proposed."
 
 
 def test_a_sixth_tool_step_aborts_the_run() -> None:
