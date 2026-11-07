@@ -37,7 +37,6 @@ from pathlib import Path
 import requests
 
 ENV_LOCAL = Path(__file__).resolve().parents[3] / ".env.local"
-DEFAULT_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com/v1"
 
 # The one fixed inference configuration, identical across all three models and
 # every request - per the confirmed experimental design, this is never varied
@@ -70,7 +69,9 @@ def gateway_credentials() -> tuple[str, str]:
     """``(base_url, api_key)`` from ``.env.local``, falling back to the process env."""
     api_key = _get_env("VLM_GATEWAY_API_KEY") or os.getenv("VLM_GATEWAY_API_KEY", "")
     base_url = _get_env("VLM_GATEWAY_BASE_URL") or os.getenv("VLM_GATEWAY_BASE_URL", "")
-    return (base_url or DEFAULT_BASE_URL), api_key
+    if not base_url:
+        raise RuntimeError("VLM_GATEWAY_BASE_URL is not set: put it in .env.local or the process environment")
+    return base_url, api_key
 
 
 def video_to_data_url(path: Path) -> str:

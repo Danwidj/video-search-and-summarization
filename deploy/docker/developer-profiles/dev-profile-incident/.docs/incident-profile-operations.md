@@ -126,7 +126,7 @@ uv pip install --python .venv/bin/python supabase opencv-python-headless setupto
 cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts
 ./native-services.sh restart vss-agent
 ```
-Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json` contains `"editable": true` and `/proc/<pid>/environ` contains the Brev Switchyard URLs (`LLM_BASE_URL=https://switchyard-13doh4lsz.brevlab.com`, `VLM_BASE_URL=https://switchyard-13doh4lsz.brevlab.com`).
+Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json` contains `"editable": true` and `/proc/<pid>/environ` contains the Brev Switchyard URLs (`LLM_BASE_URL=<the Switchyard address>`, `VLM_BASE_URL=<the Switchyard address>`).
 
 ---
 

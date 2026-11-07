@@ -32,7 +32,7 @@ Details of each path: [launch modes and connectivity](../../.docs/architecture.m
    | console, mock-backend, eval | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (the **finals** project) |
    | eval, database scripts | `INCIDENT_DB_DSN` (finals session pooler, port 5432) |
    | console, mock-backend, eval | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` |
-   | vlm-gateway (mock mode only) | `VLM_GATEWAY_API_KEY`, optional `VLM_GATEWAY_BASE_URL`. Vm mode needs no gateway key: the VM agent reads dashboard chart requests with its own LLM |
+   | vlm-gateway (mock mode only) | `VLM_GATEWAY_API_KEY` and `VLM_GATEWAY_BASE_URL` (no default). Vm mode needs no gateway key: the VM agent reads dashboard chart requests with its own LLM |
 
    Check names only, without echoing values:
    ```bash

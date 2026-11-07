@@ -1960,3 +1960,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 **Alternatives rejected.** Retrying the same URL repeats the crash; making Add to draft generate the final image couples reversible draft work to ffmpeg; keeping the temporary file leaks incident video data; replacing the bundled ffmpeg globally is a broader deployment change and does not provide per-request recovery.
 
 **Links.** [`incident-console-v2/src/lib/video/ffmpeg-frame.ts`](../incident-console-v2/src/lib/video/ffmpeg-frame.ts), [`console-reference.md`](console-reference.md)
+
+### 2026-11-07: The inference endpoint address lives only in untracked env files
+
+The Switchyard address was committed in the profile `.env`, the gateway and the agent code defaults. It now comes only from settings: `VLM_BASE_URL` (critic), `VLM_GATEWAY_BASE_URL` then `VLM_BASE_URL` (evidence detector), `VLM_GATEWAY_BASE_URL` (gateway and archived eval client), and the profile `.env` keeps `LLM_BASE_URL`, `VLM_BASE_URL`, `LLM_ENDPOINT_URL` and `VLM_ENDPOINT_URL` blank. The laptop reads them from `.env.local`, the VM agent from `generated.env.remote`. A missing address raises an error naming the setting when the first call is made (not at construction, so tests and tooling that build clients still work). Git history keeps the old address and is not rewritten. `eval/scripts/eval_vlm_client.py` still holds a default and belongs to another owner.

@@ -23,6 +23,13 @@ from unittest.mock import MagicMock
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def vlm_endpoint_env(monkeypatch):
+    """The VLM endpoint address has no code default; tests that reach a client get a placeholder."""
+    monkeypatch.delenv("VLM_GATEWAY_BASE_URL", raising=False)
+    monkeypatch.setenv("VLM_BASE_URL", "https://vlm.example")
+
+
 @pytest.fixture
 def mock_llm():
     """Create a mock LLM object for testing."""
