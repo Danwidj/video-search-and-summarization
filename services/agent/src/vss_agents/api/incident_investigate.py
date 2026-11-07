@@ -24,6 +24,11 @@ in :mod:`vss_agents.utils.agent_loop`: 4 iterations, 5 tool steps, 90 s, and a m
 entry. The response always names how the run ended in ``status`` (HTTP 200), lists every tool that ran in ``steps``, and
 lists any ``propose_*`` tool's arguments as ``actions``.
 
+A request may carry the reviewer's unsaved ``draft``. It then runs the ``report_editor`` agent instead, whose tools are
+the ``propose_*`` edit checks of :mod:`vss_agents.tools.incident_editor`, and needs ``INCIDENT_DRAFT_EDITS_ENABLED`` too
+(a ``404`` when that is off). Its ``actions`` are the edits the console applies to the draft; a run with no ``steps`` was
+not an edit request.
+
 Status codes: 200 with the outcome, 404 when the setting is off, 422 for a request that does not validate, 501 when the
 profile does not declare the agent.
 """
@@ -46,6 +51,7 @@ from pydantic import ConfigDict
 from pydantic import Field
 
 from vss_agents.utils import agent_loop
+from vss_agents.utils import draft_edits
 
 if TYPE_CHECKING:
     from nat.builder.workflow_builder import WorkflowBuilder
@@ -54,6 +60,7 @@ logger = logging.getLogger(__name__)
 
 ENABLED_ENV = "INCIDENT_INVESTIGATE_ENABLED"
 AGENT_FUNCTION = "investigator"
+EDITOR_FUNCTION = "report_editor"
 
 SessionManagerFactory = Callable[[Any, str], Awaitable[Any]]
 
@@ -67,6 +74,7 @@ class InvestigateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(..., min_length=1, max_length=500)
+    draft: draft_edits.DraftSnapshot | None = None
 
 
 class InvestigateStep(BaseModel):
@@ -96,24 +104,29 @@ class InvestigateResponse(BaseModel):
     wall_ms: int
 
 
+def _editor_question(question: str, draft: draft_edits.DraftSnapshot) -> str:
+    """The editor agent's input: the request and the draft with each item's key, which the proposal tools name items by."""
+    return f"{question}\n\nThe draft (name items by their key):\n{draft.model_dump_json(exclude_none=True)}"
+
+
 def create_incident_investigate_router(
     builder: WorkflowBuilder,
     create_session_manager: SessionManagerFactory,
     *,
     agent: str = AGENT_FUNCTION,
+    editor: str = EDITOR_FUNCTION,
     wall_seconds: float = agent_loop.WALL_CLOCK_SECONDS,
 ) -> APIRouter:
     router = APIRouter()
-    session_manager: Any = None
+    session_managers: dict[str, Any] = {}
     lock = asyncio.Lock()
 
-    async def _session_manager() -> Any:
+    async def _session_manager(name: str) -> Any:
         # One per agent, made on the first request: the config is read when the agent is built, not per call.
-        nonlocal session_manager
         async with lock:
-            if session_manager is None:
-                session_manager = await create_session_manager(builder, agent)
-            return session_manager
+            if name not in session_managers:
+                session_managers[name] = await create_session_manager(builder, name)
+            return session_managers[name]
 
     @router.post(
         "/api/v1/incidents/{video_id}/investigate",
@@ -124,17 +137,22 @@ def create_incident_investigate_router(
     async def investigate(video_id: str, body: InvestigateRequest) -> InvestigateResponse:
         if not enabled():
             raise HTTPException(status_code=404, detail="The investigator is not enabled on this agent")
+        editing = body.draft is not None
+        if editing and not draft_edits.enabled():
+            raise HTTPException(status_code=404, detail="Draft edits are not enabled on this agent")
+        name = editor if editing else agent
         try:
-            manager = await _session_manager()
+            manager = await _session_manager(name)
         except Exception as exc:
-            logger.error("Investigator agent %s is not configured: %s", agent, type(exc).__name__)
+            logger.error("Investigator agent %s is not configured: %s", name, type(exc).__name__)
             raise HTTPException(status_code=501, detail="The investigator is not configured on this profile") from exc
+        question = body.question if body.draft is None else _editor_question(body.question, body.draft)
 
         async def ask() -> str:
-            async with manager.run(body.question) as runner:
+            async with manager.run(question) as runner:
                 return str(await runner.result(to_type=str))
 
-        result = await agent_loop.run_loop(ask, video_id, wall_seconds=wall_seconds)
+        result = await agent_loop.run_loop(ask, video_id, wall_seconds=wall_seconds, draft=body.draft)
         logger.info(
             "Investigated %s: %s in %d ms, %d tool steps", video_id, result.status, result.wall_ms, len(result.steps)
         )

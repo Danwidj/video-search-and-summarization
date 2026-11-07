@@ -30,6 +30,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { chatTarget, citationTitles } from '@/lib/chat/report-chat';
 import { seekTarget } from '@/lib/chat/timestamps';
+import { applyChatEdit, type ProposedAction } from '@/lib/edits/chat-edit';
 import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
 import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
 import {
@@ -74,12 +75,15 @@ export function ReportPage({
   revisionId,
   startSeconds = null,
   evidenceProposals = false,
+  chatEdits = false,
 }: {
   videoId: string;
   revisionId: number | null;
   startSeconds?: number | null;
   /** Flag INCIDENT_EVIDENCE_PROPOSALS_ENABLED, read by the server page on each request. */
   evidenceProposals?: boolean;
+  /** Flag INCIDENT_CHAT_EDITS_ENABLED, read by the server page on each request: the chat may change the draft. */
+  chatEdits?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
@@ -119,6 +123,13 @@ export function ReportPage({
   const [saveProblems, setSaveProblems] = useState<string[]>([]);
   // The draft item whose Edit track dialog is open: the dialog shows its box, so the video does not until Done.
   const [editingTrackKey, setEditingTrackKey] = useState<string | null>(null);
+  // The draft items the chat's last edit added or changed (plus 'incident'), highlighted until the reviewer edits by hand.
+  const [assistantKeys, setAssistantKeys] = useState<string[]>([]);
+  // The chat's answer arrives after an await, so it reads the draft and the opened report from refs, not its own render.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const shownReportRef = useRef<ReportView | null>(null);
+  shownReportRef.current = state.status === 'ready' ? state.report : null;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is an explicit refetch trigger
   useEffect(() => {
@@ -225,19 +236,24 @@ export function ReportPage({
     [shownReport],
   );
 
-  const startEdit = useCallback((base: ReportView) => {
-    setDraft(draftFromView(base));
-    // A new draft starts a new conversation: answers about an earlier draft no longer describe it.
-    setChatThreads(({ [chatThreadKey(base.revisionId, true)]: _earlierDraft, ...threads }) => threads);
-    setUndoStack([]);
-    setEditBase({ revisionId: base.revisionId, revisionNo: base.revision.revisionNo, report: base });
-    setCompareReport(base);
-    setEditVersionError(null);
-    setMode('edit');
-    setSaveOpen(false);
-    setSaveProblems([]);
-    setNote('');
-  }, []);
+  const startEdit = useCallback(
+    (base: ReportView) => {
+      setDraft(draftFromView(base));
+      // A new draft starts a new conversation: answers about an earlier draft no longer describe it. With chat edits there is
+      // one conversation for the version, in View and in Edit, and a draft made by the chat must not delete the chat.
+      if (!chatEdits) setChatThreads(({ [chatThreadKey(base.revisionId, true)]: _earlierDraft, ...threads }) => threads);
+      setAssistantKeys([]);
+      setUndoStack([]);
+      setEditBase({ revisionId: base.revisionId, revisionNo: base.revision.revisionNo, report: base });
+      setCompareReport(base);
+      setEditVersionError(null);
+      setMode('edit');
+      setSaveOpen(false);
+      setSaveProblems([]);
+      setNote('');
+    },
+    [chatEdits],
+  );
 
   const editVersion = async (id: number) => {
     if (editBase?.revisionId === id) return;
@@ -321,15 +337,40 @@ export function ReportPage({
   // Only in Edit mode: a draft kept while the reviewer looks back at View does not change what View's timeline shows.
   const draftStructured = mode === 'edit' && draft ? draftToStructured(draft, videoId, overlay.frames) : null;
 
+  // A request in flight may still change the draft, so Save waits for it.
+  const chatBusy = Object.values(chatThreads).some((thread) => thread.busy);
+
   const changeDraft = (next: EditDraft) => {
     if (draft) setUndoStack((stack) => [...stack.slice(-49), draft]);
     setDraft(next);
+    setAssistantKeys([]);
+  };
+
+  // The chat's edit is one change, so one Undo reverts the whole request. Asked in View, it opens the draft the question
+  // was about and shows it with the edit applied, with no step in between for the reviewer.
+  const editFromChat = (sent: EditDraft, proposals: ProposedAction[]) => {
+    const current = draftRef.current;
+    const result = applyChatEdit(current ?? sent, sent, proposals, { evidenceProposals });
+    if (result.changedKeys.length === 0) return { applied: result.applied, skipped: result.skipped };
+    if (current) {
+      setUndoStack((stack) => [...stack.slice(-49), current]);
+    } else {
+      const base = shownReportRef.current;
+      if (!base) return { applied: [], skipped: result.skipped };
+      startEdit(base);
+      setUndoStack([sent]);
+    }
+    setDraft(result.draft);
+    setMode('edit');
+    setAssistantKeys(result.changedKeys);
+    return { applied: result.applied, skipped: result.skipped };
   };
 
   const undoDraft = () => {
     const previous = undoStack.at(-1);
     if (!previous) return;
     setDraft(previous);
+    setAssistantKeys([]);
     setUndoStack((stack) => stack.slice(0, -1));
     setSaveProblems([]);
   };
@@ -337,6 +378,7 @@ export function ReportPage({
   const revertDraft = () => {
     if (!editBase) return;
     setDraft(draftFromView(editBase.report));
+    setAssistantKeys([]);
     setUndoStack([]);
     setSaveProblems([]);
   };
@@ -581,6 +623,7 @@ export function ReportPage({
                     baseOfficial={editBase.report.official.officialRevisionId === editBase.revisionId}
                     baseRevisionNo={editBase.revisionNo}
                     draft={draft}
+                    assistantKeys={assistantKeys}
                     evidenceProposals={evidenceProposals}
                     officialMissing={!officialRevision && revisions !== null}
                     onChange={changeDraft}
@@ -638,7 +681,7 @@ export function ReportPage({
                       <Button onClick={() => switchMode('view')} size="sm" type="button" variant="outline">
                         Go back to view
                       </Button>
-                      <Button disabled={changes === 0 || saving} onClick={() => setSaveOpen(true)} type="button">
+                      <Button disabled={changes === 0 || saving || chatBusy} onClick={() => setSaveOpen(true)} type="button">
                         Save as new version
                       </Button>
                     </div>
@@ -742,7 +785,7 @@ export function ReportPage({
                 : { revision: report.revision, isOfficial: report.official.isOfficial, draft: null },
             );
             // Keyed by the version (and whether it is a draft), so each one has its own conversation.
-            const threadKey = chatThreadKey(target.versionId, mode === 'edit' && draft !== null);
+            const threadKey = chatThreadKey(target.versionId, !chatEdits && mode === 'edit' && draft !== null);
             return (
               <ReportChat
                 durationSeconds={playerDuration}
@@ -758,6 +801,7 @@ export function ReportPage({
                 thread={chatThreads[threadKey] ?? EMPTY_CHAT_THREAD}
                 titles={citationTitles(mode === 'edit' && draft && editBase ? editBase.report.structured : report.structured)}
                 videoId={videoId}
+                {...(chatEdits ? { edits: { current: () => draftRef.current ?? draftFromView(report), apply: editFromChat } } : {})}
               />
             );
           })()}

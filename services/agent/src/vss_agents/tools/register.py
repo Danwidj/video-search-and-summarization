@@ -17,6 +17,7 @@ from . import chart_generator
 from . import embed_search
 from . import fov_counts_with_chart
 from . import geolocation
+from . import incident_editor
 from . import incident_investigator
 from . import incident_report_gen
 from . import incidents
@@ -42,6 +43,7 @@ __all__ = [
     "embed_search",
     "fov_counts_with_chart",
     "geolocation",
+    "incident_editor",
     "incident_investigator",
     "incident_report_gen",
     "incidents",

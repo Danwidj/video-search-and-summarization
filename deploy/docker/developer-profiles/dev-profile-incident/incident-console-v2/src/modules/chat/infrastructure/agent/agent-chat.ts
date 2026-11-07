@@ -197,11 +197,13 @@ export async function sendAgentInvestigate(
   videoId: string,
   question: string,
   signal?: AbortSignal,
+  /** The reviewer's draft snapshot: the agent then runs its report editor and returns the edits as `actions`. */
+  draft?: Record<string, unknown>,
 ): Promise<ChatResponse> {
   const response = await fetch(`${agentUrl.replace(/\/$/, '')}/api/v1/incidents/${encodeURIComponent(videoId)}/investigate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, ...(draft ? { draft } : {}) }),
     signal,
   });
   return fromAgentInvestigateResponse(await readUpstream(response, 'Agent /api/v1/incidents/{video_id}/investigate'));

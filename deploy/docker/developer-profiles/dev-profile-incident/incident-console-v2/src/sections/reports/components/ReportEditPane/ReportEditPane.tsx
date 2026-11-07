@@ -2,6 +2,7 @@
 
 'use client';
 
+import { INCIDENT_HIGHLIGHT_KEY } from '@/lib/edits/chat-edit';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { PlusIcon } from 'lucide-react';
 
@@ -51,6 +52,9 @@ import { trackEditorSource } from '@/lib/evidence/track-editor-source';
 
 const capitalize = (value: string | null) => (value ? value[0].toUpperCase() + value.slice(1) : 'Unclassified');
 const clock = (seconds: number | null) => (seconds === null ? '—' : formatClock(seconds));
+/** The highlight on what the chat changed: it stays until the reviewer edits by hand. */
+const ASSISTANT_RING = 'ring-2 ring-primary ring-offset-2 ring-offset-background';
+
 const rowKey = (row: PairRow) => `${row.kind}-${row.b?.key ?? (row.a ? savedItemId(row.a) : '')}`;
 const draftDisplayId = (item: NonNullable<PairRow['b']>) =>
   isDraftEntity(item) ? item.canonicalId : (item.sourceId ?? (isDraftInstrument(item) ? 'New instrument' : 'New asset'));
@@ -83,6 +87,7 @@ export function ReportEditPane({
   officialMissing = false,
   evidenceOpening = null,
   evidenceProposals = false,
+  assistantKeys = [],
 }: {
   a: Structured | null;
   aRevisionNo: number;
@@ -107,6 +112,8 @@ export function ReportEditPane({
   evidenceOpening?: EvidenceOpening | null;
   /** Flag INCIDENT_EVIDENCE_PROPOSALS_ENABLED: show the Confirm, Adjust and Dismiss controls on an item with a proposed evidence change. */
   evidenceProposals?: boolean;
+  /** Keys of the items the chat's last edit added or changed, and INCIDENT_HIGHLIGHT_KEY for the report fields: shown ringed. */
+  assistantKeys?: string[];
 }) {
   // The box tool: adding new evidence, or re-tracking a card's item from a new box.
   const [boxTool, setBoxTool] = useState<{ row: PairRow['b']; opening?: EvidenceOpening } | null>(null);
@@ -269,7 +276,11 @@ export function ReportEditPane({
         </CardContent>
       </Card>
 
-      <Card className="mt-5 gap-0 border-border/80 py-0" data-testid="report-fields-compare">
+      <Card
+        className={`mt-5 gap-0 border-border/80 py-0 ${assistantKeys.includes(INCIDENT_HIGHLIGHT_KEY) ? ASSISTANT_RING : ''}`}
+        data-assistant-edit={assistantKeys.includes(INCIDENT_HIGHLIGHT_KEY) || undefined}
+        data-testid="report-fields-compare"
+      >
         <CardHeader className="gap-1 border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-4 py-3.5">
           <CardTitle className="text-base font-semibold">Report fields</CardTitle>
           <CardDescription className="text-xs">Compare the saved values with your editable draft</CardDescription>
@@ -470,6 +481,7 @@ export function ReportEditPane({
                 <PairRowView
                   aRevisionNo={aRevisionNo}
                   aColour={(row.a && savedColours.get(savedItemId(row.a))) ?? STILL_BOX_COLOUR}
+                  assistantEdited={Boolean(row.b && assistantKeys.includes(row.b.key))}
                   bColour={(row.b && draftColours.get(row.b.key)) ?? STILL_BOX_COLOUR}
                   videoId={videoId}
                   videoSrc={videoSrc}
@@ -586,6 +598,7 @@ type PatchInstrument = (key: string, patch: Partial<EditDraft['instruments'][num
 type PatchAsset = (key: string, patch: Partial<EditDraft['assets'][number]>) => void;
 
 function PairRowView({
+  assistantEdited,
   aRevisionNo,
   aColour,
   bColour,
@@ -607,6 +620,8 @@ function PairRowView({
   patchInstrument,
   patchAsset,
 }: {
+  /** The chat's last edit added or changed this row's item. */
+  assistantEdited: boolean;
   aRevisionNo: number;
   /** The colour each side's item has on the video. */
   aColour: string;
@@ -645,7 +660,12 @@ function PairRowView({
           </div>
         )}
       </div>
-      <div className="min-w-0 snap-start border-r border-dotted border-border pr-3" data-row-kind={row.kind} data-side="B">
+      <div
+        className={`min-w-0 snap-start border-r border-dotted border-border pr-3 ${assistantEdited ? `rounded-lg ${ASSISTANT_RING}` : ''}`}
+        data-assistant-edit={assistantEdited || undefined}
+        data-row-kind={row.kind}
+        data-side="B"
+      >
         {row.b ? (
           <EditCard
             colour={bColour}

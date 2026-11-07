@@ -2,7 +2,7 @@
 
 import { AppHeader } from '@/sections/shell/components/AppHeader';
 import { ReportPage as ReportView } from '@/sections/reports/components/ReportPage';
-import { isEvidenceProposalsEnabled } from '@/lib/env';
+import { isChatEditsEnabled, isEvidenceProposalsEnabled } from '@/lib/env';
 import { parseStartSeconds } from '@/lib/library/search';
 
 export default async function ReportPage({
@@ -25,6 +25,7 @@ export default async function ReportPage({
       </div>
       <div className="min-h-0 flex-1">
         <ReportView
+          chatEdits={isChatEditsEnabled()}
           evidenceProposals={isEvidenceProposalsEnabled()}
           revisionId={revisionId}
           startSeconds={startSeconds}
