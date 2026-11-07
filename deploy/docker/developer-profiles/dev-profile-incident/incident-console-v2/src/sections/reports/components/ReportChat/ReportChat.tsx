@@ -27,10 +27,21 @@ import {
   citationTitle,
   offersVideoCheck,
 } from '@/lib/chat/report-chat';
+import {
+  type DraftItemIds,
+  type GapRetryJob,
+  draftKeyOf,
+  gapRetryProposals,
+  gapRetryResultText,
+  gapRetryStartedText,
+  reportIdOf,
+  splitGapRetryActions,
+} from '@/lib/chat/gap-retry';
 import { evidenceRows, pendingEvidenceExchange, splitEvidenceActions } from '@/lib/chat/evidence-ask';
 import { segmentChatText } from '@/lib/chat/timestamps';
 import { draftSnapshot, type ProposedAction } from '@/lib/edits/chat-edit';
 import type { BoxOpening } from '@/lib/evidence/box-tool';
+import { draftItemName } from '@/lib/reports/compare';
 import type { EditDraft } from '@/modules/reports/domain/edit-draft';
 import type { AppliedAction, ChatCitation, ChatResponse, ChatStep, SkippedAction, VideoOffer } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
@@ -39,6 +50,29 @@ import { ChatStepsView } from './ChatStepsView';
 const SUGGESTIONS = ['Show the timeline of events'];
 
 const CHAT_FAILED = 'The chat service is unavailable right now. Please try again in a moment.';
+
+// A gap retry takes about a minute an item; the agent stops at five minutes, so the chat stops waiting at ten.
+const GAP_RETRY_POLL_MS = 3000;
+const GAP_RETRY_POLLS = 200;
+
+/** Every item of the draft, with the ids the gap retry maps between. */
+function draftItems(draft: EditDraft): DraftItemIds[] {
+  return [...draft.entities, ...draft.instruments, ...draft.assets];
+}
+
+/** The name a reviewer knows a draft item by, or its key when the draft has no such item. */
+function draftLabel(draft: EditDraft, key: string): string {
+  const item = [...draft.entities, ...draft.instruments, ...draft.assets].find((candidate) => candidate.key === key);
+  return item ? draftItemName(item) : key;
+}
+
+/** One gap-retry call through the console's proxy: the job as it stands. A failure is the reason the chat shows. */
+async function gapRetryCall(url: string, init: RequestInit): Promise<GapRetryJob> {
+  const response = await fetch(url, init);
+  const payload = (await readReply(response)) as Partial<GapRetryJob> & { error?: string };
+  if (!response.ok || !payload.jobId) throw new Error(payload.error || 'The gap retry could not be reached.');
+  return payload as GapRetryJob;
+}
 
 let messageSequence = 0;
 
@@ -155,11 +189,62 @@ export function ReportChat({
   const { messages, sessionId, busy, failed } = thread;
   const [question, setQuestion] = useState('');
   const scrollerViewportRef = useRef<HTMLDivElement>(null);
+  // A gap retry finishes after the question's reply, so it reads the thread as it is then, not as the question saw it.
+  const threadRef = useRef(thread);
+  threadRef.current = thread;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll to bottom whenever chat state updates
   useEffect(() => {
     scrollerViewportRef.current?.scrollTo({ top: scrollerViewportRef.current.scrollHeight });
   }, [messages, busy, failed]);
+
+  /** Appends one assistant line to the thread as it is now (after any render since the reply that started the job). */
+  function postAssistant(content: string, extra: Partial<ChatMessage> = {}) {
+    messageSequence += 1;
+    onThreadChange({
+      messages: [
+        ...threadRef.current.messages,
+        { id: `msg-${messageSequence}`, role: 'assistant', content, answeredFrom: target.label, ...extra },
+      ],
+    });
+  }
+
+  /** Polls a gap retry the editor started until it is done, then proposes the boxes it found beside their items. */
+  async function finishGapRetry(job: GapRetryJob, sent: EditDraft) {
+    let current = job;
+    try {
+      for (let poll = 0; current.status !== 'done' && poll < GAP_RETRY_POLLS && mounted.current; poll += 1) {
+        await new Promise((resolve) => setTimeout(resolve, GAP_RETRY_POLL_MS));
+        if (!mounted.current) return;
+        current = await gapRetryCall(
+          `/api/chat/gap-retry?videoId=${encodeURIComponent(videoId)}&jobId=${encodeURIComponent(current.jobId)}`,
+          {},
+        );
+      }
+    } catch (cause) {
+      postAssistant(
+        `The gap retry did not finish: ${cause instanceof Error ? cause.message : 'it could not be reached.'} Any box already on an item stands.`,
+      );
+      return;
+    }
+    if (!mounted.current) return;
+    if (current.status !== 'done') {
+      postAssistant('The gap retry is still running after ten minutes, so I have stopped waiting. Ask again to retry the gaps.');
+      return;
+    }
+    // Each found box joins its item as a proposal beside it; nothing is cut until the reviewer confirms and saves.
+    const items = draftItems(sent);
+    const label = (reportId: string) => draftLabel(sent, draftKeyOf(items, reportId) ?? reportId);
+    const outcome = edits?.apply(sent, gapRetryProposals(current, items));
+    postAssistant(gapRetryResultText(current, label), { applied: outcome?.applied, skipped: outcome?.skipped });
+  }
 
   async function send(text: string, history: ChatMessage[]) {
     messageSequence += 1;
@@ -186,9 +271,22 @@ export function ReportChat({
       // A question for the reviewer is the reply; a box opening goes to the page; the other edits join the draft in one
       // change (one Undo), then the message says what happened to each.
       const actions = payload.message.actions ?? [];
-      const { questions, opening, rest } = splitEvidenceActions(actions, sent ?? null);
+      const { questions, opening, rest: afterEvidence } = splitEvidenceActions(actions, sent ?? null);
+      const { retries, rest } = splitGapRetryActions(afterEvidence);
       const outcome = edits && sent && actions.length ? edits.apply(sent, rest, opening) : undefined;
       messageSequence += 1;
+      // A gap retry says it started in this same update, so the thread never loses the reply it was started from.
+      const started = sent
+        ? retries.map((retry) => {
+            messageSequence += 1;
+            return {
+              id: `msg-${messageSequence}`,
+              role: 'assistant' as const,
+              content: gapRetryStartedText(retry, (key) => draftLabel(sent, key)),
+              answeredFrom: target.label,
+            };
+          })
+        : [];
       onThreadChange({
         sessionId: payload.sessionId,
         messages: [
@@ -206,8 +304,26 @@ export function ReportChat({
             questions: questions.length ? questions : undefined,
             openedBox: opening,
           },
+          ...started,
         ],
       });
+      if (sent) {
+        for (const retry of retries) {
+          const job = await gapRetryCall('/api/chat/gap-retry', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // The agent knows an item by its report id, not the draft's own key.
+            body: JSON.stringify({
+              videoId,
+              itemKey: retry.itemKey === null ? null : (reportIdOf(draftItems(sent), retry.itemKey) ?? retry.itemKey),
+            }),
+          }).catch((cause: unknown) => {
+            postAssistant(`The gap retry did not start: ${cause instanceof Error ? cause.message : 'it could not be reached.'}`);
+            return null;
+          });
+          if (job) void finishGapRetry(job, sent);
+        }
+      }
     } catch (cause) {
       // A fetch that never reached the server is a TypeError whose message means nothing to a reviewer.
       onThreadChange({ failed: cause instanceof Error && !(cause instanceof TypeError) ? cause.message : CHAT_FAILED });
@@ -299,6 +415,11 @@ export function ReportChat({
                   <p className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-muted-foreground">
                     Ask about the people, objects and events in this incident. Answers come from the stored report for the version you have
                     open, not from a new look at the video. Times in an answer jump to that moment.
+                  </p>
+                  <p className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-muted-foreground">
+                    In Edit, two ways put a box on an item. "Draw the box for E2" opens the box tool so you draw it, at once. "Look for E2
+                    in the clip" has the video searched for it instead (about a minute an item); any box it finds comes back here to confirm
+                    or adjust.
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {SUGGESTIONS.map((suggestion) => (
