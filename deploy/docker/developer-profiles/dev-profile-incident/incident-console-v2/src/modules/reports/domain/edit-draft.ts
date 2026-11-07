@@ -12,6 +12,7 @@
 
 import type { ReportView } from '@/modules/reports/domain/report-view';
 import {
+  type EvidenceProposal,
   firstSeen,
   type ImagePick,
   type ReviewerDraftItem,
@@ -78,6 +79,8 @@ interface DraftItemDetails {
   reviewer: ReviewerDraftItem | null;
   /** Set image: the frame and box the reviewer drew for this item's evidence image; Save cuts it, its track and text are untouched. */
   imagePick: ImagePick | null;
+  /** An evidence change proposed for this item and not yet confirmed: while it is set, Save is blocked (draftProblems). */
+  proposal?: EvidenceProposal | null;
 }
 
 /** An in-progress edit: values a report may lack (type, times, threat level) start empty and must be chosen. */
@@ -259,6 +262,8 @@ export function draftProblems(draft: EditDraft): string[] {
     else if (seen !== null && (seen < first || seen > last))
       problems.push('The second an entity is most clearly visible must lie within its first to last seen.');
   }
+  if ([...draft.entities, ...draft.instruments, ...draft.assets].some((item) => item.proposal))
+    problems.push('Confirm, adjust or dismiss every proposed evidence change.');
   return [...new Set(problems)];
 }
 

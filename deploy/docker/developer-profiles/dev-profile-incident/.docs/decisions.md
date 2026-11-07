@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: An evidence change the chat proposes is held beside the item until the reviewer confirms it
+- **Decision:** a re-track or set-image change for an existing item is stored as `proposal` on the draft item, not as `reviewer` or `imagePick`. Confirm runs `retrackDraftItem` or `setImagePick`; Adjust reuses the Edit track or Set image dialog and its Done confirms; `draftProblems` blocks Save while any proposal is open. Behind `INCIDENT_EVIDENCE_PROPOSALS_ENABLED`, read by the report page on each request.
+- **Why:** the detector cannot signal doubt (a car was boxed as "person near billboard"), so a box the chat chose must be seen by the reviewer; a rule in `draftProblems` makes "cannot be saved unconfirmed" a code fact. Confirm reusing the hand-edit functions means Save cuts crops exactly as before.
+- **Alternatives rejected:** applying the change straight into `reviewer` (an unseen box could be saved); a confirm dialog only (Save would not be blocked); a flag in the agent (the agent only proposes, the console applies).
+- **Links:** [console-reference](console-reference.md#report-versions-view-edit-and-history), `evidence-proposals.ts`.
+
 ### 2026-11-07: Fixed edit and clip request test set and offline scorer under services/agent/tests
 - **Decision:** Plan B Phase 1 Item 1D provides the canonical 20-case test set (`cases.json`) and an offline scorer (`scorer.py`, `cases.py`) under `services/agent/tests/edit_test_set/`, unit-tested by `services/agent/tests/unit_test/test_edit_test_set.py`.
 - **Why:** enables offline verification of tool selection, arguments, and refusal behavior for both investigator (clip QA) and editor (report edits) agents without calling hosted models or spending model tokens.

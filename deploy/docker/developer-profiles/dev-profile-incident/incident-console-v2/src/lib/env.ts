@@ -45,6 +45,11 @@ export function getServiceConfiguration(): ServiceConfiguration {
   };
 }
 
+/** Flag INCIDENT_EVIDENCE_PROPOSALS_ENABLED (off unless 1, true, yes or on), read on every call so a restart is the only change needed. */
+export function isEvidenceProposalsEnabled(): boolean {
+  return /^(1|true|yes|on)$/i.test(optionalEnvironmentValue('INCIDENT_EVIDENCE_PROPOSALS_ENABLED') ?? '');
+}
+
 export function isSupabaseConfigured(config: ServiceConfiguration): boolean {
   return Boolean(config.supabaseUrl && config.supabaseServiceRoleKey);
 }

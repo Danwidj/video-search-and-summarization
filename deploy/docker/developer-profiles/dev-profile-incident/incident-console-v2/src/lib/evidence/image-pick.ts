@@ -7,7 +7,7 @@ import { boxRegion } from '@/lib/evidence/frame-geometry';
 import { pickSeconds } from '@/lib/evidence/frame-picker';
 import type { EditDraft } from '@/modules/reports/domain/edit-draft';
 import type { ItemEvidence } from '@/modules/reports/domain/report-view';
-import type { Box, ImagePick, ReviewerDraftItem } from '@/modules/reports/domain/reviewer-item';
+import type { Box, EvidenceProposal, ImagePick, ReviewerDraftItem } from '@/modules/reports/domain/reviewer-item';
 import type { EvidenceItemType } from '@/modules/reports/domain/revision';
 
 /** The frame route answers 422 for a second at or past the video's end, so a pick stops this far short of it. */
@@ -28,6 +28,8 @@ export function movePick(seconds: number, delta: number, durationSeconds: number
 
 interface DraftItemForPick {
   imagePick: ImagePick | null;
+  /** A proposed pick the reviewer is adjusting: the dialog opens on it. */
+  proposal?: EvidenceProposal | null;
   reviewer: ReviewerDraftItem | null;
   image: string | null;
   timestampSeconds: number | null;
@@ -42,13 +44,14 @@ export interface PickSeed {
 const asBox = (box: readonly number[] | null | undefined): Box | null => (box && boxRegion(box) ? (box as unknown as Box) : null);
 
 /**
- * Where the dialog opens: the reviewer's own pick, else the draft's track or still, else the saved item's frame and box while
+ * Where the dialog opens: a proposed pick, else the reviewer's own pick, else the draft's track or still, else the saved item's frame and box while
  * the draft still has the saved image, else the item's most-visible second with no box. An item with no box opens unboxed.
  */
 export function pickSeed(
   item: DraftItemForPick,
   saved: Pick<ItemEvidence, 'image' | 'located' | 'boxSeconds' | 'boundingBox'> | null,
 ): PickSeed {
+  if (item.proposal?.kind === 'set_image') return item.proposal.pick;
   if (item.imagePick) return item.imagePick;
   const first = item.reviewer?.track?.samples[0];
   if (first) return { seconds: first.t, box: asBox(first.box) };
