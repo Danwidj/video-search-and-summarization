@@ -20,6 +20,7 @@ Every model prompt the profile sends besides the contract's P1 and RP1 prompts (
 | [zoom/merge-entity](zoom/merge-entity.txt) | zoom | agent | `description`, `look_description`, `look_name`, `name` | Text-only merge of the agreeing looks with a person's report text |
 | [zoom/merge-object](zoom/merge-object.txt) | zoom | agent | `description`, `item_type`, `look_description`, `look_name`, `name` | Text-only merge of the agreeing looks with an instrument's or asset's report text |
 | [zoom/describe-box](zoom/describe-box.txt) | zoom | agent | - | Names and describes a reviewer-drawn box from one enlarged close-up with the box outlined: item type, name, description, holder, threat level |
+| [zoom/verify-box](zoom/verify-box.txt) | zoom | agent | `description`, `item_type`, `name` | Yes or no: does a box the gap retry found show the report item, and what does the box actually contain (flag, off by default) |
 | [chart/system](chart/system.txt) | chart | console | - | The dashboard chart interpreter's system prompt, built from the allowlist (source: `domain/chart-prompt.ts`) |
 | [chart/allowlist](chart/allowlist.json) | chart | console | - | The chart allowlist: metrics, dimensions, periods, severities, incident types (source: `chart-spec.ts`) |
 | [chart/severity-words](chart/severity-words.json) | chart | console | - | Not a prompt: the severity-word table the console applies to a chart request before the model reads it (source: `severity-words.ts`). Eval's `agent-route-v3` reads it |

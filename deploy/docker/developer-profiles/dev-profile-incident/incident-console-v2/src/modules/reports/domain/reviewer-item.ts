@@ -160,6 +160,15 @@ export interface ImagePick {
   box: Box;
 }
 
+/**
+ * An evidence change proposed for an existing draft item (by the chat editor) and not yet trusted. It is held beside the item,
+ * never in `reviewer` or `imagePick`, so nothing is cut from it until the reviewer confirms it (Confirm, or Adjust then Done).
+ * A re-track carries the track the tracker made, with its `partial` and `lostAt` so the reviewer sees where it lost the item.
+ */
+export type EvidenceProposal =
+  | { kind: 'retrack'; track: ReviewerTrack; reason: string | null }
+  | { kind: 'set_image'; pick: ImagePick; reason: string | null };
+
 /** The entry fields that name an item's image, frame and box: what a reviewer's own image keeps through a later re-track. */
 export const IMAGE_ENTRY_KEYS = ['image', 'frame', 'bounding_box', 'timestamp_seconds', 'box_seconds', 'located'] as const;
 

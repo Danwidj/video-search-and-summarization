@@ -153,8 +153,8 @@ test('the conversation lives on the page, so closing the panel keeps it, and eac
   assert.doesNotMatch(chat, /useState<ChatMessage\[\]>/, 'the panel holds no conversation of its own');
   assert.match(page, /useState<Record<string, ChatThread>>/);
   assert.match(page, /thread=\{chatThreads\[threadKey\] \?\? EMPTY_CHAT_THREAD\}/);
-  assert.match(page, /chatThreadKey\(target\.versionId, /, 'a thread is keyed by the version asked about');
-  assert.match(page, /_earlierDraft/, 'a new draft does not inherit answers about an earlier draft');
+  assert.match(page, /chatThreadKey\(target\.versionId\)/, 'a thread is keyed by the version asked about');
+  assert.doesNotMatch(page, /_earlierDraft/, 'a new draft keeps the version conversation');
 });
 
 test('the player stays usable beside the chat, and a jump reaches the player on screen', () => {
@@ -197,6 +197,20 @@ test('a fresh video check never reaches the report model as conversation', async
   assert.deepEqual(
     chatHistory(turns).map((turn) => turn.content),
     ['a', 'b', 'd'],
+  );
+});
+
+test('a blank assistant reply never reaches the report model as conversation', async () => {
+  const { chatHistory } = await import('../src/lib/chat/report-chat.ts');
+  const turns = [
+    { role: 'user', content: 'a' },
+    { role: 'assistant', content: '   ', source: 'investigator' },
+    { role: 'assistant', content: 'b', source: 'report' },
+    { role: 'user', content: 'c' },
+  ];
+  assert.deepEqual(
+    chatHistory(turns).map((turn) => turn.content),
+    ['a', 'b', 'c'],
   );
 });
 

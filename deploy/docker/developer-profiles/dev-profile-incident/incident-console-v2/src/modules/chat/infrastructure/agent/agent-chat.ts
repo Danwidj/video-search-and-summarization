@@ -4,7 +4,7 @@
 // camelCase ChatRequest in, camelCase ChatResponse out.
 
 import { readUpstream } from '@/lib/http';
-import type { ChatCitation, ChatRequest, ChatResponse, VideoCheckResult } from '@/modules/chat/domain/chat';
+import type { ChatCitation, ChatRequest, ChatResponse, EvidenceExchange, VideoCheckResult } from '@/modules/chat/domain/chat';
 
 export function toAgentChatBody(request: ChatRequest): Record<string, unknown> {
   const { sessionId, messages, context, versionId, draftReport } = request;
@@ -153,4 +153,81 @@ export async function sendVideoCheck(
   const body = (await readUpstream(response, 'Agent video check')) as { content?: unknown; source?: unknown };
   if (typeof body.content !== 'string' || body.source !== 'video') throw new Error('Agent returned an invalid video check');
   return { content: body.content, source: 'video' };
+}
+
+const STOPPED_REASONS = new Map<string, string>([
+  ['cap_reached', 'The agent reached its tool step limit before it could answer'],
+  ['aborted:step_budget', 'The agent reached its tool step limit before it could answer'],
+  ['timeout', 'The agent ran out of time before it could answer'],
+  ['busy', 'The model is busy, so the agent could not answer'],
+  ['error', 'The agent hit an error before it could answer'],
+]);
+
+/** One plain sentence for a run that ended with no answer, saying how many changes it proposed. Same wording as the agent route. */
+export function blankInvestigateAnswer(status: string, proposed: number): string {
+  const reason = STOPPED_REASONS.get(status) ?? 'The agent stopped before it could answer';
+  const changes =
+    proposed === 0 ? 'no changes were proposed' : proposed === 1 ? '1 change was proposed' : `${proposed} changes were proposed`;
+  return `${reason}; ${changes}.`;
+}
+
+export function fromAgentInvestigateResponse(payload: unknown, sessionId?: string): ChatResponse {
+  const body = (payload ?? {}) as {
+    status?: string;
+    answer?: string;
+    steps?: Array<{ tool?: string; args?: unknown; ok?: boolean; ms?: number; error?: string | null }>;
+    actions?: Array<{ tool?: string; args?: unknown }>;
+    wall_ms?: number;
+  };
+  if (typeof body.answer !== 'string' || !Array.isArray(body.steps)) {
+    throw new Error('Agent returned an invalid investigate response');
+  }
+  const actions = Array.isArray(body.actions)
+    ? body.actions.map((a) => ({
+        tool: String(a.tool ?? ''),
+        args: (typeof a.args === 'object' && a.args !== null ? a.args : {}) as Record<string, unknown>,
+      }))
+    : [];
+  return {
+    sessionId: sessionId || `investigate-${Date.now()}`,
+    message: {
+      role: 'assistant',
+      content: body.answer.trim() ? body.answer : blankInvestigateAnswer(body.status || 'ok', actions.length),
+      citations: [],
+      source: 'investigator',
+      status: body.status || 'ok',
+      steps: body.steps.map((s) => ({
+        tool: String(s.tool ?? ''),
+        args: (typeof s.args === 'object' && s.args !== null ? s.args : {}) as Record<string, unknown>,
+        ok: Boolean(s.ok),
+        ms: typeof s.ms === 'number' ? s.ms : 0,
+        error: typeof s.error === 'string' ? s.error : null,
+      })),
+      actions,
+      wallMs: typeof body.wall_ms === 'number' ? body.wall_ms : 0,
+    },
+  };
+}
+
+export async function sendAgentInvestigate(
+  agentUrl: string,
+  videoId: string,
+  question: string,
+  signal?: AbortSignal,
+  /** The reviewer's draft snapshot: the agent then runs its report editor and returns the edits as `actions`. */
+  draft?: Record<string, unknown>,
+  /** The new-evidence exchange still open in the chat, with the draft. */
+  evidence?: EvidenceExchange,
+): Promise<ChatResponse> {
+  const response = await fetch(`${agentUrl.replace(/\/$/, '')}/api/v1/incidents/${encodeURIComponent(videoId)}/investigate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      question,
+      ...(draft ? { draft } : {}),
+      ...(evidence ? { evidence: { questions_asked: evidence.questionsAsked, transcript: evidence.transcript } } : {}),
+    }),
+    signal,
+  });
+  return fromAgentInvestigateResponse(await readUpstream(response, 'Agent /api/v1/incidents/{video_id}/investigate'));
 }

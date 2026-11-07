@@ -30,7 +30,10 @@ from vss_agents.api.incident_box_describe import register_incident_box_describe_
 from vss_agents.api.incident_box_track import register_incident_box_track_routes
 from vss_agents.api.incident_charts import register_incident_charts_routes
 from vss_agents.api.incident_chat import register_incident_chat_routes
+from vss_agents.api.incident_draft_edits import register_incident_draft_edits_routes
+from vss_agents.api.incident_evidence_asks import register_incident_evidence_asks_routes
 from vss_agents.api.incident_evidence_embeddings import register_incident_evidence_embeddings_routes
+from vss_agents.api.incident_investigate import register_incident_investigate_routes
 from vss_agents.api.incident_revision_search import register_incident_revision_search_routes
 from vss_agents.api.incident_search import register_incident_search_routes
 from vss_agents.api.incident_video_check import register_incident_video_check_routes
@@ -109,6 +112,8 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
           revision is made official.
         - ``POST /api/v1/incidents/{video_id}/box/describe`` — names and describes
           the box a reviewer drew on a frame (one VLM call, nothing stored).
+        - ``POST /api/v1/incidents/{video_id}/investigate`` — an agent that
+          chooses its own tools to answer one question.
         - ``POST /api/v1/incidents/charts`` — draws the figures the console
           sends with ``chart_generator``.
 
@@ -151,6 +156,9 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         register_incident_box_describe_routes(app)
         register_incident_box_track_routes(app)
         register_incident_video_check_routes(app)
+        register_incident_investigate_routes(app, builder, self._create_session_manager)
+        register_incident_draft_edits_routes(app)
+        register_incident_evidence_asks_routes(app)
         chart_generator_cfg = (getattr(self.config, "functions", None) or {}).get("chart_generator")
         chart_llm_name = getattr(chart_generator_cfg, "llm_name", None)
         register_incident_charts_routes(app, builder, str(chart_llm_name) if chart_llm_name else None)

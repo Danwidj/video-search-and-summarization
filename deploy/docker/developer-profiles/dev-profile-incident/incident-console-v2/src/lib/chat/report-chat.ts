@@ -7,6 +7,14 @@
 import type { EditDraft } from '@/modules/reports/domain/edit-draft';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import type { StructuredAsset, StructuredEntity, StructuredInstrument } from '@/modules/reports/domain/report-view';
+import type { EvidenceExchange } from '@/modules/chat/domain/chat';
+
+/**
+ * Fixed prefix returned when the chat report editor refuses an unsupported edit request
+ * (re-tracking, box change, setting an image, or unsupported incident types) instead of running proposal tools or improvising.
+ * Matches the refusal instructions in report_editor's system_prompt in config.yml.
+ */
+export const CHAT_EDITOR_REFUSAL_PREFIX = "I can't do that in chat:";
 
 export interface ChatTarget {
   /** The saved version the question is about (the draft's base when there is a draft). */
@@ -80,18 +88,19 @@ export function draftReport(draft: EditDraft): Record<string, unknown> {
   };
 }
 
-export type AnswerSource = 'report' | 'report_llm' | 'video';
+export type AnswerSource = 'report' | 'report_llm' | 'video' | 'investigator';
 
 /** Where an answer came from, under the answer. With no stated source it is the stored report, as composed answers are. */
 export function answerSourceLine(source: AnswerSource | undefined, label: string): string {
   if (source === 'video') return 'Fresh video check: not part of the report, and not saved';
+  if (source === 'investigator') return `Tool-calling agent: ${label}`;
   if (source === 'report_llm') return `AI reading of the stored report: ${label}`;
   return `Answered from the stored report: ${label}`;
 }
 
-/** The turns the report chat sends: a fresh video check stays out, so a report answer never reads it as the report. */
-export function chatHistory<T extends { source?: AnswerSource }>(messages: T[]): T[] {
-  return messages.filter((message) => message.source !== 'video');
+/** The turns the report chat sends: a fresh video check stays out, so a report answer never reads it as the report, and a blank assistant reply is left out. */
+export function chatHistory<T extends { role: string; content: string; source?: AnswerSource }>(messages: T[]): T[] {
+  return messages.filter((message) => message.source !== 'video' && !(message.role === 'assistant' && message.content.trim() === ''));
 }
 
 /** Whether a check can be offered: an offer about what came after a moment needs footage after it. */
@@ -106,11 +115,19 @@ export function chatRequestBody({
   sessionId,
   videoId,
   target,
+  steps,
+  editDraft,
+  evidence,
 }: {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   sessionId?: string;
   videoId: string;
   target: ChatTarget;
+  steps?: boolean;
+  /** The draft snapshot (lib/edits/chat-edit.ts draftSnapshot): the chat may then change the draft. */
+  editDraft?: Record<string, unknown>;
+  /** The new-evidence exchange still open (lib/chat/evidence-ask.ts pendingEvidenceExchange). */
+  evidence?: EvidenceExchange;
 }) {
   return {
     messages,
@@ -118,6 +135,9 @@ export function chatRequestBody({
     incidentId: videoId,
     versionId: target.versionId,
     ...(target.draftReport ? { draftReport: target.draftReport } : {}),
+    ...(steps !== undefined ? { steps } : {}),
+    ...(editDraft ? { editDraft } : {}),
+    ...(evidence ? { evidence } : {}),
   };
 }
 

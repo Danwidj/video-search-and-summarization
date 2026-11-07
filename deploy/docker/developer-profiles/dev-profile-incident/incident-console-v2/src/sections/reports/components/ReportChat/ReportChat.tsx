@@ -28,9 +28,14 @@ import {
   citationTitle,
   offersVideoCheck,
 } from '@/lib/chat/report-chat';
+import { evidenceRows, pendingEvidenceExchange, splitEvidenceActions } from '@/lib/chat/evidence-ask';
 import { segmentChatText } from '@/lib/chat/timestamps';
-import type { ChatCitation, ChatResponse, VideoOffer } from '@/modules/chat/domain/chat';
+import { draftSnapshot, type ProposedAction } from '@/lib/edits/chat-edit';
+import type { BoxOpening } from '@/lib/evidence/box-tool';
+import type { EditDraft } from '@/modules/reports/domain/edit-draft';
+import type { AppliedAction, ChatCitation, ChatResponse, ChatStep, SkippedAction, VideoOffer } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
+import { ChatStepsView } from './ChatStepsView';
 
 const SUGGESTIONS = ['Show the timeline of events'];
 
@@ -56,6 +61,14 @@ type ChatMessage = {
   videoOffer?: VideoOffer;
   /** Times the agent found the report does not hold. They stay plain text. */
   unknownTimes?: string[];
+  steps?: ChatStep[];
+  applied?: AppliedAction[];
+  skipped?: SkippedAction[];
+  wallMs?: number;
+  /** The reply is the editor's question to the reviewer about new evidence (its content is that question). */
+  askedReviewer?: boolean;
+  /** The reply opened the box tool for new evidence at this second, with this name. */
+  openedBox?: BoxOpening;
 };
 
 /** One conversation. The report page holds it, so closing the panel does not lose it. */
@@ -116,6 +129,7 @@ export function ReportChat({
   onSeek,
   durationSeconds = null,
   titles = {},
+  edits,
 }: {
   videoId: string;
   target: ChatTarget;
@@ -126,6 +140,15 @@ export function ReportChat({
   durationSeconds?: number | null;
   /** Each cited item's name (citationTitles), so a citation is shown without its id. */
   titles?: Record<string, string>;
+  /**
+   * Lets a question change the draft . `current` is the draft as it is when the question
+   * is sent; `apply` takes the agent's proposals, made for that draft, and returns what it applied and skipped.
+   * A box the agent opened for new evidence (`opening`) is shown in Edit, the box tool open on it.
+   */
+  edits?: {
+    current: () => EditDraft;
+    apply: (sent: EditDraft, proposals: ProposedAction[], opening?: BoxOpening) => { applied: AppliedAction[]; skipped: SkippedAction[] };
+  };
 }) {
   const { messages, sessionId, busy, failed } = thread;
   const [question, setQuestion] = useState('');
@@ -140,16 +163,29 @@ export function ReportChat({
     messageSequence += 1;
     const next: ChatMessage[] = [...history, { id: `msg-${messageSequence}`, role: 'user', content: text }];
     onThreadChange({ messages: next, busy: true, failed: null });
+    const sent = edits?.current();
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
-          chatRequestBody({ messages: chatHistory(next).map(({ role, content }) => ({ role, content })), sessionId, videoId, target }),
+          chatRequestBody({
+            messages: chatHistory(next).map(({ role, content }) => ({ role, content })),
+            sessionId,
+            videoId,
+            target,
+            ...(sent ? { editDraft: draftSnapshot(sent) } : {}),
+            evidence: pendingEvidenceExchange(next) ?? undefined,
+          }),
         ),
       });
       const payload = (await readReply(response)) as Partial<ChatResponse> & { error?: string };
       if (!response.ok || !payload.message) throw new Error(payload.error || CHAT_FAILED);
+      // A question for the reviewer is the reply; a box opening goes to the page; the other edits join the draft in one
+      // change (one Undo), then the message says what happened to each.
+      const actions = payload.message.actions ?? [];
+      const { question, opening, rest } = splitEvidenceActions(actions, sent ?? null);
+      const outcome = edits && sent && actions.length ? edits.apply(sent, rest, opening) : undefined;
       messageSequence += 1;
       onThreadChange({
         sessionId: payload.sessionId,
@@ -157,9 +193,16 @@ export function ReportChat({
           ...next,
           {
             ...payload.message,
+            content: question ?? payload.message.content,
             id: `msg-${messageSequence}`,
             answeredFrom: target.label,
             unknownTimes: payload.grounding?.unknownTimes,
+            steps: payload.message.steps,
+            applied: outcome?.applied ?? payload.message.applied,
+            skipped: outcome?.skipped ?? payload.message.skipped,
+            wallMs: payload.message.wallMs,
+            askedReviewer: question !== undefined,
+            openedBox: opening,
           },
         ],
       });
@@ -348,6 +391,18 @@ export function ReportChat({
                               Check original video
                             </Button>
                           </div>
+                        )}
+                        {(Boolean(message.steps?.length) ||
+                          Boolean(message.applied?.length) ||
+                          Boolean(message.skipped?.length) ||
+                          evidenceRows(message).length > 0) && (
+                          <ChatStepsView
+                            applied={message.applied}
+                            evidence={evidenceRows(message)}
+                            skipped={message.skipped}
+                            steps={message.steps}
+                            wallMs={message.wallMs}
+                          />
                         )}
                         <p className="mt-1.5 text-[10.5px] text-muted-foreground" data-testid="chat-answered-from">
                           {answerSourceLine(message.source, message.answeredFrom ?? '')}

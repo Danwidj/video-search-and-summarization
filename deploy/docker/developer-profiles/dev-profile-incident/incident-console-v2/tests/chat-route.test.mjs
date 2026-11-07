@@ -226,3 +226,93 @@ test('a template (chat-contract-v1) answer has no flag and no grounding', async 
   assert.equal('insufficientEvidence' in payload.message, false);
   assert.equal('grounding' in payload, false);
 });
+
+test('the draft goes to the investigate route and its actions come back for the page to apply', async () => {
+  const actions = [{ tool: 'propose_set_incident_fields', args: { severity_level: 4 } }];
+  upstream.body = {
+    status: 'ok',
+    answer: 'Raised the severity.',
+    steps: [{ tool: 'propose_set_incident_fields', args: { severity_level: 4 }, ok: true, ms: 5 }],
+    actions,
+    wall_ms: 10,
+  };
+  const editDraft = { incident: { title: 'Fight' }, entities: [] };
+  const response = await post({ messages: [{ role: 'user', content: 'Make it severity 4' }], incidentId: 'V1', editDraft });
+  const body = await response.json();
+  assert.equal(upstream.calls.length, 1);
+  assert.match(upstream.calls[0].url, /\/api\/v1\/incidents\/V1\/investigate$/);
+  assert.deepEqual(upstream.calls[0].body, { question: 'Make it severity 4', draft: editDraft });
+  assert.deepEqual(body.message.actions, actions);
+  assert.equal(body.message.applied, undefined);
+});
+
+test('the new-evidence exchange goes with the draft to the editor, in the agent shape', async () => {
+  upstream.body = {
+    status: 'ok',
+    answer: '',
+    steps: [{ tool: 'propose_ask_reviewer', args: { question: 'Which shop?' }, ok: true, ms: 4 }],
+    actions: [{ tool: 'propose_ask_reviewer', args: { question: 'Which shop?' } }],
+    wall_ms: 5,
+  };
+  const evidence = { questionsAsked: 1, transcript: [{ role: 'reviewer', text: 'a bag on the floor' }] };
+  const response = await post({
+    messages: [{ role: 'user', content: 'near the till' }],
+    incidentId: 'V1',
+    editDraft: { incident: {}, entities: [] },
+    evidence,
+  });
+  const body = await response.json();
+  assert.deepEqual(upstream.calls[0].body.evidence, { questions_asked: 1, transcript: evidence.transcript });
+  assert.deepEqual(body.message.actions, upstream.body.actions);
+});
+
+test('an editor run that used no tool was not an edit: the usual chat answers, as it does without a draft', async () => {
+  const bodies = [{ status: 'ok', answer: 'This is not an edit.', steps: [], actions: [], wall_ms: 3 }, agentResponse];
+  globalThis.fetch = async (url, init) => {
+    upstream.calls.push({ url: String(url), body: JSON.parse(init.body) });
+    return new Response(JSON.stringify(bodies[upstream.calls.length - 1]), { status: 200 });
+  };
+  const response = await post({
+    messages: [{ role: 'user', content: 'What weapon?' }],
+    incidentId: 'V1',
+    editDraft: { incident: {} },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    upstream.calls.map((call) => call.url.split('/').slice(-1)[0]),
+    ['investigate', 'chat'],
+  );
+});
+
+test('an editor run that used no tool and returned a refusal prefix is returned to the user without falling through', async () => {
+  const refusalAnswer =
+    "I can't do that in chat: re-tracking and images are done in the box tool in Edit, and new evidence with + Add evidence.";
+  upstream.body = { status: 'ok', answer: refusalAnswer, steps: [], actions: [], wall_ms: 4 };
+  const response = await post({
+    messages: [{ role: 'user', content: 'Re-track the person in purple' }],
+    incidentId: 'V1',
+    editDraft: { incident: {} },
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(upstream.calls.length, 1);
+  assert.match(upstream.calls[0].url, /\/api\/v1\/incidents\/V1\/investigate$/);
+  assert.equal(body.message.content, refusalAnswer);
+  assert.deepEqual(body.message.actions, []);
+});
+
+test('an editor run that used no tool and returned a type refusal prefix is returned to the user without falling through', async () => {
+  const refusalAnswer =
+    "I can't do that in chat: allowed incident types are road accident, burglary, explosion, assault and animal attack.";
+  upstream.body = { status: 'ok', answer: refusalAnswer, steps: [], actions: [], wall_ms: 4 };
+  const response = await post({
+    messages: [{ role: 'user', content: 'Change the type to robbery' }],
+    incidentId: 'V1',
+    editDraft: { incident: {} },
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(upstream.calls.length, 1);
+  assert.match(upstream.calls[0].url, /\/api\/v1\/incidents\/V1\/investigate$/);
+  assert.equal(body.message.content, refusalAnswer);
+});

@@ -11,6 +11,22 @@ import type { TrackSample } from '@/modules/reports/domain/track';
 
 type ReviewerTrackSample = ReviewerTrack['samples'][number];
 
+/** New evidence the chat asked for: the box tool opens at this second with the name already filled in. */
+export interface EvidenceOpening {
+  seconds: number;
+  name: string;
+}
+
+/** An existing draft item the chat asked to redraw (re-track or set image): the box tool opens on it at its own seen second. */
+export interface ItemOpening {
+  itemKey: string;
+  name: string;
+}
+
+export type BoxOpening = EvidenceOpening | ItemOpening;
+
+export const isItemOpening = (opening: BoxOpening): opening is ItemOpening => 'itemKey' in opening;
+
 /** How far one "Extend" button reaches, and the window either side of a fresh box. */
 export const TRACK_WINDOW_SECONDS = 3;
 /** Milliseconds of waiting on the AI before the box tool says it is still looking. */
