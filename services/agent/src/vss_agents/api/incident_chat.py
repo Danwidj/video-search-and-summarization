@@ -59,6 +59,7 @@ from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import model_validator
 
+from vss_agents.utils import chat_followups
 from vss_agents.utils import chat_routing
 from vss_agents.utils import grounded_chat
 from vss_agents.utils import incident_db
@@ -580,14 +581,15 @@ def create_incident_chat_router(
                 )
             official = await revisions.get_official_revision_id(video_id) == version_id
         except RevisionStoreUnavailableError as exc:
-            raise HTTPException(status_code=503, detail=f"Report revisions unavailable: {exc}") from exc
+            logger.error("RevisionStore unavailable during grounded chat: %s", exc)
+            raise HTTPException(status_code=503, detail=REPORTS_UNAVAILABLE) from exc
         except HTTPException:
             raise
         except Exception as exc:
             logger.error("RevisionStore failed during grounded chat: %s", exc, exc_info=True)
-            raise HTTPException(status_code=502, detail=f"Report revision error: {exc}") from exc
+            raise HTTPException(status_code=502, detail=REPORTS_UNAVAILABLE) from exc
 
-        saved = revision.get("evidence") or []
+        saved = report_answers.dict_rows(revision.get("evidence"))
         raw = revision.get("payload")
         payload: dict[str, Any] = raw if isinstance(raw, dict) else {}
         report, evidence, retired = payload, saved, set[str]()
@@ -605,7 +607,7 @@ def create_incident_chat_router(
             answer = grounded_chat.check_answer(reply, context, question=question, retired=retired)
         except grounded_chat.ChatModelError as exc:
             logger.error("Chat model failed for version %s: %s", version_id, exc)
-            raise HTTPException(status_code=502, detail=f"Chat model error: {exc}") from exc
+            raise HTTPException(status_code=502, detail=CHAT_MODEL_UNAVAILABLE) from exc
         by_id = {str(entry.get("item_id")): entry for entry in evidence}
         items = {item["item_id"]: item for item in context["items"]}
         citations = []
@@ -665,7 +667,8 @@ def create_incident_chat_router(
             )
             official = await revisions.get_official_revision_id(video_id) == version_id
         except RevisionStoreUnavailableError as exc:
-            raise HTTPException(status_code=503, detail=f"Report revisions unavailable: {exc}") from exc
+            logger.error("RevisionStore unavailable during routed chat: %s", exc)
+            raise HTTPException(status_code=503, detail=REPORTS_UNAVAILABLE) from exc
         report, evidence, retired = _version_report(revision, body.draft_report)
         view = report_answers.report_view(report, evidence, retired=retired)
         question = next(m.content for m in reversed(body.messages) if m.role == "user").strip()
@@ -684,10 +687,21 @@ def create_incident_chat_router(
         offer: VideoOffer | None = None
         checks_video = video_check.enabled()
         earlier = any(message.role == "assistant" for message in body.messages)
-        if decision.reason == "needs_reading" and not earlier and report_answers.has_no_subject(question, view):
+        single_person = sum(item.is_person for item in view.items) == 1
+        if (
+            decision.reason == "needs_reading"
+            and not earlier
+            and not single_person
+            and report_answers.has_no_subject(question, view)
+        ):
             return ChatResponse(
                 session_id=session_id,
-                message=AssistantMessage(content=NO_SUBJECT, citations=[], insufficient_evidence=True, source="report"),
+                message=AssistantMessage(
+                    content=chat_followups.clarification(view),
+                    citations=[],
+                    insufficient_evidence=True,
+                    source="report",
+                ),
                 grounding={**grounding, "route": "insufficient", "route_reason": "no_subject"},
             )
         if decision.route == "deterministic":
@@ -706,10 +720,27 @@ def create_incident_chat_router(
                     grounded_chat.routed_messages(context, history), grounded_chat.ROUTED_SCHEMA
                 )
                 answer = grounded_chat.check_routed(reply, context, view, question=question, retired=retired)
-            except grounded_chat.ChatModelError as exc:
-                logger.error("Chat model failed for version %s: %s", version_id, exc)
-                raise HTTPException(status_code=502, detail=f"Chat model error: {exc}") from exc
+            except Exception as exc:
+                # The reviewer still gets what the report can settle; the reason stays in the log.
+                logger.error("Chat model failed for version %s: %s", version_id, exc, exc_info=True)
+                fallback = _model_unavailable(question, history, view, decision)
+                wanted = decision.video == "always"
+                offer = VideoOffer(reason=_offer_reason(decision.video, "")) if checks_video and wanted else None
+                route = "insufficient" if fallback.insufficient_evidence and offer is None else "deterministic"
+                return ChatResponse(
+                    session_id=session_id,
+                    message=AssistantMessage(
+                        content=fallback.text,
+                        citations=_citations(video_id, fallback.item_ids, view, evidence),
+                        insufficient_evidence=fallback.insufficient_evidence,
+                        source="report",
+                        video_offer=offer,
+                    ),
+                    grounding={**grounding, "route": route, "route_reason": "model_unavailable"},
+                )
             content, item_ids, insufficient = answer.content, answer.item_ids, answer.insufficient_evidence
+            if answer.video_could_answer and not checks_video and decision.video != "never":
+                content = f"{content}\n\n{VIDEO_UNAVAILABLE}"
             source = "report_llm"
             grounding |= {
                 "model": model.model,
@@ -753,12 +784,13 @@ def create_incident_chat_router(
                     f"not {filters['incident_id']}",
                 )
         except RevisionStoreUnavailableError as exc:
-            raise HTTPException(status_code=503, detail=f"Report revisions unavailable: {exc}") from exc
+            logger.error("RevisionStore unavailable during incident chat: %s", exc)
+            raise HTTPException(status_code=503, detail=REPORTS_UNAVAILABLE) from exc
         except HTTPException:
             raise
         except Exception as exc:
             logger.error("RevisionStore failed during incident chat: %s", exc, exc_info=True)
-            raise HTTPException(status_code=502, detail=f"Report revision error: {exc}") from exc
+            raise HTTPException(status_code=502, detail=REPORTS_UNAVAILABLE) from exc
         return revision, video_id
 
     async def _library(body: ChatRequest, session_id: str) -> ChatResponse:
@@ -774,13 +806,13 @@ def create_incident_chat_router(
             )
         except grounded_chat.ChatModelError as exc:
             logger.error("Chat model failed to plan a library question: %s", exc)
-            raise HTTPException(status_code=502, detail=f"Chat model error: {exc}") from exc
+            raise HTTPException(status_code=502, detail=CHAT_MODEL_UNAVAILABLE) from exc
         usages = [dict(getattr(model, "last_usage", {}) or {})]
         try:
             reports = await _index().reports()
         except Exception as exc:
             logger.error("Library index failed during library chat: %s", exc, exc_info=True)
-            raise HTTPException(status_code=502, detail=f"Library read error: {exc}") from exc
+            raise HTTPException(status_code=502, detail=REPORTS_UNAVAILABLE) from exc
         matching = [report for report in reports if grounded_chat.matches(report, plan)]
         ranked = grounded_chat.rank(matching, plan["query"])
         candidates = ranked[: grounded_chat.MAX_LIBRARY_REPORTS]
@@ -829,7 +861,7 @@ def create_incident_chat_router(
             answer = grounded_chat.check_library_answer(reply, context, question=question)
         except grounded_chat.ChatModelError as exc:
             logger.error("Chat model failed to answer a library question: %s", exc)
-            raise HTTPException(status_code=502, detail=f"Chat model error: {exc}") from exc
+            raise HTTPException(status_code=502, detail=CHAT_MODEL_UNAVAILABLE) from exc
         by_report = {report.incident_id: report for report in candidates}
         item_types = {(r["incident_id"], i["item_id"]): i["item_type"] for r in context["reports"] for i in r["items"]}
         citations = []
@@ -904,13 +936,20 @@ def create_incident_chat_router(
             revision, video_id = await _load_version(body, filters, revisions)
             report, evidence, retired = _version_report(revision, body.draft_report)
             view = report_answers.report_view(report, evidence, retired=retired)
-            earlier = any(message.role == "assistant" for message in body.messages)
-            if earlier and report_answers.needs_context(query_text, view):
-                return ChatResponse(
-                    session_id=session_id,
-                    message=AssistantMessage(role="assistant", content=NEEDS_NAME, citations=[]),
-                )
-            return _composed_answer(session_id, query_text, video_id, revision, body.draft_report)
+            history = [message.model_dump() for message in body.messages]
+            try:
+                answer = chat_followups.resolve(query_text, history, view) or report_answers.compose(query_text, view)
+                text = answer.text
+                if answer.kind in ("unanswerable", "absent") and not video_check.enabled():
+                    text = f"{text} {VIDEO_UNAVAILABLE}"
+                cards = _citations(video_id, answer.item_ids, view, evidence)
+            except Exception as exc:
+                logger.error("Composing a report answer failed for version %s: %s", body.version_id, exc, exc_info=True)
+                text, cards = COULD_NOT_READ, []
+            return ChatResponse(
+                session_id=session_id,
+                message=AssistantMessage(role="assistant", content=text, citations=cards),
+            )
 
         if not getattr(client, "enabled", True):
             return ChatResponse(
@@ -921,7 +960,7 @@ def create_incident_chat_router(
             hits = await client.search(query=query_text, top_k=5, filters=filters)
         except Exception as exc:
             logger.error("SearchClient failed during incident chat: %s", exc, exc_info=True)
-            raise HTTPException(status_code=502, detail=f"Evidence search error: {exc}") from exc
+            raise HTTPException(status_code=502, detail=SEARCH_UNAVAILABLE) from exc
 
         # Handle empty results cleanly
         if not hits:
@@ -990,11 +1029,41 @@ NOT_SEARCHED = {
 }
 
 
-NO_SUBJECT = 'Which person or object do you mean? Name them, for example "the man in the white shirt".'
-NEEDS_NAME = (
-    "This chat mode reads each question on its own, so it can't tell who or what that refers to. "
-    'Name the person or object, for example "the man in the white shirt".'
-)
+CHAT_MODEL_UNAVAILABLE = "The chat model is unavailable right now. Please try again in a moment."
+REPORTS_UNAVAILABLE = "The incident reports can't be read right now. Please try again in a moment."
+SEARCH_UNAVAILABLE = "The evidence search is unavailable right now. Please try again in a moment."
+COULD_NOT_READ = "I couldn't read the report for this question just now. Please try again in a moment."
+FROM_THE_REPORT = "The AI reader is unavailable right now, so this comes straight from the stored report."
+VIDEO_UNAVAILABLE = "A check of the original video isn't available right now."
+
+
+def _model_unavailable(
+    question: str,
+    history: list[dict[str, Any]],
+    view: report_answers.ReportView,
+    decision: chat_routing.Decision,
+) -> report_answers.ComposedAnswer:
+    """What a question routed to the model gets when the model fails.
+
+    Only an answer that stands on the report is given. A composed "the report doesn't mention hit" for "why did he hit
+    him?" could be false, so a motive, a dispute, a request for the video or an answer that found nothing gets a plain
+    request to try again.
+    """
+    failed = report_answers.ComposedAnswer(COULD_NOT_READ, (), True, "model_unavailable")
+    if decision.reason in ("motive", "disputes_report", "asks_for_video"):
+        return failed
+    try:
+        composed = chat_followups.resolve(question, history, view) or report_answers.compose(question, view)
+    except Exception as exc:
+        logger.error("Composing a fallback answer failed: %s", exc, exc_info=True)
+        return failed
+    if composed.kind == "clarify":
+        return composed
+    if composed.insufficient_evidence:
+        return failed
+    return report_answers.ComposedAnswer(
+        f"{composed.text}\n\n{FROM_THE_REPORT}", composed.item_ids, False, composed.kind
+    )
 
 
 def _offer_reason(video: str, missing: str) -> str:
@@ -1010,7 +1079,7 @@ def _version_report(
     """The report a question reads (a draft laid over its base version), its evidence and the ids the draft removed."""
     raw = revision.get("payload")
     payload: dict[str, Any] = raw if isinstance(raw, dict) else {}
-    saved = revision.get("evidence") or []
+    saved = report_answers.dict_rows(revision.get("evidence"))
     if draft_report is None:
         return payload, saved, set()
     report = report_answers.overlay_draft(payload, draft_report)
@@ -1054,29 +1123,6 @@ def _citations(
             )
         )
     return citations
-
-
-def _composed_answer(
-    session_id: str,
-    query: str,
-    video_id: str,
-    revision: dict[str, Any],
-    draft_report: dict[str, Any] | None,
-) -> ChatResponse:
-    """The answer to a question about one revision (or a draft of it), composed from its report.
-
-    The citations are the items the answer relies on, each with the crop and second of its evidence entry
-    (a draft item takes the saved crop of the same item in the base revision).
-    """
-    report, evidence, retired = _version_report(revision, draft_report)
-    view = report_answers.report_view(report, evidence, retired=retired)
-    answer = report_answers.compose(query, view)
-    return ChatResponse(
-        session_id=session_id,
-        message=AssistantMessage(
-            role="assistant", content=answer.text, citations=_citations(video_id, answer.item_ids, view, evidence)
-        ),
-    )
 
 
 def register_incident_chat_routes(

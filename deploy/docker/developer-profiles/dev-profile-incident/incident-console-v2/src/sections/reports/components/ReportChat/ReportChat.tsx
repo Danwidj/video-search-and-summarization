@@ -34,7 +34,14 @@ import { formatClock } from '@/modules/reports/domain/normalize';
 
 const SUGGESTIONS = ['Show the timeline of events'];
 
+const CHAT_FAILED = 'The chat service is unavailable right now. Please try again in a moment.';
+
 let messageSequence = 0;
+
+/** A reply body as JSON; a proxy's HTML error page reads as an empty reply rather than a parse error on screen. */
+async function readReply(response: Response): Promise<unknown> {
+  return response.json().catch(() => ({}));
+}
 
 type ChatMessage = {
   id: string;
@@ -141,8 +148,8 @@ export function ReportChat({
           chatRequestBody({ messages: chatHistory(next).map(({ role, content }) => ({ role, content })), sessionId, videoId, target }),
         ),
       });
-      const payload = (await response.json()) as Partial<ChatResponse> & { error?: string };
-      if (!response.ok || !payload.message) throw new Error(payload.error || 'No answer returned');
+      const payload = (await readReply(response)) as Partial<ChatResponse> & { error?: string };
+      if (!response.ok || !payload.message) throw new Error(payload.error || CHAT_FAILED);
       messageSequence += 1;
       onThreadChange({
         sessionId: payload.sessionId,
@@ -157,7 +164,8 @@ export function ReportChat({
         ],
       });
     } catch (cause) {
-      onThreadChange({ failed: cause instanceof Error ? cause.message : 'Chat failed' });
+      // A fetch that never reached the server is a TypeError whose message means nothing to a reviewer.
+      onThreadChange({ failed: cause instanceof Error && !(cause instanceof TypeError) ? cause.message : CHAT_FAILED });
     } finally {
       onThreadChange({ busy: false });
     }
@@ -176,11 +184,11 @@ export function ReportChat({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoId, question: asked.content, storedAnswer: answer.content }),
       });
-      const payload = (await response.json()) as { content?: string; error?: string };
-      if (!response.ok || !payload.content) throw new Error(payload.error || 'No result returned');
+      const payload = (await readReply(response)) as { content?: string; error?: string };
+      if (!response.ok || !payload.content) throw new Error(payload.error || 'No result was returned.');
       content = payload.content;
     } catch (cause) {
-      const reason = cause instanceof Error ? cause.message : 'The check failed';
+      const reason = cause instanceof Error && !(cause instanceof TypeError) ? cause.message : 'The check could not be reached.';
       content = `The video check did not finish: ${reason} The answer above from the stored report stands.`;
     }
     messageSequence += 1;
@@ -363,7 +371,7 @@ export function ReportChat({
                   variant="destructive"
                 >
                   <AlertDescription>
-                    Chat is unavailable right now, so no answer was returned. <span className="text-[11px] opacity-70">({failed})</span>{' '}
+                    {failed}{' '}
                     <button
                       className="font-semibold underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
                       onClick={retry}

@@ -76,7 +76,11 @@ export function LibraryChat() {
       messageSequence += 1;
       setMessages([...next, { ...payload.message, id: `library-msg-${messageSequence}`, grounding: payload.grounding }]);
     } catch (cause) {
-      setFailed(cause instanceof Error ? cause.message : 'Chat failed');
+      setFailed(
+        cause instanceof Error && !(cause instanceof TypeError)
+          ? cause.message
+          : 'The chat service is unavailable right now. Please try again in a moment.',
+      );
     } finally {
       setBusy(false);
     }
@@ -222,7 +226,7 @@ export function LibraryChat() {
                   variant="destructive"
                 >
                   <AlertDescription>
-                    Chat is unavailable right now, so no answer was returned. <span className="text-[11px] opacity-70">({failed})</span>{' '}
+                    {failed}{' '}
                     <button
                       className="font-semibold underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
                       onClick={retry}

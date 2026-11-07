@@ -1,0 +1,21 @@
+{
+  "session_id": "s1",
+  "message": {
+    "role": "assistant",
+    "content": "The report gives the location as: elevator lobby.\n\nThe AI reader is unavailable right now, so this comes straight from the stored report.",
+    "citations": [],
+    "insufficient_evidence": false,
+    "source": "report"
+  },
+  "grounding": {
+    "mode": "routed",
+    "scope": "incident",
+    "model": null,
+    "version_id": 7,
+    "official": false,
+    "draft": false,
+    "dropped_citations": [],
+    "route": "deterministic",
+    "route_reason": "model_unavailable"
+  }
+}

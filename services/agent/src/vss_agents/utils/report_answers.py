@@ -24,7 +24,12 @@ shares no words with any item, so it got the report's first five items. This mod
   the report could not establish about those events; the incident description when there is no timeline. An event
   wholly outside the incident window is shown as context before or after the incident, not dropped: it may be real
   lead-up or aftermath;
-- **who:** the people, with how they look and when they are seen;
+- **who:** the people, with how they look and when they are seen. An entity of unknown type counts as a person when its
+  label or description says so; with no people listed, the events and text that describe people are shown, uncounted;
+- **where:** the report's location as written, and what it does not specify;
+- **a moment** ("what happened at 0:30?"): the events at that second, else the nearest one, labelled as nearest;
+- **a role, a name, an injury or a cause:** the report's own wording, else a plain statement that it does not establish
+  it. Nobody is called the attacker or the victim unless the report's text does;
 - **objects** (weapons, tools, what was used or taken, or a named object): the instruments, with who held them, and
   the assets. A named object the report does not record is said to be absent;
 - **when, or how long:** the incident window, or when a named item is seen;
@@ -33,7 +38,7 @@ shares no words with any item, so it got the report's first five items. This mod
   timeline; a moment the report does not record is said to be missing. What followed the incident is the timeline's
   events after its window;
 - **anything else:** the timeline events that share the question's words; otherwise a plain statement that the report
-  does not say, with no citations.
+  does not say, with no citations. A greeting or a question plainly about something else is redirected to the incident.
 
 Item ids are references inside the report: the P1 prompt has timeline sentences say "E1 strikes E2 with I1". Before
 any report text reaches an answer, each id is resolved to its item's own short description
@@ -50,6 +55,8 @@ import re
 from typing import TYPE_CHECKING
 from typing import Any
 
+from vss_agents.utils import chat_questions
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
     from collections.abc import Mapping
@@ -64,6 +71,17 @@ MAX_EVENTS = 8
 MAX_TIMELINE_EVENTS = 12
 MAX_UNCERTAINTIES = 3
 HUMAN_TYPES = frozenset({"human", "person", "people", "man", "woman", "child", "pedestrian"})
+# What a label or description names when an entity's type does not say ("person in white shirt", type "unknown").
+UNTYPED = frozenset({"", "unknown", "other"})
+_PERSON_WORDS = (
+    "man men woman women person persons people boy boys girl girls child children kid kids guy guys adult adults teen "
+    "teenager teenagers pedestrian pedestrians driver drivers passenger passengers cyclist cyclists motorcyclist "
+    "motorcyclists rider riders cashier cashiers clerk clerks guard guards officer officers customer customers "
+    "employee employees worker workers shopper shoppers bystander bystanders individual individuals suspect suspects "
+    "victim victims attacker attackers robber robbers thief thieves"
+)
+_PERSON_HEADS = frozenset(_PERSON_WORDS.split())
+_PERSON_MENTION = re.compile(rf"\b(?:{'|'.join(sorted(_PERSON_HEADS))})\b")
 NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
 
 _ID_TOKEN = r"(?:new-)?[EIA][0-9]{1,3}"  # the contract's ids, and the console's ids for items added in a draft
@@ -107,6 +125,78 @@ _HARM = re.compile(r"\b(?:harm\w*|hurt\w*|injur\w*|threat\w*|weapons?|hazard\w*|
 _TYPE = re.compile(
     r"\b(?:(?:what|which) (?:kind|type|sort|category) of|type of incident|kind of incident|classif\w*|category)\b"
 )
+_LOCATION = re.compile(
+    r"^\s*(?:and\s+|so\s+)?where\b|\b(?:locations?|located|whereabouts|address)\b"
+    r"|\b(?:what|which) (?:building|floor|street|city|town|place|area|site|room)\b"
+)
+# "Where did he go?" asks about a movement, not where the incident is.
+_MOVEMENT = re.compile(r"\b(?:go|goes|gone|went|run|ran|flee|fled|come|came|from|head\w*|end(?:ed)? up|leave|left)\b")
+_INJURY = re.compile(
+    r"\b(?:injur\w*|hurt\w*|harmed|wound\w*|bleed\w*|blood\w*|casualt\w*|dead|died|dies?|killed|fatal\w*|"
+    r"hospital\w*|ambulance\w*|unconscious)\b"
+)
+_CAN_HARM = re.compile(r"\bcould\b|\bcan\b|\bcapable\b|\bused to\b")
+_INJURY_TEXT = re.compile(
+    r"\b(?:injur\w*|hurt\w*|wound\w*|bleed\w*|blood\w*|casualt\w*|dead|died|dies|killed|fatal\w*|hospital\w*|"
+    r"ambulance\w*|unconscious|motionless|collaps\w*)\b"
+)
+_NAME = re.compile(r"\bnames?\b|\bidentit(?:y|ies)\b")
+_PRONOUN = re.compile(r"\b(?:he|she|him|her|his|hers|they|them|their)\b")
+_ATTACKER = r"attackers?|assailants?|aggressors?|perpetrators?|offenders?|culprits?|instigators?|robbers?|burglars?|thie(?:f|ves)"
+_FIRST_MOVE = (
+    r"who (?:\w+ )?(?:attacked|hit|struck|punched|pushed|shoved|started|began|threw|initiated|provoked)\b"
+    r"|\bwho(?:'s| is| was) (?:at fault|to blame|responsible)"
+    r"|\bwho (?:\w+ )?(?:first|started it)"
+)
+_ROLE_WORDS = re.compile(rf"\b(?:{_ATTACKER})\b")
+_ROLE_ATTACKER = re.compile(rf"\b(?:{_ATTACKER})\b|\b{_FIRST_MOVE}")
+_ROLE_VICTIM = re.compile(
+    r"\bvictims?\b|\bwho (?:was|got|were) (?:attacked|assaulted|hit|struck|punched|hurt|harmed)\b"
+)
+_ROLE_SUSPECT = re.compile(r"\bsuspects?\b")
+_ATTACKER_TEXT = re.compile(
+    rf"\b(?:{_ATTACKER}|attack(?:s|ed|ing)?|assault(?:s|ed|ing)?|aggress\w*|strik(?:es|ing)|struck|punch\w*|"
+    r"stab\w*|shoot\w*|shot|suspects?)\b"
+)
+_VICTIM_TEXT = re.compile(r"\b(?:victims?|attacked|assaulted|struck|stabbed|shot)\b")
+_FIRST_MOVE_TEXT = re.compile(r"\b(?:first|initiat\w*|start(?:s|ed)?|began|begins?|provok\w*|instigat\w*)\b")
+_CAUSE = re.compile(
+    r"\bwhat (?:\w+ )?(?:caused|causes|cause|led to|leads to|started|triggered|sparked|provoked)\b(?! (?:harm|injur|damage))"
+    r"|\b(?:the )?(?:cause|reason) (?:of|for|behind)\b"
+    r"|\bwhy did (?:this|it|that|the (?:incident|fight|altercation|attack|assault|accident|crash|explosion|fire))\b"
+    r"|\bhow did (?:this|it|that|the (?:incident|fight|altercation|attack|assault|accident|crash|explosion|fire)) "
+    r"(?:start|begin|happen)\b"
+)
+_CAUSE_TEXT = re.compile(
+    r"\b(?:caus\w*|because|due to|result(?:s|ed|ing)? (?:of|from|in)|led to|leads to|trigger\w*)\b"
+)
+_UNKNOWN_CAUSE = re.compile(r"\b(?:cause|reason|why|motive|trigger\w*)\b")
+_GREETING = re.compile(
+    r"^\s*(?:hi|hello|hey|hiya|good (?:morning|afternoon|evening)|thanks?(?: you)?(?: very much)?|thx|ok|okay|cool|great)"
+    r"(?:\s+there)?[\s!.,?]*$"
+)
+_THANKS = re.compile(r"^\s*(?:thanks?(?: you)?(?: very much)?|thx)[\s!.,]*$")
+_OFF_TOPIC = re.compile(
+    r"\b(?:weather|forecast|temperature outside|stocks?|bitcoin|crypto|recipes?|football|soccer|basketball|horoscope|"
+    r"lyrics|poem|jokes?|translate|prime minister|president|capital of|news today|meaning of life|movies?)\b"
+)
+# Wording that ties a question to the footage, so "what was the weather during the incident?" stays a report question.
+_TIED_TO_INCIDENT = re.compile(r"\b(?:incident|video|clip|footage|report|during|at the time|was|were)\b")
+# Phrases with "take" that are no taking: "take part", "what action did the guard take".
+_NOT_A_TAKING = re.compile(
+    r"\b(?:take|takes|took|taken|taking) (?:part|action|care|cover|over|off|long|time|steps?|photos?|pictures?|a look)\b"
+    r"|\bactions? did\b.*\btake\b"
+)
+_DID_WHAT = re.compile(r"\bwhat (?:did|does|do|was|is|were|are)\b.*\b(?:do|does|doing|did)\b|\bwhat actions?\b")
+# Words that name a place, for a report with no location field.
+_PLACE_TEXT = (
+    "elevator lift lobby store shop supermarket minimart bar pub restaurant cafe parking garage street road highway "
+    "motorway intersection crossroads hallway corridor kitchen bedroom bathroom house apartment office bank school "
+    "hospital station warehouse factory gas petrol toll park sidewalk pavement driveway yard stairwell stairs"
+)
+_PLACES = frozenset(_PLACE_TEXT.split())
+_PLACE_DETAIL = re.compile(r"\d|\b(?:address|floor|building|street|avenue)\b .*[A-Z0-9]|(?<=[a-z,] )[A-Z][a-z]+")
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 _HOW_MANY = re.compile(r"\bhow many\b")
 _PRESENCE = re.compile(r"^\s*(?:is|are|was|were|did|does|do|has|have|had)\b|\bany\b")
 # A bare existence question ("is there a crowbar?", "any knives?"): the only yes/no question a list of items can answer.
@@ -238,6 +328,7 @@ _STOP = frozenset(
         "last",
         "before",
         "after",
+        "during",
         "time",
         "times",
         "involved",
@@ -354,7 +445,20 @@ _CONTEXT = re.compile(
 _JUDGEMENT = re.compile(r"^\s*(?:was|is|were|are)\s+(?:the|that|this|those|these)\b")
 _REASONING = re.compile(r"^\s*(?:why|how come)\b|\bhow did\b|\bexplain\b|\bbecause\b|\breason\b")
 _THIS_INCIDENT = re.compile(r"\b(?:in|of|for|during) (?:this|the) (?:event|incident)\b")
-_TIME_FIRST = re.compile(r"^\s*(?:when|what time|how long|at what (?:second|point|time|moment))\b")
+_TIME_FIRST = re.compile(
+    r"^\s*(?:when|what time|how long|at what (?:second|point|time|moment))\b"
+    r"|\bbetween (?:which|what) (?:times?|timestamps?|seconds?)\b|\b(?:which|what) timestamps?\b"
+)
+
+
+def safe_list(value: Any) -> list[Any]:
+    """A report field that should be a list; anything else (a malformed or hand-edited field) counts as empty."""
+    return list(value) if isinstance(value, list | tuple) else []
+
+
+def dict_rows(value: Any) -> list[dict[str, Any]]:
+    """The objects of a list field, without any malformed entry."""
+    return [row for row in safe_list(value) if isinstance(row, dict)]
 
 
 def _num(value: Any) -> float | None:
@@ -462,7 +566,11 @@ class Item:
 
     @property
     def is_person(self) -> bool:
-        return self.kind == "entity" and self.entity_type in HUMAN_TYPES
+        if self.kind != "entity":
+            return False
+        if self.entity_type in UNTYPED:
+            return _entity_head(self) in _PERSON_HEADS
+        return self.entity_type in HUMAN_TYPES
 
     @property
     def words(self) -> set[str]:
@@ -545,8 +653,8 @@ def item_ids(report: Mapping[str, Any] | None) -> set[str]:
     return {
         str(raw[id_field]).strip()
         for key, id_field, _ in ITEM_KINDS
-        for raw in report.get(key) or []
-        if isinstance(raw, dict) and str(raw.get(id_field) or "").strip()
+        for raw in dict_rows(report.get(key))
+        if str(raw.get(id_field) or "").strip()
     }
 
 
@@ -573,15 +681,15 @@ def report_view(
 ) -> ReportView:
     """The answerable view of a report; a revision saved without its report falls back to its evidence entries."""
     report = report if isinstance(report, dict) else {}
+    evidence = dict_rows(evidence)
     seen = {
         (str(e.get("item_type")), str(e.get("item_id"))): _num(e.get("box_seconds", e.get("timestamp_seconds")))
         for e in evidence
-        if isinstance(e, dict)
     }
     items: list[Item] = []
     for key, id_field, kind in ITEM_KINDS:
-        for raw in report.get(key) or []:
-            if not isinstance(raw, dict) or not str(raw.get(id_field) or "").strip():
+        for raw in dict_rows(report.get(key)):
+            if not str(raw.get(id_field) or "").strip():
                 continue
             item_id = str(raw[id_field]).strip()
             threat = _num(raw.get("threat_level"))
@@ -604,7 +712,7 @@ def report_view(
             )
     if not items:
         for entry in evidence:
-            if not isinstance(entry, dict) or entry.get("item_type") not in ("entity", "instrument", "asset"):
+            if entry.get("item_type") not in ("entity", "instrument", "asset"):
                 continue
             if not str(entry.get("item_id") or "").strip():
                 continue
@@ -621,9 +729,7 @@ def report_view(
                     seconds=_num(entry.get("box_seconds", entry.get("timestamp_seconds"))),
                 )
             )
-    events = [
-        e for e in report.get("timeline") or [] if isinstance(e, dict) and str(e.get("description") or "").strip()
-    ]
+    events = [e for e in dict_rows(report.get("timeline")) if str(e.get("description") or "").strip()]
     events.sort(key=lambda e: (_num(e.get("start_seconds")) is None, _num(e.get("start_seconds")) or 0.0))
     raw_incident = report.get("incident")
     incident: dict[str, Any] = raw_incident if isinstance(raw_incident, dict) else {}
@@ -633,7 +739,9 @@ def report_view(
         items=tuple(items),
         timeline=tuple(events),
         retired=frozenset(str(i) for i in retired if str(i) not in held),
-        uncertainties=tuple(u.strip() for u in report.get("uncertainties") or [] if isinstance(u, str) and u.strip()),
+        uncertainties=tuple(
+            u.strip() for u in safe_list(report.get("uncertainties")) if isinstance(u, str) and u.strip()
+        ),
     )
 
 
@@ -730,8 +838,10 @@ def _item_phrases(item: Item) -> list[list[frozenset[str]]]:
 
 
 def _entity_head(item: Item) -> str:
-    """What a person or animal is, from its label: "dog" for "black and tan dog", "man" for "man in blue shirt"."""
-    words = _LABEL_HEAD_END.split(f"{item.label.lower().strip()} ", maxsplit=1)[0].split()
+    """What a person or animal is, from its label ("dog" for "black and tan dog", "man" for "man in blue shirt"), else
+    from its description's first clause."""
+    text = item.label or _first_clause(item.description)
+    words = _LABEL_HEAD_END.split(f"{text.lower().strip()} ", maxsplit=1)[0].split()
     return words[-1] if words else ""
 
 
@@ -936,16 +1046,267 @@ def _people(view: ReportView, targets: Sequence[Item], *, how_many: bool) -> Com
         return ComposedAnswer(
             f"The report describes {_join(details)}.", tuple(t.item_id for t in chosen), False, "people"
         )
+    others = [i for i in view.items if i.kind == "entity" and not i.is_person]
     if not people:
-        return ComposedAnswer("This report records no people.", (), False, "people")
+        return _described_people(view, others, how_many=how_many)
     details = [f"{p.introduce(mentions)}{' (' + p.seen() + ')' if p.seen() else ''}" for p in people]
     lead = _capitalize(_count(len(people), "person is", "people are"))
     text = f"{lead} involved: {_join(details)}."
-    others = [i for i in view.items if i.kind == "entity" and not i.is_person]
     if others and not how_many:
         text += f" The report also records {_join([o.introduce(mentions) for o in others])}."
+    if not how_many:
+        text += f" {_no_identity(len(people))}"
     cited = [p.item_id for p in people] + ([o.item_id for o in others] if others and not how_many else [])
     return ComposedAnswer(text, tuple(cited), False, "people")
+
+
+def _no_identity(people: int) -> str:
+    return f"The report does not establish {'their identities' if people != 1 else 'who this is'}."
+
+
+def _described_people(view: ReportView, others: Sequence[Item], *, how_many: bool) -> ComposedAnswer:
+    """A report that lists no people may still describe them: an empty list is not a statement that nobody was there.
+
+    The events and text that mention people are shown, not counted: "a man ... the man" may be one person or two.
+    """
+    mentions = view.mentions()
+    lines, cited = _lines_matching(view, _PERSON_MENTION, mentions)
+    if lines:
+        lead = "The report's list of people is empty, but it describes people in these events:"
+        tail = "It gives no count of them." if how_many else _no_identity(2)
+        extra = f" It also records {_join([o.introduce(mentions) for o in others])}." if others else ""
+        text = "\n".join([lead, *lines]) + f"\n\n{tail}{extra}"
+        return ComposedAnswer(text, (*cited, *(o.item_id for o in others)), False, "people_described")
+    if others:
+        details = [f"{o.introduce(mentions)}{' (' + o.seen() + ')' if o.seen() else ''}" for o in others]
+        text = f"The report describes no people. It records {_join(details)}."
+        return ComposedAnswer(text, tuple(o.item_id for o in others), False, "people")
+    return ComposedAnswer("This report records no people.", (), False, "people")
+
+
+def _report_sentences(view: ReportView) -> list[str]:
+    """Every sentence of the report that is not a timeline event: what its incident fields and entities say."""
+    texts = [str(view.incident.get(key) or "") for key in ("description", "severity_reason")]
+    texts += [i.description for i in view.items if i.kind == "entity"]
+    return [s.strip() for text in texts for s in _SENTENCE_END.split(text.strip()) if s.strip()]
+
+
+def _lines_matching(
+    view: ReportView, pattern: re.Pattern[str], mentions: Mapping[str, str]
+) -> tuple[list[str], list[str]]:
+    """The report's own lines a pattern finds, as list lines, and the items they name. Timeline events come with their
+    times; other text is used only when no event carries the same words."""
+    events = [e for e in view.timeline if pattern.search(resolve_references(str(e["description"]), mentions).lower())]
+    lines = [_event_line(e, mentions) for e in events[:MAX_EVENTS]]
+    texts = [str(e.get("description") or "") for e in events[:MAX_EVENTS]]
+    told = _words(" ".join(texts))
+    for sentence in _report_sentences(view):
+        resolved = resolve_references(sentence.rstrip("."), mentions)
+        if pattern.search(resolved.lower()) and (not told or _words(sentence) - told):
+            line = f"\u2022 {_capitalize(resolved)}."
+            if line not in lines and len(lines) < MAX_EVENTS:
+                lines.append(line)
+                texts.append(sentence)
+                told |= _words(sentence)
+    return lines, text_items(texts, view)
+
+
+def _uncertain(view: ReportView, pattern: re.Pattern[str], mentions: Mapping[str, str]) -> list[str]:
+    """The report's uncertainties a pattern finds, as a block, or nothing."""
+    found = [resolve_references(u.rstrip("."), mentions) for u in view.uncertainties if pattern.search(u.lower())]
+    if not found:
+        return []
+    lines = [f"\u2022 {text}." for text in found[:MAX_UNCERTAINTIES]]
+    return ["What the report could not establish:\n" + "\n".join(lines)]
+
+
+def _main_events(view: ReportView, mentions: Mapping[str, str]) -> list[str]:
+    """What an answer that cannot settle a question can still show: the events of the incident, as a block."""
+    events = [e for e in view.timeline if _phase(e, view.incident) == "during"] or list(view.timeline)
+    if not events:
+        description = str(view.incident.get("description") or "").strip().rstrip(".")
+        return [f"What it records: {resolve_references(description, mentions)}."] if description else []
+    return [_block("What it records:", events[:MAX_EVENTS], mentions)]
+
+
+def _people_in_view(view: ReportView) -> list[Item]:
+    return [i for i in view.items if i.is_person]
+
+
+def _role(view: ReportView, q: str) -> ComposedAnswer:
+    """Who the attacker, victim or first mover was: only ever the report's own wording, never a pick between people."""
+    mentions = view.mentions()
+    first_move = bool(re.search(rf"\b{_FIRST_MOVE}", q))
+    if _ROLE_VICTIM.search(q):
+        word, text_pattern = "who the victim is", _VICTIM_TEXT
+    elif _ROLE_SUSPECT.search(q):
+        word, text_pattern = "who the suspect is", _ATTACKER_TEXT
+    elif first_move:
+        word, text_pattern = "who started it", _ATTACKER_TEXT
+    else:
+        word, text_pattern = "who the attacker is", _ATTACKER_TEXT
+    lines, cited = _lines_matching(view, text_pattern, mentions)
+    if first_move:
+        lines = [line for line in lines if _FIRST_MOVE_TEXT.search(line.lower())]
+    if lines:
+        text = "\n".join([f"The report doesn't state {word} outright. Its closest wording is:", *lines])
+        return ComposedAnswer(
+            "\n\n".join([text, _no_names(view), *_uncertain(view, _UNKNOWN_CAUSE, mentions)]),
+            tuple(cited),
+            False,
+            "role",
+        )
+    blocks = [f"The report does not establish {word}.", *_main_events(view, mentions)]
+    told = " ".join(str(e.get("description") or "") for e in view.timeline)
+    cited = text_items([told], view)
+    return ComposedAnswer("\n\n".join(blocks), tuple(cited), True, "role")
+
+
+def _no_names(view: ReportView) -> str:
+    return "It gives no names." if _people_in_view(view) else "It names nobody."
+
+
+def _identity(view: ReportView) -> ComposedAnswer:
+    """A name or identity: no contract field holds one, so the report's descriptions are all it can offer."""
+    mentions = view.mentions()
+    people = _people_in_view(view)
+    lead = "The report doesn't give anyone's name or identity."
+    if people:
+        details = _join([p.introduce(mentions) for p in people])
+        text = f"{lead} It describes {_count(len(people), 'person', 'people')}: {details}."
+        return ComposedAnswer(text, tuple(p.item_id for p in people), True, "identity")
+    lines, cited = _lines_matching(view, _PERSON_MENTION, mentions)
+    text = "\n".join([f"{lead} It describes people only in these events:", *lines]) if lines else lead
+    return ComposedAnswer(text, tuple(cited), True, "identity")
+
+
+def _injury(view: ReportView) -> ComposedAnswer:
+    """Whether anyone was hurt: the report's own wording. An empty report is silence, never a statement of no injury."""
+    mentions = view.mentions()
+    lines, cited = _lines_matching(view, _INJURY_TEXT, mentions)
+    unknown = _uncertain(view, _INJURY_TEXT, mentions)
+    if lines:
+        return ComposedAnswer(
+            "\n\n".join(["\n".join(["The report says this about injuries:", *lines]), *unknown]),
+            tuple(cited),
+            False,
+            "injury",
+        )
+    lead = "The report doesn't state whether anyone was injured."
+    return ComposedAnswer("\n\n".join([lead, *unknown]), (), not unknown, "injury")
+
+
+def _cause(view: ReportView) -> ComposedAnswer:
+    """What caused the incident: what the report says about it, and what it could not establish."""
+    mentions = view.mentions()
+    lines, cited = _lines_matching(view, _CAUSE_TEXT, mentions)
+    unknown = _uncertain(view, _UNKNOWN_CAUSE, mentions)
+    if lines:
+        text = "\n".join(["The report says this about how it came about:", *lines])
+        return ComposedAnswer("\n\n".join([text, *unknown]), tuple(cited), False, "cause")
+    blocks = ["The report doesn't state what caused the incident.", *unknown, *_main_events(view, mentions)]
+    told = " ".join(str(e.get("description") or "") for e in view.timeline)
+    return ComposedAnswer("\n\n".join(blocks), tuple(text_items([told], view)), True, "cause")
+
+
+def inconsistencies(view: ReportView) -> dict[str, str]:
+    """Conflicts between report fields that code can see without judging meaning, by the answer kind they affect.
+
+    The answer shows both sides and picks neither. A check of location against description wording was tried on all 256
+    stored revisions and left out: it flagged 40, and the flags read were false ("shop" against "store"). Conflicts of meaning are for the
+    chat model (the routed prompt).
+    """
+    out: dict[str, str] = {}
+    start, end = _num(view.incident.get("start_timestamp")), _num(view.incident.get("end_timestamp"))
+    if start is not None and end is not None and end < start:
+        out["time"] = (
+            f"The report is inconsistent here: its incident ends at {clock(end)} but starts at {clock(start)}."
+        )
+    return out
+
+
+def _location(view: ReportView) -> ComposedAnswer:
+    """Where the incident happened: the report's location as written. A report with none may still name a place."""
+    mentions = view.mentions()
+    location = str(view.incident.get("location") or "").strip().rstrip(".")
+    if location:
+        text = f"The report gives the location as: {_lower_first(location)}."
+        if not _PLACE_DETAIL.search(location):
+            text += " The report does not specify the exact building or address."
+        return ComposedAnswer(text, (), False, "location")
+    lines, cited = _lines_matching(view, re.compile(rf"\b(?:{'|'.join(sorted(_PLACES))})\b"), mentions)
+    if lines:
+        text = "\n".join(["The report records no location, but these parts of it name a place:", *lines])
+        return ComposedAnswer(text, tuple(cited), False, "location")
+    return ComposedAnswer("The report doesn't record where this happened.", (), True, "location")
+
+
+def _moment(view: ReportView, moment: chat_questions.Moment) -> ComposedAnswer:
+    """The events at, after or before the moment a question points at, with their times for jumping to them."""
+    mentions = view.mentions()
+    timed = [e for e in view.timeline if _num(e.get("start_seconds")) is not None]
+    at = clock(moment.start) or "that moment"
+    span = at if moment.end == moment.start else f"{at} to {clock(moment.end)}"
+    if not timed:
+        return ComposedAnswer(
+            f"The report has no timed events, so it can't say what happened at {at}.", (), True, "moment"
+        )
+
+    def start(event: Mapping[str, Any]) -> float:
+        return _num(event.get("start_seconds")) or 0.0
+
+    def end(event: Mapping[str, Any]) -> float:
+        value = _num(event.get("end_seconds"))
+        return start(event) if value is None else value
+
+    if moment.side != "at":
+        after = moment.side == "after"
+        side = [e for e in timed if (start(e) >= moment.start if after else end(e) <= moment.start)]
+        word = "after" if after else "before"
+        if not side:
+            return ComposedAnswer(f"The report records nothing {word} {at}.", (), True, "moment")
+        lead = f"{_capitalize(word)} {at}, the report records:"
+    else:
+        side = [e for e in timed if start(e) <= moment.end and end(e) >= moment.start]
+        lead = f"At {span}, the report records:"
+        if not side:
+            distance = {id(e): min(abs(start(e) - moment.start), abs(end(e) - moment.start)) for e in timed}
+            nearest = min(distance.values())
+            side = [e for e in timed if distance[id(e)] == nearest]
+            lead = f"The report records nothing at {span}. The nearest it records is:"
+    shown = side[:MAX_EVENTS]
+    cited = text_items((str(e.get("description") or "") for e in shown), view)
+    return ComposedAnswer(_block(lead, shown, mentions), tuple(cited), False, "moment")
+
+
+def next_events(view: ReportView, seconds: float, *, earlier: bool = False) -> ComposedAnswer:
+    """What followed (or came before) the event starting at ``seconds``: a follow-up to an answer that told it."""
+    mentions = view.mentions()
+    timed = [e for e in view.timeline if _num(e.get("start_seconds")) is not None]
+    side = [e for e in timed if ((_num(e.get("start_seconds")) or 0.0) < seconds) == earlier]
+    side = [e for e in side if earlier or (_num(e.get("start_seconds")) or 0.0) > seconds]
+    if not side:
+        word = "earlier" if earlier else "after that"
+        return ComposedAnswer(f"The report records nothing {word}.", (), True, "sequence")
+    shown = side[-1:] if earlier else side[:1]
+    cited = text_items((str(e.get("description") or "") for e in shown), view)
+    lead = "Just before that, the report records:" if earlier else "Next, the report records:"
+    return ComposedAnswer(_block(lead, shown, mentions), tuple(cited), False, "sequence")
+
+
+def about_item(view: ReportView, item: Item) -> ComposedAnswer:
+    """What the report records about one item, for a follow-up that points at it."""
+    return _about(view, [item])
+
+
+def entity_head(item: Item) -> str:
+    """What a person or animal is, as its label says ("man" for "man in blue shirt")."""
+    return _entity_head(item)
+
+
+def named_items(text: str, view: ReportView) -> list[str]:
+    """The items report or answer text names, by id or by name, in order."""
+    return text_items([text], view)
 
 
 def _object_phrase(view: ReportView, item: Item) -> str:
@@ -1157,7 +1518,20 @@ def _intent_words(q: str) -> set[str]:
     """The words of a lower-case question that say what kind of answer it wants, rather than what it is about."""
     return {
         w
-        for pattern in (_CHRONOLOGY, _PEOPLE, _OBJECTS, _WHEN, _SEVERITY, _TYPE, _TAKEN, _HARM)
+        for pattern in (
+            _CHRONOLOGY,
+            _PEOPLE,
+            _OBJECTS,
+            _WHEN,
+            _SEVERITY,
+            _TYPE,
+            _TAKEN,
+            _HARM,
+            _LOCATION,
+            _INJURY,
+            _ROLE_WORDS,
+            _CAUSE,
+        )
         for match in pattern.finditer(q)
         for w in _words(match.group(0))
     }
@@ -1201,7 +1575,16 @@ def _around(view: ReportView, q: str) -> ComposedAnswer:
     names = set().union(*(i.name_words for i in view.items)) if view.items else set()
     wanted = action_words(_SEQUENCE.sub(" ", q)) - _intent_words(q) - names - _PEOPLE_NOUNS
     events = list(view.timeline)
-    moment = next((n for n, e in enumerate(events) if wanted & action_words(str(e.get("description") or ""))), None)
+    # The event that shares the most of the moment's words, and of two that tie the one that says least else:
+    # "entered the elevator" is "enters the elevator and presses a button", not "enters the elevator lobby in a shirt".
+    fit = [(n, wanted & action_words(str(e.get("description") or ""))) for n, e in enumerate(events)]
+    matched = [(n, shared) for n, shared in fit if shared]
+    moment = None
+    if matched:
+        moment = max(
+            matched,
+            key=lambda m: (len(m[1]), -len(_tokens(str(events[m[0]].get("description") or "")))),
+        )[0]
     if moment is None:
         return ComposedAnswer(
             "The report's timeline doesn't record that moment, so it can't say what came around it. "
@@ -1227,13 +1610,17 @@ def is_plain(question: str, view: ReportView) -> bool:
     """Whether a question asks only for a kind of report field ("who appears?", "what happened?"), which a composed
     answer gives in full. One that names something, reasons, leans on the conversation or points at one moment does not.
     """
-    q = _ASKS_IDS.sub(" ", question.lower())
+    q = _ASKS_IDS.sub(" ", read_question(question, view))
+    composed = compose(question, view)
+    if composed.kind == "out_of_scope":
+        return True
+    moment = chat_questions.question_moment(q)
+    if moment is not None:
+        q = _SEQUENCE.sub(" ", chat_questions.without_moment(q, moment))
     if _REASONING.search(q) or _CONTEXT.search(q) or _SEQUENCE.search(q) or _JUDGEMENT.search(q):
         return _AFTER_INCIDENT.search(q) is not None
     left = set(_tokens(q)) - _intent_words(q) - _PLAIN_WORDS
-    return not {w for w in left if not _variants(w) & (_intent_words(q) | _PLAIN_WORDS)} and compose(
-        question, view
-    ).kind in (
+    return not {w for w in left if not _variants(w) & (_intent_words(q) | _PLAIN_WORDS)} and composed.kind in (
         "chronology",
         "people",
         "objects",
@@ -1243,6 +1630,8 @@ def is_plain(question: str, view: ReportView) -> bool:
         "time",
         "severity",
         "type",
+        "location",
+        "moment",
     )
 
 
@@ -1259,10 +1648,45 @@ def has_no_subject(question: str, view: ReportView) -> bool:
     return needs_context(question, view) and not set(_tokens(_CONTEXT.sub(" ", q))) - _intent_words(q)
 
 
+def read_question(question: str, view: ReportView) -> str:
+    """A question as the answers read it (:func:`chat_questions.normalise`). A word the report uses, or a common word,
+    is right as written, however close it is to an intent word."""
+    report_text = " ".join(
+        [
+            *(" ".join((i.name, i.description, i.label)) for i in view.items),
+            *(str(e.get("description") or "") for e in view.timeline),
+            *(str(view.incident.get(key) or "") for key in ("type", "title", "description", "location")),
+        ]
+    )
+    return chat_questions.normalise(question, _STOP | _PLAIN_WORDS | set(_WORD.findall(report_text.lower())))
+
+
+def _out_of_scope(q: str, known_words: set[str]) -> ComposedAnswer | None:
+    """A greeting, or a question plainly about something else: it gets no search of the report and no model call."""
+    if _THANKS.search(q):
+        return ComposedAnswer(YOU_ARE_WELCOME, (), False, "out_of_scope")
+    if _GREETING.search(q):
+        return ComposedAnswer(GREETING, (), False, "out_of_scope")
+    topic = _OFF_TOPIC.search(q)
+    if topic and not _TIED_TO_INCIDENT.search(q) and not _words(topic.group(0)) & known_words:
+        return ComposedAnswer(OUT_OF_SCOPE, (), True, "out_of_scope")
+    return None
+
+
+YOU_ARE_WELCOME = "You're welcome. Ask me anything else about this incident."
+GREETING = (
+    "Hello. Ask me anything about this incident, for example what happened, who was involved or where it took place."
+)
+OUT_OF_SCOPE = (
+    "I can only answer questions about this incident, so I can't help with that. You could ask what happened, who was "
+    "involved, where it took place or when it happened."
+)
+
+
 def compose(question: str, view: ReportView) -> ComposedAnswer:
     """The answer to one question about one report version, or a statement that the report does not say."""
     asks_ids = bool(_ASKS_IDS.search(question.lower()))
-    q = _ASKS_IDS.sub(" ", question.lower())  # "the item ids of the people" asks about the people
+    q = _ASKS_IDS.sub(" ", read_question(question, view))  # "the item ids of the people" asks about the people
     words = _words(q)
     known_words = set().union(
         *(i.words for i in view.items), *(_words(str(e.get("description") or "")) for e in view.timeline)
@@ -1285,19 +1709,37 @@ def compose(question: str, view: ReportView) -> ComposedAnswer:
     ]
     how_many = bool(_HOW_MANY.search(q))
     people_q = bool(_PEOPLE.search(q)) and (bool(_PEOPLE_NAMED.search(q)) or not _OBJECT_KINDS.search(q))
-    if _AFTER_INCIDENT.search(q):
+    taking = _NOT_A_TAKING.sub(" ", q)
+    moment = chat_questions.question_moment(q)
+    named = [t for t in targets if naming & t.name_words]
+    no_sequence = not _SEQUENCE.search(q)
+    if off_topic := _out_of_scope(q, known_words):
+        answer = off_topic
+    elif _AFTER_INCIDENT.search(q):
         answer = _after_incident(view)
     elif _TIME_FIRST.search(q):
         answer = _when(view, targets)
     elif _TYPE.search(q):
         answer = _incident_type(view)
+    elif moment is not None:
+        answer = _moment(view, moment)
+    elif _LOCATION.search(q) and not named and not _MOVEMENT.search(q):
+        answer = _location(view)
+    elif _NAME.search(q) and (_PEOPLE_NAMED.search(q) or _PRONOUN.search(q)) and not _OBJECT_KINDS.search(q):
+        answer = _identity(view)
+    elif no_sequence and (_ROLE_ATTACKER.search(q) or _ROLE_VICTIM.search(q) or _ROLE_SUSPECT.search(q)):
+        answer = _role(view, q)
+    elif no_sequence and _INJURY.search(q) and not _CAN_HARM.search(q):
+        answer = _injury(view)
+    elif no_sequence and _CAUSE.search(q):
+        answer = _cause(view)
     elif _chronology_asked(q) and _SEQUENCE.search(q):
         answer = _around(view, q)
     elif _chronology_asked(q):
         answer = _chronology(view, targets)
-    elif _TAKEN.search(q) or _HARM.search(q):
+    elif _TAKEN.search(taking) or _HARM.search(q):
         # A question may ask both ("what was taken, or what could cause harm?"): each part is answered.
-        parts = ([_taken(view, targets)] if _TAKEN.search(q) else []) + ([_harm(view)] if _HARM.search(q) else [])
+        parts = ([_taken(view, targets)] if _TAKEN.search(taking) else []) + ([_harm(view)] if _HARM.search(q) else [])
         answer = parts[0]
         if len(parts) > 1:
             answer = ComposedAnswer(
@@ -1318,6 +1760,8 @@ def compose(question: str, view: ReportView) -> ComposedAnswer:
         answer = holders
     elif people_q and not any(not t.is_person for t in targets) and not (_OBJECTS.search(q) and unmatched):
         answer = _people(view, targets, how_many=how_many)
+    elif _DID_WHAT.search(q) and targets:
+        answer = _chronology(view, targets)
     elif _OBJECTS.search(q) or targets or (_PRESENCE.search(q) and unmatched):
         answer = _objects(
             view, targets, unmatched if not targets else [], presence=bool(_EXISTENCE.search(q)), how_many=how_many
@@ -1331,12 +1775,16 @@ def compose(question: str, view: ReportView) -> ComposedAnswer:
                 f" doesn't mention {_join([chr(34) + w + chr(34) for w in unmatched])}" if unmatched else " doesn't say"
             )
             answer = ComposedAnswer(
-                f"This report{missing}. You can ask what happened, who was involved, which objects were involved, or "
-                "when it happened.",
+                f"This report{missing}. I can only answer from this incident's report: you can ask what happened, who "
+                "was involved, where it took place, which objects were involved, or when it happened.",
                 (),
                 True,
                 "unanswerable",
             )
+    if conflict := inconsistencies(view).get(answer.kind):
+        answer = ComposedAnswer(
+            f"{answer.text}\n\n{conflict}", answer.item_ids, answer.insufficient_evidence, answer.kind
+        )
     if asks_ids and answer.item_ids:
         mentions = view.mentions()
         listed = _join([f"{i} is {mentions[i]}" for i in answer.item_ids if i in mentions])

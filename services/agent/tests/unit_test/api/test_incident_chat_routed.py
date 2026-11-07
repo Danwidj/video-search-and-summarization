@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 import httpx
 import pytest
 
+from vss_agents.api import incident_chat
 from vss_agents.api.incident_chat import create_incident_chat_router
 from vss_agents.api.incident_video_check import create_incident_video_check_router
 from vss_agents.utils import chat_routing
@@ -333,7 +334,7 @@ def test_a_pointer_with_nothing_before_it_is_asked_about_with_no_model_call(ques
     model = FakeModel()
     body = _ask(question, model).json()
     assert model.calls == [] and body["grounding"]["route_reason"] == "no_subject"
-    assert body["message"]["content"].startswith("Which person or object")
+    assert body["message"]["content"] == "Which person do you mean: the man in blue shirt or the man in white shirt?"
 
 
 @pytest.mark.parametrize("question", ["Was the object a weapon?", "When did that happen?"])
@@ -347,18 +348,56 @@ def test_a_judgement_or_a_pointer_at_the_last_answer_goes_to_the_model(question:
     assert _ask(messages, model).json()["message"]["source"] == "report_llm" and len(model.calls) == 1
 
 
-def test_a_failed_model_is_an_error_not_an_answer() -> None:
-    class Broken(FakeModel):
-        async def complete(self, messages: Any, schema: Any) -> dict[str, Any]:
-            raise grounded_chat.ChatModelError("down")
+def _assert_asked_to_retry(resp: Any) -> None:
+    """A failed model that leaves the report nothing to say: a plain request to try again, and nothing internal."""
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["message"]["content"] == incident_chat.COULD_NOT_READ
+    assert body["message"]["citations"] == [] and body["message"]["insufficient_evidence"] is True
+    assert body["message"]["source"] == "report" and body["grounding"]["model"] is None
+    assert body["grounding"]["route"] == "insufficient"
+    assert body["grounding"]["route_reason"] == "model_unavailable"
 
-    assert _ask("How did it begin?", Broken()).status_code == 502
+
+class Broken(FakeModel):
+    async def complete(self, messages: Any, schema: Any) -> dict[str, Any]:
+        raise grounded_chat.ChatModelError("down")
 
 
-def test_a_model_reply_without_the_parts_is_an_error() -> None:
+def test_a_failed_model_with_nothing_to_fall_back_on_asks_to_try_again() -> None:
+    _assert_asked_to_retry(_ask("How did it begin?", Broken()))
+
+
+def test_a_failed_model_gives_what_the_report_settles_and_says_so() -> None:
+    body = _ask("Is the man in the white shirt the one who pushed him?", Broken()).json()
+    assert body["grounding"]["route_reason"] == "model_unavailable"
+    body = _ask("What happened to the wall?", Broken()).json()
+    assert body["message"]["content"].endswith(incident_chat.FROM_THE_REPORT)
+    assert body["message"]["insufficient_evidence"] is False and body["grounding"]["route"] == "deterministic"
+
+
+@pytest.mark.parametrize("question", ["Why did he hit him?", "Was that actually a wall?", "Check the video for a gun"])
+def test_a_failed_model_never_answers_a_motive_a_dispute_or_a_video_request_by_code(question: str) -> None:
+    resp = _ask(question, Broken())
+    assert resp.json()["message"]["content"] == incident_chat.COULD_NOT_READ
+
+
+def test_an_unexpected_failure_while_checking_a_reply_is_handled_like_a_failed_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def explode(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("secret internal state")
+
+    monkeypatch.setattr(grounded_chat, "check_routed", explode)
+    resp = _ask("How did it begin?", FakeModel())
+    _assert_asked_to_retry(resp)
+    assert "secret" not in resp.text
+
+
+def test_a_model_reply_without_the_parts_is_handled_like_a_failed_model() -> None:
     model = FakeModel()
     del model.reply["interpretation"]
-    assert _ask("How did it begin?", model).status_code == 502
+    _assert_asked_to_retry(_ask("How did it begin?", model))
 
 
 def _real_model(handler: Any) -> grounded_chat.OpenAIChatModel:
@@ -370,29 +409,77 @@ def _real_model(handler: Any) -> grounded_chat.OpenAIChatModel:
     )
 
 
-def test_a_rate_limit_is_a_plain_error_that_shows_no_account_details() -> None:
+def test_a_rate_limit_shows_no_account_details() -> None:
     secret = '{"error":{"message":"Rate limit exceeded for api_key: abc123"}}'
     resp = _ask("How did it begin?", _real_model(lambda request: httpx.Response(429, text=secret)))
-    assert resp.status_code == 502 and "rate limited" in resp.json()["detail"]
+    _assert_asked_to_retry(resp)
     assert "abc123" not in resp.text
 
 
 def test_a_provider_error_body_never_reaches_the_client() -> None:
     resp = _ask("How did it begin?", _real_model(lambda request: httpx.Response(500, text="internal key=abc123")))
-    assert resp.status_code == 502 and "abc123" not in resp.text
+    _assert_asked_to_retry(resp)
+    assert "abc123" not in resp.text
 
 
-def test_a_model_timeout_is_an_error_not_an_answer() -> None:
+def test_a_model_timeout_asks_to_try_again() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("slow")
 
-    assert _ask("How did it begin?", _real_model(handler)).status_code == 502
+    _assert_asked_to_retry(_ask("How did it begin?", _real_model(handler)))
 
 
 @pytest.mark.parametrize("content", ["not json", "[]", '{"answer": ""}'])
-def test_an_invalid_model_reply_is_an_error_not_an_answer(content: str) -> None:
+def test_an_invalid_model_reply_asks_to_try_again(content: str) -> None:
     body = {"choices": [{"message": {"content": content}}]}
-    assert _ask("How did it begin?", _real_model(lambda request: httpx.Response(200, json=body))).status_code == 502
+    _assert_asked_to_retry(_ask("How did it begin?", _real_model(lambda request: httpx.Response(200, json=body))))
+
+
+def test_a_reply_that_is_not_json_at_all_asks_to_try_again() -> None:
+    _assert_asked_to_retry(_ask("How did it begin?", _real_model(lambda _request: httpx.Response(200, text="<html>"))))
+
+
+def test_with_checks_off_a_visible_detail_says_the_video_cannot_be_checked() -> None:
+    model = FakeModel(answer="The report doesn't say.", citations=[], insufficient_evidence=True)
+    model.reply["video_could_answer"] = True
+    body = _ask("What colour were his shoes?", model).json()
+    assert body["message"]["content"].endswith(incident_chat.VIDEO_UNAVAILABLE)
+    assert "video_offer" not in body["message"]
+
+
+def test_a_motive_never_mentions_the_video() -> None:
+    model = FakeModel(answer="The report doesn't say.", citations=[], insufficient_evidence=True)
+    model.reply["video_could_answer"] = True
+    assert incident_chat.VIDEO_UNAVAILABLE not in _ask("Why did he do it?", model).json()["message"]["content"]
+
+
+@pytest.mark.parametrize(
+    ("question", "fragment"),
+    [
+        ("where the incident take place", "doesn't record where this happened"),
+        ("What happened at 0:22?", "pushes him to the wall"),
+        ("What is the weather tomorrow?", "only answer questions about this incident"),
+    ],
+)
+def test_questions_code_answers_make_no_model_call(question: str, fragment: str) -> None:
+    model = FakeModel()
+    body = _ask(question, model).json()
+    assert model.calls == [] and fragment in body["message"]["content"]
+    assert body["message"]["source"] == "report"
+
+
+def test_the_model_sees_the_location_and_every_part_of_the_report() -> None:
+    model = FakeModel()
+    store = Store({7: _revision(incident={"location": "elevator lobby"}, uncertainties=["The cause is unclear."])})
+    _ask("Who attacked first?", model, store=store)
+    sent = str(model.calls[0])
+    assert "elevator lobby" in sent and "The cause is unclear." in sent and "pushes him to the wall" in sent
+
+
+def test_a_failed_model_keeps_timestamps_and_cards_from_the_report() -> None:
+    body = _ask("What happened after the man pushes him?", Broken()).json()
+    assert body["grounding"]["route_reason"] == "model_unavailable"
+    assert "0:30" in body["message"]["content"]
 
 
 def test_a_report_with_no_timeline_answers_and_invents_no_time() -> None:
