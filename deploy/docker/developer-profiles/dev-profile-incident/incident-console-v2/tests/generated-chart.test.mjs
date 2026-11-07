@@ -400,7 +400,40 @@ describe('figures come from the dashboard data', () => {
       [dashboard.queries[0].periodStart, dashboard.queries[0].periodEnd],
       [new Date('2026-10-01T00:00:00Z'), new Date('2026-10-07T00:00:00Z')],
     );
-    assert.equal(answer.chart.title, 'Reports per day, 1 to 6 October 2026');
+    assert.equal(answer.chart.title, 'Reports per day, October 2026 (to date)');
+    assert.deepEqual(answer.chart.scope, ['October 2026 (to date)']);
+  });
+
+  test('a range that runs past today is charted up to today, and its title says so', async () => {
+    const dashboard = statusDashboard(analytics);
+    const answer = await generateChart(
+      {
+        interpreter: { interpret: async () => spec({ dimension: 'report_day', period: { from: '2026-10-01', to: '2026-12-31' } }) },
+        dashboard,
+        renderer: renderer(),
+      },
+      { request: 'reports per day from October to December', chartType: 'bar', timezone: 'UTC', now: new Date('2026-11-07T12:00:00Z') },
+    );
+    assert.deepEqual(
+      [dashboard.queries[0].periodStart, dashboard.queries[0].periodEnd],
+      [new Date('2026-10-01T00:00:00Z'), new Date('2026-11-08T00:00:00Z')],
+    );
+    assert.equal(answer.chart.title, 'Reports per day, 1 October to 7 November 2026 (to date)');
+    assert.deepEqual(answer.chart.scope, ['1 October to 7 November 2026 (to date)']);
+  });
+
+  test('a range that starts after today is refused before any query, even when it is a whole future month', async () => {
+    const dashboard = statusDashboard(analytics);
+    const answer = await generateChart(
+      {
+        interpreter: { interpret: async () => spec({ dimension: 'report_day', period: { from: '2026-12-01', to: '2026-12-31' } }) },
+        dashboard,
+        renderer: renderer(),
+      },
+      { request: 'incidents next month', chartType: 'bar', timezone: 'UTC', now: new Date('2026-11-07T12:00:00Z') },
+    );
+    assert.deepEqual(answer, { kind: 'unsupported' });
+    assert.equal(dashboard.queries.length, 0);
   });
 
   test('the interpreter is told today and the time zone, and a future month is refused before any query', async () => {

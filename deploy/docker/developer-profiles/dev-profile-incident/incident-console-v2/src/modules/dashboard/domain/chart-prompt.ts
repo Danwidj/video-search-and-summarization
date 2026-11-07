@@ -42,14 +42,16 @@ period: one of ${Object.keys(CHART_PERIODS).join(', ')}, or a calendar period wr
   The request starts with today's date and the viewer's time zone. Dates are the viewer's calendar days. A month or a date
   given without its year is the most recent one that is not after today: "October" in November 2026 is 2026-10. A month
   that is still running counts up to today, so "November" on 6 November 2026 is {"month":"2026-11"}, and the chart covers
-  1 to 6 November. A phrase such as "last week of October" is a from and to pair. A calendar period must not run past
-  today, and a range may cover at most 366 days.
+  1 to 6 November. A month or range that ends after today is charted up to today, so "October to December" on 6 November
+  2026 is {"from":"2026-10-01","to":"2026-12-31"}, and the chart covers 1 October to 6 November. A phrase such as "last
+  week of October" is a from and to pair. A calendar period must not start after today, and a range may cover at most
+  366 days.
 incidentType: null or one of ${INCIDENT_TYPES.join(', ')}.
 severity: null or one of ${CHART_SEVERITIES.join(', ')}.
 
 The user picks bar or pie separately, so ignore any chart type named in the request.
 
-If any part of the request cannot be expressed with exactly these values, reply {"unsupported": true} and nothing else. That covers a period no form above can express (a span over 366 days, a date after today, a time of day), a location, camera, person or free text filter, a field not listed, when incidents actually happened (only report dates and times are known), a request to change, invent or add figures, and anything that is not a chart request.
+If any part of the request cannot be expressed with exactly these values, reply {"unsupported": true} and nothing else. That covers a period no form above can express (a span over 366 days, a day or period that starts after today, a time of day), a location, camera, person or free text filter, a field not listed, when incidents actually happened (only report dates and times are known), a request to change, invent or add figures, and anything that is not a chart request.
 
 Examples:
 "incident distribution" -> {"metric":"incidents","dimension":"incident_type","period":"all_time","incidentType":null,"severity":null}

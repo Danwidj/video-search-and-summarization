@@ -248,7 +248,8 @@ export type ChartSpec = Omit<z.infer<ReturnType<typeof chartSpecSchema>>, 'perio
 
 /**
  * The spec a model reply describes, or null for anything else: a refusal, a non-allowlisted value, an unknown key, or a
- * calendar period that is malformed, reversed, longer than CALENDAR_MAX_DAYS or not up to today (`today`, YYYY-MM-DD).
+ * calendar period that is malformed, reversed, longer than CALENDAR_MAX_DAYS or starts after today (`today`, YYYY-MM-DD).
+ * A period that ends after today is kept as written here; generateChart charts it up to today.
  */
 export function parseChartSpec(reply: unknown, today: string): ChartSpec | null {
   const parsed = chartSpecSchema(today).safeParse(reply);

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Calendar periods for dashboard charts: a model reply may name one month, one day or a from and to pair, and it counts
-// only when it is a real date, not after today in the viewer's time zone, not reversed and at most 366 days long.
+// only when it is a real date, not reversed, at most 366 days long and not starting after today in the viewer's time zone.
+// A month or range that ends after today is charted up to today and titled "(to date)".
 
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
@@ -32,6 +33,8 @@ describe('calendar periods that count', () => {
     'a range': { from: '2026-10-01', to: '2026-10-15' },
     'a range of one day': { from: '2026-10-15', to: '2026-10-15' },
     'a range of exactly the maximum span': { from: '2025-10-31', to: '2026-10-31' },
+    'a range that runs past today': { from: '2026-10-25', to: '2026-11-02' },
+    'a range that starts today and runs past it': { from: '2026-10-31', to: '2026-12-31' },
     'the presets, as before': 'last_30_days',
   };
   for (const [name, period] of Object.entries(valid)) {
@@ -43,6 +46,23 @@ describe('calendar periods that count', () => {
   test('a month still running is accepted and counts up to today', () => {
     assert.notEqual(parseChartSpec(spec({ month: '2026-10' }), '2026-10-06'), null);
     assert.deepEqual(calendarDays({ month: '2026-10' }, '2026-10-06'), { first: '2026-10-01', last: '2026-10-06' });
+  });
+
+  test('a range that runs past today is clamped to end today', () => {
+    assert.deepEqual(calendarDays({ from: '2026-10-01', to: '2026-12-31' }, '2026-11-07'), { first: '2026-10-01', last: '2026-11-07' });
+    assert.deepEqual(calendarDays({ from: '2026-10-25', to: '2026-11-02' }, TODAY), { first: '2026-10-25', last: '2026-10-31' });
+  });
+
+  test('the maximum span is measured on the days charted, so a range clamped to today may be longer as written', () => {
+    assert.notEqual(calendarDays({ from: '2025-11-07', to: '2026-12-31' }, '2026-11-07'), null);
+    assert.equal(calendarDays({ from: '2025-11-06', to: '2026-12-31' }, '2026-11-07'), null);
+  });
+
+  test('the spec keeps a range that runs past today as written, for generateChart to clamp', () => {
+    assert.deepEqual(parseChartSpec(spec({ from: '2026-10-01', to: '2026-12-31' }), '2026-11-07').period, {
+      from: '2026-10-01',
+      to: '2026-12-31',
+    });
   });
 
   test('the preset shape is unchanged, so old answers still parse', () => {
@@ -57,8 +77,8 @@ describe('calendar periods that are refused', () => {
     'a month after today': { month: '2026-11' },
     'a month a year ahead': { month: '2027-01' },
     'a day after today': { day: '2026-11-01' },
-    'a range that runs past today': { from: '2026-10-25', to: '2026-11-02' },
     'a range that starts after today': { from: '2026-11-01', to: '2026-11-03' },
+    'a range entirely in the future, like next month': { from: '2026-11-01', to: '2026-11-30' },
     'a reversed range': { from: '2026-10-15', to: '2026-10-01' },
     'a range over the maximum span': { from: '2025-10-30', to: '2026-10-31' },
     'a day that does not exist': { day: '2026-02-30' },
@@ -136,8 +156,14 @@ describe('the words for a period', () => {
     assert.equal(calendarWords({ from: '2025-12-29', to: '2026-01-02' }, TODAY), '29 December 2025 to 2 January 2026');
   });
 
-  test('a month still running is named by the days it covers', () => {
-    assert.equal(calendarWords({ month: '2026-10' }, '2026-10-06'), '1 to 6 October 2026');
+  test('a month still running is titled by its month, and says it is to date', () => {
+    assert.equal(calendarWords({ month: '2026-10' }, '2026-10-06'), 'October 2026 (to date)');
+    assert.equal(calendarWords({ month: '2026-10' }, '2026-10-31'), 'October 2026');
+  });
+
+  test('a range that reaches past today is titled to date, and names the days charted', () => {
+    assert.equal(calendarWords({ from: '2026-10-01', to: '2026-12-31' }, '2026-11-07'), '1 October to 7 November 2026 (to date)');
+    assert.equal(calendarWords({ from: '2025-12-29', to: '2026-12-31' }, '2026-01-02'), '29 December 2025 to 2 January 2026 (to date)');
   });
 
   test('the maximum span is the one the allowlist publishes', () => {

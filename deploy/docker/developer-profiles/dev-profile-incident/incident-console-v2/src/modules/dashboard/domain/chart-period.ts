@@ -3,6 +3,7 @@
 // Calendar periods for dashboard charts: one month, one day, or the days from one date to another (inclusive).
 // Dates are the viewer's own calendar days (YYYY-MM-DD, no times). The presets stay in chart-spec.ts.
 // A model reply that names a calendar period is checked here, against today's date in the viewer's time zone.
+// A period that starts on or before today but ends after it is charted up to today, and the title says "(to date)".
 
 export const CALENDAR_MAX_DAYS = 366;
 
@@ -45,8 +46,9 @@ function spanDays(range: DayRange): number {
 
 /**
  * The days a calendar period covers, or null when it is not a period the viewer can chart today: a malformed or
- * unreal date, a reversed range, a range over CALENDAR_MAX_DAYS, a day or range that reaches past today, or a month
- * that starts after today. A month still running is clipped to today, so "November" on 6 November covers 1 to 6 November.
+ * unreal date, a reversed range, a day after today, a range or month that starts after today, or a range over
+ * CALENDAR_MAX_DAYS (the days charted, so a range that runs past today is measured up to today). A month or range
+ * that ends after today is clipped to today, so "November" on 6 November covers 1 to 6 November.
  */
 export function calendarDays(period: CalendarPeriod, today: string): DayRange | null {
   if ('month' in period) {
@@ -61,9 +63,15 @@ export function calendarDays(period: CalendarPeriod, today: string): DayRange | 
     return { first: period.day, last: period.day };
   }
   if (!isRealDay(period.from) || !isRealDay(period.to)) return null;
-  const range = { first: period.from, last: period.to };
-  if (range.first > range.last || range.last > today) return null;
+  if (period.from > period.to || period.from > today) return null;
+  const range = { first: period.from, last: period.to > today ? today : period.to };
   return spanDays(range) > CALENDAR_MAX_DAYS ? null : range;
+}
+
+/** True when a period that calendarDays accepts reaches past today, so it is charted up to today and titled "(to date)". */
+export function isToDate(period: CalendarPeriod, today: string): boolean {
+  if ('day' in period) return false;
+  return ('month' in period ? monthLastDay(period.month) : period.to) > today;
 }
 
 /** The last day of a YYYY-MM month. */
@@ -85,15 +93,19 @@ export function rangeWords({ first, last }: DayRange): string {
   return `${d1} ${month1} ${y1} to ${d2} ${month2} ${y2}`;
 }
 
-/** The words for a calendar period on `today`: a whole month is named by its month, anything else by its days. */
+/**
+ * The words for a calendar period on `today`: a month is named by its month and year, anything else by its days. A period
+ * that reaches past today says so: "November 2026 (to date)", "1 October to 6 November 2026 (to date)".
+ */
 export function calendarWords(period: CalendarPeriod, today: string): string {
   const days = calendarDays(period, today);
   if (!days) throw new Error('calendarWords needs a period that calendarDays accepts');
-  if ('month' in period && days.last === monthLastDay(period.month)) {
+  const suffix = isToDate(period, today) ? ' (to date)' : '';
+  if ('month' in period) {
     const [year, month] = period.month.split('-').map(Number) as [number, number];
-    return `${MONTHS[month - 1]} ${year}`;
+    return `${MONTHS[month - 1]} ${year}${suffix}`;
   }
-  return rangeWords(days);
+  return `${rangeWords(days)}${suffix}`;
 }
 
 /** The calendar day in `timeZone` at `now`, as YYYY-MM-DD. */
