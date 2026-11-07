@@ -2,6 +2,14 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-08: A Library card's duration comes from the run's recorded video length
+- **Decision:** `list_incident_report_summaries` returns `durationSeconds`, read from `model_runs.notes` at `incidentConsoleV2.request.videoDurationSeconds` (the length the analysis read before validation). The card shows it as an `m:ss` or `h:mm:ss` badge, bottom-right on the thumbnail, and no badge when it is null. Migration `20261108000000_library_card_duration.sql`.
+- **Why:** `videos.duration` exists but the console never writes it (the upload row is inserted without it), so reading it would always show nothing. The run notes already hold the length and the list query already joins them, so the change is one field in the existing RPC with no per-card probe or download.
+- **Alternatives rejected:**
+  - *Reading `videos.duration`:* always null today; would need a writer and a backfill first.
+  - *Probing each video in the browser or on the server per card:* the brief forbids it and it costs a download per card.
+- **Links:** [`supabase/migrations/20261108000000_library_card_duration.sql`](../supabase/migrations/20261108000000_library_card_duration.sql); [`thumbnail.ts`](../incident-console-v2/src/lib/ui/thumbnail.ts)
+
 ### 2026-11-08: The report chat is a docked panel that narrows the page, not an overlay
 - **Decision:** on the report page the chat is a docked `aside` beside the article, `sm:w-[28rem]` (the old sheet's width), and the article takes the rest (`min-w-0 flex-1`). Closing it (close button, Escape or the toggle) restores the full width. It is no longer a Radix sheet, so no overlay, portal or focus trap; `ReportChat` takes an `onClose` prop instead of `SheetClose`. Below `sm` it takes the full width, as the sheet did.
 - **Why:** with the sheet open it covered the right side of the page, hiding the edit column and the evidence cards. Docking keeps every field and card usable while the chat is open.
