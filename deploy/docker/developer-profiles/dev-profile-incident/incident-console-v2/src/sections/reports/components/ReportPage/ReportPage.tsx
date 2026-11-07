@@ -98,6 +98,15 @@ export function ReportPage({
   const startedAt = useRef(false);
 
   const [chatOpen, setChatOpen] = useState(false);
+  // Escape closes the docked chat wherever focus is, as it closed the sheet; a key a field already handled is left alone.
+  useEffect(() => {
+    if (!chatOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) setChatOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [chatOpen]);
   // The report's controls live in the shared app header: its two slots are found after mount and filled by portal.
   const [slots, setSlots] = useState<{ start: HTMLElement | null; end: HTMLElement | null } | null>(null);
   useEffect(() => {
@@ -696,9 +705,6 @@ export function ReportPage({
         <aside
           aria-label="Ask about this incident"
           className="flex h-full min-h-0 w-full shrink-0 flex-col border-l border-border bg-card sm:w-[28rem]"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') setChatOpen(false);
-          }}
         >
           {(() => {
             const target = chatTarget(
