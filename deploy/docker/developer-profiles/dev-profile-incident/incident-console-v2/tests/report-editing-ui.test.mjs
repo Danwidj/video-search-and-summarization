@@ -210,7 +210,7 @@ test('the new-analysis model selector shows full model names and never clips the
       'Nemotron 3 Super 120B (text only)',
       'Nemotron 3 Ultra (text only)',
       'Nemotron 3 Ultra NVFP4 (text only)',
-      'Nemotron 3 Auto',
+      'Nemotron 3 Auto (text only)',
       'Nemotron 3.5 Lightning 30B (text only)',
     ],
   );

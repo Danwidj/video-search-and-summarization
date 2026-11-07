@@ -55,7 +55,7 @@
     },
     {
       "id": "nvidia/nemotron-3-auto",
-      "label": "Nemotron 3 Auto",
+      "label": "Nemotron 3 Auto (text only)",
       "timeout_seconds": 300
     },
     {

@@ -37,7 +37,8 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 ### 2026-11-07: Every model the Brev endpoint serves is in the allowlist
 - **Decision:** `contracts/inference.json` (and the agent's vendored copy) lists all 10 models of the endpoint, with readable labels; the models not expected to take video say "(text only)". The list is static, not fetched live. No contract version change.
 - **Why:** the captain asked for the Re-analyse dialog and the upload dropdown to show every endpoint model.
-- **Needs:** the agent restarted to see its copy. The text-only labels follow a stored note and are not yet probed. `eval/tests/test_contract_fixtures.py` compares this list to `eval_vlm_client.MODELS`, so it fails until eval (off limits here) adds them.
+- **Probed 2026-11-07** (one 64x64 image, 16 tokens, per model, through the gateway; no video, no analysis): `cosmos-3-auto` answered (takes images). `nemotron-3-nano-30b-a3b`, `nemotron-3-super-120b-a12b` and `nemotron-3.5-lightning-30b-a3b` were refused as not multimodal. `nemotron-3-ultra`, `nemotron-3-ultra-nvfp4` and `nemotron-3-auto` returned 400 "an internal error occurred" (the reason is not stated), so they are labelled text only as agreed; `nemotron-3-auto` gained that label. Retest if the endpoint changes.
+- **Needs:** the agent restarted to see its copy. `eval/tests/test_contract_fixtures.py` compares this list to `eval_vlm_client.MODELS`, so it fails until eval (off limits here) adds them.
 
 ### 2026-11-07: Version type is a coloured pill, one shared component
 - **Decision:** `VersionPill` shows a version's type everywhere: Model slate blue, Human plum, official teal #0B7A8F with a star (green looked like the Generate and Reset buttons) and the text "Official · Type". Colours are `--color-version-*` theme tokens.
