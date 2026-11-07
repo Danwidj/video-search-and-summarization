@@ -558,6 +558,8 @@ export function ReportPage({
                   <ReportEditPane
                     a={compareReport?.structured ?? null}
                     aRevisionNo={compareReport?.revision.revisionNo ?? editBase.revisionNo}
+                    baseKind={editBase.report.revision.kind === 'human' ? 'human' : 'ai'}
+                    baseOfficial={editBase.report.official.officialRevisionId === editBase.revisionId}
                     baseRevisionNo={editBase.revisionNo}
                     draft={draft}
                     officialMissing={!officialRevision && revisions !== null}

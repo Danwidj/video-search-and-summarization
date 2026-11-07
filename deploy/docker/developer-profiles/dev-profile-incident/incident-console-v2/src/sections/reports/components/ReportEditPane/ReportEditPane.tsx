@@ -8,6 +8,7 @@ import { PlusIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { MutedVideo } from '@/components/muted-video';
 import { Button } from '@/components/ui/button';
+import { VersionPill } from '@/components/version-pill';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -68,6 +69,8 @@ export function ReportEditPane({
   a,
   aRevisionNo,
   baseRevisionNo,
+  baseKind,
+  baseOfficial,
   draft,
   title,
   videoId,
@@ -81,6 +84,9 @@ export function ReportEditPane({
   a: Structured | null;
   aRevisionNo: number;
   baseRevisionNo: number;
+  /** The opened version's type and whether it is official, for the pill beside the title. */
+  baseKind: 'ai' | 'human';
+  baseOfficial: boolean;
   draft: EditDraft;
   title: string;
   videoId: string;
@@ -252,11 +258,14 @@ export function ReportEditPane({
               left={
                 <div className="flex items-start justify-between gap-3">
                   <span>{title}</span>
-                  {a?.incident.confidenceScore != null && (
-                    <Badge className="shrink-0 font-mono text-[11px]" data-testid="confidence-tag" variant="secondary">
-                      {Math.round(a.incident.confidenceScore * 100)}% confidence
-                    </Badge>
-                  )}
+                  <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                    <VersionPill kind={baseKind} official={baseOfficial} />
+                    {a?.incident.confidenceScore != null && (
+                      <Badge className="font-mono text-[11px]" data-testid="confidence-tag" variant="secondary">
+                        {Math.round(a.incident.confidenceScore * 100)}% confidence
+                      </Badge>
+                    )}
+                  </span>
                 </div>
               }
               right={

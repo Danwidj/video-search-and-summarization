@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MoreHorizontalIcon, SearchIcon, StarIcon, TagIcon, Trash2Icon, WrenchIcon } from 'lucide-react';
+import { MoreHorizontalIcon, SearchIcon, TagIcon, Trash2Icon, WrenchIcon } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
 import { ReportThumbnail } from '@/sections/library/components/ReportThumbnail';
@@ -12,6 +12,7 @@ import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { cardTitle } from '@/lib/library/view';
 import { formatTimestamp } from '@/lib/time';
 import { Button } from '@/components/ui/button';
+import { VersionPill } from '@/components/version-pill';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -149,23 +150,20 @@ export function IncidentCard({
                 {item.isOfficial ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full bg-moss px-2 py-0.5 text-[11px] font-bold text-white"
-                        data-testid="library-official-marker"
-                      >
-                        <StarIcon className="size-3 fill-current" />
-                        Official · {item.kind === 'human' ? 'Human' : 'AI'}
-                      </span>
+                      <VersionPill data-testid="library-official-marker" kind={item.kind === 'human' ? 'human' : 'ai'} official />
                     </TooltipTrigger>
                     {item.officialSince && <TooltipContent>Made official {formatTimestamp(item.officialSince)}</TooltipContent>}
                   </Tooltip>
                 ) : (
-                  <span
-                    className="inline-flex items-center rounded-full border border-dashed border-ink/30 bg-muted px-2 py-0.5 text-[11px] font-bold text-ink/60"
-                    data-testid="library-no-official-marker"
-                  >
-                    No official version
-                  </span>
+                  <>
+                    <VersionPill kind={item.kind === 'human' ? 'human' : 'ai'} />
+                    <span
+                      className="inline-flex items-center rounded-full border border-dashed border-ink/30 bg-muted px-2 py-0.5 text-[11px] font-bold text-ink/60"
+                      data-testid="library-no-official-marker"
+                    >
+                      No official version
+                    </span>
+                  </>
                 )}
               </TooltipProvider>
             </div>

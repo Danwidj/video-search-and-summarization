@@ -7,6 +7,7 @@ import { Fragment, type CSSProperties, type KeyboardEvent, type MouseEvent, type
 import { Badge } from '@/components/ui/badge';
 import { EvidenceBadges } from '@/sections/reports/components/EvidenceBadges';
 import { Button } from '@/components/ui/button';
+import { VersionPill } from '@/components/version-pill';
 import { Card as UICard, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { evidenceDisplay } from '@/lib/evidence/evidence-view';
 import { formatTimestamp } from '@/lib/time';
@@ -97,20 +98,13 @@ export function ReportPane({
           <div className="flex min-w-0 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <CardTitle className="text-base font-semibold">Now Viewing: Version {revision.revisionNo}</CardTitle>
-              {report.official.isOfficial && (
-                <Badge
-                  className="border-amber-400 bg-amber-50 text-[11px] font-bold text-amber-800"
-                  data-testid="official-status"
-                  variant="outline"
-                >
-                  ★ Official
-                </Badge>
-              )}
             </div>
             <CardDescription className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" data-testid="revision-label">
-              <Badge className="px-2 py-0.5 text-[11px] font-semibold" variant="secondary">
-                {revision.kind === 'human' ? 'Human' : 'AI'}
-              </Badge>
+              <VersionPill
+                data-testid="official-status"
+                kind={revision.kind === 'human' ? 'human' : 'ai'}
+                official={report.official.isOfficial}
+              />
               {revision.kind === 'ai' && <span>{run.model}</span>}
               <span>{formatTimestamp(revision.createdAt, 'time unknown')}</span>
               {revision.note && <span>· {revision.note}</span>}
@@ -153,11 +147,14 @@ export function ReportPane({
             <Row label="Title">
               <div className="flex items-start justify-between gap-3">
                 <span>{reportHeading(report)}</span>
-                {incident.confidenceScore !== null && (
-                  <Badge className="shrink-0 font-mono text-[11px]" data-testid="confidence-tag" variant="secondary">
-                    {Math.round(incident.confidenceScore * 100)}% confidence
-                  </Badge>
-                )}
+                <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                  <VersionPill kind={revision.kind === 'human' ? 'human' : 'ai'} official={report.official.isOfficial} />
+                  {incident.confidenceScore !== null && (
+                    <Badge className="font-mono text-[11px]" data-testid="confidence-tag" variant="secondary">
+                      {Math.round(incident.confidenceScore * 100)}% confidence
+                    </Badge>
+                  )}
+                </span>
               </div>
               {modelOutput?.title && modelOutput.title !== reportHeading(report) && (
                 <span className="mt-0.5 block text-xs text-muted-foreground/80" data-testid="title-edited">

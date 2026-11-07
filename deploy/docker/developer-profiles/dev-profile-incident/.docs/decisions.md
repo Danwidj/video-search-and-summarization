@@ -22,6 +22,11 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Evaluation:** `dashboard_calendar.py` mirrors the clamp; its tests and development requests changed with it (no live run).
 - **Links:** [`chart-period.ts`](../incident-console-v2/src/modules/dashboard/domain/chart-period.ts), [`chart-prompt.ts`](../incident-console-v2/src/modules/dashboard/domain/chart-prompt.ts), [`generate-chart/index.ts`](../incident-console-v2/src/modules/dashboard/application/generate-chart/index.ts)
 
+### 2026-11-07: Version type is a coloured pill, one shared component
+- **Decision:** `VersionPill` shows a version's type everywhere: Model slate blue, Human plum, official the theme green with a star and the text "Official · Type". Colours are `--color-version-*` theme tokens.
+- **Why:** type and official status were separate badges in different places; the captain chose colour by type with the text kept as a label.
+- **Alternatives rejected:** colour only (not accessible); changing Dashboard chart or severity colours (out of scope).
+
 ### 2026-11-07: The Library is always ordered official first, then oldest upload first
 - **Decision:** the Find incidents list has no sort control. The console always asks for `p_sort = 'official-first'`: official reports first, then the rest, each by `videos.uploaded_datetime` oldest first, with the old tie-break (newest report time, revision id), sorted in the RPC so it holds across pages (migration `20261107100000_library_official_first_sort.sql`; the older sort values stay for other callers). With search text the existing ranking (both matches, then words only, then meaning only) is kept; words-only matches follow the new order.
 - **Why:** the captain asked for one fixed order that puts official reports first.

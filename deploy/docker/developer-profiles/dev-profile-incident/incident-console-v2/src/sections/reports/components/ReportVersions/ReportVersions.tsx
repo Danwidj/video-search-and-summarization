@@ -17,6 +17,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { VersionPill } from '@/components/version-pill';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -154,16 +155,9 @@ export function ReportVersions({
                       <span className="flex flex-wrap items-center gap-x-2">
                         <b>v{revision.revisionNo}</b>
                         <span className="text-muted-foreground">{formatTimestamp(revision.createdAt, 'time unknown')}</span>
-                        {official && (
-                          <Badge className="border-amber-400 bg-amber-50 text-[10.5px] font-bold text-amber-800" variant="outline">
-                            ★ Official
-                          </Badge>
-                        )}
                       </span>
                       <span className="flex items-center gap-1.5 text-muted-foreground">
-                        <Badge className="px-1.5 text-[10.5px] font-semibold" variant="secondary">
-                          {revision.kind === 'human' ? 'Human' : 'AI'}
-                        </Badge>
+                        <VersionPill kind={revision.kind === 'human' ? 'human' : 'ai'} official={official} />
                         <span className="truncate">
                           {revision.kind === 'ai' ? (revision.model ?? 'Unknown model') : shortVersionNote(revision.note ?? '')}
                         </span>
