@@ -2,6 +2,60 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: Every Dashboard chart enters with the same timing, by CSS where Recharts does not draw it
+- **Decision:** the treemap, waffle, icon array, risk ladder, heatmap and Total bar use `.chart-enter` / `.chart-grow` (transform and opacity, staggered by `--enter-delay`) with `useChartEntrance`, which gives 1500 ms on first data and 400 ms after a data change and replays by keying on an epoch. Off under `prefers-reduced-motion`.
+- **Why:** only the Recharts bars and donut animated; the captain asked for all charts. Recharts' treemap animation does not suit the custom cell, and `backwards` fill keeps hover transforms working.
+- **Alternatives rejected:** a motion library (new dependency); animating width or layout properties (reflow).
+- **Links:** [console-reference](console-reference.md), `Dashboard.tsx`, `styles.css`.
+
+### 2026-11-07: The report controls live in the shared app header, which centres the nav
+- **Decision:** the app header is a `1fr auto 1fr` grid, so the pill nav is centred on every page. The report page portals its controls into two header slots (left of the brand, far right) and has no toolbar row. State and handlers stay in `ReportPage`; the View / Edit `Tabs` markup is unchanged from main.
+- **Why:** the captain wanted one navbar row with the nav truly centred; a portal keeps behaviour with the page that owns it.
+- **Alternatives rejected:** lifting report state into a layout context (more moving parts); a second header component for reports (two navs to keep in step).
+- **Links:** [console-reference](console-reference.md), `AppHeader.tsx`, `ReportPage.tsx`.
+
+### 2026-11-07: Dashboard charts draw slowly once, then quickly on a filter change
+- **Decision:** 1500 ms (`CHART_ANIMATION_MS`) the first time a chart has data, 400 ms (`CHART_FILTER_ANIMATION_MS`) when a filter changes its data; reduced motion stays off.
+- **Why:** the slow draw is a pleasant first impression but made every filter click feel laggy.
+- **Alternatives rejected:** one shorter duration for both; no animation on filter changes (the change is harder to follow).
+- **Links:** [console-reference](console-reference.md#dashboard-analytics-and-cross-filtering), `useChartMotion` in `Dashboard.tsx`.
+
+### 2026-11-07: The Dashboard takes the approved mockup: treemap, donut, waffle, risk ladder and icon array
+- **Decision:** built the approved mockup (round 26) into the console with no RPC change: Top assets as a slate treemap, Severity donut with the legend beneath, Evidence by kind as a 10x10 waffle, Entity types as an icon array, Instruments by threat level as a risk ladder, "Total: N" on cards, tilted two-line labels on Incidents by type, the legend in the top row, no Ask button and chips only while filtering. Colours come from the tokens; the asset size scale got its own token, `--color-asset-size`, and threat level uses `levelBand`. The mock's fake data and no-op links were left out.
+- **Why:** the captain approved the mockup; the shared tokens keep one meaning per colour.
+- **Alternatives rejected:** copying the mockup's hex values (they broke the colour guard); keeping the Ask button (the card is on the same screen at 1440x900).
+- **Links:** [console-reference](console-reference.md#dashboard-analytics-and-cross-filtering), `Dashboard.tsx`.
+
+### 2026-11-07: Not yet official is solid grey in charts, a dashed grey pill elsewhere; the Official pill glows
+- **Decision:** `--color-not-official` is a plain solid mid grey `#aeb5bb` for every chart bar, heatmap ramp and legend swatch, with no outline. The "No official version" pill and the report notice keep a light grey fill (`--color-not-official-pill` `#e9ece4`) with a dashed outline (`--color-not-official-line` `#7b8794`), as on main. The shared Official pill (`VersionPill`, `.official-glow` in `styles.css`) has a teal halo on a pseudo-element that breathes by opacity over 4 s; under reduced motion the glow stays steady.
+- **Why:** the captain asked for grey (replacing pale teal `#8cc5cf`); a dashed outline on chart bars looked busy, so charts "stick to the colour"; the glow makes official obvious.
+- **Alternatives rejected:** pale teal (too close to official teal); dashed chart bars (tried, removed on the captain's word); animating box-shadow (repaints; opacity is composited).
+- **Links:** [console-reference](console-reference.md#colour), `styles.css`, `version-pill.tsx`.
+
+### 2026-11-07: Colour meanings are tokens in styles.css, with one band mapping for severity and threat
+- **Decision:** version model/human/official, not yet official (`#8cc5cf`, replacing the orange in charts, legends and split bars), the severity bands and card hover are semantic CSS variables in `styles.css` with a comment table. One helper (`levelBand`) maps 5 and 4 to high, 3 to medium, 2 and 1 to low for severity and threat; severity pills derive tint and border from the band token with `color-mix`. The official star in History uses the official token. A test fails if a meaning hex appears outside `styles.css` and the two canvas mirrors. Severity 4 is now the high band (it was a separate orange).
+- **Why:** the same meaning had several hexes across pages; the Dashboard redesign will use this one set.
+- **Alternatives rejected:** a generated tokens file (more machinery than one CSS file and a test); recolouring the destructive orange and amber notices (they carry no one of these meanings).
+- **Links:** [console-reference](console-reference.md#colour-meanings), `tests/colour-tokens.test.mjs`.
+
+### 2026-11-07: Reviewers cannot save an unknown entity
+- **Decision:** the edit row dropdown offers only Human and Animal, the box tool's add dialog asks for Human or Animal, and an entity still `unknown` (an older version) must be set before Save. `validateStructuredEdit` refuses an entity of type `unknown` (422), so no human version holds one. Stored older reports still display and filter as they were.
+- **Why:** a reviewer always knows whether an entity is a person or an animal; no AI version has ever produced `unknown` (0 of 942).
+- **Alternatives rejected:** removing `unknown` from the contract enum, schema or prompt (shared with eval; no contract bump for a reviewer-side rule).
+- **Links:** `src/modules/contract/domain/structured-edit.ts`, `src/modules/reports/domain/edit-draft.ts`.
+
+### 2026-11-07: The Library header is the app nav plus Chrome-style tabs and one filter row
+- **Decision:** the approved Library header redesign, console only (no database change). The shared app header is a white bar with a bottom border and the three links in one rounded pill track (shadcn `NavigationMenu`; the current page is a solid dark-green pill); it serves Analyze, Library, Dashboard and the report pages. The Library drops its title, "Incident console" label, info icon and Analyze button (Analyze stays one click away in the nav). Find incidents and Find evidence are real shadcn `Tabs`, centred in a full-width strip, drawn Chrome-style (selected tab on the page colour with curved feet, 150 ms colour transition, none under reduced motion). The search field and every filter sit on one row on both tabs (`InputGroup` for the search; Find evidence has the kind as a joined `ToggleGroup`); there is no Search button, Enter submits. A set filter is drawn in the theme green. Chips and "Clear all" appear only when a filter is set, and the search-order note only while searching. Cards are unchanged.
+- **Why:** the header and controls took 309 px above the first card; it is now about 153 px at 1440x900 (mockup 154 px).
+- **Alternatives rejected:** keeping the Search button (Enter is enough); a sticky filter bar in the Library (the cards are sized to the viewport, so the page does not scroll at desktop).
+- **Links:** [console-reference](console-reference.md#console-pages), `AppHeader.tsx`, `LibraryScreen.tsx`, `EvidenceTab.tsx`, `components/ui/input-group.tsx` (added from shadcn).
+
+### 2026-11-07: The Dashboard is one sticky filter bar over a tight 12-column grid
+- **Decision:** the approved redesign: one sticky bar (period presets with a new 90d, Custom, Status, Severity, Type, Ask for a chart) with removable chips, the explanation and card subtitles as tooltips, the legend once, a floating Reset in a reserved right rail, and the Activity card's own toggle removed because Status replaces it. Status sends the existing `scope`, Type the existing `type`; the route accepts `days=90`. No asset, instrument or entity filter, no RPC change, no migration (the captain does not want RPC filters).
+- **Why:** the header and per-card text took 249 px before the first chart and the filters were scattered; the mockup's measured height was about 890 px against 2335 px.
+- **Alternatives rejected:** a More menu with asset, instrument and entity filters (needs RPC parameters); keeping the Activity toggle beside Status (two controls for one thing).
+- **Links:** [console-reference](console-reference.md#dashboard-analytics-and-cross-filtering).
+
 ### 2026-11-07: Chat answers people, place and moments from the whole report, never picks a role, and a failed model is not an error
 - **Decision:**
   - Code reads `incident.location`, a time in the question, and the people the report's text describes, not only its typed items. An entity of type `unknown` is a person when its label or description says so.
@@ -21,6 +75,29 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Amends:** the 2026-11-06 calendar-period decision, where "a day or range that reaches past today is refused" no longer holds for ranges. A day after today is still refused.
 - **Evaluation:** `dashboard_calendar.py` mirrors the clamp; its tests and development requests changed with it (no live run).
 - **Links:** [`chart-period.ts`](../incident-console-v2/src/modules/dashboard/domain/chart-period.ts), [`chart-prompt.ts`](../incident-console-v2/src/modules/dashboard/domain/chart-prompt.ts), [`generate-chart/index.ts`](../incident-console-v2/src/modules/dashboard/application/generate-chart/index.ts)
+
+### 2026-11-07: Every model the Brev endpoint serves is in the allowlist
+- **Decision:** `contracts/inference.json` (and the agent's vendored copy) lists all 10 models of the endpoint, with readable labels; the models not expected to take video say "(text only)". The list is static, not fetched live. No contract version change.
+- **Why:** the captain asked for the Re-analyse dialog and the upload dropdown to show every endpoint model.
+- **Probed 2026-11-07** (one 64x64 image, 16 tokens, per model, through the gateway; no video, no analysis): `cosmos-3-auto` answered (takes images). `nemotron-3-nano-30b-a3b`, `nemotron-3-super-120b-a12b` and `nemotron-3.5-lightning-30b-a3b` were refused as not multimodal. `nemotron-3-ultra`, `nemotron-3-ultra-nvfp4` and `nemotron-3-auto` returned 400 "an internal error occurred" (the reason is not stated), so they are labelled text only as agreed; `nemotron-3-auto` gained that label. Retest if the endpoint changes.
+- **Needs:** the agent restarted to see its copy. `eval/tests/test_contract_fixtures.py` compares this list to `eval_vlm_client.MODELS`, so it fails until eval (off limits here) adds them.
+
+### 2026-11-07: Version type is a coloured pill, one shared component
+- **Decision:** `VersionPill` shows a version's type everywhere: Model slate blue, Human plum, official teal #0B7A8F with a star (green looked like the Generate and Reset buttons) and the text "Official · Type". Colours are `--color-version-*` theme tokens.
+- **Why:** type and official status were separate badges in different places; the captain chose colour by type with the text kept as a label.
+- **Alternatives rejected:** colour only (not accessible); changing Dashboard chart or severity colours (out of scope).
+
+### 2026-11-07: The Library is always ordered official first, then oldest upload first
+- **Decision:** the Find incidents list has no sort control. The console always asks for `p_sort = 'official-first'`: official reports first, then the rest, each by `videos.uploaded_datetime` oldest first, with the old tie-break (newest report time, revision id), sorted in the RPC so it holds across pages (migration `20261107100000_library_official_first_sort.sql`; the older sort values stay for other callers). With search text the existing ranking (both matches, then words only, then meaning only) is kept; words-only matches follow the new order.
+- **Why:** the captain asked for one fixed order that puts official reports first.
+- **Needs:** the migration applied to finals; before that the RPC falls back to newest first.
+
+### 2026-11-07: Total reports counts every version, split AI and human
+- **Decision:** the Total reports card shows the number of all versions (every `report_revisions` row of the counted reports' videos) as its big number, split AI against human, with a small line for the incident count (one per video). It no longer splits official against not yet official, and the "Multiple versions" stat is gone from the card. The RPC gains `versions` (migration `20261107090000_dashboard_all_versions.sql`); every other field is unchanged because evaluation reads them.
+- **Why:** the card counted one revision per video, so a video with an AI and two human versions showed 1. The captain wanted all versions and the AI and human mix.
+- **Alternatives rejected:** reusing `revisions` (it counts only the one revision per video that `total` counts); changing `total` (the other displays and evaluation count incidents).
+- **Needs:** the migration applied to finals; until then the card shows the incident count alone.
+- **Links:** [`Dashboard.tsx`](../incident-console-v2/src/sections/dashboard/components/Dashboard/Dashboard.tsx)
 
 ### 2026-11-07: The stream check reads the nested get-stream-info by this run's sensor id, and an animal is never time-matched to a person track
 - **Decision:** (1) `PerceptionClient.has_stream(sensor_id)` replaces `stream_count()`. It reads `stream-info.stream-info[].camera_id` (the live reply is `{"stream-info":{"stream-count":1,"stream-info":[{"camera_id":...,"source_id":4}]}}`); a missing key, an empty list or an unreadable reply reads as gone. `_stream_alive` asks for this run's own id, so a quiet-start clip now waits to its length plus `INCIDENT_TRACKING_END_MARGIN_SECONDS` instead of giving up at 40 s. (2) An entity whose `item_name` is `animal` is never given to a person track by seconds alone (`match_by_time`); box overlap still applies, and an animal left without a track gets `track_gap` "person tracking does not follow animals". `human` and `unknown` entities are unchanged.
@@ -1948,3 +2025,15 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 **Alternatives rejected.** Retrying the same URL repeats the crash; making Add to draft generate the final image couples reversible draft work to ffmpeg; keeping the temporary file leaks incident video data; replacing the bundled ffmpeg globally is a broader deployment change and does not provide per-request recovery.
 
 **Links.** [`incident-console-v2/src/lib/video/ffmpeg-frame.ts`](../incident-console-v2/src/lib/video/ffmpeg-frame.ts), [`console-reference.md`](console-reference.md)
+
+### 2026-11-07: The inference endpoint address lives only in untracked env files
+
+The Switchyard address was committed in the profile `.env`, the gateway and the agent code defaults. It now comes only from settings: `VLM_BASE_URL` (critic), `VLM_GATEWAY_BASE_URL` then `VLM_BASE_URL` (evidence detector), `VLM_GATEWAY_BASE_URL` (gateway and archived eval client), and the profile `.env` keeps `LLM_BASE_URL`, `VLM_BASE_URL`, `LLM_ENDPOINT_URL` and `VLM_ENDPOINT_URL` blank. The laptop reads them from `.env.local`, the VM agent from `generated.env.remote`. A missing address raises an error naming the setting when the first call is made (not at construction, so tests and tooling that build clients still work). Git history keeps the old address and is not rewritten. `eval/scripts/eval_vlm_client.py` still holds a default and belongs to another owner.
+
+### 2026-11-07: The severity rationale is editable
+
+The rationale was model output copied into every human version, so a human report showed text nobody on the team wrote. It is now a Class A field (`incident.severity_reason`, a string the contract already defines, so no contract version change) edited in Edit mode and stored on the human version; the "For model severity N/5" line is removed. Alternative rejected: leaving it read-only and hiding it on human versions (loses the explanation).
+
+### 2026-11-07: Confidence is a tag beside the title, never a row
+
+Confidence stays model-sourced and read-only, but a Confidence row (View and Edit) implied the reviewer could set it. It is now a small right-aligned tag beside the title in both modes and is absent when the version has none; the "Title generated by the model" line is removed with it.

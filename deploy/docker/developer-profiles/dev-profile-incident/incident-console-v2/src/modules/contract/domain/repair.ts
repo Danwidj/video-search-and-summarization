@@ -185,7 +185,7 @@ export function attemptIdNormalization(report: IncidentContractReport, violation
     return ineligible(
       'INSTRUMENT_HOLDER_UNRESOLVABLE',
       ['INSTRUMENT_HOLDER_UNKNOWN'],
-      'an instrument holder matches no entity ID, so ID normalization cannot resolve it',
+      'an instrument holder matches no entity ID, so ID normalisation cannot resolve it',
     );
   }
 

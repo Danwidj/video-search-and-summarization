@@ -42,6 +42,7 @@ test('an unchanged draft of each real contract-v2 run is a valid edit with the s
       'description',
       'end_timestamp',
       'severity_level',
+      'severity_reason',
       'start_timestamp',
       'title',
       'type',
@@ -60,7 +61,6 @@ test('an unchanged draft of each real contract-v2 run is a valid edit with the s
 test('Class B and Class C fields cannot be part of an edit (400)', () => {
   const base = editFromDraft(draftFromView(view(repaired)));
   for (const [path, value] of [
-    ['incident.severity_reason', 'x'],
     ['incident.location', 'x'],
     ['incident.confidence_score', 0.5],
     ['incident.duration', 3],
@@ -377,7 +377,7 @@ test('the title is part of the draft: it starts as the version title, counts as 
   }
 });
 
-test('the edit contract requires a title and rejects a blank one; severity rationale and location stay read-only', () => {
+test('the edit contract requires a title and rejects a blank one; location stays read-only', () => {
   const base = editFromDraft(draftFromView(view(repaired)));
   assert.equal(validateStructuredEdit({ ...base, incident: { ...base.incident, title: 'A new title' } }).incident.title, 'A new title');
   const { title: _title, ...untitled } = base.incident;
@@ -389,7 +389,7 @@ test('the edit contract requires a title and rejects a blank one; severity ratio
     () => validateStructuredEdit({ ...base, incident: { ...base.incident, title: '   ' } }),
     (error) => error instanceof StructuredEditError && error.status === 422 && /title must not be blank/.test(error.message),
   );
-  for (const key of ['severity_reason', 'location']) {
+  for (const key of ['location']) {
     assert.throws(
       () => validateStructuredEdit({ ...base, incident: { ...base.incident, [key]: 'x' } }),
       (error) => error instanceof StructuredEditError && error.status === 400,
@@ -404,7 +404,6 @@ test("the reviewer's title is stored on the human revision and read back everywh
   edit.incident.title = 'Physical altercation in a lift';
   const { payload } = humanRevisionContent({ payload: parent.payload, evidence: parent.evidence ?? [] }, edit);
   assert.equal(payload.incident.title, 'Physical altercation in a lift', 'the payload every reader uses holds the new title');
-  assert.equal(payload.incident.severity_reason, parent.payload.incident.severity_reason, 'model-only fields stay as the parent has them');
   assert.equal(payload.incident.location, parent.payload.incident.location);
   assert.equal(JSON.stringify(parent), parentBefore, 'the earlier version is not changed');
 
@@ -421,4 +420,31 @@ test('an older record with a title only in its run notes still opens with that t
   const older = buildReportView({ ...repaired, incident: stored });
   assert.equal(older.structured.incident.title, view(repaired).modelOutput.title);
   assert.equal(draftChangeCount(older.structured, draftFromView(older)), 0);
+});
+
+test("the reviewer's severity rationale is stored on the human revision; the parent's is untouched and a missing one is rejected", () => {
+  const parent = aiRevisionRow(repaired);
+  const parentBefore = JSON.stringify(parent);
+  const edit = editFromDraft(draftFromView(view(repaired)));
+  assert.equal(edit.incident.severity_reason, parent.payload.incident.severity_reason ?? '', 'an unchanged draft keeps the stored text');
+  edit.incident.severity_reason = 'A fall with no injury.';
+  const { payload } = humanRevisionContent({ payload: parent.payload, evidence: parent.evidence ?? [] }, validateStructuredEdit(edit));
+  assert.equal(payload.incident.severity_reason, 'A fall with no injury.');
+  assert.equal(payload.incident.location, parent.payload.incident.location, 'model-only fields stay as the parent has them');
+  assert.equal(JSON.stringify(parent), parentBefore, 'the earlier version is not changed');
+  const { severity_reason: _reason, ...without } = edit.incident;
+  assert.throws(
+    () => validateStructuredEdit({ ...edit, incident: without }),
+    (error) => error instanceof StructuredEditError && error.status === 422 && /severity_reason/.test(error.message),
+  );
+});
+
+test('the server refuses a human edit whose entity is unknown, and accepts human and animal', () => {
+  const edit = editFromDraft(draftFromView(view(repaired)));
+  edit.entities[0].type = 'unknown';
+  expectError(edit, 422, /choose human or animal, not unknown/);
+  for (const type of ['human', 'animal']) {
+    edit.entities[0].type = type;
+    assert.doesNotThrow(() => validateStructuredEdit(edit));
+  }
 });

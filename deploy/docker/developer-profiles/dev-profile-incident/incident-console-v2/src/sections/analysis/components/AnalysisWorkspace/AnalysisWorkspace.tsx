@@ -479,11 +479,11 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
               New analysis
             </Badge>
             <CardTitle className="text-2xl font-semibold tracking-tight text-foreground" id="upload-title">
-              Drop videos here
+              Upload videos
             </CardTitle>
-            <CardDescription className="max-w-sm text-sm leading-6 text-muted-foreground" id="upload-description">
-              MP4, MKV, MOV, or WebM. Analysis starts automatically after selection, uses the model above and can take several minutes.
-              Several videos run one after another, each to its own report.
+            <CardDescription className="max-w-sm text-left text-sm leading-6 text-muted-foreground" id="upload-description">
+              MP4, MKV, MOV or WebM. Analysis starts automatically using the model above, and can take several minutes per video. Multiple
+              videos run one at a time, and each gets its own report.
             </CardDescription>
           </CardHeader>
           <CardContent className="mt-6 flex flex-col items-center p-0">
@@ -611,7 +611,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
                   ? 'Retry analysis'
                   : nameNotice && storedName
                     ? `Continue as ${storedName}`
-                    : 'Analyze video'}
+                    : 'Analyse video'}
             </Button>
             {busy && !queuedOnServer && (
               <Button

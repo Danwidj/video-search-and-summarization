@@ -5,8 +5,6 @@
 // links, refresh and back/forward all land on the same list. Pure, so tests
 // can import it.
 
-export type IncidentSort = 'newest' | 'oldest';
-
 export interface IncidentFilters {
   search: string;
   type: string;
@@ -26,7 +24,6 @@ export interface IncidentFilters {
   fromTime: string;
   toTime: string;
   day: string;
-  sort: IncidentSort;
   page: number;
 }
 
@@ -46,7 +43,6 @@ export const EMPTY_FILTERS: IncidentFilters = {
   fromTime: '',
   toTime: '',
   day: '',
-  sort: 'newest',
   page: 1,
 };
 
@@ -67,7 +63,6 @@ export const FILTER_KEYS = [
   'fromTime',
   'toTime',
   'day',
-  'sort',
   'page',
 ];
 
@@ -90,7 +85,6 @@ export function parseFilters(query: URLSearchParams): IncidentFilters {
     fromTime: get('fromTime'),
     toTime: get('toTime'),
     day: get('day'),
-    sort: get('sort') === 'oldest' ? 'oldest' : 'newest',
     page: Number.isInteger(page) && page > 0 ? page : 1,
   };
 }
@@ -116,7 +110,6 @@ export function filterParams(filters: IncidentFilters): URLSearchParams {
   set('fromTime', filters.fromTime);
   set('toTime', filters.toTime);
   set('day', filters.day);
-  if (filters.sort !== 'newest') p.set('sort', filters.sort);
   if (filters.page > 1) p.set('page', String(filters.page));
   return p;
 }

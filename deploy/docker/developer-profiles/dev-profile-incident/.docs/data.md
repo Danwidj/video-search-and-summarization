@@ -341,7 +341,7 @@ newest revision (so reports awaiting selection still appear). Facets come from t
 description/title/confidence from `payload.incident`. Filters: `p_search`, `p_type`, `p_severity`
 (`low`/`medium`/`high` or a number), `p_kind` (`ai`/`human`), date range, local time-of-day and
 weekday (`p_timezone`, default UTC), entity/instrument/asset text or exact-name match,
-`p_entity_types`, `p_sort`, and `p_scope` (`all`, `official` or `not_official`). `p_type`
+`p_entity_types`, `p_sort` (`official-first` is the Library's own and always sent by the console: is_official first, then `uploaded_datetime` ascending; added by migration `20261107100000`, the older values behave as before), and `p_scope` (`all`, `official` or `not_official`). `p_type`
 `Unclassified` selects a NULL `incident_type`. Returns
 `{reports: [...], totalItems, incidentTypes}`. Each card carries `revisionId`, `revisionNo`,
 `videoId`, `modelRunId`, `kind`, `createdBy`, `note`, `isOfficial`, `outcome`, and the display
@@ -368,7 +368,7 @@ it). Returns `total` with
 `entityTypes`, `topInstruments`, `topAssets`, `threatLevels`, a confidence histogram with
 `confidenceNotProvided`, and `modelCoverage` (attempts by outcome: failed attempts from `model_runs`,
 successful ones from AI revisions). Each `types`, `trend`, `heatmap`, `topAssets`, `entityTypes` and `topInstruments` entry also
-carries `official` and `notOfficial`. `multipleVersions` counts the counted reports whose video has more than one `report_revisions` row (AI and human alike; not part of the split). `evidence` lists the counted reports' items by kind in the order `entities`, `instruments`, `assets`, each with `count`, `official` and `notOfficial`; an item is one entry of the report payload, not a distinct name. `videos` and `modelCoverage` ignore every filter except that
+carries `official` and `notOfficial`. `versions` (migration `20261107090000`) counts every `report_revisions` row of the counted reports' videos (`total`), split by kind (`ai`, `human`); `total` and `revisions` still count one revision per video. `multipleVersions` counts the counted reports whose video has more than one `report_revisions` row (AI and human alike; not part of the split). `evidence` lists the counted reports' items by kind in the order `entities`, `instruments`, `assets`, each with `count`, `official` and `notOfficial`; an item is one entry of the report payload, not a distinct name. `videos` and `modelCoverage` ignore every filter except that
 `modelCoverage` follows the period. A `type` of `Unclassified` selects a NULL `incident_type`.
 
 ---

@@ -33,6 +33,7 @@ test('contract-v2 smoke run: Class A from rows, Class B from notes, Class C from
     duration: 10,
     description: smoke.incident.description,
     severityLevel: 2,
+    severityReason: null,
     confidenceScore: null,
   });
   assert.deepEqual(

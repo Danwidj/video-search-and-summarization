@@ -87,11 +87,22 @@ test('adding an asset puts the draft item, its first-seen image and the box item
 });
 
 test('adding an entity names it, spans the track and keeps its most visible second inside', () => {
-  const next = tool.addBoxItem(emptyDraft(), item({ itemType: 'entity', name: 'Woman in red coat', track: track([2.4, 3, 4.6]) }), null);
+  const next = tool.addBoxItem(
+    emptyDraft(),
+    item({ itemType: 'entity', entityType: 'human', name: 'Woman in red coat', track: track([2.4, 3, 4.6]) }),
+    null,
+  );
   const [entity] = next.entities;
   assert.equal(entity.label, 'Woman in red coat');
   assert.deepEqual([entity.firstSeenSeconds, entity.lastSeenSeconds, entity.timestampSeconds], [2, 5, 2]);
   assert.doesNotThrow(() => editFromDraft(next), 'the draft is a complete edit');
+});
+
+test('a new entity takes the human or animal type the reviewer chose in the dialog', () => {
+  for (const entityType of ['human', 'animal']) {
+    const next = tool.addBoxItem(emptyDraft(), item({ itemType: 'entity', name: 'Someone', entityType }), null);
+    assert.equal(next.entities[0].type, entityType);
+  }
 });
 
 test('adding an instrument keeps its holder and threat, and a still image sits at its own second', () => {
@@ -187,4 +198,13 @@ test('Edit mode offers Add evidence and, per card, Edit track and a clickable im
     'review opens at the frame the reviewer selected',
   );
   assert.doesNotMatch(dialog, /evidence-crop/, 'Add to draft does not block on an ffmpeg crop request');
+});
+
+test('an entity left as unknown blocks Save, while Human and Animal pass', () => {
+  const unknown = tool.addBoxItem(emptyDraft(), item({ itemType: 'entity', name: 'Someone' }), null);
+  assert.equal(unknown.entities[0].type, 'unknown');
+  assert.throws(() => editFromDraft(unknown), /Human or Animal/);
+  assert.doesNotThrow(() =>
+    editFromDraft(tool.addBoxItem(emptyDraft(), item({ itemType: 'entity', name: 'Someone', entityType: 'animal' }), null)),
+  );
 });

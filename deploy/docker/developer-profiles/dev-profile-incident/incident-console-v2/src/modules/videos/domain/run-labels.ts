@@ -15,7 +15,7 @@ export const OUTCOME_LABELS: Record<RunOutcome, string> = {
 
 export const OUTCOME_DESCRIPTIONS: Record<RunOutcome, string> = {
   valid_first_pass: 'The model’s response satisfied the incident contract on the first pass.',
-  valid_after_structural_repair: 'Contract repair applied (IDs only): identifiers were normalized; no text or value was changed.',
+  valid_after_structural_repair: 'Contract repair applied (IDs only): identifiers were normalised; no text or value was changed.',
   contract_failed: 'The model answered, but the answer broke the incident contract. No report was created.',
   request_failed: 'The model request did not produce a usable answer. No report was created.',
   legacy: 'Analysed before outcomes were recorded (earlier prompt, eval or seed data). Outcome not recorded.',

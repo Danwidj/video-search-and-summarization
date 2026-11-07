@@ -565,7 +565,6 @@ class OpenVocabularyDetector(Protocol):
         ...
 
 
-DEFAULT_GROUNDING_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com"
 DEFAULT_GROUNDING_MODEL = "nvidia/cosmos-3-nano-reasoner"
 GROUNDING_MAX_EDGE_PIXELS = 1280
 GROUNDING_MAX_ATTEMPTS = 4
@@ -825,9 +824,7 @@ class DefaultDetector:
     ) -> None:
         self.model_name = model_name or DEFAULT_GROUNDING_MODEL
         self.min_score = min_score
-        self.base_url = (
-            base_url or os.getenv("VLM_GATEWAY_BASE_URL") or os.getenv("VLM_BASE_URL") or DEFAULT_GROUNDING_BASE_URL
-        ).rstrip("/")
+        self.base_url = (base_url or os.getenv("VLM_GATEWAY_BASE_URL") or os.getenv("VLM_BASE_URL") or "").rstrip("/")
         self.api_key = (
             api_key if api_key is not None else os.getenv("VLM_GATEWAY_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
         )
@@ -886,6 +883,8 @@ class DefaultDetector:
         return bool(self.api_key)
 
     def _chat_url(self) -> str:
+        if not self.base_url:
+            raise RuntimeError("VLM_GATEWAY_BASE_URL (or VLM_BASE_URL) is not set: the detector has no endpoint to call")
         root = self.base_url[: -len("/v1")] if self.base_url.endswith("/v1") else self.base_url
         return f"{root}/v1/chat/completions"
 

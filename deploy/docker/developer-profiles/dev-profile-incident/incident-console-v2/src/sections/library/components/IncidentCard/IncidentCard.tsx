@@ -3,15 +3,18 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MoreHorizontalIcon, SearchIcon, StarIcon, TagIcon, Trash2Icon, WrenchIcon } from 'lucide-react';
+import { MoreHorizontalIcon, SearchIcon, TagIcon, Trash2Icon, WrenchIcon } from 'lucide-react';
 
+import { cn } from 'cn';
 import { Card } from '@/components/ui/card';
+import { CARD_HOVER } from '@/lib/ui/card-hover';
 import { ReportThumbnail } from '@/sections/library/components/ReportThumbnail';
 import { DeleteIncidentDialog } from '@/sections/library/components/IncidentCard/DeleteIncidentDialog';
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { cardTitle } from '@/lib/library/view';
 import { formatTimestamp } from '@/lib/time';
 import { Button } from '@/components/ui/button';
+import { NotOfficialPill, VersionPill } from '@/components/version-pill';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,7 +56,10 @@ export function IncidentCard({
         role="link"
         tabIndex={0}
         aria-label={`Open report: ${displayTitle}`}
-        className="group relative flex cursor-pointer flex-col lg:h-full lg:max-h-[40vh] lg:min-h-0 gap-0 py-0 overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
+        className={cn(
+          'group relative flex cursor-pointer flex-col lg:h-full lg:max-h-[40vh] lg:min-h-0 gap-0 py-0 overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs focus-visible:outline-none',
+          CARD_HOVER,
+        )}
         id={`report-${item.revisionId}`}
         onClick={(event) => {
           if (!event.currentTarget.contains(event.target as Node)) return;
@@ -72,6 +78,7 @@ export function IncidentCard({
           kind={item.kind}
           severity={item.severity}
           thumbnailUrl={item.thumbnailUrl}
+          previewVideoId={item.videoId}
         >
           <div className="absolute right-2 top-2 z-10" data-no-card-nav>
             <TooltipProvider>
@@ -137,7 +144,7 @@ export function IncidentCard({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span
-                        className="inline-flex items-center gap-1 rounded-full border border-[#f3cc68] bg-[#fff1c7] px-1.5 py-0.5 text-[11px] font-bold text-[#765300]"
+                        className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-800"
                         data-testid="library-repair-marker"
                       >
                         <WrenchIcon className="size-3" />
@@ -149,41 +156,21 @@ export function IncidentCard({
                 {item.isOfficial ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full bg-moss px-2 py-0.5 text-[11px] font-bold text-white"
-                        data-testid="library-official-marker"
-                      >
-                        <StarIcon className="size-3 fill-current" />
-                        Official · {item.kind === 'human' ? 'Human' : 'AI'}
-                      </span>
+                      <VersionPill data-testid="library-official-marker" kind={item.kind === 'human' ? 'human' : 'ai'} official />
                     </TooltipTrigger>
                     {item.officialSince && <TooltipContent>Made official {formatTimestamp(item.officialSince)}</TooltipContent>}
                   </Tooltip>
                 ) : (
-                  <span
-                    className="inline-flex items-center rounded-full border border-dashed border-ink/30 bg-muted px-2 py-0.5 text-[11px] font-bold text-ink/60"
-                    data-testid="library-no-official-marker"
-                  >
-                    No official version
-                  </span>
+                  <>
+                    <VersionPill kind={item.kind === 'human' ? 'human' : 'ai'} />
+                    <NotOfficialPill data-testid="library-no-official-marker" />
+                  </>
                 )}
               </TooltipProvider>
             </div>
           </div>
 
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <h2 className="line-clamp-1 text-[15px] font-semibold leading-snug tracking-tight text-ink">{displayTitle}</h2>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{displayTitle}</p>
-                <p className="text-xs opacity-70" data-testid="video-name">
-                  {item.filename} · Added {formatTimestamp(item.uploadedAt)}
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <h2 className="line-clamp-1 text-[15px] font-semibold leading-snug tracking-tight text-ink">{displayTitle}</h2>
 
           <p className="truncate text-[13px] leading-5 text-ink/60">{item.description}</p>
         </div>

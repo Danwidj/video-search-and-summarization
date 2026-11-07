@@ -12,6 +12,7 @@ const NO_INCIDENTS: DashboardAnalytics = {
   official: 0,
   notOfficial: 0,
   multipleVersions: 0,
+  versions: { total: 0, ai: 0, human: 0 },
   videos: { uploaded: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 },
   previous: { total: 0, human: 0, ai: 0, high: 0 },
   averageConfidence: null,

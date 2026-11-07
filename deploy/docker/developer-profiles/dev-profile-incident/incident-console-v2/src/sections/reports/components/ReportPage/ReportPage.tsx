@@ -2,8 +2,9 @@
 'use client';
 
 import Link from 'next/link';
-import { MessageSquareTextIcon, PictureInPicture2Icon } from 'lucide-react';
+import { ArrowLeftIcon, MessageSquareTextIcon, PictureInPicture2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { MutedVideo } from '@/components/muted-video';
@@ -24,6 +25,7 @@ import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Skeleton } from '@/components/ui/skeleton';
+import { HEADER_END_SLOT, HEADER_START_SLOT } from '@/sections/shell/components/AppHeader';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { chatTarget, citationTitles } from '@/lib/chat/report-chat';
@@ -95,6 +97,11 @@ export function ReportPage({
   const startedAt = useRef(false);
 
   const [chatOpen, setChatOpen] = useState(false);
+  // The report's controls live in the shared app header: its two slots are found after mount and filled by portal.
+  const [slots, setSlots] = useState<{ start: HTMLElement | null; end: HTMLElement | null } | null>(null);
+  useEffect(() => {
+    setSlots({ start: document.getElementById(HEADER_START_SLOT), end: document.getElementById(HEADER_END_SLOT) });
+  }, []);
   // Each version's conversation (and its draft's) lives here, so it outlasts the panel closing.
   const [chatThreads, setChatThreads] = useState<Record<string, ChatThread>>({});
   const [draft, setDraft] = useState<EditDraft | null>(null);
@@ -253,24 +260,32 @@ export function ReportPage({
 
   if (state.status === 'loading') {
     return (
-      <div className="pb-16" role="status">
-        <div className="overflow-hidden border-y border-border bg-card shadow-panel">
-          <div className="h-12 border-b border-border bg-muted/40" />
-          <div className="grid gap-px bg-border lg:grid-cols-[1fr_22rem]">
-            <Skeleton className="aspect-video w-full rounded-none" />
-            <div className="space-y-3 p-4 bg-card">
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
+      <div className="h-full min-h-0 overflow-hidden" role="status">
+        <article className="report-sheet flex h-full min-h-0 flex-col overflow-hidden border-y border-border bg-card shadow-panel">
+          <div className="flex min-h-0 flex-1">
+            <div className="hidden min-h-0 w-[38%] flex-col border-r border-border lg:flex">
+              <Skeleton className="min-h-0 flex-[45] rounded-none" />
+              <div className="flex min-h-0 flex-[27.5] flex-col gap-3 border-t border-border p-4">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+              <div className="flex min-h-0 flex-[27.5] flex-col gap-3 border-t border-border p-4">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+            </div>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <Skeleton className="aspect-video w-full rounded-none lg:hidden" />
+              <div className="flex flex-col gap-3 p-5">
+                <Skeleton className="h-6 w-1/2" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-3/4" />
+              </div>
             </div>
           </div>
-          <div className="space-y-3 p-8">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-5/6" />
-            <Skeleton className="h-4 w-3/4" />
-          </div>
           <span className="sr-only">Loading incident report</span>
-        </div>
+        </article>
       </div>
     );
   }
@@ -299,10 +314,6 @@ export function ReportPage({
   const officialRevision = (revisions ?? []).find((revision) => revision.isOfficial);
   const changes = draft && editBase ? draftChangeCount(editBase.report.structured, draft) : 0;
   const problems = draft ? draftProblems(draft) : [];
-  const otherAiRevision = (revisions ?? []).find((revision) => revision.kind === 'ai' && revision.revisionId !== report.revisionId);
-  const compareHref = otherAiRevision
-    ? `/reports/${encodeURIComponent(videoId)}/compare?left=${report.revisionId}&right=${otherAiRevision.revisionId}`
-    : null;
   const officialLabel = officialRevision ? `v${officialRevision.revisionNo}` : 'none';
   // Only in Edit mode: a draft kept while the reviewer looks back at View does not change what View's timeline shows.
   const draftStructured = mode === 'edit' && draft ? draftToStructured(draft, videoId, overlay.frames) : null;
@@ -398,38 +409,44 @@ export function ReportPage({
         className="report-sheet flex h-full min-h-0 flex-col overflow-hidden border-y border-border bg-card shadow-panel"
         data-testid="report-page"
       >
-        <div
-          className="z-30 flex flex-none flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-card px-5 py-3 text-sm sm:px-8"
-          data-testid="report-sticky"
-        >
-          <Link className="font-semibold text-primary hover:underline" href="/library" id="back-to-library">
-            ← Library
-          </Link>
-          <span className="min-w-0 flex-1" />
-          <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={videoId} />
-          <Button
-            aria-expanded={chatOpen}
-            className="border-primary/20 bg-primary/5 text-xs font-semibold hover:bg-primary/10"
-            data-testid="chat-toggle"
-            onClick={() => setChatOpen((open) => !open)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <MessageSquareTextIcon aria-hidden="true" data-icon="inline-start" />
-            Ask about this incident
-          </Button>
-          <Tabs onValueChange={(value) => switchMode(value as Mode)} value={mode}>
-            <TabsList aria-label="Report mode" className="h-8">
-              <TabsTrigger className="text-xs font-semibold" value="view">
-                View
-              </TabsTrigger>
-              <TabsTrigger className="text-xs font-semibold" value="edit">
-                Edit
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+        {slots?.start &&
+          createPortal(
+            <Button asChild className="bg-card text-xs font-semibold" size="sm" variant="outline">
+              <Link href="/library" id="back-to-library">
+                <ArrowLeftIcon aria-hidden="true" data-icon="inline-start" />
+                Library
+              </Link>
+            </Button>,
+            slots.start,
+          )}
+        {slots?.end &&
+          createPortal(
+            <>
+              <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={videoId} />
+              <Button
+                aria-expanded={chatOpen}
+                className="text-xs font-semibold"
+                data-testid="chat-toggle"
+                onClick={() => setChatOpen((open) => !open)}
+                size="sm"
+                type="button"
+              >
+                <MessageSquareTextIcon aria-hidden="true" data-icon="inline-start" />
+                Ask about this incident
+              </Button>
+              <Tabs onValueChange={(value) => switchMode(value as Mode)} value={mode}>
+                <TabsList aria-label="Report mode" className="h-8">
+                  <TabsTrigger className="text-xs font-semibold" value="view">
+                    View
+                  </TabsTrigger>
+                  <TabsTrigger className="text-xs font-semibold" value="edit">
+                    Edit
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </>,
+            slots.end,
+          )}
 
         <ResizablePanelGroup className="min-h-0 flex-1" orientation="horizontal">
           <ResizablePanel className="hidden min-h-0 overflow-hidden lg:block" defaultSize="38%" maxSize="65%" minSize="25%">
@@ -546,7 +563,6 @@ export function ReportPage({
 
                 {mode === 'view' ? (
                   <ReportPane
-                    compareHref={compareHref}
                     officialMissing={!officialRevision && revisions !== null}
                     onSeek={seek}
                     onSelectTrack={selectTrack}
@@ -558,6 +574,8 @@ export function ReportPage({
                   <ReportEditPane
                     a={compareReport?.structured ?? null}
                     aRevisionNo={compareReport?.revision.revisionNo ?? editBase.revisionNo}
+                    baseKind={editBase.report.revision.kind === 'human' ? 'human' : 'ai'}
+                    baseOfficial={editBase.report.official.officialRevisionId === editBase.revisionId}
                     baseRevisionNo={editBase.revisionNo}
                     draft={draft}
                     officialMissing={!officialRevision && revisions !== null}

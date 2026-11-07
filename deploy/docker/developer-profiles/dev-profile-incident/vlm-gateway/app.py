@@ -40,7 +40,9 @@ app = FastAPI(title="VLM Gateway", version="0.1.0")
 
 
 def _get_base_url() -> str:
-    url = os.getenv("VLM_GATEWAY_BASE_URL", "https://switchyard-13doh4lsz.brevlab.com/v1")
+    url = os.getenv("VLM_GATEWAY_BASE_URL", "").strip()
+    if not url:
+        raise HTTPException(status_code=500, detail="VLM_GATEWAY_BASE_URL is not set on the gateway")
     return url.rstrip("/")
 
 

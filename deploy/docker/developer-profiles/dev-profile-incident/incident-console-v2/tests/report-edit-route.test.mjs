@@ -172,10 +172,10 @@ test('a Save whose summary cannot be embedded still succeeds, with no vector', a
 test('Class B/C fields are rejected with 400 before any database call', async () => {
   const db = database();
   const edit = baseEdit();
-  edit.incident.severity_reason = 'Reviewer rationale';
+  edit.incident.location = 'Reviewer location';
   const response = await patch(request(edit));
   assert.equal(response.status, 400);
-  assert.deepEqual((await response.json()).notEditable, ['incident.severity_reason']);
+  assert.deepEqual((await response.json()).notEditable, ['incident.location']);
   assert.equal(db.requests.length, 0);
 });
 

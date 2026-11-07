@@ -168,6 +168,7 @@ export function draftChangeCount(base: Structured, draft: EditDraft): number {
     [incident.endSeconds, draft.incident.end_timestamp],
     [incident.description ?? '', draft.incident.description],
     [incident.severityLevel, draft.incident.severity_level],
+    [incident.severityReason ?? '', draft.incident.severity_reason],
   ];
   return (
     pairReport(base, draft).rows.filter((row) => rowDiffers(row, draft)).length + fields.filter(([left, right]) => left !== right).length
@@ -311,6 +312,7 @@ export function draftToStructured(draft: EditDraft, videoId?: string, frames: Re
         : null,
     description: draft.incident.description,
     severityLevel: draft.incident.severity_level,
+    severityReason: draft.incident.severity_reason,
     confidenceScore: null,
   };
   const evidence = (key: string, image: string | null, imageUrl: string | null, seconds: number | null) => ({

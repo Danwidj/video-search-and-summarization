@@ -71,7 +71,7 @@ export function RunDetailsPanel({ report }: { report: ReportView }) {
               <Block
                 title={
                   run.status === 'valid_after_structural_repair'
-                    ? 'Original raw model response (before ID normalization)'
+                    ? 'Original raw model response (before ID normalisation)'
                     : 'Raw model response'
                 }
               >
@@ -83,7 +83,7 @@ export function RunDetailsPanel({ report }: { report: ReportView }) {
               <Block
                 title={
                   run.status === 'valid_after_structural_repair'
-                    ? 'Validated model output (after ID normalization)'
+                    ? 'Validated model output (after ID normalisation)'
                     : 'Original validated model output'
                 }
               >

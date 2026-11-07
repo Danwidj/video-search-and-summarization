@@ -20,7 +20,7 @@ import {
 } from '@/modules/reports/domain/reviewer-item';
 
 export const EDITABLE_INCIDENT_TYPES = ['road accident', 'burglary', 'explosion', 'assault', 'animal attack'] as const;
-export const EDITABLE_ENTITY_TYPES = ['human', 'animal', 'unknown'] as const;
+export const EDITABLE_ENTITY_TYPES = ['human', 'animal'] as const;
 
 /** Fields every item carries: when it is most clearly visible, its detector label and its evidence image (an R2 key). */
 interface EditItemDetails {
@@ -42,7 +42,15 @@ interface EditEntitySpan {
 }
 
 export interface StructuredEdit {
-  incident: { type: string; title: string; start_timestamp: number; end_timestamp: number; description: string; severity_level: number };
+  incident: {
+    type: string;
+    title: string;
+    start_timestamp: number;
+    end_timestamp: number;
+    description: string;
+    severity_level: number;
+    severity_reason: string;
+  };
   entities: Array<{ entity_id: string; type: string; description: string } & EditEntitySpan & EditItemDetails>;
   instruments: Array<
     { instrument_id: string; entity_id: string | null; name: string; description: string; threat_level: number } & EditItemDetails
@@ -81,6 +89,7 @@ export interface EditDraft {
     end_timestamp: number | null;
     description: string;
     severity_level: number | null;
+    severity_reason: string;
   };
   entities: Array<
     {
@@ -185,6 +194,7 @@ export function draftFromView(view: ReportView): EditDraft {
       description: incident.description ?? '',
       severity_level:
         incident.severityLevel !== null && incident.severityLevel >= 1 && incident.severityLevel <= 5 ? incident.severityLevel : null,
+      severity_reason: incident.severityReason ?? '',
     },
     entities: entities.map((entity, index) => ({
       ...details(`entity-${index}`, entity.entityId, entity),
@@ -240,6 +250,8 @@ export function draftProblems(draft: EditDraft): string[] {
     problems.push('Rate the threat level of every instrument (1-5).');
   if ([...draft.entities, ...draft.instruments, ...draft.assets].some((item) => item.timestampSeconds === null))
     problems.push('Enter the second each entity, instrument and asset is most clearly visible.');
+  if (draft.entities.some((entity) => !(EDITABLE_ENTITY_TYPES as readonly string[]).includes(entity.type)))
+    problems.push('Choose Human or Animal for every entity.');
   for (const entity of draft.entities) {
     const { firstSeenSeconds: first, lastSeenSeconds: last, timestampSeconds: seen } = entity;
     if (first === null || last === null) problems.push('Enter the first and last second each entity is seen.');
@@ -275,6 +287,7 @@ export function editFromDraft(draft: EditDraft): StructuredEdit {
       end_timestamp: draft.incident.end_timestamp ?? 0,
       description: draft.incident.description,
       severity_level: draft.incident.severity_level ?? 0,
+      severity_reason: draft.incident.severity_reason,
     },
     entities: draft.entities.map((entity, index) => ({
       entity_id: `E${index + 1}`,
@@ -324,7 +337,7 @@ export function addReviewerItem(draft: EditDraft, item: ReviewerDraftItem): Edit
         {
           ...common,
           canonicalId: nextCanonicalEntityId(draft.entities),
-          type: 'unknown',
+          type: item.entityType ?? 'unknown',
           description: item.description,
           firstSeenSeconds: Math.floor(Math.min(span[0], seconds)),
           lastSeenSeconds: Math.ceil(Math.max(span[1], seconds)),
