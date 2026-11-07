@@ -123,6 +123,7 @@ export function toApplierActions(draft: EditDraft, proposals: ProposedAction[]):
             name: 'name',
             description: 'description',
             threat_level: 'threatLevel',
+            holder_key: 'holderKey',
             timestamp_seconds: 'timestampSeconds',
           }),
         );
