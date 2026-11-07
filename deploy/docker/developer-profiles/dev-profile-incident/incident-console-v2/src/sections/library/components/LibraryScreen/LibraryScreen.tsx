@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { PlusIcon } from 'lucide-react';
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
 
 import { EvidenceTab, type EvidenceScope } from '@/sections/library/components/EvidenceTab';
 import { IncidentCard } from '@/sections/library/components/IncidentCard';
@@ -451,8 +451,9 @@ export function Library() {
                           size="sm"
                           type="button"
                           variant="outline"
+                          aria-label="Previous page"
                         >
-                          Previous
+                          <ChevronLeftIcon />
                         </Button>
                       </PaginationItem>
                       {pageItems(filters.page, totalPages).map((value, index) =>
@@ -484,8 +485,9 @@ export function Library() {
                           size="sm"
                           type="button"
                           variant="outline"
+                          aria-label="Next page"
                         >
-                          Next
+                          <ChevronRightIcon />
                         </Button>
                       </PaginationItem>
                     </PaginationContent>

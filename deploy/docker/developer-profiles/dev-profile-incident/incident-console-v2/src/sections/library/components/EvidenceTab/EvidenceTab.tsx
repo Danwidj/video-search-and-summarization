@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
 import { MIN_SIMILARITY } from '@/lib/search/min-similarity';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -295,8 +296,14 @@ export function EvidenceTab({
               <Pagination>
                 <PaginationContent>
                   <PaginationItem>
-                    <Button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} size="sm" variant="outline">
-                      Previous
+                    <Button
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      size="sm"
+                      variant="outline"
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeftIcon />
                     </Button>
                   </PaginationItem>
                   {pageItems(page, totalPages).map((p, index) =>
@@ -324,8 +331,9 @@ export function EvidenceTab({
                       onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                       size="sm"
                       variant="outline"
+                      aria-label="Next page"
                     >
-                      Next
+                      <ChevronRightIcon />
                     </Button>
                   </PaginationItem>
                 </PaginationContent>
