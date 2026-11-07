@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { ArrowLeftIcon, MessageSquareTextIcon, PictureInPicture2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useGroupRef } from 'react-resizable-panels';
 
 import { MutedVideo } from '@/components/muted-video';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -28,6 +29,7 @@ import { HEADER_END_SLOT, HEADER_START_SLOT } from '@/sections/shell/components/
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { chatTarget, citationTitles } from '@/lib/chat/report-chat';
+import { videoFitLayout } from '@/lib/ui/video-fit';
 import { seekTarget } from '@/lib/chat/timestamps';
 import { applyChatEdit, type ProposedAction } from '@/lib/edits/chat-edit';
 import type { BoxOpening } from '@/lib/evidence/box-tool';
@@ -90,6 +92,28 @@ export function ReportPage({
   const [playerDuration, setPlayerDuration] = useState<number | null>(null);
   // The stage is sized to the clip's own shape so a 4:3 clip is not letterboxed inside a 16:9 box.
   const [videoAspect, setVideoAspect] = useState(DEFAULT_VIDEO_ASPECT);
+  // The desktop workspace's left column: the video is sized to its width at the video's aspect ratio, and the timeline and
+  // versions take the rest. Measured on every column size change (window, divider, chat), before paint.
+  const workspace = useGroupRef();
+  const workspaceColumn = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const column = workspaceColumn.current;
+    if (!column) return;
+    const fit = () => {
+      const layout = videoFitLayout(column.clientWidth, column.clientHeight, videoAspect);
+      if (layout) {
+        workspace.current?.setLayout({
+          'report-video': layout.video,
+          'report-timeline': layout.timeline,
+          'report-versions': layout.versions,
+        });
+      }
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(column);
+    return () => observer.disconnect();
+  }, [videoAspect, workspace]);
   const [pipSupported, setPipSupported] = useState(false);
   const [inPip, setInPip] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -501,8 +525,8 @@ export function ReportPage({
 
         <ResizablePanelGroup className="min-h-0 flex-1" orientation="horizontal">
           <ResizablePanel className="hidden min-h-0 overflow-hidden lg:block" defaultSize="38%" maxSize="65%" minSize="25%">
-            <ResizablePanelGroup className="h-full" orientation="vertical">
-              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="45%" minSize="20%">
+            <ResizablePanelGroup className="h-full" elementRef={workspaceColumn} groupRef={workspace} orientation="vertical">
+              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="45%" id="report-video" minSize="20%">
                 <div
                   className="video-cell relative flex h-full min-h-0 min-w-0 items-center justify-center overflow-hidden bg-muted [container-type:size]"
                   data-testid="video-cell"
@@ -564,8 +588,9 @@ export function ReportPage({
                   </div>
                 </div>
               </ResizablePanel>
-              <ResizableHandle aria-label="Resize video and timeline" withHandle />
-              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="27.5%" minSize="15%">
+              {/* The video keeps its fitted height, so this divider is fixed; the timeline and versions divider below stays draggable. */}
+              <ResizableHandle aria-label="Resize video and timeline" disabled withHandle />
+              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="27.5%" id="report-timeline" minSize="15%">
                 <ReportTimeline
                   currentTime={currentTime}
                   onSeek={seek}
@@ -574,7 +599,7 @@ export function ReportPage({
                 />
               </ResizablePanel>
               <ResizableHandle aria-label="Resize timeline and versions" withHandle />
-              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="27.5%" minSize="15%">
+              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="27.5%" id="report-versions" minSize="15%">
                 <ReportVersions
                   currentRevisionId={mode === 'edit' && editBase ? editBase.revisionId : report.revisionId}
                   error={revisionsError}
