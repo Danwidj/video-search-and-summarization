@@ -4,9 +4,12 @@
 // The caller passes the draft in and stores the returned one with a single change, so Undo reverts the whole chat request.
 // An action that cannot be applied is skipped and reported with its reason; the other actions still apply. Problems the
 // result still has come from draftProblems, the same check a hand edit gets. Evidence actions are not applied here: a box
-// is only trusted once the reviewer confirms it (report section 5).
+// is only trusted once the reviewer confirms it (report section 5): with `evidenceProposals` on, a change_evidence action
+// becomes an unconfirmed proposal on the item (lib/evidence/evidence-proposals.ts), and draftProblems blocks Save until
+// the reviewer confirms, adjusts or dismisses it.
 
 import { z } from 'zod';
+import { proposeEvidence } from '@/lib/evidence/evidence-proposals';
 import { deleteDraftItem } from '@/lib/reports/compare';
 import {
   EDITABLE_ENTITY_TYPES,
@@ -16,6 +19,7 @@ import {
   newEntityDraft,
   newItemDetails,
 } from '@/modules/reports/domain/edit-draft';
+import { parseReviewerTrack } from '@/modules/reports/domain/reviewer-item';
 
 export interface AgentAction {
   id: string;
@@ -53,7 +57,12 @@ interface Outcome {
   note?: string;
 }
 
-type Handler = (draft: EditDraft, args: unknown) => Outcome;
+export interface ApplyOptions {
+  /** Turns change_evidence actions into proposals the reviewer confirms; off, they are skipped as before. */
+  evidenceProposals?: boolean;
+}
+
+type Handler = (draft: EditDraft, args: unknown, options: ApplyOptions) => Outcome;
 
 /** Thrown for an action that cannot be applied; any other error is a bug and is not caught. */
 class CannotApply extends Error {}
@@ -270,6 +279,52 @@ const setHolder: Handler = (draft, args) => {
 
 const notApplied: Handler = () => cannot(EVIDENCE_REASON);
 
+const evidenceBox = z.tuple([
+  z.number().min(0).max(1000),
+  z.number().min(0).max(1000),
+  z.number().min(0).max(1000),
+  z.number().min(0).max(1000),
+]);
+const windowSeconds = z.number().finite().min(0).max(30);
+
+// A re-track names the seed (seconds, box) the tracker ran from; `track` is the tracker's answer, added by the page before applying.
+const changeEvidenceArgs = z.discriminatedUnion('op', [
+  z
+    .object({
+      op: z.literal('retrack'),
+      itemKey,
+      seconds: seconds.optional(),
+      box: evidenceBox.optional(),
+      backSeconds: windowSeconds.optional(),
+      forwardSeconds: windowSeconds.optional(),
+      locateConfidence: z.enum(['checked', 'unchecked']).optional(),
+      track: z.unknown().optional(),
+      reason: z.string().optional(),
+    })
+    .strict(),
+  z.object({ op: z.literal('set_image'), itemKey, seconds, box: evidenceBox, reason: z.string().optional() }).strict(),
+]);
+
+/** A re-track or set-image proposal on an existing item; the track a re-track carries is the tracker's answer, already fetched. */
+const changeEvidence: Handler = (draft, args, options) => {
+  if (!options.evidenceProposals) return cannot(EVIDENCE_REASON);
+  const data = parse(changeEvidenceArgs, args);
+  ensureAnyItem(draft, data.itemKey);
+  const reason = data.reason ?? null;
+  if (data.op === 'set_image') {
+    return {
+      draft: proposeEvidence(draft, data.itemKey, { kind: 'set_image', pick: { seconds: data.seconds, box: data.box }, reason }),
+      note: 'proposed; the reviewer confirms the image before saving',
+    };
+  }
+  const track = parseReviewerTrack(data.track);
+  if (!track) return cannot('the tracker produced no usable track for this item');
+  return {
+    draft: proposeEvidence(draft, data.itemKey, { kind: 'retrack', track, reason }),
+    note: 'proposed; the reviewer confirms the track before saving',
+  };
+};
+
 // A Map, not an object: a tool named "constructor" must be unknown, not a prototype property.
 const HANDLERS = new Map<string, Handler>([
   ['set_incident_fields', setIncidentFields],
@@ -278,12 +333,12 @@ const HANDLERS = new Map<string, Handler>([
   ['upsert_instrument', upsertInstrumentHandler],
   ['upsert_asset', upsertAssetHandler],
   ['set_instrument_holder', setHolder],
-  ['change_evidence', notApplied],
+  ['change_evidence', changeEvidence],
   ['add_evidence', notApplied],
 ]);
 
 /** Applies the actions in order to a copy of the draft; the input draft is never changed. */
-export function applyAgentActions(draft: EditDraft, actions: AgentAction[]): ApplyResult {
+export function applyAgentActions(draft: EditDraft, actions: AgentAction[], options: ApplyOptions = {}): ApplyResult {
   let next = draft;
   const applied: AppliedAction[] = [];
   const skipped: SkippedAction[] = [];
@@ -294,7 +349,7 @@ export function applyAgentActions(draft: EditDraft, actions: AgentAction[]): App
       continue;
     }
     try {
-      const outcome = handler(next, args);
+      const outcome = handler(next, args, options);
       next = outcome.draft;
       applied.push(outcome.note ? { id, tool, note: outcome.note } : { id, tool });
     } catch (error) {

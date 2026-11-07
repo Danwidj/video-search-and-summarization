@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { evidenceDisplay, videoFrameUrl } from '@/lib/evidence/evidence-view';
 import type { BoxToolClient } from '@/lib/evidence/box-tool-client';
 import { addBoxItem, holderChoices, retrackDraftItem } from '@/lib/evidence/box-tool';
+import { confirmAdjusted, confirmProposal, describeProposal, dismissProposal, findDraftItem } from '@/lib/evidence/evidence-proposals';
 import { pickSeed, setImagePick } from '@/lib/evidence/image-pick';
 import {
   deleteDraftItem,
@@ -80,6 +81,7 @@ export function ReportEditPane({
   onSeek,
   boxClient,
   officialMissing = false,
+  evidenceProposals = false,
 }: {
   a: Structured | null;
   aRevisionNo: number;
@@ -100,6 +102,8 @@ export function ReportEditPane({
   /** Open the existing box tool immediately when entering Edit from the View evidence section. */
   /** True once revisions have loaded and none of them is official. */
   officialMissing?: boolean;
+  /** Flag INCIDENT_EVIDENCE_PROPOSALS_ENABLED: show the Confirm, Adjust and Dismiss controls on an item with a proposed evidence change. */
+  evidenceProposals?: boolean;
 }) {
   // The box tool: adding new evidence, or re-tracking a card's item from a new box.
   const [boxTool, setBoxTool] = useState<{ row: PairRow['b'] } | null>(null);
@@ -148,14 +152,24 @@ export function ReportEditPane({
   const finishImagePicker = (pick: ImagePick) => {
     const target = imagePicker?.row;
     if (!target) return;
-    onChange(setImagePick(draft, itemKind(target), target.key, pick));
+    const proposed = findDraftItem(draft, target.key)?.item.proposal;
+    onChange(
+      proposed?.kind === 'set_image' ? confirmAdjusted(draft, target.key, pick) : setImagePick(draft, itemKind(target), target.key, pick),
+    );
     setImagePicker(null);
   };
+  // Adjust opens the same dialog a hand edit uses, starting from the proposal; its Done confirms the adjusted result.
+  const adjustProposal = (row: PairRow) => (row.b?.proposal?.kind === 'retrack' ? editTrack(row) : setImage(row));
   const finishTrackEditor = (track: ReviewerTrack) => {
     const target = trackEditor?.row;
     if (!target) return;
     const kind: BoxItemType = isDraftEntity(target) ? 'entity' : isDraftInstrument(target) ? 'instrument' : 'asset';
     const text = existingForTool(target);
+    if (findDraftItem(draft, target.key)?.item.proposal?.kind === 'retrack') {
+      onChange(confirmAdjusted(draft, target.key, track));
+      setTrackEditor(null);
+      return;
+    }
     onChange(
       retrackDraftItem(draft, kind, target.key, {
         itemType: kind,
@@ -461,6 +475,15 @@ export function ReportEditPane({
                   onRemove={remove}
                   onEditTrack={editTrack}
                   onSetImage={setImage}
+                  proposals={
+                    evidenceProposals
+                      ? {
+                          onConfirm: () => row.b && onChange(confirmProposal(draft, row.b.key)),
+                          onAdjust: () => adjustProposal(row),
+                          onDismiss: () => row.b && onChange(dismissProposal(draft, row.b.key)),
+                        }
+                      : null
+                  }
                   onRevert={revert}
                   onSeek={onSeek}
                   patchAsset={patchAsset}
@@ -519,6 +542,10 @@ const itemKind = (item: NonNullable<PairRow['b']>): BoxItemType =>
 
 /** What the track editor opens with: the item's track (the reviewer's or the saved one), else a still box, else nothing. */
 function trackEditorProps(item: NonNullable<PairRow['b']>, saved: NonNullable<PairRow['a']>['evidence'] | null) {
+  if (item.proposal?.kind === 'retrack') {
+    const { samples } = item.proposal.track;
+    return { badge: 'Proposed track' as const, samples, trackUrl: null, still: null, initialSeconds: samples[0].t };
+  }
   const source = trackEditorSource(item, saved);
   return {
     badge: source.badge,
@@ -537,6 +564,12 @@ function PairField({ label, left, right }: { label: string; left: React.ReactNod
       <dd className="m-0 min-w-0 text-sm leading-6 text-foreground">{right}</dd>
     </div>
   );
+}
+
+interface ProposalControls {
+  onConfirm: () => void;
+  onAdjust: () => void;
+  onDismiss: () => void;
 }
 
 type PatchEntity = (key: string, patch: Partial<EditDraft['entities'][number]>) => void;
@@ -558,6 +591,7 @@ function PairRowView({
   onRemove,
   onEditTrack,
   onSetImage,
+  proposals,
   onRevert,
   onSeek,
   patchEntity,
@@ -579,6 +613,7 @@ function PairRowView({
   onRemove: (row: PairRow) => void;
   onEditTrack: (row: PairRow) => void;
   onSetImage: (row: PairRow) => void;
+  proposals: ProposalControls | null;
   onRevert: (row: PairRow) => void;
   onSeek: (seconds: number) => void;
   patchEntity: PatchEntity;
@@ -614,6 +649,7 @@ function PairRowView({
             onRemove={() => onRemove(row)}
             onEditTrack={() => onEditTrack(row)}
             onSetImage={() => onSetImage(row)}
+            proposals={proposals}
             onRevert={changed ? () => onRevert(row) : null}
             onSeek={onSeek}
             patchAsset={patchAsset}
@@ -721,6 +757,7 @@ function EditCard({
   onRemove,
   onEditTrack,
   onSetImage,
+  proposals,
   onRevert,
   onSeek,
   patchEntity,
@@ -738,6 +775,7 @@ function EditCard({
   onRemove: () => void;
   onEditTrack: () => void;
   onSetImage: () => void;
+  proposals: ProposalControls | null;
   onRevert: (() => void) | null;
   onSeek: (seconds: number) => void;
   patchEntity: PatchEntity;
@@ -898,6 +936,24 @@ function EditCard({
         <p className="text-ink/50">
           Most visible at <b className="font-mono">{clock(item.timestampSeconds)}</b>
         </p>
+      )}
+      {proposals && item.proposal && (
+        <div className="rounded-md border border-clay/40 bg-clay/5 p-2" data-testid="evidence-proposal">
+          <p className="font-semibold text-clay">Proposed evidence change, not applied yet</p>
+          <p className="text-ink/70">{describeProposal(item.proposal)}</p>
+          {item.proposal.reason && <p className="text-ink/50">{item.proposal.reason}</p>}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
+            <Button data-testid="proposal-confirm" onClick={proposals.onConfirm} size="xs" type="button">
+              Confirm
+            </Button>
+            <Button data-testid="proposal-adjust" onClick={proposals.onAdjust} size="xs" type="button" variant="outline">
+              Adjust
+            </Button>
+            <Button data-testid="proposal-dismiss" onClick={proposals.onDismiss} size="xs" type="button" variant="ghost">
+              Dismiss
+            </Button>
+          </div>
+        </div>
       )}
       {pick && (
         <p className="text-ink/50" data-testid="image-pick-line">
