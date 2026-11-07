@@ -57,7 +57,7 @@ functions:
     object_store_base_url: ${VSS_AGENT_REPORTS_BASE_URL}
     llm_name: ${LLM_MODEL_TYPE:-nim}_llm
 
-  # Incident investigator: POST /api/v1/incidents/{video_id}/investigate (off unless INCIDENT_INVESTIGATE_ENABLED).
+  # Incident investigator: POST /api/v1/incidents/{video_id}/investigate.
   # A NAT tool_calling_agent that chooses among tool_names. max_iterations 4 means at most 5 tool runs; the route
   # also stops at 5 tool steps and 90 s, and reports reaching max_iterations as cap_reached.
   incident_read_report:
@@ -84,7 +84,7 @@ functions:
         no tool.
       - If a tool returns an error, do not call it again with the same arguments; say what failed.
 
-  # Report editor: the same route with a "draft" in the body (also needs INCIDENT_DRAFT_EDITS_ENABLED). The propose_* tools
+  # Report editor: the same route with a "draft" in the body. The propose_* tools
   # check an edit against that draft and write nothing; the console applies the route's "actions" to the reviewer's draft.
   propose_set_incident_fields:
     _type: propose_set_incident_fields

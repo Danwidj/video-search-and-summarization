@@ -4,7 +4,7 @@
 // The caller passes the draft in and stores the returned one with a single change, so Undo reverts the whole chat request.
 // An action that cannot be applied is skipped and reported with its reason; the other actions still apply. Problems the
 // result still has come from draftProblems, the same check a hand edit gets. Evidence actions are not applied here: a box
-// is only trusted once the reviewer confirms it (report section 5): with `evidenceProposals` on, a change_evidence action
+// is only trusted once the reviewer confirms it (report section 5): a change_evidence action
 // becomes an unconfirmed proposal on the item (lib/evidence/evidence-proposals.ts), and draftProblems blocks Save until
 // the reviewer confirms, adjusts or dismisses it.
 
@@ -57,12 +57,7 @@ interface Outcome {
   note?: string;
 }
 
-export interface ApplyOptions {
-  /** Turns change_evidence actions into proposals the reviewer confirms; off, they are skipped as before. */
-  evidenceProposals?: boolean;
-}
-
-type Handler = (draft: EditDraft, args: unknown, options: ApplyOptions) => Outcome;
+type Handler = (draft: EditDraft, args: unknown) => Outcome;
 
 /** Thrown for an action that cannot be applied; any other error is a bug and is not caught. */
 class CannotApply extends Error {}
@@ -306,8 +301,7 @@ const changeEvidenceArgs = z.discriminatedUnion('op', [
 ]);
 
 /** A re-track or set-image proposal on an existing item; the track a re-track carries is the tracker's answer, already fetched. */
-const changeEvidence: Handler = (draft, args, options) => {
-  if (!options.evidenceProposals) return cannot(EVIDENCE_REASON);
+const changeEvidence: Handler = (draft, args) => {
   const data = parse(changeEvidenceArgs, args);
   ensureAnyItem(draft, data.itemKey);
   const reason = data.reason ?? null;
@@ -338,7 +332,7 @@ const HANDLERS = new Map<string, Handler>([
 ]);
 
 /** Applies the actions in order to a copy of the draft; the input draft is never changed. */
-export function applyAgentActions(draft: EditDraft, actions: AgentAction[], options: ApplyOptions = {}): ApplyResult {
+export function applyAgentActions(draft: EditDraft, actions: AgentAction[]): ApplyResult {
   let next = draft;
   const applied: AppliedAction[] = [];
   const skipped: SkippedAction[] = [];
@@ -349,7 +343,7 @@ export function applyAgentActions(draft: EditDraft, actions: AgentAction[], opti
       continue;
     }
     try {
-      const outcome = handler(next, args, options);
+      const outcome = handler(next, args);
       next = outcome.draft;
       applied.push(outcome.note ? { id, tool, note: outcome.note } : { id, tool });
     } catch (error) {

@@ -29,24 +29,12 @@ const track = (partial = false) => ({
 const act = (args, id = 'e1') => ({ id, tool: 'change_evidence', args });
 const PENDING = /Confirm, adjust or dismiss/;
 
-test('with the flag off a change_evidence action is skipped, as before', () => {
-  const draft = base();
-  const result = applyAgentActions(draft, [act({ op: 'set_image', itemKey: draft.entities[0].key, seconds: 3, box: [0, 0, 10, 10] })]);
-  assert.equal(result.applied.length, 0);
-  assert.match(result.skipped[0].reason, /not applied here/);
-  assert.equal(result.draft.entities[0].proposal ?? null, null);
-});
-
 test('a set-image proposal sits beside the item, changes nothing about it and blocks Save', () => {
   const draft = base();
   const key = draft.entities[0].key;
-  const result = applyAgentActions(
-    draft,
-    [act({ op: 'set_image', itemKey: key, seconds: 3.25, box: [10, 20, 300, 400], reason: 'clearer' })],
-    {
-      evidenceProposals: true,
-    },
-  );
+  const result = applyAgentActions(draft, [
+    act({ op: 'set_image', itemKey: key, seconds: 3.25, box: [10, 20, 300, 400], reason: 'clearer' }),
+  ]);
   assert.equal(result.applied.length, 1);
   const [entity] = result.draft.entities;
   assert.deepEqual(entity.proposal, { kind: 'set_image', pick: { seconds: 3.25, box: [10, 20, 300, 400] }, reason: 'clearer' });
@@ -59,11 +47,9 @@ test('a set-image proposal sits beside the item, changes nothing about it and bl
 test('a re-track proposal needs a usable track and keeps partial and lostAt for the card', () => {
   const draft = base();
   const key = draft.entities[0].key;
-  const noTrack = applyAgentActions(draft, [act({ op: 'retrack', itemKey: key, seconds: 4, box: [1, 2, 30, 40] })], {
-    evidenceProposals: true,
-  });
+  const noTrack = applyAgentActions(draft, [act({ op: 'retrack', itemKey: key, seconds: 4, box: [1, 2, 30, 40] })]);
   assert.match(noTrack.skipped[0].reason, /no usable track/);
-  const ok = applyAgentActions(draft, [act({ op: 'retrack', itemKey: key, track: track(true) })], { evidenceProposals: true });
+  const ok = applyAgentActions(draft, [act({ op: 'retrack', itemKey: key, track: track(true) })]);
   const { proposal } = ok.draft.entities[0];
   assert.equal(proposal.track.partial, true);
   assert.equal(proposal.track.lostAt, 6);
@@ -73,14 +59,12 @@ test('a re-track proposal needs a usable track and keeps partial and lostAt for 
 
 test('an invented key or a box outside the frame is skipped', () => {
   const draft = base();
-  const flags = { evidenceProposals: true };
   assert.match(
-    applyAgentActions(draft, [act({ op: 'set_image', itemKey: 'nope', seconds: 1, box: [0, 0, 5, 5] })], flags).skipped[0].reason,
+    applyAgentActions(draft, [act({ op: 'set_image', itemKey: 'nope', seconds: 1, box: [0, 0, 5, 5] })]).skipped[0].reason,
     /no item/,
   );
   assert.equal(
-    applyAgentActions(draft, [act({ op: 'set_image', itemKey: draft.entities[0].key, seconds: 1, box: [0, 0, 5, 1200] })], flags).skipped
-      .length,
+    applyAgentActions(draft, [act({ op: 'set_image', itemKey: draft.entities[0].key, seconds: 1, box: [0, 0, 5, 1200] })]).skipped.length,
     1,
   );
 });
@@ -143,7 +127,7 @@ test('a re-track action gets the tracker answer before applying; a failed call l
   assert.equal(calls[0][1].itemType, 'entity');
   assert.equal(calls[0][1].seconds, 5);
   assert.equal(resolved.args.track.span[0], 4);
-  const result = applyAgentActions(draft, [resolved], { evidenceProposals: true });
+  const result = applyAgentActions(draft, [resolved]);
   assert.equal(result.applied.length, 1);
   const [failed] = await resolveEvidenceActions('vid', draft, [action], {
     track: async () => {
@@ -151,14 +135,12 @@ test('a re-track action gets the tracker answer before applying; a failed call l
     },
   });
   assert.equal(failed.args.track, undefined);
-  assert.equal(applyAgentActions(draft, [failed], { evidenceProposals: true }).skipped.length, 1);
+  assert.equal(applyAgentActions(draft, [failed]).skipped.length, 1);
 });
 
-test('the pane shows Confirm, Adjust and Dismiss only with the flag on, and the page reads the flag per request', () => {
+test('the pane always shows Confirm, Adjust and Dismiss on an item with a proposed evidence change', () => {
   const pane = readFileSync(join(process.cwd(), 'src/sections/reports/components/ReportEditPane/ReportEditPane.tsx'), 'utf8');
   for (const id of ['evidence-proposal', 'proposal-confirm', 'proposal-adjust', 'proposal-dismiss'])
     assert.ok(pane.includes(`"${id}"`), id);
-  assert.match(pane, /evidenceProposals\s*\?\s*\{/);
-  const page = readFileSync(join(process.cwd(), 'src/app/reports/[videoId]/page.tsx'), 'utf8');
-  assert.match(page, /evidenceProposals=\{isEvidenceProposalsEnabled\(\)\}/);
+  assert.doesNotMatch(pane, /evidenceProposals/);
 });

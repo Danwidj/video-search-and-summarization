@@ -67,7 +67,6 @@ from vss_agents.utils.crop_evidence import encode_jpeg
 from vss_agents.utils.crop_evidence import evidence_items
 from vss_agents.utils.crop_evidence import evidence_key
 from vss_agents.utils.crop_evidence import extract_frame
-from vss_agents.utils.crop_evidence import gap_retry_enabled
 from vss_agents.utils.crop_evidence import gap_retry_kind
 from vss_agents.utils.crop_evidence import get_crop_evidence_service
 from vss_agents.utils.crop_evidence import is_english_name
@@ -2454,14 +2453,6 @@ def _asset_report() -> dict:
 
 
 class TestGapRetry:
-    def test_the_flag_is_off_by_default_and_read_on_each_call(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("INCIDENT_GAP_RETRY_ENABLED", raising=False)
-        assert gap_retry_enabled() is False
-        monkeypatch.setenv("INCIDENT_GAP_RETRY_ENABLED", "on")
-        assert gap_retry_enabled() is True
-        monkeypatch.setenv("INCIDENT_GAP_RETRY_ENABLED", "0")
-        assert gap_retry_enabled() is False
-
     @pytest.mark.parametrize(
         ("gap", "kind"),
         [
@@ -2574,15 +2565,12 @@ class TestGapRetry:
         assert len(inner.queries) == 2
 
     @pytest.mark.asyncio
-    async def test_the_retry_is_off_without_the_flag_and_adds_no_detector_call(
-        self, tiny_video_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.delenv("INCIDENT_GAP_RETRY_ENABLED", raising=False)
+    async def test_the_retry_is_off_with_gap_retry_false_and_adds_no_detector_call(self, tiny_video_path: Path) -> None:
         detector = _QueryLog()
         namer = FakeZoomNamer()
         service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore(), namer=namer)
         results = await service.process_incident_report(
-            video_ref=tiny_video_path, video_id="v", report=_asset_report(), batch_id="run-1"
+            video_ref=tiny_video_path, video_id="v", report=_asset_report(), batch_id="run-1", gap_retry=False
         )
         assert results[0]["image"] is None and namer.checks == []
         assert "gap-retry" not in {r.get("box_source") for r in results}

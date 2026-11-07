@@ -3,7 +3,7 @@
 import { NextResponse } from 'next/server';
 import { sendAgentChat, sendAgentInvestigate } from '@/modules/chat/infrastructure/agent/agent-chat';
 import { chatErrorResponse } from '@/modules/chat/infrastructure/agent/chat-errors';
-import { getServiceConfiguration, isChatEditsEnabled, isChatStepsEnabled } from '@/lib/env';
+import { getServiceConfiguration, isChatStepsEnabled } from '@/lib/env';
 import { UpstreamError } from '@/lib/http';
 import type { ChatMessage } from '@/modules/chat/domain/chat';
 
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
       versionId?: number;
       draftReport?: Record<string, unknown>;
       steps?: boolean;
-      /** The draft snapshot (lib/edits/chat-edit.ts) the page sends when the chat may edit; ignored unless the edits flag is on. */
+      /** The draft snapshot (lib/edits/chat-edit.ts) the page sends when the chat may edit. */
       editDraft?: Record<string, unknown>;
     };
     if (!input.messages?.length) return NextResponse.json({ error: 'At least one message is required' }, { status: 400 });
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     const config = getServiceConfiguration();
     if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
 
-    const editing = isChatEditsEnabled() && input.editDraft != null && typeof input.editDraft === 'object';
+    const editing = input.editDraft != null && typeof input.editDraft === 'object';
     const stepsRequested = isChatStepsEnabled(request) || input.steps === true;
     if ((stepsRequested || editing) && input.incidentId) {
       const lastQuestion = [...input.messages]

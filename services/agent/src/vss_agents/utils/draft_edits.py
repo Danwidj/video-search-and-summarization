@@ -19,14 +19,12 @@ Nothing here writes. The draft is the reviewer's unsaved draft, sent as a snapsh
 their draft ``key`` (stable in the browser), never by the ``E#``/``I#``/``A#`` ids, which are renumbered on send, so an
 invented or renumbered id is rejected as an unknown key. Seconds must lie inside the incident window when it is set.
 
-The proposals are applied by the console (see the scout report, ``data/vss-agent-chat-editor/report.md``). Off unless
-``INCIDENT_DRAFT_EDITS_ENABLED`` is set. See :mod:`vss_agents.api.incident_draft_edits`.
+The proposals are applied by the console (see the scout report, ``data/vss-agent-chat-editor/report.md``). See :mod:`vss_agents.api.incident_draft_edits`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Literal
@@ -40,7 +38,6 @@ from pydantic import model_validator
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-ENABLED_ENV = "INCIDENT_DRAFT_EDITS_ENABLED"
 INCIDENT_TYPES = ("road accident", "burglary", "explosion", "assault", "animal attack")
 ENTITY_TYPES = ("human", "animal")
 SEVERITY_MAX = 5
@@ -52,11 +49,6 @@ OUT_OF_SCOPE_RULE = (
     "If the request is not an edit to this incident report, call no tool and say you can only edit the report. "
     "Never answer it from your own knowledge."
 )
-
-
-def enabled() -> bool:
-    """Whether this agent may offer draft edits. Off unless the setting says otherwise."""
-    return (os.environ.get(ENABLED_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 class DraftEditError(ValueError):

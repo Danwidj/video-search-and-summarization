@@ -25,10 +25,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from vss_agents.api.incident_investigate import ENABLED_ENV
 from vss_agents.api.incident_investigate import register_incident_investigate_routes
 from vss_agents.utils import agent_loop
-from vss_agents.utils import draft_edits
 
 URL = "/api/v1/incidents/V1/investigate"
 BODY = {"question": "who gets out of the car?"}
@@ -71,27 +69,7 @@ def _client(script, *, factory=None) -> tuple[TestClient, _SessionManager, Async
     return TestClient(app), manager, create
 
 
-@pytest.fixture
-def on(monkeypatch):
-    monkeypatch.setenv(ENABLED_ENV, "1")
-
-
-def test_off_by_default_is_a_404_and_the_agent_is_never_built(monkeypatch) -> None:
-    monkeypatch.delenv(ENABLED_ENV, raising=False)
-    client, _, create = _client(lambda: _calls())
-    assert client.post(URL, json=BODY).status_code == 404
-    create.assert_not_called()
-
-
-def test_the_flag_is_read_on_every_request(monkeypatch) -> None:
-    client, _, _ = _client(lambda: _calls())
-    monkeypatch.setenv(ENABLED_ENV, "true")
-    assert client.post(URL, json=BODY).status_code == 200
-    monkeypatch.setenv(ENABLED_ENV, "off")
-    assert client.post(URL, json=BODY).status_code == 404
-
-
-def test_answer_steps_and_actions(on) -> None:
+def test_answer_steps_and_actions() -> None:
     client, manager, create = _client(
         lambda: _calls(
             ("incident_read_report", {}),
@@ -111,14 +89,14 @@ def test_answer_steps_and_actions(on) -> None:
     assert create.await_args.args[1] == "investigator"
 
 
-def test_the_session_manager_is_made_once(on) -> None:
+def test_the_session_manager_is_made_once() -> None:
     client, _, create = _client(lambda: _calls())
     client.post(URL, json=BODY)
     client.post(URL, json=BODY)
     create.assert_awaited_once()
 
 
-def test_reaching_the_iteration_cap_is_not_ok(on) -> None:
+def test_reaching_the_iteration_cap_is_not_ok() -> None:
     cap = f"{agent_loop.CAP_ANSWER_PREFIX} 4 iterations. The agent repeatedly called tools."
     client, _, _ = _client(lambda: _calls(("a", {}), final=cap))
     data = client.post(URL, json=BODY).json()
@@ -126,20 +104,20 @@ def test_reaching_the_iteration_cap_is_not_ok(on) -> None:
     assert len(data["steps"]) == 1
 
 
-def test_a_sixth_tool_step_aborts_the_run(on) -> None:
+def test_a_sixth_tool_step_aborts_the_run() -> None:
     client, _, _ = _client(lambda: _calls(*[(f"t{i}", {}) for i in range(8)]))
     data = client.post(URL, json=BODY).json()
     assert data["status"] == "aborted:step_budget"
     assert len(data["steps"]) == 5
 
 
-def test_an_agent_that_is_not_declared_is_a_501(on) -> None:
+def test_an_agent_that_is_not_declared_is_a_501() -> None:
     client, _, _ = _client(lambda: _calls(), factory=AsyncMock(side_effect=ValueError("no such function")))
     assert client.post(URL, json=BODY).status_code == 501
 
 
 @pytest.mark.parametrize("body", [{}, {"question": ""}, {"question": "x" * 501}, {"question": "q", "video_id": "V2"}])
-def test_a_bad_body_is_a_422(on, body) -> None:
+def test_a_bad_body_is_a_422(body) -> None:
     client, _, _ = _client(lambda: _calls())
     assert client.post(URL, json=body).status_code == 422
 
@@ -147,8 +125,7 @@ def test_a_bad_body_is_a_422(on, body) -> None:
 DRAFT = {"incident": {"title": "Fight"}, "entities": [{"key": "p1", "type": "human"}]}
 
 
-def test_a_draft_runs_the_editor_agent_with_the_draft_in_its_question(on, monkeypatch) -> None:
-    monkeypatch.setenv(draft_edits.ENABLED_ENV, "1")
+def test_a_draft_runs_the_editor_agent_with_the_draft_in_its_question() -> None:
     seen: list = []
 
     async def script() -> str:
@@ -164,23 +141,14 @@ def test_a_draft_runs_the_editor_agent_with_the_draft_in_its_question(on, monkey
     assert seen[0].entities[0].key == "p1"
 
 
-def test_a_draft_with_draft_edits_off_is_a_404_and_no_agent_is_built(on, monkeypatch) -> None:
-    monkeypatch.delenv(draft_edits.ENABLED_ENV, raising=False)
-    client, _, create = _client(lambda: _calls())
-    assert client.post(URL, json={**BODY, "draft": DRAFT}).status_code == 404
-    create.assert_not_called()
-
-
-def test_a_request_without_a_draft_still_runs_the_investigator(on, monkeypatch) -> None:
-    monkeypatch.setenv(draft_edits.ENABLED_ENV, "1")
+def test_a_request_without_a_draft_still_runs_the_investigator() -> None:
     client, manager, create = _client(lambda: _calls())
     client.post(URL, json=BODY)
     assert create.await_args.args[1] == "investigator"
     assert manager.questions == [BODY["question"]]
 
 
-def test_each_agent_gets_its_own_session_manager(on, monkeypatch) -> None:
-    monkeypatch.setenv(draft_edits.ENABLED_ENV, "1")
+def test_each_agent_gets_its_own_session_manager() -> None:
     client, _, create = _client(lambda: _calls())
     client.post(URL, json=BODY)
     client.post(URL, json={**BODY, "draft": DRAFT})
@@ -188,8 +156,7 @@ def test_each_agent_gets_its_own_session_manager(on, monkeypatch) -> None:
     assert [call.args[1] for call in create.await_args_list] == ["investigator", "report_editor"]
 
 
-def test_a_draft_with_a_repeated_key_is_a_422(on, monkeypatch) -> None:
-    monkeypatch.setenv(draft_edits.ENABLED_ENV, "1")
+def test_a_draft_with_a_repeated_key_is_a_422() -> None:
     client, _, _ = _client(lambda: _calls())
     twin = {"incident": {}, "entities": [{"key": "a"}, {"key": "a"}]}
     assert client.post(URL, json={**BODY, "draft": twin}).status_code == 422

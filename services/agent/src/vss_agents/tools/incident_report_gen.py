@@ -804,14 +804,14 @@ async def collect_evidence(
     tracking: track_evidence.TrackingRequest | None = None,
     object_tracking: track_evidence.ObjectTrackingRequest | None = None,
     deadline: float | None = None,
-    gap_retry: bool | None = None,
+    gap_retry: bool = True,
 ) -> list[dict[str, Any]]:
     """Crop and upload every evidence item. Never raises: a failure becomes an ``image_gap`` reason.
 
     ``store`` and ``detector`` override the service's own (R2 and the shared detector in production) for this
     call only. ``object_tracking`` receives the summary of the instrument and asset tracks. ``deadline`` is the
     request's ``time.monotonic()`` budget end: past it, items are left with an ``image_gap`` or ``zoom_gap``.
-    ``gap_retry`` overrides ``INCIDENT_GAP_RETRY_ENABLED`` for this call (None reads it).
+    ``gap_retry`` turns the gap retry off for this call when False.
     """
     try:
         return await crop_evidence.get_crop_evidence_service().process_incident_report(
