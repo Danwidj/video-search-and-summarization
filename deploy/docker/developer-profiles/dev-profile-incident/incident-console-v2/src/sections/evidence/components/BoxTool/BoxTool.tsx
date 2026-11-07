@@ -61,6 +61,7 @@ export function BoxTool({
   existing = null,
   holders,
   initialSeconds,
+  initialName,
   client = boxToolClient,
   onClose,
   onDone,
@@ -71,6 +72,8 @@ export function BoxTool({
   /** The draft's entities by name, for an instrument's holder. */
   holders: Array<{ key: string; name: string }>;
   initialSeconds: number;
+  /** The name a new item starts with, when the chat asked for this evidence. */
+  initialName?: string;
   client?: BoxToolClient;
   onClose: () => void;
   onDone: (item: BoxToolItem, holderKey: string | null) => void;
@@ -84,7 +87,7 @@ export function BoxTool({
   const [seed, setSeed] = useState<{ seconds: number; box: Box } | null>(null);
   const [card, setCard] = useState<Card>(() => ({
     itemType: existing?.itemType ?? 'asset',
-    name: existing?.name ?? '',
+    name: existing?.name ?? initialName ?? '',
     description: existing?.description ?? '',
     holderKey: null,
     threatLevel: existing?.threatLevel ?? null,
