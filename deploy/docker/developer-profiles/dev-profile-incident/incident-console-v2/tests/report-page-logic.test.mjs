@@ -198,6 +198,6 @@ test('the report controls render into the shared header slots, and the nav is a 
 
 test('the report route shows a plain "Report workspace" title and selects no nav item', async () => {
   const route = await readFile(new URL('../src/app/reports/[videoId]/page.tsx', import.meta.url), 'utf8');
-  assert.match(route, /<AppHeader fullWidth workspaceTitle="Report workspace" \/>/);
+  assert.match(route, /<AppHeader fullWidth subtitle="Report workspace" \/>/);
   assert.doesNotMatch(route, /active=/);
 });
