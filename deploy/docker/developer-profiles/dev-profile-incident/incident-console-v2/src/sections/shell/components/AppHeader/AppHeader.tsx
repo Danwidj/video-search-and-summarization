@@ -13,7 +13,7 @@ import { cn } from 'cn';
 import { forgetLibraryState } from '@/lib/library/remembered-state';
 
 const NAV_ITEMS = [
-  { href: '/', key: 'analyze', label: 'Analyze' },
+  { href: '/', key: 'analyze', label: 'Analyse' },
   { href: '/library', key: 'library', label: 'Library' },
   { href: '/dashboard', key: 'dashboard', label: 'Dashboard' },
 ] as const;

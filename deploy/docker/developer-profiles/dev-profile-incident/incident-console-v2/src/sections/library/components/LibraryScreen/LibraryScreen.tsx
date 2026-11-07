@@ -391,11 +391,11 @@ export function Library() {
                   library === 'empty' ? (
                     <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
                       <h2 className="text-xl font-semibold">Your library is empty.</h2>
-                      <p className="mt-2 text-sm text-ink/50">Analyze a video to create the first incident report.</p>
+                      <p className="mt-2 text-sm text-ink/50">Analyse a video to create the first incident report.</p>
                       <Button asChild className="mt-4 bg-ink font-semibold text-white hover:bg-ink/90">
                         <Link href="/">
                           <PlusIcon className="size-4" />
-                          Analyze video
+                          Analyse video
                         </Link>
                       </Button>
                     </div>

@@ -611,7 +611,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
                   ? 'Retry analysis'
                   : nameNotice && storedName
                     ? `Continue as ${storedName}`
-                    : 'Analyze video'}
+                    : 'Analyse video'}
             </Button>
             {busy && !queuedOnServer && (
               <Button
