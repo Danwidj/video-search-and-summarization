@@ -57,6 +57,33 @@ functions:
     object_store_base_url: ${VSS_AGENT_REPORTS_BASE_URL}
     llm_name: ${LLM_MODEL_TYPE:-nim}_llm
 
+  # Incident investigator: POST /api/v1/incidents/{video_id}/investigate (off unless INCIDENT_INVESTIGATE_ENABLED).
+  # A NAT tool_calling_agent that chooses among tool_names. max_iterations 4 means at most 5 tool runs; the route
+  # also stops at 5 tool steps and 90 s, and reports reaching max_iterations as cap_reached.
+  incident_read_report:
+    _type: incident_read_report
+
+  incident_list_versions:
+    _type: incident_list_versions
+
+  investigator:
+    _type: tool_calling_agent
+    llm_name: investigator_llm
+    tool_names: [incident_read_report, incident_list_versions]
+    max_iterations: 4
+    handle_tool_errors: true
+    system_prompt: |
+      You answer a reviewer's question about one video's incident report. Use the tools; the tools already know
+      which video it is.
+      - Answer only from tool results, and say which tool each claim came from.
+      - Use incident_read_report first for any question the report may answer. Use incident_list_versions only for
+        questions about versions, edits or which report is official.
+      - You cannot hear audio or look at the video. If asked about sound, speech or anything the report does not
+        hold, say so plainly.
+      - If the question is not about this video's report, say you can only answer questions about the report and call
+        no tool.
+      - If a tool returns an error, do not call it again with the same arguments; say what failed.
+
   video_understanding:
     _type: video_understanding
     vlm_name: ${VLM_MODEL_TYPE:-nim}_vlm # e.g. nim_vlm, openai_vlm
@@ -202,6 +229,22 @@ llms:
     base_url: ${LLM_BASE_URL}/v1
     max_tokens: 4096
     temperature: 0.0
+    model_kwargs:
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: ${LLM_ENABLE_THINKING:-false}
+
+  # The investigator's model. A request that stalls or is throttled must end well inside the route's 90 s, so the
+  # toolkit's defaults (10 retries, no timeout) are replaced: 30 s per call, 2 retries.
+  investigator_llm:
+    _type: openai
+    model_name: ${LLM_NAME}
+    base_url: ${LLM_BASE_URL}/v1
+    max_tokens: 1024
+    temperature: 0.0
+    max_retries: 2
+    num_retries: 2
+    request_timeout: 30
     model_kwargs:
       extra_body:
         chat_template_kwargs:

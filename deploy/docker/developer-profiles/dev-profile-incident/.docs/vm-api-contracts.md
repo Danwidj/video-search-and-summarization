@@ -188,6 +188,20 @@ A reviewer's confirmed fresh look at the video. Off unless `INCIDENT_VIDEO_CHECK
 
 Request: `{"question": <1-500 chars>, "stored_answer": <1-4000 chars>}`. Response `200`: `{"content", "source": "video", "can_answer", "relation", "model", "usage"}`. `content` has labelled parts (`Stored report:`, `Video reanalysis:`, and `Discrepancy:` on a conflict); `relation` is `agrees`, `conflicts`, `unrelated` or `unclear`. The VLM (`VLM_NAME` at `VLM_GATEWAY_BASE_URL`, else `VLM_BASE_URL`) sees only the question and the clip. `404` no video file; `502` with a reason for a timeout, rate limit or unreadable reply. The console calls it from `POST /api/chat/video-check`.
 
+## `POST /api/v1/incidents/{video_id}/investigate`
+
+An agent that chooses its own tools to answer one question about one video. Off unless `INCIDENT_INVESTIGATE_ENABLED` is set (read on every request): a request is then a `404` and no model is called. It writes nothing. Code: [`incident_investigate.py`](../../../../../services/agent/src/vss_agents/api/incident_investigate.py), [`utils/agent_loop.py`](../../../../../services/agent/src/vss_agents/utils/agent_loop.py), [`tools/incident_investigator.py`](../../../../../services/agent/src/vss_agents/tools/incident_investigator.py).
+
+Request: `{"question": <1-500 chars>}` (other keys are `422`). Response `200`: `{"status", "answer", "steps", "actions", "wall_ms"}`.
+
+- **`status`:** `ok`, `cap_reached` (the agent ran out of iterations; `answer` is the toolkit's give-up sentence, not a result), `timeout` (90 s), `busy` (the model endpoint still answered 429 after its retries), `aborted:step_budget`, `aborted:tool_failed:<tool>` (a tool failed for a reason the model cannot fix, such as the database being down) or `error`. All are HTTP `200`.
+- **`steps`:** every tool that ran, in order: `{tool, args, ok, ms, error?}`. A call whose arguments failed validation never reached the tool and is not listed.
+- **`actions`:** the arguments of each `propose_*` tool that ran (`{tool, args}`). The two tools registered so far only read, so it is `[]` until a proposing tool is added to the agent's `tool_names`.
+- **Limits:** 4 iterations, 5 tool steps, 90 s for the run, 30 s per model call with 2 retries (set on the `investigator_llm` entry, not in code).
+- **The video is bound by the route.** The tools take no `video_id` argument, so the model cannot read another video.
+- **Tools** (`functions:` in `dev-profile-base/vss-agent/configs/config.yml`, the `investigator` entry's `tool_names`): `incident_read_report` (official version, else the newest, cut at 8000 characters) and `incident_list_versions`.
+- **Status codes:** `404` flag off, `422` bad body, `501` the profile does not declare `investigator`.
+
 ## `POST /api/v1/incidents/chart-requests`
 
 Reads one dashboard chart request with the agent's own LLM: the `llms:` entry named by `chart_generator.llm_name` in `dev-profile-base/vss-agent/configs/config.yml` (`${LLM_MODEL_TYPE:-nim}_llm`). The console sends the two messages the model gets, and the route passes them to that LLM unchanged. It returns the JSON object the model wrote. It validates nothing else: the console checks the object against its allowlist and refuses anything else.

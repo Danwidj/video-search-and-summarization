@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: The investigator is the toolkit's `tool_calling_agent`, run through `SessionManager`, with limits added around it
+- **Decision:** `investigator` is a `tool_calling_agent` under `functions:` in the agent config, with its tools in `tool_names`. The route runs it through `FastApiFrontEndPluginWorker._create_session_manager` and wraps the run in `utils/agent_loop.py`: a step log written by the tools, a 5-step budget, a 90 s wall clock, and detection of the toolkit's give-up string (`cap_reached`). The model-call timeout (30 s) and retries (2) sit on the `investigator_llm` entry. The video id is bound by the route in a per-request context, not filled in by the model. A tool error that is not a `ValueError` stops the run. The route is behind `INCIDENT_INVESTIGATE_ENABLED`, checked per request.
+- **Why:** `SessionManager` is the only path that writes Phoenix tool spans (measured: spans appear in the project). The agent returns one string and no steps, and at its iteration cap it returns a normal-looking sentence and runs one tool more, so the route has to log steps itself and detect the cap. The toolkit defaults (10 retries, no timeout) would let one slow model call run past the wall clock.
+- **Alternatives rejected:** a hand-written loop (duplicates the toolkit and loses its spans); the stock top agent's tool list (video search tools, not this task); letting the model pass `video_id` (it could read another video).
+- **Links:** [vm-api-contracts](vm-api-contracts.md#post-apiv1incidentsvideo_idinvestigate), `agent_loop.py`, `incident_investigate.py`.
+
 ### 2026-11-07: Every Dashboard chart enters with the same timing, by CSS where Recharts does not draw it
 - **Decision:** the treemap, waffle, icon array, risk ladder, heatmap and Total bar use `.chart-enter` / `.chart-grow` (transform and opacity, staggered by `--enter-delay`) with `useChartEntrance`, which gives 1500 ms on first data and 400 ms after a data change and replays by keying on an epoch. Off under `prefers-reduced-motion`.
 - **Why:** only the Recharts bars and donut animated; the captain asked for all charts. Recharts' treemap animation does not suit the custom cell, and `backwards` fill keeps hover transforms working.
