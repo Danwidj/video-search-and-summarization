@@ -10,7 +10,7 @@ From the profile folder (`deploy/docker/developer-profiles/dev-profile-incident/
 ./start.sh --mode vm   # the agent on kwanz-ws over an SSH tunnel
 ```
 
-The console opens on `http://127.0.0.1:3200`; `GET /api/health` should report `ready`.
+The console opens on `http://127.0.0.1:3200`; `GET /api/health` should report `ready`. That is `next dev`; for a production build add `--prod` (`./start.sh --mode vm --prod`: `npm run build`, then `npm run start`, same port 3200). To pick up a code change in a production console, stop it and run the same command again; it rebuilds each time. Details: [operations](../.docs/incident-profile-operations.md).
 - **Backend:** in vm mode the console reaches only the agent (`localhost:8000`, the one tunnelled port) and uploads straight to R2 through `/api/uploads/r2`. It uses no VST and no `:7777` proxy.
 - **Mock mode:** `./start.sh --mode mock` runs a zero-GPU mock that mimics the backend, a backup rather than the real one; verify UI work on the VM. To run the console by hand in mock mode, start the [mock backend](../mock-backend/base_profile_mock/README.md) and the [VLM gateway](../vlm-gateway/README.md), then `npm install && npm run dev` here.
 - **Settings:** `.env.local` is a symlink to the profile's shared `../.env.local`. Edit that file, not the symlink.

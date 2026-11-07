@@ -4,6 +4,7 @@
 # workflow. RUN FROM YOUR LAPTOP:
 #
 #   cd deploy/docker/developer-profiles/dev-profile-incident && ./start.sh
+#   (add --prod for a production console build; it rebuilds on every run)
 #
 # Modes (via --mode or VSS_START_MODE, default: vm):
 #   vm    — real VM agent (checks/deploys kwanz-ws over SSH, opens the SSH
