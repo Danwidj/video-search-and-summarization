@@ -3,6 +3,7 @@
 import { NextResponse } from 'next/server';
 import { sendAgentChat, sendAgentInvestigate } from '@/modules/chat/infrastructure/agent/agent-chat';
 import { chatErrorResponse } from '@/modules/chat/infrastructure/agent/chat-errors';
+import { CHAT_EDITOR_REFUSAL_PREFIX } from '@/lib/chat/report-chat';
 import { getServiceConfiguration, isChatStepsEnabled } from '@/lib/env';
 import { UpstreamError } from '@/lib/http';
 import type { ChatMessage } from '@/modules/chat/domain/chat';
@@ -43,8 +44,12 @@ export async function POST(request: Request) {
           const investigate = (draft?: Record<string, unknown>) =>
             sendAgentInvestigate(agentUrl, incidentId, lastQuestion, AbortSignal.timeout(115000), draft);
           const edited = editing ? await investigate(input.editDraft) : null;
-          // An editor that ran no tool was not asked to edit: the question goes on to the usual routes, unchanged.
+          // An editor that ran no tool was not asked to edit: the question goes on to the usual routes, unchanged,
+          // unless the editor explicitly refused an unsupported edit (starts with CHAT_EDITOR_REFUSAL_PREFIX).
           if (edited?.message.steps?.length) return NextResponse.json(edited);
+          if (edited?.message.content.trim().startsWith(CHAT_EDITOR_REFUSAL_PREFIX)) {
+            return NextResponse.json(edited);
+          }
           if (stepsRequested) return NextResponse.json(await investigate());
         } catch (investigateError) {
           // If the agent endpoint is 404 or 501, fall through to stock agent chat
