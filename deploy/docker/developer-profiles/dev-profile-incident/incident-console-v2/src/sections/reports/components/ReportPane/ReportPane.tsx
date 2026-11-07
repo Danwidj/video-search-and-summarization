@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import Link from 'next/link';
 import { Fragment, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -48,7 +47,6 @@ export function ReportPane({
   playerDuration,
   onSeek,
   officialMissing = false,
-  compareHref = null,
   selectedTrackId = null,
   onSelectTrack = () => undefined,
 }: {
@@ -57,8 +55,6 @@ export function ReportPane({
   onSeek: (seconds: number, still?: StillBox | null) => void;
   /** True once the versions have loaded and none of them is official. */
   officialMissing?: boolean;
-  /** Link to compare this version with another AI version, when there is one. */
-  compareHref?: string | null;
   /** The item whose box the player emphasises; null for none. */
   selectedTrackId?: string | null;
   onSelectTrack?: (id: string | null) => void;
@@ -121,17 +117,6 @@ export function ReportPane({
           {officialMissing && (
             <p className="bg-amber-50/80 px-4 py-2 text-xs text-amber-950" data-testid="official-status">
               No official version has been selected for this video. Star a version to make it official.
-            </p>
-          )}
-          {compareHref && (
-            <p className="px-4 py-2 text-xs">
-              <span className="text-muted-foreground">Another AI version is available for this video. </span>
-              <Link
-                className="font-semibold text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-                href={compareHref}
-              >
-                Compare versions side by side →
-              </Link>
             </p>
           )}
         </CardContent>

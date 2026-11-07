@@ -299,10 +299,6 @@ export function ReportPage({
   const officialRevision = (revisions ?? []).find((revision) => revision.isOfficial);
   const changes = draft && editBase ? draftChangeCount(editBase.report.structured, draft) : 0;
   const problems = draft ? draftProblems(draft) : [];
-  const otherAiRevision = (revisions ?? []).find((revision) => revision.kind === 'ai' && revision.revisionId !== report.revisionId);
-  const compareHref = otherAiRevision
-    ? `/reports/${encodeURIComponent(videoId)}/compare?left=${report.revisionId}&right=${otherAiRevision.revisionId}`
-    : null;
   const officialLabel = officialRevision ? `v${officialRevision.revisionNo}` : 'none';
   // Only in Edit mode: a draft kept while the reviewer looks back at View does not change what View's timeline shows.
   const draftStructured = mode === 'edit' && draft ? draftToStructured(draft, videoId, overlay.frames) : null;
@@ -546,7 +542,6 @@ export function ReportPage({
 
                 {mode === 'view' ? (
                   <ReportPane
-                    compareHref={compareHref}
                     officialMissing={!officialRevision && revisions !== null}
                     onSeek={seek}
                     onSelectTrack={selectTrack}
