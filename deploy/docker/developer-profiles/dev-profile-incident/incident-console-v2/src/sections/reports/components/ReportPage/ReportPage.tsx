@@ -340,7 +340,7 @@ export function ReportPage({
   const editFromChat = (sent: EditDraft, proposals: ProposedAction[]) => {
     const current = draftRef.current;
     const result = applyChatEdit(current ?? sent, sent, proposals);
-    if (result.changedKeys.length === 0) return { applied: result.applied, skipped: result.skipped };
+    if (result.changedKeys.length + result.removedKeys.length === 0) return { applied: result.applied, skipped: result.skipped };
     if (current) {
       setUndoStack((stack) => [...stack.slice(-49), current]);
     } else {

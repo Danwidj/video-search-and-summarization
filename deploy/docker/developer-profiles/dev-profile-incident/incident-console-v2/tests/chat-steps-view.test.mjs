@@ -77,6 +77,11 @@ test('ChatStepsView renders expandable trigger and sections matching the spec', 
   assert.match(file, /Total duration: \{wallMs\} ms/);
 });
 
+test('ChatStepsView shows an applied action note, which names a removed item', async () => {
+  const file = await readFile(new URL('../src/sections/reports/components/ReportChat/ChatStepsView.tsx', import.meta.url), 'utf8');
+  assert.match(file, /\{action\.note && <p[^>]*>\{action\.note\}<\/p>\}/);
+});
+
 test('ReportChat integrates ChatStepsView under assistant bubbles', async () => {
   const file = await readFile(new URL('../src/sections/reports/components/ReportChat/ReportChat.tsx', import.meta.url), 'utf8');
   assert.match(file, /import \{ ChatStepsView \} from '\.\/ChatStepsView';/);

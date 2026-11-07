@@ -179,26 +179,50 @@ export interface ChatEditResult {
   skipped: SkippedAction[];
   /** The keys of the items the edit added or changed, and `incident` for the incident fields: what the page highlights. */
   changedKeys: string[];
+  /** The keys of the items the edit removed: a change too, though the page has nothing left to highlight for them. */
+  removedKeys: string[];
 }
 
+const NO_CHANGE = 'no change: the draft already had this';
+const DELETE_TOOL = 'delete_item';
+
 /**
- * Applies the agent's proposals to the draft as it is now. `sent` is the draft the agent was shown: an action on an item
- * the reviewer changed since is skipped with that reason, the others apply.
+ * Applies the agent's proposals to the draft as it is now, one at a time. `sent` is the draft the agent was shown: an action
+ * on an item the reviewer changed since is skipped with that reason. An action that leaves the draft as it was is skipped
+ * with NO_CHANGE, and a delete is reported as a delete with the item it removed.
  */
 export function applyChatEdit(now: EditDraft, sent: EditDraft, proposals: ProposedAction[]): ChatEditResult {
-  const actions = toApplierActions(sent, proposals);
-  const stale: SkippedAction[] = [];
-  const fresh = actions.filter((action) => {
-    const key = targets(action).find((target) => changedSince(sent, now, target));
-    if (key === undefined) return true;
-    stale.push({ id: action.id, tool: action.tool, reason: 'you changed this while the assistant was working' });
-    return false;
-  });
-  const result = applyAgentActions(now, fresh);
+  const applied: AppliedAction[] = [];
+  const skipped: SkippedAction[] = [];
+  let draft = now;
+  for (const action of toApplierActions(sent, proposals)) {
+    if (targets(action).some((target) => changedSince(sent, now, target))) {
+      skipped.push({ id: action.id, tool: action.tool, reason: 'you changed this while the assistant was working' });
+      continue;
+    }
+    const result = applyAgentActions(draft, [action]);
+    const [failure] = result.skipped;
+    if (failure) {
+      skipped.push(failure);
+      continue;
+    }
+    if (same(draft, result.draft)) {
+      skipped.push({ id: action.id, tool: action.tool, reason: NO_CHANGE });
+      continue;
+    }
+    const args = action.args as Record<string, unknown>;
+    const removed = args.op === 'delete' ? items(draft).find((item) => item.key === args.itemKey) : undefined;
+    const [done] = result.applied;
+    const note = [removed && `deleted "${removed.label || removed.key}"`, done?.note].filter(Boolean).join('; ');
+    applied.push({ id: action.id, tool: removed ? DELETE_TOOL : action.tool, note: note || undefined });
+    draft = result.draft;
+  }
   const before = new Map(items(now).map((item) => [item.key, item]));
-  const changedKeys = items(result.draft)
+  const after = new Map(items(draft).map((item) => [item.key, item]));
+  const changedKeys = items(draft)
     .filter((item) => !same(before.get(item.key), item))
     .map((item) => item.key);
-  if (!same(now.incident, result.draft.incident)) changedKeys.unshift(INCIDENT_HIGHLIGHT_KEY);
-  return { draft: result.draft, applied: result.applied, skipped: [...stale, ...result.skipped], changedKeys };
+  if (!same(now.incident, draft.incident)) changedKeys.unshift(INCIDENT_HIGHLIGHT_KEY);
+  const removedKeys = [...before.keys()].filter((key) => !after.has(key));
+  return { draft, applied, skipped, changedKeys, removedKeys };
 }
