@@ -64,8 +64,6 @@ export function ReportPane({
 }) {
   const { structured, modelOutput, run, differences, revision } = report;
   const { incident } = structured;
-  const windowEdited = differences.fields.includes('incident window');
-  const original = modelOutput?.original;
   const heldBy = (entityId: string) => structured.instruments.filter((instrument) => instrument.entityId === entityId);
   const heldIds = new Set(structured.entities.flatMap((entity) => heldBy(entity.entityId).map((instrument) => instrument.instrumentId)));
   const unheld = structured.instruments.filter((instrument) => !heldIds.has(instrument.instrumentId));
@@ -178,12 +176,6 @@ export function ReportPane({
               <Badge className={`px-3 py-0.5 text-xs font-bold ${severityStyle(incident.severityLevel)}`} variant="outline">
                 {incident.severityLevel ?? '—'}/5
               </Badge>
-              {differences.severity && (
-                <span className="mt-1 block text-xs font-semibold text-destructive" data-testid="severity-edited">
-                  Model assessed severity {differences.severity.model}/5; reviewer set {differences.severity.current}/5. The rationale below
-                  explains the model&apos;s assessment, not the reviewer&apos;s.
-                </span>
-              )}
             </Row>
             {incident.confidenceScore !== null && <Row label="Confidence">{Math.round(incident.confidenceScore * 100)}%</Row>}
             <Row label="Time range">
@@ -200,11 +192,6 @@ export function ReportPane({
                 </Button>
               ) : (
                 'Not recorded'
-              )}
-              {windowEdited && original && original.startSeconds !== null && original.endSeconds !== null && (
-                <span className="ml-3 text-xs font-semibold text-destructive" data-testid="window-edited">
-                  reviewer-set; model window {formatClock(original.startSeconds)}–{formatClock(original.endSeconds)}
-                </span>
               )}
             </Row>
             <Row label="Summary">

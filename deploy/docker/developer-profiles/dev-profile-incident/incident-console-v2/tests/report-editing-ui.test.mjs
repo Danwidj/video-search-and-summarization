@@ -16,7 +16,8 @@ test('report page shows structured fields without run and model-output details',
   ).join('\n');
 
   assert.match(report, /Severity rationale/);
-  assert.match(report, /reviewer set/, 'an edited severity is shown against the model severity');
+  assert.doesNotMatch(report, /Model assessed severity/, 'a reviewer-set severity carries no orange note');
+  assert.doesNotMatch(report, /reviewer-set; model window/, 'a reviewer-set window carries no orange note');
   assert.doesNotMatch(report, /Model event timeline/);
   assert.doesNotMatch(report, /Model-reported uncertainties/);
   assert.doesNotMatch(report, /timeline-inconsistent/);
@@ -27,7 +28,6 @@ test('report page shows structured fields without run and model-output details',
   assert.match(report, /ReportEditPane/, 'editing opens the side-by-side pane');
   assert.match(report, /Edit from v/, 'the report opens edit mode from the shown version');
   assert.match(report, /Model classified this as/);
-  assert.match(report, /model window/);
 });
 
 test('the report page has a History of versions, a reviewer prompt and explicit official controls, and no verification flow', async () => {
