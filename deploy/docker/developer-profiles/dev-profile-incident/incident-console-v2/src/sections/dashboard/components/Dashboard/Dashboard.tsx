@@ -628,7 +628,7 @@ function Heatmap({
   return (
     <TooltipProvider delayDuration={100}>
       <div className="overflow-x-auto p-2">
-        <div className="min-w-[640px]">
+        <div className="min-w-[440px]">
           <div className="grid grid-cols-[32px_repeat(24,1fr)] gap-0.5 text-[10px] text-ink-caption">
             <span />
             {HOURS_OF_DAY.map((h) => (
@@ -649,13 +649,13 @@ function Heatmap({
                       <button
                         aria-label={summary}
                         className={cn(
-                          'relative h-4 rounded-xs transition duration-150 hover:z-10 hover:bg-(--cell-hover) hover:ring-2 hover:ring-ink motion-safe:hover:scale-150 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          'relative h-4 rounded-xs bg-(--cell) transition duration-150 hover:z-10 hover:bg-(--cell-hover) hover:ring-2 hover:ring-ink motion-safe:hover:scale-150 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                           selected === `${d}-${h}` ? 'ring-2 ring-ink' : '',
                         )}
                         onClick={() => onSelect(d, h)}
                         style={
                           {
-                            background: `color-mix(in srgb, ${SERIES_COLOR[series]} ${share}%, transparent)`,
+                            '--cell': `color-mix(in srgb, ${SERIES_COLOR[series]} ${share}%, transparent)`,
                             '--cell-hover': darken(`color-mix(in srgb, ${SERIES_COLOR[series]} ${share}%, white)`),
                           } as CSSProperties
                         }
