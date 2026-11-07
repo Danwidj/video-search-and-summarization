@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: New-evidence questions are proposal checks with a client-sent question count, behind their own flag
+- **Decision:** `ask_reviewer` and `open_box_tool` are proposal checks (`utils/evidence_asks.py`, route `evidence-asks`), not tools registered in the agent loop. The orchestrator sends the number of questions already asked for this evidence (0-2); the route enforces at most two in all, no question after the box tool, and one box tool opening inside the incident window. Behind `INCIDENT_EVIDENCE_ASKS_ENABLED`, checked per request. The console's box tool takes an opening with the name filled in.
+- **Why:** the draft-edit checks already work this way and write nothing, so the console keeps the decision and the reviewer keeps the save. The agent loop is stateless between reviewer replies, so the count has to come with the request. A separate flag lets the evidence flow go live without the draft edits.
+- **Alternatives rejected:** a per-process counter in a registered tool (shared across requests, so it would leak between videos and reviewers); reusing `INCIDENT_DRAFT_EDITS_ENABLED` (couples two features that go live separately).
+- **Links:** [vm-api-contracts](vm-api-contracts.md#post-apiv1incidentsvideo_idevidence-asks), `draft_edits.py`.
+
 ### 2026-11-07: Fixed edit and clip request test set and offline scorer under services/agent/tests
 - **Decision:** Plan B Phase 1 Item 1D provides the canonical 20-case test set (`cases.json`) and an offline scorer (`scorer.py`, `cases.py`) under `services/agent/tests/edit_test_set/`, unit-tested by `services/agent/tests/unit_test/test_edit_test_set.py`.
 - **Why:** enables offline verification of tool selection, arguments, and refusal behavior for both investigator (clip QA) and editor (report edits) agents without calling hosted models or spending model tokens.
