@@ -95,6 +95,22 @@ test('LibraryChat integrates ChatStepsView under assistant bubbles', async () =>
 
 // --- 3. API client adapter tests ---
 
+test('fromAgentInvestigateResponse answers a blank reply with a sentence for its status', () => {
+  const blank = fromAgentInvestigateResponse({
+    status: 'aborted:step_budget',
+    answer: '',
+    steps: [],
+    actions: [
+      { tool: 'propose_rename', args: { key: 'k1' } },
+      { tool: 'propose_rename', args: { key: 'k2' } },
+    ],
+    wall_ms: 10,
+  });
+  assert.equal(blank.message.content, 'The agent reached its tool step limit before it could answer; 2 changes were proposed.');
+  const timedOut = fromAgentInvestigateResponse({ status: 'timeout', answer: '  ', steps: [], wall_ms: 90000 });
+  assert.equal(timedOut.message.content, 'The agent ran out of time before it could answer; no changes were proposed.');
+});
+
 test('fromAgentInvestigateResponse parses steps, actions and wallMs into ChatResponse', () => {
   const payload = {
     status: 'ok',

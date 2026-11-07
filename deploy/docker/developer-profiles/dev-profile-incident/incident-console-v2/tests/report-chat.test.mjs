@@ -200,6 +200,20 @@ test('a fresh video check never reaches the report model as conversation', async
   );
 });
 
+test('a blank assistant reply never reaches the report model as conversation', async () => {
+  const { chatHistory } = await import('../src/lib/chat/report-chat.ts');
+  const turns = [
+    { role: 'user', content: 'a' },
+    { role: 'assistant', content: '   ', source: 'investigator' },
+    { role: 'assistant', content: 'b', source: 'report' },
+    { role: 'user', content: 'c' },
+  ];
+  assert.deepEqual(
+    chatHistory(turns).map((turn) => turn.content),
+    ['a', 'b', 'c'],
+  );
+});
+
 test('a check needing footage after a moment is hidden when the video ends there', async () => {
   const { offersVideoCheck } = await import('../src/lib/chat/report-chat.ts');
   assert.equal(offersVideoCheck(undefined, 30), false);
