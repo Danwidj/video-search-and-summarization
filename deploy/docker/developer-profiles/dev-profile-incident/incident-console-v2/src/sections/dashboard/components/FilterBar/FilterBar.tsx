@@ -222,7 +222,7 @@ export function FilterBar({
             Official
           </span>
           <span className="flex items-center gap-1.5">
-            <span aria-hidden="true" className="size-2.5 rounded-xs border border-dashed border-not-official-line bg-not-official" />
+            <span aria-hidden="true" className="size-2.5 rounded-xs bg-not-official" />
             Not yet official
           </span>
         </span>

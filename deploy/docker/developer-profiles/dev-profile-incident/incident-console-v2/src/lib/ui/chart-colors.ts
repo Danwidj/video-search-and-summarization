@@ -3,14 +3,12 @@
 /**
  * Colours for generated charts, as hex: a canvas cannot read CSS variables, so the agent and the
  * browser both get these values. Official and not yet official equal the `--color-version-official` and
- * `--color-not-official` (and `--color-not-official-line`) tokens (app/styles.css); a test keeps them equal. `--chart-2` and `--chart-4` are not used for data:
+ * `--color-not-official` tokens (app/styles.css); a test keeps them equal. `--chart-2` and `--chart-4` are not used for data:
  * they fail the 3:1 non-text contrast rule against white. Every colour here passes 3:1.
  */
 export const CHART_COLORS = {
   official: '#0b7a8f',
-  notOfficial: '#e9ece4',
-  /** The dashed outline that goes with the not yet official fill. */
-  notOfficialLine: '#7b8794',
+  notOfficial: '#aeb5bb',
   /** One series with no official split. */
   total: '#174f3b',
   /** Slices of a donut that is not a severity or status chart, in order. */

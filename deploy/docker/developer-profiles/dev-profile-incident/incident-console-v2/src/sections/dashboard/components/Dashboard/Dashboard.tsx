@@ -44,7 +44,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { darken, DimSector, NotOfficialBar, PopBar, PopSector } from '@/sections/dashboard/components/Dashboard/chart-hover';
+import { darken, DimSector, PopBar, PopSector } from '@/sections/dashboard/components/Dashboard/chart-hover';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { cn } from 'cn';
 import { formatCalendarDay } from '@/modules/dashboard/domain/charts';
@@ -849,7 +849,6 @@ function SplitBars({
               className={hrefFor ? 'cursor-pointer' : undefined}
               dataKey="notOfficial"
               fill="var(--color-notOfficial)"
-              shape={NotOfficialBar}
               {...motion}
               onClick={(_entry, index) => activate(index)}
               radius={[0, 4, 4, 0]}
@@ -986,8 +985,7 @@ const HOURS_OF_DAY = Array.from({ length: 24 }, (_, h) => h);
 const SERIES_COLOR = {
   count: 'var(--chart-5)',
   official: 'var(--color-version-official)',
-  // The grey outline tone: the pale fill would vanish on white once mixed down for a quiet cell.
-  notOfficial: 'var(--color-not-official-line)',
+  notOfficial: 'var(--color-not-official)',
 } as const;
 
 function Heatmap({

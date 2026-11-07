@@ -2,8 +2,6 @@
 
 import { Rectangle, Sector } from 'recharts';
 
-import { notOfficialStroke } from '@/lib/ui/not-official';
-
 /** How much darker the hovered mark gets: its own colour mixed with black, so its meaning stays. */
 export const darken = (color: string) => `color-mix(in srgb, ${color} 72%, black)`;
 
@@ -18,20 +16,11 @@ type BarShapeProps = React.ComponentProps<typeof Rectangle> & { fill?: string };
 /** Recharts' `activeBar` for a horizontal bar: darker and thicker, drawn over its neighbours without moving them. */
 export function PopBar(props: BarShapeProps) {
   const { x = 0, y = 0, height = 0, fill = 'currentColor', ...rest } = props;
-  // The hovered not yet official segment keeps its dashed outline while it darkens.
-  const outline =
-    (rest as { dataKey?: unknown }).dataKey === 'notOfficial' ? notOfficialStroke(Number(rest.width ?? 0), Number(height)) : {};
   return (
     <g className="chart-pop">
-      <Rectangle {...rest} {...outline} fill={darken(fill)} height={Number(height) + BAR_GROW} x={x} y={Number(y) - BAR_GROW / 2} />
+      <Rectangle {...rest} fill={darken(fill)} height={Number(height) + BAR_GROW} x={x} y={Number(y) - BAR_GROW / 2} />
     </g>
   );
-}
-
-/** `shape` of the not yet official segment of a split bar: grey fill and a dashed outline (a plain hairline when the segment is tiny). */
-export function NotOfficialBar(props: BarShapeProps) {
-  const { width = 0, height = 0, fill, ...rest } = props;
-  return <Rectangle {...rest} fill={fill} height={height} width={width} {...notOfficialStroke(Number(width), Number(height))} />;
 }
 
 type SectorProps = React.ComponentProps<typeof Sector> & { fill?: string };

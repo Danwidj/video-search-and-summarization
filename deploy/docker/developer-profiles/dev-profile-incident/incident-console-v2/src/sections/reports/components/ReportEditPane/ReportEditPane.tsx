@@ -222,7 +222,7 @@ export function ReportEditPane({
         </CardHeader>
         {officialMissing && (
           <CardContent
-            className="border-y border-dashed border-not-official-line bg-not-official/60 px-4 py-2 text-xs text-ink-caption"
+            className="border-y border-dashed border-not-official-line bg-not-official-pill/60 px-4 py-2 text-xs text-ink-caption"
             data-testid="official-status"
           >
             No official version has been selected for this video. Star a version to make it official.

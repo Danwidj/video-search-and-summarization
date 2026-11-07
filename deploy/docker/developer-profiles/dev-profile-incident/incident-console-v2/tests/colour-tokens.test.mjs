@@ -23,6 +23,7 @@ const MEANINGS = {
   'version-human': token('--color-version-human'),
   'version-official': token('--color-version-official'),
   'not-official': token('--color-not-official'),
+  'not-official-pill': token('--color-not-official-pill'),
   'not-official-line': token('--color-not-official-line'),
   'sev-high': token('--color-sev-high'),
   'sev-medium': token('--color-sev-medium'),
@@ -86,7 +87,6 @@ test('the canvas mirrors equal the tokens', () => {
   assert.deepEqual(severityChartColor, { high: MEANINGS['sev-high'], medium: MEANINGS['sev-medium'], low: MEANINGS['sev-low'] });
   assert.equal(CHART_COLORS.official, MEANINGS['version-official']);
   assert.equal(CHART_COLORS.notOfficial, MEANINGS['not-official']);
-  assert.equal(CHART_COLORS.notOfficialLine, MEANINGS['not-official-line']);
 });
 
 test('severity and threat level share one band mapping: 5 and 4 high, 3 medium, 2 and 1 low', () => {

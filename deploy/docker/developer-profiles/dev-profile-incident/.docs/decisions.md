@@ -14,11 +14,11 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Alternatives rejected:** copying the mockup's hex values (they broke the colour guard); keeping the Ask button (the card is on the same screen at 1440x900).
 - **Links:** [console-reference](console-reference.md#dashboard-analytics-and-cross-filtering), `Dashboard.tsx`.
 
-### 2026-11-07: Not yet official is a light grey with a dashed outline
-- **Decision:** `--color-not-official` is `#e9ece4` and the new `--color-not-official-line` is `#7b8794`; every not yet official mark (Library "No official version" pill, report notice, Dashboard split bars, legend swatch) is that fill with a dashed outline (`lib/ui/not-official.ts`). Official stays solid teal with a star. Segments under 10 px keep a plain hairline, not a dash.
-- **Why:** the captain asked for grey with a dashed outline (as main's pill), replacing pale teal (`#8cc5cf`); the dash carries the meaning without relying on colour alone.
-- **Alternatives rejected:** pale teal (too close to the official teal); a dash on every segment however small (messy outline).
-- **Links:** [console-reference](console-reference.md#colour), `lib/ui/not-official.ts`.
+### 2026-11-07: Not yet official is solid grey in charts, a dashed grey pill elsewhere; the Official pill glows
+- **Decision:** `--color-not-official` is a plain solid mid grey `#aeb5bb` for every chart bar, heatmap ramp and legend swatch, with no outline. The "No official version" pill and the report notice keep a light grey fill (`--color-not-official-pill` `#e9ece4`) with a dashed outline (`--color-not-official-line` `#7b8794`), as on main. The shared Official pill (`VersionPill`, `.official-glow` in `styles.css`) has a teal halo on a pseudo-element that breathes by opacity over 4 s; under reduced motion the glow stays steady.
+- **Why:** the captain asked for grey (replacing pale teal `#8cc5cf`); a dashed outline on chart bars looked busy, so charts "stick to the colour"; the glow makes official obvious.
+- **Alternatives rejected:** pale teal (too close to official teal); dashed chart bars (tried, removed on the captain's word); animating box-shadow (repaints; opacity is composited).
+- **Links:** [console-reference](console-reference.md#colour), `styles.css`, `version-pill.tsx`.
 
 ### 2026-11-07: Colour meanings are tokens in styles.css, with one band mapping for severity and threat
 - **Decision:** version model/human/official, not yet official (`#8cc5cf`, replacing the orange in charts, legends and split bars), the severity bands and card hover are semantic CSS variables in `styles.css` with a comment table. One helper (`levelBand`) maps 5 and 4 to high, 3 to medium, 2 and 1 to low for severity and threat; severity pills derive tint and border from the band token with `color-mix`. The official star in History uses the official token. A test fails if a meaning hex appears outside `styles.css` and the two canvas mirrors. Severity 4 is now the high band (it was a separate orange).
