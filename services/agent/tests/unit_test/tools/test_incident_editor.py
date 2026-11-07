@@ -115,3 +115,16 @@ def test_nulls_the_model_filled_in_are_left_out_but_a_holder_of_nobody_stays() -
         ]
         == "p1"
     )
+
+
+def test_a_nobody_holder_is_left_out_of_an_upserted_instrument() -> None:
+    for nobody in (None, "nobody", " None "):
+        assert incident_editor._set_arguments(
+            "upsert_instrument", {"op": "add", "name": "knife", "holder_key": nobody}
+        ) == {"op": "add", "name": "knife"}
+    assert (
+        incident_editor._set_arguments("upsert_instrument", {"op": "edit", "item_key": "k1", "holder_key": "p1"})[
+            "holder_key"
+        ]
+        == "p1"
+    )

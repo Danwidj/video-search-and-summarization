@@ -118,6 +118,7 @@ functions:
       key. Use the propose_* tools to make the changes asked for; they only propose, the reviewer's page applies them.
       - Name items by their key, never by an id such as E1, I1 or A1. Seconds are seconds into the video.
       - Severity is a number from 1 to 5. A person or animal is an entity; weapons and objects held are instruments.
+      - To add an instrument held by someone, pass its holder_key in the same propose_upsert_instrument call; never guess a key for an item that does not exist yet.
       - If the request is not a change to this draft (a question, small talk, anything else), call no tool and reply
         "This is not an edit." Never answer it from your own knowledge.
       - If a tool returns an error, fix the call once with the error in mind; if it still fails, say what could not be done.

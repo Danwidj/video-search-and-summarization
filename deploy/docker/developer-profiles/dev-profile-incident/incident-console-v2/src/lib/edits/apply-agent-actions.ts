@@ -103,6 +103,7 @@ const instrumentFields = {
   name: z.string().optional(),
   description: z.string().optional(),
   threatLevel: threatLevel.optional(),
+  holderKey: itemKey.optional(),
   timestampSeconds: seconds.optional(),
 };
 const upsertInstrument = z.discriminatedUnion('op', [
@@ -222,11 +223,12 @@ const upsertInstrumentHandler: Handler = (draft, args) => {
   const data = parse(upsertInstrument, args);
   if (data.op === 'add') {
     const base = newItemDetails('instrument', draft);
+    if (data.holderKey !== undefined) ensureKey(draft.entities, data.holderKey, 'entity');
     const instrument: DraftInstrument = {
       ...base,
       ...defined({ timestampSeconds: data.timestampSeconds }),
       label: data.name ?? '',
-      holderKey: null,
+      holderKey: data.holderKey ?? null,
       name: data.name ?? '',
       description: data.description ?? '',
       threat_level: data.threatLevel ?? null,
@@ -235,10 +237,12 @@ const upsertInstrumentHandler: Handler = (draft, args) => {
   }
   ensureKey(draft.instruments, data.itemKey, 'instrument');
   if (data.op === 'delete') return { draft: deleteDraftItem(draft, 'instrument', data.itemKey) };
+  if (data.holderKey !== undefined) ensureKey(draft.entities, data.holderKey, 'entity');
   const patch = defined({
     name: data.name,
     description: data.description,
     threat_level: data.threatLevel,
+    holderKey: data.holderKey,
     timestampSeconds: data.timestampSeconds,
   });
   requireChange(patch, 'instrument field');
