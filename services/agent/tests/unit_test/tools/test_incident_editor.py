@@ -249,3 +249,4 @@ def test_the_report_editor_prompt_opens_the_box_tool_on_an_item_instead_of_refus
     assert "I can't do that in chat: re-tracking and images" not in prompt
     assert "call propose_open_box_tool with that item's key alone (no seconds or name)" in prompt
     assert "Never draw or locate a box yourself" in prompt
+    assert "I can't do that in chat: there is no such item in the draft." in prompt
