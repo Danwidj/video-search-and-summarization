@@ -41,6 +41,8 @@ export interface ReviewerDraftItem {
   description: string;
   holder?: string | null;
   threatLevel?: number | null;
+  /** A new entity's kind, chosen by the reviewer (never unknown). */
+  entityType?: 'human' | 'animal';
   aiProposal: BoxProposal | null;
   track: ReviewerTrack | null;
   stillSeconds?: number;

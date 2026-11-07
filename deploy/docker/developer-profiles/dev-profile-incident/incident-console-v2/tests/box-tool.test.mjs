@@ -94,6 +94,13 @@ test('adding an entity names it, spans the track and keeps its most visible seco
   assert.doesNotThrow(() => editFromDraft(next), 'the draft is a complete edit');
 });
 
+test('a new entity takes the human or animal type the reviewer chose in the dialog', () => {
+  for (const entityType of ['human', 'animal']) {
+    const next = tool.addBoxItem(emptyDraft(), item({ itemType: 'entity', name: 'Someone', entityType }), null);
+    assert.equal(next.entities[0].type, entityType);
+  }
+});
+
 test('adding an instrument keeps its holder and threat, and a still image sits at its own second', () => {
   const holder = tool.addBoxItem(emptyDraft(), item({ itemType: 'entity', name: 'Person 1' }), null);
   const key = holder.entities[0].key;

@@ -335,7 +335,7 @@ export function addReviewerItem(draft: EditDraft, item: ReviewerDraftItem): Edit
         {
           ...common,
           canonicalId: nextCanonicalEntityId(draft.entities),
-          type: 'unknown',
+          type: item.entityType ?? 'unknown',
           description: item.description,
           firstSeenSeconds: Math.floor(Math.min(span[0], seconds)),
           lastSeenSeconds: Math.ceil(Math.max(span[1], seconds)),
