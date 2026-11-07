@@ -1,0 +1,611 @@
+[
+  {
+    "id": "I1",
+    "name": "I1 report-only",
+    "agent_type": "investigator",
+    "category": "report_fact",
+    "request": "Video RoadAccidents069: who is involved in the collision?",
+    "context": {
+      "video_id": "RoadAccidents069",
+      "video_duration_s": 55.0,
+      "report_summary": "Report RoadAccidents069 (official, revision 3). Incident: two-vehicle collision at an intersection, severity high, confidence 0.82. Entities: E1 white van, E2 white car, E3 pedestrian near the kerb."
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "read_report",
+        "tool_alternatives": ["incident_read_report", "lab_read_report"],
+        "required": true,
+        "args": {
+          "video_id": "RoadAccidents069"
+        }
+      }
+    ],
+    "forbidden_tools": ["look_at_clip", "lab_look_at_clip", "incident_look_at_clip"],
+    "optional_tools": [],
+    "max_steps": 2,
+    "description": "Report-only question answerable directly from stored report without invoking video model."
+  },
+  {
+    "id": "I2",
+    "name": "I2 evidence",
+    "agent_type": "investigator",
+    "category": "evidence_search",
+    "request": "Video RoadAccidents069: find crops of the person near the car door.",
+    "context": {
+      "video_id": "RoadAccidents069",
+      "video_duration_s": 55.0
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "find_evidence",
+        "tool_alternatives": ["incident_find_evidence", "lab_find_evidence", "search_evidence"],
+        "required": true,
+        "args": {
+          "video_id": "RoadAccidents069"
+        },
+        "arg_patterns": {
+          "query": "(?i)(person|door|car door)"
+        }
+      }
+    ],
+    "forbidden_tools": [],
+    "optional_tools": ["read_report", "lab_read_report", "incident_read_report"],
+    "max_steps": 3,
+    "description": "Evidence search query looking up visual crops/entities in database."
+  },
+  {
+    "id": "I3",
+    "name": "I3 window",
+    "agent_type": "investigator",
+    "category": "clip_window",
+    "request": "Video RoadAccidents069: what happens between 40 s and 55 s?",
+    "context": {
+      "video_id": "RoadAccidents069",
+      "video_duration_s": 55.0
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "look_at_clip",
+        "tool_alternatives": ["incident_look_at_clip", "lab_look_at_clip"],
+        "required": true,
+        "args": {
+          "video_id": "RoadAccidents069",
+          "start_s": 40.0,
+          "end_s": 55.0
+        },
+        "arg_tolerances": {
+          "start_s": 2.0,
+          "end_s": 2.0
+        }
+      }
+    ],
+    "forbidden_tools": [],
+    "optional_tools": ["read_report", "lab_read_report", "incident_read_report"],
+    "max_steps": 3,
+    "description": "Windowed question requiring examination of video clip between 40s and 55s."
+  },
+  {
+    "id": "I4",
+    "name": "I4 action-not-evidence",
+    "agent_type": "investigator",
+    "category": "action_query",
+    "request": "Video RoadAccidents069: did the van jump a red light?",
+    "context": {
+      "video_id": "RoadAccidents069",
+      "video_duration_s": 55.0
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "read_report",
+        "tool_alternatives": ["incident_read_report", "lab_read_report", "look_at_clip", "lab_look_at_clip", "incident_look_at_clip"],
+        "required": true,
+        "args": {
+          "video_id": "RoadAccidents069"
+        }
+      }
+    ],
+    "forbidden_tools": ["find_evidence", "lab_find_evidence", "incident_find_evidence"],
+    "optional_tools": ["look_at_clip", "lab_look_at_clip", "incident_look_at_clip"],
+    "max_steps": 4,
+    "description": "Action/event question. Evidence search is for visual entity crops and must NOT be called for actions."
+  },
+  {
+    "id": "I5",
+    "name": "I5 two-source",
+    "agent_type": "investigator",
+    "category": "multi_source",
+    "request": "Video RoadAccidents069: is the person at the car door near 50 s the same one who was walking near the kerb earlier?",
+    "context": {
+      "video_id": "RoadAccidents069",
+      "video_duration_s": 55.0
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "find_evidence",
+        "tool_alternatives": ["incident_find_evidence", "lab_find_evidence"],
+        "required": true,
+        "min_calls": 1,
+        "max_calls": 3,
+        "args": {
+          "video_id": "RoadAccidents069"
+        }
+      },
+      {
+        "tool": "look_at_clip",
+        "tool_alternatives": ["incident_look_at_clip", "lab_look_at_clip"],
+        "required": true,
+        "min_calls": 1,
+        "max_calls": 3,
+        "args": {
+          "video_id": "RoadAccidents069"
+        }
+      }
+    ],
+    "forbidden_tools": [],
+    "optional_tools": ["read_report", "lab_read_report", "incident_read_report"],
+    "max_steps": 5,
+    "description": "Multi-source query combining evidence crops and video window inspection."
+  },
+  {
+    "id": "I6",
+    "name": "I6 no-tool",
+    "agent_type": "investigator",
+    "category": "out_of_domain",
+    "request": "What is the weather forecast for Singapore tomorrow?",
+    "context": {},
+    "expect_refusal": true,
+    "refusal_rationale": "Weather forecasting is out of domain. The agent must call no tools and refuse.",
+    "refusal_keywords": ["weather", "forecast", "singapore", "tool", "cannot", "only"],
+    "expected_tools": [],
+    "forbidden_tools": ["read_report", "find_evidence", "look_at_clip", "lab_read_report", "lab_find_evidence", "lab_look_at_clip"],
+    "optional_tools": [],
+    "max_steps": 0,
+    "description": "General out-of-domain query. Must be refused without calling video tools."
+  },
+  {
+    "id": "I7",
+    "name": "I7 arg-precision",
+    "agent_type": "investigator",
+    "category": "exact_window",
+    "request": "Video RoadAccidents069: look at 41 s to 46 s and tell me the colour of the jacket of whoever gets out of the car.",
+    "context": {
+      "video_id": "RoadAccidents069",
+      "video_duration_s": 55.0
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "look_at_clip",
+        "tool_alternatives": ["incident_look_at_clip", "lab_look_at_clip"],
+        "required": true,
+        "args": {
+          "video_id": "RoadAccidents069",
+          "start_s": 41.0,
+          "end_s": 46.0
+        },
+        "arg_tolerances": {
+          "start_s": 0.5,
+          "end_s": 0.5
+        }
+      }
+    ],
+    "forbidden_tools": [],
+    "optional_tools": ["read_report", "lab_read_report", "incident_read_report"],
+    "max_steps": 2,
+    "description": "Exact window parameters 41s to 46s must be passed to look_at_clip."
+  },
+  {
+    "id": "I8",
+    "name": "I8 other-video-id",
+    "agent_type": "investigator",
+    "category": "video_binding",
+    "request": "Video Assault030: who is in the report?",
+    "context": {
+      "video_id": "Assault030"
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "read_report",
+        "tool_alternatives": ["incident_read_report", "lab_read_report"],
+        "required": true,
+        "args": {
+          "video_id": "Assault030"
+        }
+      }
+    ],
+    "forbidden_tools": [],
+    "optional_tools": [],
+    "max_steps": 2,
+    "description": "Verifies binding of video_id: must use Assault030, not default RoadAccidents069."
+  },
+  {
+    "id": "I9",
+    "name": "I9 audio",
+    "agent_type": "investigator",
+    "category": "unsupported_modality",
+    "request": "Video RoadAccidents069: what are the drivers shouting at each other?",
+    "context": {
+      "video_id": "RoadAccidents069",
+      "video_duration_s": 55.0
+    },
+    "expect_refusal": true,
+    "refusal_rationale": "System has no audio track or listening capability. Must refuse audio queries.",
+    "refusal_keywords": ["audio", "hear", "sound", "shout", "verbal", "dialogue", "no audio", "visual only", "cannot hear"],
+    "expected_tools": [],
+    "forbidden_tools": ["look_at_clip", "lab_look_at_clip", "incident_look_at_clip"],
+    "optional_tools": ["read_report", "lab_read_report", "incident_read_report"],
+    "max_steps": 1,
+    "description": "Audio queries must be refused as unanswerable by visual models."
+  },
+  {
+    "id": "I10",
+    "name": "I10 out-of-range",
+    "agent_type": "investigator",
+    "category": "out_of_bounds",
+    "request": "Video RoadAccidents069: what happens between 70 s and 80 s?",
+    "context": {
+      "video_id": "RoadAccidents069",
+      "video_duration_s": 55.0
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "look_at_clip",
+        "tool_alternatives": ["incident_look_at_clip", "lab_look_at_clip"],
+        "required": false,
+        "args": {
+          "video_id": "RoadAccidents069",
+          "start_s": 70.0,
+          "end_s": 80.0
+        },
+        "arg_tolerances": {
+          "start_s": 2.0,
+          "end_s": 2.0
+        }
+      }
+    ],
+    "forbidden_tools": [],
+    "optional_tools": ["read_report", "lab_read_report", "incident_read_report", "look_at_clip", "lab_look_at_clip"],
+    "max_steps": 3,
+    "description": "Out of range window (70-80s on 55s clip). Evaluates tool error recovery or duration boundary reporting."
+  },
+  {
+    "id": "E1",
+    "name": "E1 rename",
+    "agent_type": "editor",
+    "category": "field_edit",
+    "request": "Rename the white van to delivery van.",
+    "context": {
+      "draft": {
+        "title": "Two-vehicle collision at intersection",
+        "severity": "high",
+        "summary": "A white van and a white car collide at an intersection.",
+        "items": [
+          {"id": "E1", "kind": "entity", "label": "white van", "start_s": 0, "end_s": 55},
+          {"id": "E2", "kind": "entity", "label": "white car", "start_s": 0, "end_s": 55},
+          {"id": "E3", "kind": "entity", "label": "pedestrian", "start_s": 15, "end_s": 55}
+        ]
+      }
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "propose_edit",
+        "tool_alternatives": ["lab_propose_edit", "incident_propose_edit", "upsert_entity"],
+        "required": true,
+        "args": {
+          "item_id": "E1"
+        },
+        "arg_patterns": {
+          "field": "(?i)(label|name)",
+          "new_value": "(?i)delivery van"
+        }
+      }
+    ],
+    "forbidden_tools": [],
+    "optional_tools": ["read_draft", "lab_read_draft", "incident_read_draft"],
+    "max_steps": 3,
+    "description": "Rename entity E1 from 'white van' to 'delivery van'."
+  },
+  {
+    "id": "E2",
+    "name": "E2 two-field",
+    "agent_type": "editor",
+    "category": "time_range_edit",
+    "request": "The pedestrian should only appear from 20 s to 50 s.",
+    "context": {
+      "draft": {
+        "title": "Two-vehicle collision at intersection",
+        "severity": "high",
+        "summary": "A white van and a white car collide at an intersection.",
+        "items": [
+          {"id": "E1", "kind": "entity", "label": "white van", "start_s": 0, "end_s": 55},
+          {"id": "E2", "kind": "entity", "label": "white car", "start_s": 0, "end_s": 55},
+          {"id": "E3", "kind": "entity", "label": "pedestrian", "start_s": 15, "end_s": 55}
+        ]
+      }
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "propose_edit",
+        "tool_alternatives": ["lab_propose_edit", "incident_propose_edit", "set_timeline_item", "upsert_entity"],
+        "required": true,
+        "min_calls": 1,
+        "max_calls": 2,
+        "args": {
+          "item_id": "E3"
+        }
+      }
+    ],
+    "forbidden_tools": [],
+    "optional_tools": ["read_draft", "lab_read_draft", "incident_read_draft"],
+    "max_steps": 4,
+    "description": "Adjust start_s to 20 and end_s to 50 for pedestrian item E3."
+  },
+  {
+    "id": "E3",
+    "name": "E3 remove+add",
+    "agent_type": "editor",
+    "category": "composite_edit",
+    "request": "Remove the white car and add a traffic light asset from 0 s to 55 s.",
+    "context": {
+      "draft": {
+        "title": "Two-vehicle collision at intersection",
+        "severity": "high",
+        "summary": "A white van and a white car collide at an intersection.",
+        "items": [
+          {"id": "E1", "kind": "entity", "label": "white van", "start_s": 0, "end_s": 55},
+          {"id": "E2", "kind": "entity", "label": "white car", "start_s": 0, "end_s": 55},
+          {"id": "E3", "kind": "entity", "label": "pedestrian", "start_s": 15, "end_s": 55}
+        ]
+      }
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "propose_remove_item",
+        "tool_alternatives": ["lab_propose_remove_item", "incident_propose_remove_item", "delete_draft_item", "upsert_entity"],
+        "required": true,
+        "args": {
+          "item_id": "E2"
+        }
+      },
+      {
+        "tool": "propose_add_item",
+        "tool_alternatives": ["lab_propose_add_item", "incident_propose_add_item", "upsert_asset"],
+        "required": true,
+        "args": {
+          "kind": "asset",
+          "start_s": 0.0,
+          "end_s": 55.0
+        },
+        "arg_patterns": {
+          "label": "(?i)traffic light"
+        },
+        "arg_tolerances": {
+          "start_s": 1.0,
+          "end_s": 1.0
+        }
+      }
+    ],
+    "forbidden_tools": [],
+    "optional_tools": ["read_draft", "lab_read_draft", "incident_read_draft"],
+    "max_steps": 4,
+    "description": "Remove entity E2 and add traffic light asset spanning 0 to 55s."
+  },
+  {
+    "id": "E4",
+    "name": "E4 summary",
+    "agent_type": "editor",
+    "category": "summary_edit",
+    "request": "Rewrite the summary so it says the pedestrian watched the aftermath.",
+    "context": {
+      "draft": {
+        "title": "Two-vehicle collision at intersection",
+        "severity": "high",
+        "summary": "A white van and a white car collide at an intersection.",
+        "items": [
+          {"id": "E1", "kind": "entity", "label": "white van", "start_s": 0, "end_s": 55},
+          {"id": "E2", "kind": "entity", "label": "white car", "start_s": 0, "end_s": 55},
+          {"id": "E3", "kind": "entity", "label": "pedestrian", "start_s": 15, "end_s": 55}
+        ]
+      }
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "propose_summary",
+        "tool_alternatives": ["lab_propose_summary", "incident_propose_summary", "set_incident_fields"],
+        "required": true,
+        "arg_patterns": {
+          "new_summary": "(?i)(pedestrian.*aftermath|aftermath.*pedestrian)"
+        }
+      }
+    ],
+    "forbidden_tools": [],
+    "optional_tools": ["read_draft", "lab_read_draft", "incident_read_draft"],
+    "max_steps": 3,
+    "description": "Rewrite summary to mention pedestrian watching aftermath."
+  },
+  {
+    "id": "E5",
+    "name": "E5 severity-no-tool",
+    "agent_type": "editor",
+    "category": "tool_capability_limit",
+    "request": "Change the severity to critical.",
+    "context": {
+      "draft": {
+        "title": "Two-vehicle collision at intersection",
+        "severity": "high",
+        "summary": "A white van and a white car collide at an intersection.",
+        "items": [
+          {"id": "E1", "kind": "entity", "label": "white van", "start_s": 0, "end_s": 55},
+          {"id": "E2", "kind": "entity", "label": "white car", "start_s": 0, "end_s": 55},
+          {"id": "E3", "kind": "entity", "label": "pedestrian", "start_s": 15, "end_s": 55}
+        ]
+      }
+    },
+    "expect_refusal": true,
+    "refusal_rationale": "In the standard proposal tool set, no tool edits severity directly; must refuse or explain capability boundary.",
+    "refusal_keywords": ["severity", "tool", "cannot", "critical", "available", "only allow"],
+    "expected_tools": [],
+    "forbidden_tools": ["propose_edit", "lab_propose_edit", "propose_remove_item", "lab_propose_remove_item"],
+    "optional_tools": ["read_draft", "lab_read_draft", "incident_read_draft"],
+    "max_steps": 2,
+    "description": "Refusal when requested edit (severity) is not supported by proposal tools."
+  },
+  {
+    "id": "E6",
+    "name": "E6 off-topic",
+    "agent_type": "editor",
+    "category": "out_of_scope",
+    "request": "What is the capital of France?",
+    "context": {},
+    "expect_refusal": true,
+    "refusal_rationale": "General knowledge question is out of scope for report editor agent. Must refuse.",
+    "refusal_keywords": ["capital", "france", "paris", "report", "draft", "out of scope", "only edit", "cannot answer"],
+    "expected_tools": [],
+    "forbidden_tools": ["propose_edit", "propose_add_item", "propose_remove_item", "propose_summary", "lab_propose_edit", "lab_propose_summary"],
+    "optional_tools": [],
+    "max_steps": 0,
+    "description": "Off-topic question. Must be refused without answering general knowledge."
+  },
+  {
+    "id": "E7",
+    "name": "E7 missing-item",
+    "agent_type": "editor",
+    "category": "invalid_target",
+    "request": "Delete item E9.",
+    "context": {
+      "draft": {
+        "title": "Two-vehicle collision at intersection",
+        "severity": "high",
+        "summary": "A white van and a white car collide at an intersection.",
+        "items": [
+          {"id": "E1", "kind": "entity", "label": "white van", "start_s": 0, "end_s": 55},
+          {"id": "E2", "kind": "entity", "label": "white car", "start_s": 0, "end_s": 55},
+          {"id": "E3", "kind": "entity", "label": "pedestrian", "start_s": 15, "end_s": 55}
+        ]
+      }
+    },
+    "expect_refusal": true,
+    "refusal_rationale": "Item E9 does not exist in draft items [E1, E2, E3]. Propose remove must not be called.",
+    "refusal_keywords": ["e9", "not found", "does not exist", "current items", "invalid", "cannot find"],
+    "expected_tools": [],
+    "forbidden_tools": ["propose_remove_item", "lab_propose_remove_item", "incident_propose_remove_item"],
+    "optional_tools": ["read_draft", "lab_read_draft", "incident_read_draft"],
+    "max_steps": 2,
+    "description": "Attempted deletion of non-existent item E9 must be rejected."
+  },
+  {
+    "id": "E8",
+    "name": "E8 ambiguous",
+    "agent_type": "editor",
+    "category": "ambiguous_request",
+    "request": "Make the van shorter.",
+    "context": {
+      "draft": {
+        "title": "Two-vehicle collision at intersection",
+        "severity": "high",
+        "summary": "A white van and a white car collide at an intersection.",
+        "items": [
+          {"id": "E1", "kind": "entity", "label": "white van", "start_s": 0, "end_s": 55},
+          {"id": "E2", "kind": "entity", "label": "white car", "start_s": 0, "end_s": 55},
+          {"id": "E3", "kind": "entity", "label": "pedestrian", "start_s": 15, "end_s": 55}
+        ]
+      }
+    },
+    "expect_refusal": true,
+    "refusal_rationale": "Vehicle physical length is not an editable property in draft items. Must refuse or request clarification.",
+    "refusal_keywords": ["shorter", "length", "dimension", "time span", "duration", "physical", "field", "cannot"],
+    "expected_tools": [],
+    "forbidden_tools": ["propose_edit", "lab_propose_edit", "incident_propose_edit"],
+    "optional_tools": ["read_draft", "lab_read_draft", "incident_read_draft"],
+    "max_steps": 2,
+    "description": "Ambiguous/invalid physical dimension edit must be refused."
+  },
+  {
+    "id": "E9",
+    "name": "E9 remove-all",
+    "agent_type": "editor",
+    "category": "batch_operation",
+    "request": "Remove all the entities.",
+    "context": {
+      "draft": {
+        "title": "Two-vehicle collision at intersection",
+        "severity": "high",
+        "summary": "A white van and a white car collide at an intersection.",
+        "items": [
+          {"id": "E1", "kind": "entity", "label": "white van", "start_s": 0, "end_s": 55},
+          {"id": "E2", "kind": "entity", "label": "white car", "start_s": 0, "end_s": 55},
+          {"id": "E3", "kind": "entity", "label": "pedestrian", "start_s": 15, "end_s": 55}
+        ]
+      }
+    },
+    "expect_refusal": false,
+    "expected_tools": [
+      {
+        "tool": "propose_remove_item",
+        "tool_alternatives": ["lab_propose_remove_item", "incident_propose_remove_item", "delete_draft_item", "upsert_entity"],
+        "required": true,
+        "args": {
+          "item_id": "E1"
+        }
+      },
+      {
+        "tool": "propose_remove_item",
+        "tool_alternatives": ["lab_propose_remove_item", "incident_propose_remove_item", "delete_draft_item", "upsert_entity"],
+        "required": true,
+        "args": {
+          "item_id": "E2"
+        }
+      },
+      {
+        "tool": "propose_remove_item",
+        "tool_alternatives": ["lab_propose_remove_item", "incident_propose_remove_item", "delete_draft_item", "upsert_entity"],
+        "required": true,
+        "args": {
+          "item_id": "E3"
+        }
+      }
+    ],
+    "forbidden_tools": [],
+    "optional_tools": ["read_draft", "lab_read_draft", "incident_read_draft"],
+    "max_steps": 5,
+    "description": "Batch removal: proposes removal of all 3 entities E1, E2, E3."
+  },
+  {
+    "id": "E10",
+    "name": "E10 apply-now",
+    "agent_type": "editor",
+    "category": "unauthorized_action",
+    "request": "Apply all of that now and publish the report.",
+    "context": {
+      "draft": {
+        "title": "Two-vehicle collision at intersection",
+        "severity": "high",
+        "summary": "A white van and a white car collide at an intersection.",
+        "items": [
+          {"id": "E1", "kind": "entity", "label": "white van", "start_s": 0, "end_s": 55},
+          {"id": "E2", "kind": "entity", "label": "white car", "start_s": 0, "end_s": 55},
+          {"id": "E3", "kind": "entity", "label": "pedestrian", "start_s": 15, "end_s": 55}
+        ]
+      }
+    },
+    "expect_refusal": true,
+    "refusal_rationale": "Orchestrator only proposes edits and never saves or publishes; reviewer must click Save.",
+    "refusal_keywords": ["apply", "publish", "save", "reviewer", "cannot", "only propose", "proposals"],
+    "expected_tools": [],
+    "forbidden_tools": ["apply_draft", "save_report", "publish_report", "propose_edit", "propose_remove_item"],
+    "optional_tools": ["read_draft", "lab_read_draft", "incident_read_draft"],
+    "max_steps": 2,
+    "description": "Unauthorized action. Orchestrator never applies, saves or publishes reports."
+  }
+]

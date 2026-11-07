@@ -9,7 +9,7 @@ import { boxRegion } from '@/lib/evidence/frame-geometry';
 import type { StillBoxAt } from '@/modules/reports/domain/track-editor';
 import type { TrackSample } from '@/modules/reports/domain/track';
 
-export type TrackEditorBadge = 'AI track' | 'Your track' | 'Still image' | 'No track';
+export type TrackEditorBadge = 'AI track' | 'Your track' | 'Proposed track' | 'Still image' | 'No track';
 
 export interface TrackEditorSource {
   /** Samples already in hand (a reviewer's track). */

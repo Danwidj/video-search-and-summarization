@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { NextResponse } from 'next/server';
-import { sendAgentChat } from '@/modules/chat/infrastructure/agent/agent-chat';
+import { sendAgentChat, sendAgentInvestigate } from '@/modules/chat/infrastructure/agent/agent-chat';
 import { chatErrorResponse } from '@/modules/chat/infrastructure/agent/chat-errors';
-import { getServiceConfiguration } from '@/lib/env';
-import type { ChatMessage } from '@/modules/chat/domain/chat';
+import { CHAT_EDITOR_REFUSAL_PREFIX } from '@/lib/chat/report-chat';
+import { getServiceConfiguration, isChatStepsEnabled } from '@/lib/env';
+import { UpstreamError } from '@/lib/http';
+import type { ChatMessage, EvidenceExchange } from '@/modules/chat/domain/chat';
 
 export const maxDuration = 120;
 export async function POST(request: Request) {
@@ -16,6 +18,11 @@ export async function POST(request: Request) {
       evidenceCropIds?: string[];
       versionId?: number;
       draftReport?: Record<string, unknown>;
+      steps?: boolean;
+      /** The draft snapshot (lib/edits/chat-edit.ts) the page sends when the chat may edit. */
+      editDraft?: Record<string, unknown>;
+      /** The new-evidence exchange still open in the chat (lib/chat/evidence-ask.ts), sent with the question. */
+      evidence?: EvidenceExchange;
     };
     if (!input.messages?.length) return NextResponse.json({ error: 'At least one message is required' }, { status: 400 });
     if (input.versionId != null && !(Number.isInteger(input.versionId) && input.versionId >= 1))
@@ -24,6 +31,45 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'A draft report needs the versionId it was edited from' }, { status: 400 });
     const config = getServiceConfiguration();
     if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
+
+    const editing = input.editDraft != null && typeof input.editDraft === 'object';
+    const stepsRequested = isChatStepsEnabled(request) || input.steps === true;
+    if ((stepsRequested || editing) && input.incidentId) {
+      const lastQuestion = [...input.messages]
+        .reverse()
+        .find((m) => m.role === 'user')
+        ?.content?.trim();
+      if (lastQuestion) {
+        try {
+          const { agentUrl } = config;
+          const incidentId = input.incidentId as string;
+          // The new-evidence exchange goes only with the draft: only the editor takes it.
+          const investigate = (draft?: Record<string, unknown>) =>
+            sendAgentInvestigate(
+              agentUrl,
+              incidentId,
+              lastQuestion,
+              AbortSignal.timeout(115000),
+              draft,
+              draft ? input.evidence : undefined,
+            );
+          const edited = editing ? await investigate(input.editDraft) : null;
+          // An editor that ran no tool was not asked to edit: the question goes on to the usual routes, unchanged,
+          // unless the editor explicitly refused an unsupported edit (starts with CHAT_EDITOR_REFUSAL_PREFIX).
+          if (edited?.message.steps?.length) return NextResponse.json(edited);
+          if (edited?.message.content.trim().startsWith(CHAT_EDITOR_REFUSAL_PREFIX)) {
+            return NextResponse.json(edited);
+          }
+          if (stepsRequested) return NextResponse.json(await investigate());
+        } catch (investigateError) {
+          // If the agent endpoint is 404 or 501, fall through to stock agent chat
+          if (!(investigateError instanceof UpstreamError && (investigateError.status === 404 || investigateError.status === 501))) {
+            return chatErrorResponse(investigateError, 'Follow-up chat (investigator)');
+          }
+        }
+      }
+    }
+
     const result = await sendAgentChat(
       config.agentUrl,
       {

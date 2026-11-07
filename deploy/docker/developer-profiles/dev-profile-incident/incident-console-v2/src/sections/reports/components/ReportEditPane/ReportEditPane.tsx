@@ -2,6 +2,7 @@
 
 'use client';
 
+import { INCIDENT_HIGHLIGHT_KEY } from '@/lib/edits/chat-edit';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { PlusIcon } from 'lucide-react';
 
@@ -15,7 +16,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { evidenceDisplay, videoFrameUrl } from '@/lib/evidence/evidence-view';
 import type { BoxToolClient } from '@/lib/evidence/box-tool-client';
-import { addBoxItem, holderChoices, retrackDraftItem } from '@/lib/evidence/box-tool';
+import { addBoxItem, type BoxOpening, type EvidenceOpening, holderChoices, isItemOpening, retrackDraftItem } from '@/lib/evidence/box-tool';
+import {
+  confirmAdjusted,
+  confirmProposal,
+  describeProposal,
+  dismissProposal,
+  findDraftItem,
+  proposeEvidence,
+} from '@/lib/evidence/evidence-proposals';
 import { pickSeed, setImagePick } from '@/lib/evidence/image-pick';
 import {
   deleteDraftItem,
@@ -35,7 +44,12 @@ import {
 } from '@/lib/reports/compare';
 import { severityStyle } from '@/lib/ui/severity';
 import { cn } from '@/lib/utils';
-import type { ImagePick, ReviewerDraftItem as BoxToolItem, ReviewerTrack } from '@/modules/reports/domain/reviewer-item';
+import {
+  firstSeen,
+  type ImagePick,
+  type ReviewerDraftItem as BoxToolItem,
+  type ReviewerTrack,
+} from '@/modules/reports/domain/reviewer-item';
 import type { EvidenceItemType as BoxItemType } from '@/modules/reports/domain/revision';
 import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, type EditDraft } from '@/modules/reports/domain/edit-draft';
 import { formatClock } from '@/modules/reports/domain/normalize';
@@ -50,6 +64,9 @@ import { trackEditorSource } from '@/lib/evidence/track-editor-source';
 
 const capitalize = (value: string | null) => (value ? value[0].toUpperCase() + value.slice(1) : 'Unclassified');
 const clock = (seconds: number | null) => (seconds === null ? '—' : formatClock(seconds));
+/** The highlight on what the chat changed: it stays until the reviewer edits by hand. */
+const ASSISTANT_RING = 'ring-2 ring-primary ring-offset-2 ring-offset-background';
+
 const rowKey = (row: PairRow) => `${row.kind}-${row.b?.key ?? (row.a ? savedItemId(row.a) : '')}`;
 const draftDisplayId = (item: NonNullable<PairRow['b']>) =>
   isDraftEntity(item) ? item.canonicalId : (item.sourceId ?? (isDraftInstrument(item) ? 'New instrument' : 'New asset'));
@@ -80,6 +97,9 @@ export function ReportEditPane({
   onSeek,
   boxClient,
   officialMissing = false,
+  evidenceOpening = null,
+  onEvidenceOpened,
+  assistantKeys = [],
 }: {
   a: Structured | null;
   aRevisionNo: number;
@@ -100,9 +120,28 @@ export function ReportEditPane({
   /** Open the existing box tool immediately when entering Edit from the View evidence section. */
   /** True once revisions have loaded and none of them is official. */
   officialMissing?: boolean;
+  /**
+   * What the chat's open_box_tool proposal asks for: new evidence (the box tool opens with the name filled in), or an existing
+   * item to redraw (the box tool opens on it in re-track mode).
+   */
+  evidenceOpening?: BoxOpening | null;
+  /** Called once the box tool has opened on `evidenceOpening`, so the page does not open it again when this pane remounts. */
+  onEvidenceOpened?: () => void;
+  /** Keys of the items the chat's last edit added or changed, and INCIDENT_HIGHLIGHT_KEY for the report fields: shown ringed. */
+  assistantKeys?: string[];
 }) {
-  // The box tool: adding new evidence, or re-tracking a card's item from a new box.
-  const [boxTool, setBoxTool] = useState<{ row: PairRow['b'] } | null>(null);
+  // The box tool: adding new evidence, or re-tracking a card's item from a new box. `redraw` is the chat's item: its new box is
+  // a proposal beside the item, not a change, until the reviewer confirms it.
+  const [boxTool, setBoxTool] = useState<{ row: PairRow['b']; opening?: EvidenceOpening; redraw?: boolean } | null>(null);
+  useEffect(() => {
+    if (!evidenceOpening) return;
+    if (!isItemOpening(evidenceOpening)) setBoxTool({ row: null, opening: evidenceOpening });
+    else {
+      const found = findDraftItem(draft, evidenceOpening.itemKey);
+      if (found) setBoxTool({ row: found.item, redraw: true });
+    }
+    onEvidenceOpened?.();
+  }, [evidenceOpening, onEvidenceOpened, draft]);
   const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLElement | null>(null);
   // The track editor: fix a card's track with keyframes. `saved` is the opened version's item, whose track it starts from.
   const [trackEditor, setTrackEditor] = useState<{
@@ -148,14 +187,24 @@ export function ReportEditPane({
   const finishImagePicker = (pick: ImagePick) => {
     const target = imagePicker?.row;
     if (!target) return;
-    onChange(setImagePick(draft, itemKind(target), target.key, pick));
+    const proposed = findDraftItem(draft, target.key)?.item.proposal;
+    onChange(
+      proposed?.kind === 'set_image' ? confirmAdjusted(draft, target.key, pick) : setImagePick(draft, itemKind(target), target.key, pick),
+    );
     setImagePicker(null);
   };
+  // Adjust opens the same dialog a hand edit uses, starting from the proposal; its Done confirms the adjusted result.
+  const adjustProposal = (row: PairRow) => (row.b?.proposal?.kind === 'retrack' ? editTrack(row) : setImage(row));
   const finishTrackEditor = (track: ReviewerTrack) => {
     const target = trackEditor?.row;
     if (!target) return;
     const kind: BoxItemType = isDraftEntity(target) ? 'entity' : isDraftInstrument(target) ? 'instrument' : 'asset';
     const text = existingForTool(target);
+    if (findDraftItem(draft, target.key)?.item.proposal?.kind === 'retrack') {
+      onChange(confirmAdjusted(draft, target.key, track));
+      setTrackEditor(null);
+      return;
+    }
     onChange(
       retrackDraftItem(draft, kind, target.key, {
         itemType: kind,
@@ -170,7 +219,13 @@ export function ReportEditPane({
   };
   const finishBoxTool = (item: BoxToolItem, holderKey: string | null) => {
     const target = boxTool?.row ?? null;
-    if (target) {
+    if (target && boxTool?.redraw) {
+      // A new box for the chat's item: a re-track when it is a track, else the item's image at that second and box.
+      const proposal = item.track
+        ? { kind: 'retrack' as const, track: item.track, reason: null }
+        : { kind: 'set_image' as const, pick: firstSeen(item), reason: null };
+      onChange(proposeEvidence(draft, target.key, proposal));
+    } else if (target) {
       const kind: BoxItemType = isDraftEntity(target) ? 'entity' : isDraftInstrument(target) ? 'instrument' : 'asset';
       onChange(retrackDraftItem(draft, kind, target.key, item));
     } else onChange(addBoxItem(draft, item, holderKey));
@@ -249,7 +304,11 @@ export function ReportEditPane({
         </CardContent>
       </Card>
 
-      <Card className="mt-5 gap-0 border-border/80 py-0" data-testid="report-fields-compare">
+      <Card
+        className={`mt-5 gap-0 border-border/80 py-0 ${assistantKeys.includes(INCIDENT_HIGHLIGHT_KEY) ? ASSISTANT_RING : ''}`}
+        data-assistant-edit={assistantKeys.includes(INCIDENT_HIGHLIGHT_KEY) || undefined}
+        data-testid="report-fields-compare"
+      >
         <CardHeader className="gap-1 border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-4 py-3.5">
           <CardTitle className="text-base font-semibold">Report fields</CardTitle>
           <CardDescription className="text-xs">Compare the saved values with your editable draft</CardDescription>
@@ -450,6 +509,7 @@ export function ReportEditPane({
                 <PairRowView
                   aRevisionNo={aRevisionNo}
                   aColour={(row.a && savedColours.get(savedItemId(row.a))) ?? STILL_BOX_COLOUR}
+                  assistantEdited={Boolean(row.b && assistantKeys.includes(row.b.key))}
                   bColour={(row.b && draftColours.get(row.b.key)) ?? STILL_BOX_COLOUR}
                   videoId={videoId}
                   videoSrc={videoSrc}
@@ -461,6 +521,11 @@ export function ReportEditPane({
                   onRemove={remove}
                   onEditTrack={editTrack}
                   onSetImage={setImage}
+                  proposals={{
+                    onConfirm: () => row.b && onChange(confirmProposal(draft, row.b.key)),
+                    onAdjust: () => adjustProposal(row),
+                    onDismiss: () => row.b && onChange(dismissProposal(draft, row.b.key)),
+                  }}
                   onRevert={revert}
                   onSeek={onSeek}
                   patchAsset={patchAsset}
@@ -503,7 +568,10 @@ export function ReportEditPane({
           client={boxClient}
           existing={boxTool.row ? existingForTool(boxTool.row) : null}
           holders={holderChoices(draft)}
-          initialSeconds={boxTool.row ? existingForTool(boxTool.row).firstSeenSeconds : (draft.incident.start_timestamp ?? 0)}
+          initialName={boxTool.opening?.name}
+          initialSeconds={
+            boxTool.row ? existingForTool(boxTool.row).firstSeenSeconds : (boxTool.opening?.seconds ?? draft.incident.start_timestamp ?? 0)
+          }
           onClose={() => setBoxTool(null)}
           onDone={finishBoxTool}
           videoId={videoId}
@@ -519,6 +587,10 @@ const itemKind = (item: NonNullable<PairRow['b']>): BoxItemType =>
 
 /** What the track editor opens with: the item's track (the reviewer's or the saved one), else a still box, else nothing. */
 function trackEditorProps(item: NonNullable<PairRow['b']>, saved: NonNullable<PairRow['a']>['evidence'] | null) {
+  if (item.proposal?.kind === 'retrack') {
+    const { samples } = item.proposal.track;
+    return { badge: 'Proposed track' as const, samples, trackUrl: null, still: null, initialSeconds: samples[0].t };
+  }
   const source = trackEditorSource(item, saved);
   return {
     badge: source.badge,
@@ -539,11 +611,18 @@ function PairField({ label, left, right }: { label: string; left: React.ReactNod
   );
 }
 
+interface ProposalControls {
+  onConfirm: () => void;
+  onAdjust: () => void;
+  onDismiss: () => void;
+}
+
 type PatchEntity = (key: string, patch: Partial<EditDraft['entities'][number]>) => void;
 type PatchInstrument = (key: string, patch: Partial<EditDraft['instruments'][number]>) => void;
 type PatchAsset = (key: string, patch: Partial<EditDraft['assets'][number]>) => void;
 
 function PairRowView({
+  assistantEdited,
   aRevisionNo,
   aColour,
   bColour,
@@ -558,12 +637,15 @@ function PairRowView({
   onRemove,
   onEditTrack,
   onSetImage,
+  proposals,
   onRevert,
   onSeek,
   patchEntity,
   patchInstrument,
   patchAsset,
 }: {
+  /** The chat's last edit added or changed this row's item. */
+  assistantEdited: boolean;
   aRevisionNo: number;
   /** The colour each side's item has on the video. */
   aColour: string;
@@ -579,6 +661,7 @@ function PairRowView({
   onRemove: (row: PairRow) => void;
   onEditTrack: (row: PairRow) => void;
   onSetImage: (row: PairRow) => void;
+  proposals: ProposalControls | null;
   onRevert: (row: PairRow) => void;
   onSeek: (seconds: number) => void;
   patchEntity: PatchEntity;
@@ -601,7 +684,12 @@ function PairRowView({
           </div>
         )}
       </div>
-      <div className="min-w-0 snap-start border-r border-dotted border-border pr-3" data-row-kind={row.kind} data-side="B">
+      <div
+        className={`min-w-0 snap-start border-r border-dotted border-border pr-3 ${assistantEdited ? `rounded-lg ${ASSISTANT_RING}` : ''}`}
+        data-assistant-edit={assistantEdited || undefined}
+        data-row-kind={row.kind}
+        data-side="B"
+      >
         {row.b ? (
           <EditCard
             colour={bColour}
@@ -614,6 +702,7 @@ function PairRowView({
             onRemove={() => onRemove(row)}
             onEditTrack={() => onEditTrack(row)}
             onSetImage={() => onSetImage(row)}
+            proposals={proposals}
             onRevert={changed ? () => onRevert(row) : null}
             onSeek={onSeek}
             patchAsset={patchAsset}
@@ -721,6 +810,7 @@ function EditCard({
   onRemove,
   onEditTrack,
   onSetImage,
+  proposals,
   onRevert,
   onSeek,
   patchEntity,
@@ -738,6 +828,7 @@ function EditCard({
   onRemove: () => void;
   onEditTrack: () => void;
   onSetImage: () => void;
+  proposals: ProposalControls | null;
   onRevert: (() => void) | null;
   onSeek: (seconds: number) => void;
   patchEntity: PatchEntity;
@@ -898,6 +989,24 @@ function EditCard({
         <p className="text-ink/50">
           Most visible at <b className="font-mono">{clock(item.timestampSeconds)}</b>
         </p>
+      )}
+      {proposals && item.proposal && (
+        <div className="rounded-md border border-clay/40 bg-clay/5 p-2" data-testid="evidence-proposal">
+          <p className="font-semibold text-clay">Proposed evidence change, not applied yet</p>
+          <p className="text-ink/70">{describeProposal(item.proposal)}</p>
+          {item.proposal.reason && <p className="text-ink/50">{item.proposal.reason}</p>}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
+            <Button data-testid="proposal-confirm" onClick={proposals.onConfirm} size="xs" type="button">
+              Confirm
+            </Button>
+            <Button data-testid="proposal-adjust" onClick={proposals.onAdjust} size="xs" type="button" variant="outline">
+              Adjust
+            </Button>
+            <Button data-testid="proposal-dismiss" onClick={proposals.onDismiss} size="xs" type="button" variant="ghost">
+              Dismiss
+            </Button>
+          </div>
+        </div>
       )}
       {pick && (
         <p className="text-ink/50" data-testid="image-pick-line">
