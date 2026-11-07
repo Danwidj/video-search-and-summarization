@@ -98,7 +98,7 @@ test('edit mode pairs every evidence row with A and saves the whole draft as a n
   assert.match(editor, /pairReport/);
   assert.match(editor, /ReadCard/);
   assert.match(editor, /EditCard/);
-  assert.match(editor, /New in B/);
+  assert.match(editor, /Not in v4\./, 'an item missing from the saved version is a hatched Not in v4 card');
   assert.match(editor, /Deleted/);
   assert.match(editor, /Revert to v/);
   assert.match(editor, /Delete/);
@@ -157,13 +157,17 @@ test('edit evidence pairs fit the evidence-card footprint', async () => {
   const edit = await readFile(new URL('reports/components/ReportEditPane/ReportEditPane.tsx', components), 'utf8');
   const carousel = await readFile(new URL('evidence/components/EvidenceCarousel/EvidenceCarousel.tsx', components), 'utf8');
   assert.match(edit, /<EvidenceCarousel[^>]* lanes>/, 'the A and B lanes sit in the carousel, which sets their width');
-  assert.match(carousel, /auto-cols-\[min\(24rem,calc\(100vw-4rem\)\)\]/, 'a pair is one evidence card wide');
+  assert.match(
+    carousel,
+    /auto-cols-\[min\(15\.5rem,calc\(100vw-4rem\)\)\]/,
+    'a pair is one 250 px evidence card wide, as the approved mockup',
+  );
   assert.doesNotMatch(`${edit}${carousel}`, /min\(42rem,calc\(100vw-4rem\)\)/, 'never the old double-width pair');
   assert.match(edit, /CardHeader className="gap-0 border-b/, 'an edit card has the same title band under its image as a View card');
   assert.match(edit, /max-w-88 gap-0 overflow-hidden/, 'the video and title content have no card-level gap');
   assert.match(edit, /<DraftVideoFrame/, 'a newly selected box is previewed from the browser-loaded video in its draft card');
   assert.match(edit, /testId="draft-evidence-video-preview"/);
-  assert.match(edit, /data-testid="edit-readonly-evidence-id"/, 'the read-only A card has the same ID badge as View');
+  assert.doesNotMatch(edit, /edit-readonly-evidence-id/, 'the Edit page shows no ID chip: the names identify the items');
   assert.match(edit, /kind=\{kind\}/, 'the read-only A card has the same image kind badge as View');
 });
 

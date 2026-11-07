@@ -14,10 +14,13 @@ export function ReportTimeline({
   videoSeconds,
   currentTime,
   onSeek,
+  bare = false,
 }: {
   structured: ReportView['structured'];
   videoSeconds: number | null;
   currentTime: number;
+  /** The Edit page's timeline: a plain heading and no legend, as its mockup shows. */
+  bare?: boolean;
   onSeek: (seconds: number) => void;
 }) {
   const lanes = buildTimelineLanes(structured);
@@ -27,17 +30,21 @@ export function ReportTimeline({
 
   return (
     <section aria-label="Timeline" className="flex h-full min-h-0 flex-col bg-card" data-testid="report-timeline">
-      <div className="border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-3 py-2.5">
-        <h3 className="text-sm font-semibold text-foreground">Timeline · one lane per entity and what they hold</h3>
-        <p className="mt-1 flex gap-3 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
-          {(['entity', 'instrument', 'asset'] as const).map((kind) => (
-            <span className="flex items-center gap-1" key={kind}>
-              <i className={`inline-block size-2 ${MARKER_SHAPE[kind]} ${KIND_COLOUR[kind]}`} />
-              {LEGEND_LABEL[kind]}
-            </span>
-          ))}
-        </p>
-      </div>
+      {bare ? (
+        <div className="px-3 pt-2 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Timeline</div>
+      ) : (
+        <div className="border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-3 py-2.5">
+          <h3 className="text-sm font-semibold text-foreground">Timeline · one lane per entity and what they hold</h3>
+          <p className="mt-1 flex gap-3 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
+            {(['entity', 'instrument', 'asset'] as const).map((kind) => (
+              <span className="flex items-center gap-1" key={kind}>
+                <i className={`inline-block size-2 ${MARKER_SHAPE[kind]} ${KIND_COLOUR[kind]}`} />
+                {LEGEND_LABEL[kind]}
+              </span>
+            ))}
+          </p>
+        </div>
+      )}
       {lanes.length === 0 ? (
         <p className="px-3 py-4 text-sm text-muted-foreground" data-testid="timeline-empty">
           This version has no evidence items to place on a timeline.
