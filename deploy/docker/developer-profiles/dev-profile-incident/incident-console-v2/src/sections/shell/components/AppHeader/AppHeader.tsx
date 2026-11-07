@@ -25,13 +25,21 @@ export const HEADER_END_SLOT = 'app-header-end';
 export function AppHeader({
   active,
   subtitle = 'Video intelligence',
+  fullWidth = false,
 }: {
   active?: 'analyze' | 'library' | 'dashboard';
   subtitle?: string;
+  /** Edge to edge with small side padding (the report page), instead of the centred max-width container. */
+  fullWidth?: boolean;
 }) {
   return (
     <header className="print-hidden relative z-40 shrink-0 border-b border-ink/10 bg-white">
-      <div className="mx-auto flex min-h-14 w-full max-w-[1500px] items-center justify-between gap-3 px-4 py-2 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:gap-4 sm:px-6 lg:px-12">
+      <div
+        className={cn(
+          'mx-auto flex min-h-14 w-full items-center justify-between gap-3 px-4 py-2 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:gap-4',
+          fullWidth ? 'sm:px-4' : 'max-w-[1500px] sm:px-6 lg:px-12',
+        )}
+      >
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex items-center gap-3 empty:hidden" id={HEADER_START_SLOT} />
           <Link
