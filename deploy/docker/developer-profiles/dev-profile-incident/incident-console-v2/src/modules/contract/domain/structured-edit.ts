@@ -221,7 +221,19 @@ export function validateStructuredEdit(edit: unknown, catalog?: ContractCatalog)
   const blankTitle: ContractViolation[] = typed.incident.title.trim()
     ? []
     : [{ code: 'SCHEMA_VIOLATION', path: 'incident/title', message: 'incident/title: the title must not be blank' }];
-  const violations = [...crossFieldViolations(pseudoReport), ...entitySpanViolations(typed), ...blankTitle];
+  // The contract's enum still allows unknown for AI output, but a reviewer must say what an entity is.
+  const unknownEntities: ContractViolation[] = typed.entities.flatMap((entity, index) =>
+    entity.type === 'unknown'
+      ? [
+          {
+            code: 'SCHEMA_VIOLATION',
+            path: `entities/${index}/type`,
+            message: `entities[${index}].type: choose human or animal, not unknown`,
+          },
+        ]
+      : [],
+  );
+  const violations = [...crossFieldViolations(pseudoReport), ...entitySpanViolations(typed), ...blankTitle, ...unknownEntities];
   if (violations.length) {
     throw new StructuredEditError(
       422,

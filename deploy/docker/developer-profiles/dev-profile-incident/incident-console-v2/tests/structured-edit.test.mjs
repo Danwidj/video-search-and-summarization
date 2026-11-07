@@ -438,3 +438,13 @@ test("the reviewer's severity rationale is stored on the human revision; the par
     (error) => error instanceof StructuredEditError && error.status === 422 && /severity_reason/.test(error.message),
   );
 });
+
+test('the server refuses a human edit whose entity is unknown, and accepts human and animal', () => {
+  const edit = editFromDraft(draftFromView(view(repaired)));
+  edit.entities[0].type = 'unknown';
+  expectError(edit, 422, /choose human or animal, not unknown/);
+  for (const type of ['human', 'animal']) {
+    edit.entities[0].type = type;
+    assert.doesNotThrow(() => validateStructuredEdit(edit));
+  }
+});

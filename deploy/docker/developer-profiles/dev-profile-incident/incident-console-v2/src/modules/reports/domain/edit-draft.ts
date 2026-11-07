@@ -20,7 +20,7 @@ import {
 } from '@/modules/reports/domain/reviewer-item';
 
 export const EDITABLE_INCIDENT_TYPES = ['road accident', 'burglary', 'explosion', 'assault', 'animal attack'] as const;
-export const EDITABLE_ENTITY_TYPES = ['human', 'animal', 'unknown'] as const;
+export const EDITABLE_ENTITY_TYPES = ['human', 'animal'] as const;
 
 /** Fields every item carries: when it is most clearly visible, its detector label and its evidence image (an R2 key). */
 interface EditItemDetails {
@@ -250,6 +250,8 @@ export function draftProblems(draft: EditDraft): string[] {
     problems.push('Rate the threat level of every instrument (1-5).');
   if ([...draft.entities, ...draft.instruments, ...draft.assets].some((item) => item.timestampSeconds === null))
     problems.push('Enter the second each entity, instrument and asset is most clearly visible.');
+  if (draft.entities.some((entity) => !(EDITABLE_ENTITY_TYPES as readonly string[]).includes(entity.type)))
+    problems.push('Choose Human or Animal for every entity.');
   for (const entity of draft.entities) {
     const { firstSeenSeconds: first, lastSeenSeconds: last, timestampSeconds: seen } = entity;
     if (first === null || last === null) problems.push('Enter the first and last second each entity is seen.');

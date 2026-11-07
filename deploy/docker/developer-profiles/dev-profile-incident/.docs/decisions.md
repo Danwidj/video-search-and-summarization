@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: Reviewers cannot save an unknown entity
+- **Decision:** the edit row dropdown offers only Human and Animal, the box tool's add dialog asks for Human or Animal, and an entity still `unknown` (an older version) must be set before Save. `validateStructuredEdit` refuses an entity of type `unknown` (422), so no human version holds one. Stored older reports still display and filter as they were.
+- **Why:** a reviewer always knows whether an entity is a person or an animal; no AI version has ever produced `unknown` (0 of 942).
+- **Alternatives rejected:** removing `unknown` from the contract enum, schema or prompt (shared with eval; no contract bump for a reviewer-side rule).
+- **Links:** `src/modules/contract/domain/structured-edit.ts`, `src/modules/reports/domain/edit-draft.ts`.
+
 ### 2026-11-07: The Library header is the app nav plus Chrome-style tabs and one filter row
 - **Decision:** the approved Library header redesign, console only (no database change). The shared app header is a white bar with a bottom border and the three links in one rounded pill track (shadcn `NavigationMenu`; the current page is a solid dark-green pill); it serves Analyze, Library, Dashboard and the report pages. The Library drops its title, "Incident console" label, info icon and Analyze button (Analyze stays one click away in the nav). Find incidents and Find evidence are real shadcn `Tabs`, centred in a full-width strip, drawn Chrome-style (selected tab on the page colour with curved feet, 150 ms colour transition, none under reduced motion). The search field and every filter sit on one row on both tabs (`InputGroup` for the search; Find evidence has the kind as a joined `ToggleGroup`); there is no Search button, Enter submits. A set filter is drawn in the theme green. Chips and "Clear all" appear only when a filter is set, and the search-order note only while searching. Cards are unchanged.
 - **Why:** the header and controls took 309 px above the first card; it is now about 153 px at 1440x900 (mockup 154 px).

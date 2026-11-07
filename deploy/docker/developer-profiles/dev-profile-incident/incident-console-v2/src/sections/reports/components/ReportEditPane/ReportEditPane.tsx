@@ -795,9 +795,16 @@ function EditCard({
       seconds={item.timestampSeconds}
     >
       {isDraftEntity(item) && (
-        <Select onValueChange={(val) => patchEntity(item.key, { type: val })} value={item.type}>
-          <SelectTrigger aria-label="Entity type" className="h-8 w-full bg-white text-xs">
-            <SelectValue placeholder="Entity type" />
+        <Select
+          onValueChange={(val) => patchEntity(item.key, { type: val })}
+          value={(EDITABLE_ENTITY_TYPES as readonly string[]).includes(item.type) ? item.type : ''}
+        >
+          <SelectTrigger
+            aria-invalid={!(EDITABLE_ENTITY_TYPES as readonly string[]).includes(item.type)}
+            aria-label="Entity type"
+            className="h-8 w-full bg-white text-xs"
+          >
+            <SelectValue placeholder="Choose Human or Animal" />
           </SelectTrigger>
           <SelectContent position="popper">
             {EDITABLE_ENTITY_TYPES.map((type) => (
