@@ -91,7 +91,7 @@ export function Library() {
     try {
       const params = filterParams(filters);
       const response = await fetch(
-        `/api/reports?${new URLSearchParams([...params, ['page', String(filters.page)], ['sort', filters.sort], ['timezone', timeZone]])}`,
+        `/api/reports?${new URLSearchParams([...params, ['page', String(filters.page)], ['timezone', timeZone]])}`,
         { cache: 'no-store', signal },
       );
       const payload = (await response.json()) as {
@@ -286,16 +286,7 @@ export function Library() {
                 Search
               </Button>
             </form>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <Select
-                label="Sort incidents"
-                onChange={(value) => apply({ sort: value === 'oldest' ? 'oldest' : 'newest' })}
-                options={[
-                  ['newest', 'Newest first'],
-                  ['oldest', 'Oldest first'],
-                ]}
-                value={filters.sort}
-              />
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Select
                 label="Incident type"
                 onChange={(value) => apply({ type: value })}
@@ -374,7 +365,7 @@ export function Library() {
             </div>
             {searchMode === 'semantic' && (
               <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">
-                Best match first. The sort applies again when the search text is cleared.
+                Best match first. The usual order (official first, then oldest upload first) applies again when the search text is cleared.
               </p>
             )}
             {searchMode === 'text' && (

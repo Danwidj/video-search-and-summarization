@@ -310,6 +310,20 @@ with tempfile.TemporaryDirectory() as tmp:
         named = ", ".join(f"{key} => %({key})s" for key in kwargs)
         return one(conn, f"SELECT public.list_incident_report_summaries({named})", kwargs)[0]
 
+    @test("the library's official-first sort lists official reports, then the rest, each by upload date oldest first, across pages")
+    def _():
+        with conn.transaction(force_rollback=True):
+            # v1 is official and uploaded last; v2 and v3 are not yet official.
+            conn.execute("UPDATE public.videos SET uploaded_datetime = '2026-03-03' WHERE id = 'v1'")
+            conn.execute("UPDATE public.videos SET uploaded_datetime = '2026-02-02' WHERE id = 'v2'")
+            conn.execute("UPDATE public.videos SET uploaded_datetime = '2026-01-01' WHERE id = 'v3'")
+            order = lambda **kw: [r["videoId"] for r in summaries(p_sort="official-first", **kw)["reports"]]
+            assert order() == ["v1", "v3", "v2"], order()
+            assert order(p_page_size=2, p_page=1) == ["v1", "v3"] and order(p_page_size=2, p_page=2) == ["v2"]
+            assert summaries(p_sort="official-first")["totalItems"] == 3
+            assert order(p_scope="not_official") == ["v3", "v2"], "the filters still apply"
+            assert [r["videoId"] for r in summaries(p_sort="oldest")["reports"]] != order(), "other sorts are unchanged"
+
     @test("the library shows the official revision, else the newest, one card per incident")
     def _():
         result = summaries()

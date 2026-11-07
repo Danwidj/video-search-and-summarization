@@ -21,7 +21,7 @@ const MAX_LIST_SIZE = 1000;
 /** Revision hits asked for per text search; the agent ranks best first. */
 const REVISION_TOP_K = 50;
 const REVISION_SEARCH_TIMEOUT_MS = 30_000;
-const SORTS = new Set(['newest', 'oldest', 'severity-high', 'severity-low', 'confidence-high', 'confidence-low']);
+const SORTS = new Set(['official-first', 'newest', 'oldest', 'severity-high', 'severity-low', 'confidence-high', 'confidence-low']);
 const SEVERITIES = new Set(['all', 'low', 'medium', 'high', '1', '2', '3', '4', '5']);
 
 const SCOPES = new Set(['all', 'official', 'not_official']);
@@ -112,7 +112,7 @@ export async function GET(request: Request) {
     const requestedPage = Number.parseInt(params.get('page') || '1', 10);
     const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const pageSize = params.get('all') === 'true' ? 1000 : PAGE_SIZE;
-    const sort = params.get('sort') || 'newest';
+    const sort = params.get('sort') || 'official-first';
     const severity = params.get('severity') || 'all';
     const dayRaw = params.get('day');
     const dayOfWeek = dayRaw === null ? null : Number(dayRaw);

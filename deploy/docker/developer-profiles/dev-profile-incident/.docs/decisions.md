@@ -22,6 +22,11 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Evaluation:** `dashboard_calendar.py` mirrors the clamp; its tests and development requests changed with it (no live run).
 - **Links:** [`chart-period.ts`](../incident-console-v2/src/modules/dashboard/domain/chart-period.ts), [`chart-prompt.ts`](../incident-console-v2/src/modules/dashboard/domain/chart-prompt.ts), [`generate-chart/index.ts`](../incident-console-v2/src/modules/dashboard/application/generate-chart/index.ts)
 
+### 2026-11-07: The Library is always ordered official first, then oldest upload first
+- **Decision:** the Find incidents list has no sort control. The console always asks for `p_sort = 'official-first'`: official reports first, then the rest, each by `videos.uploaded_datetime` oldest first, with the old tie-break (newest report time, revision id), sorted in the RPC so it holds across pages (migration `20261107100000_library_official_first_sort.sql`; the older sort values stay for other callers). With search text the existing ranking (both matches, then words only, then meaning only) is kept; words-only matches follow the new order.
+- **Why:** the captain asked for one fixed order that puts official reports first.
+- **Needs:** the migration applied to finals; before that the RPC falls back to newest first.
+
 ### 2026-11-07: Total reports counts every version, split AI and human
 - **Decision:** the Total reports card shows the number of all versions (every `report_revisions` row of the counted reports' videos) as its big number, split AI against human, with a small line for the incident count (one per video). It no longer splits official against not yet official, and the "Multiple versions" stat is gone from the card. The RPC gains `versions` (migration `20261107090000_dashboard_all_versions.sql`); every other field is unchanged because evaluation reads them.
 - **Why:** the card counted one revision per video, so a video with an AI and two human versions showed 1. The captain wanted all versions and the AI and human mix.

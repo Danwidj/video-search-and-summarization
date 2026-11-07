@@ -341,7 +341,7 @@ newest revision (so reports awaiting selection still appear). Facets come from t
 description/title/confidence from `payload.incident`. Filters: `p_search`, `p_type`, `p_severity`
 (`low`/`medium`/`high` or a number), `p_kind` (`ai`/`human`), date range, local time-of-day and
 weekday (`p_timezone`, default UTC), entity/instrument/asset text or exact-name match,
-`p_entity_types`, `p_sort`, and `p_scope` (`all`, `official` or `not_official`). `p_type`
+`p_entity_types`, `p_sort` (`official-first` is the Library's own and always sent by the console: is_official first, then `uploaded_datetime` ascending; added by migration `20261107100000`, the older values behave as before), and `p_scope` (`all`, `official` or `not_official`). `p_type`
 `Unclassified` selects a NULL `incident_type`. Returns
 `{reports: [...], totalItems, incidentTypes}`. Each card carries `revisionId`, `revisionNo`,
 `videoId`, `modelRunId`, `kind`, `createdBy`, `note`, `isOfficial`, `outcome`, and the display
