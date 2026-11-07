@@ -9,7 +9,9 @@ import { test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { applyChatEdit, toApplierActions } = await import('../src/lib/edits/chat-edit.ts');
-const { gapRetryProposals, gapRetryResultText, gapRetryStartedText, splitGapRetryActions } = await import('../src/lib/chat/gap-retry.ts');
+const { draftKeyOf, gapRetryProposals, gapRetryResultText, gapRetryStartedText, reportIdOf, splitGapRetryActions } = await import(
+  '../src/lib/chat/gap-retry.ts'
+);
 const { readGapRetry, startGapRetry } = await import('../src/modules/chat/infrastructure/agent/agent-chat.ts');
 const { draftFromView } = await import('../src/modules/reports/domain/edit-draft.ts');
 const { buildReportView } = await import('./support/report-view.mjs');
@@ -17,6 +19,7 @@ const { buildReportView } = await import('./support/report-view.mjs');
 const fixture = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const view = buildReportView({ ...structuredClone(fixture), playbackUrl: 'https://signed.example/v.mp4' });
 const base = () => draftFromView(view);
+const allItems = (draft) => [...draft.entities, ...draft.instruments, ...draft.assets];
 
 const found = (itemKey, name) => ({ itemKey, name, status: 'found', reason: null, seconds: 12, box: [100, 200, 300, 400] });
 const missed = (itemKey, name) => ({
@@ -41,18 +44,38 @@ test('a gap retry request is taken out of the editor actions, with its item or n
   );
 });
 
-test('only the boxes found become set-image proposals, and the applier holds each one beside its item', () => {
+test('the agent knows a draft item by its report id, and the console maps that id back to the draft key', () => {
   const draft = base();
-  const key = draft.entities[0].key;
-  const job = { jobId: 'j1', videoId: 'v', revisionId: 1, status: 'done', items: [found(key, 'man'), missed('other', 'bag')] };
-  const proposals = gapRetryProposals(job);
+  const entity = draft.entities[0];
+  const items = allItems(draft);
+  const reportId = reportIdOf(items, entity.key);
+  assert.equal(reportId, entity.sourceId || entity.canonicalId);
+  assert.equal(draftKeyOf(items, reportId), entity.key);
+  assert.equal(draftKeyOf(items, 'no-such-report-id'), null);
+  assert.equal(reportIdOf(items, 'no-such-draft-key'), null);
+});
+
+test('only the boxes found become set-image proposals, on the draft item the report id names', () => {
+  const draft = base();
+  const items = allItems(draft);
+  const entity = draft.entities[0];
+  const reportId = reportIdOf(items, entity.key);
+  const job = {
+    jobId: 'j1',
+    videoId: 'v',
+    revisionId: 1,
+    status: 'done',
+    items: [found(reportId, 'man'), missed('other-report-id', 'bag')],
+  };
+  const proposals = gapRetryProposals(job, items);
   assert.deepEqual(
     proposals.map((proposal) => proposal.tool),
     ['change_evidence'],
   );
+  assert.equal(proposals[0].args.item_key, entity.key);
   const result = applyChatEdit(draft, draft, proposals);
   assert.equal(result.skipped.length, 0);
-  const item = result.draft.entities.find((entity) => entity.key === key);
+  const item = result.draft.entities.find((candidate) => candidate.key === entity.key);
   assert.equal(item.proposal.kind, 'set_image');
   assert.equal(item.proposal.pick.seconds, 12);
   assert.deepEqual(item.proposal.pick.box, [100, 200, 300, 400]);

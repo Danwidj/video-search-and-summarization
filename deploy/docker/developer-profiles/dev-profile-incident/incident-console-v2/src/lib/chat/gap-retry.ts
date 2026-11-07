@@ -52,14 +52,35 @@ export function splitGapRetryActions(actions: ProposedAction[]): GapRetrySplit {
   return split;
 }
 
+/**
+ * A draft item as the id mapping reads it. The draft's `key` is its own (what the editor and the applier use); the report and
+ * the agent know an item by `sourceId` (its id in the report) or, for an entity, `canonicalId` (the same id).
+ */
+export interface DraftItemIds {
+  key: string;
+  sourceId?: string | null;
+  canonicalId?: string;
+}
+
+/** The id the report and the agent know a draft item by, or null for an item the reviewer added (not in the report). */
+export function reportIdOf(items: DraftItemIds[], key: string): string | null {
+  const item = items.find((candidate) => candidate.key === key);
+  return item?.sourceId || item?.canonicalId || null;
+}
+
+/** The draft key of the item the report knows as `reportId`, or null when the draft has no such item. */
+export function draftKeyOf(items: DraftItemIds[], reportId: string): string | null {
+  return items.find((candidate) => candidate.sourceId === reportId || candidate.canonicalId === reportId)?.key ?? null;
+}
+
 /** The found boxes as set-image proposals on their items: the reviewer confirms or adjusts each one before Save. */
-export function gapRetryProposals(job: GapRetryJob): ProposedAction[] {
+export function gapRetryProposals(job: GapRetryJob, items: DraftItemIds[]): ProposedAction[] {
   return job.items
     .filter((item) => item.status === 'found' && item.seconds !== null && item.box !== null)
     .map((item) => ({
       tool: CHANGE_EVIDENCE_TOOL,
       args: {
-        item_key: item.itemKey,
+        item_key: draftKeyOf(items, item.itemKey) ?? item.itemKey,
         op: 'set_image',
         seconds: item.seconds,
         box: item.box,

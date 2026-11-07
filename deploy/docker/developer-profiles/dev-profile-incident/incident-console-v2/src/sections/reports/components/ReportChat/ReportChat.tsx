@@ -27,7 +27,16 @@ import {
   citationTitle,
   offersVideoCheck,
 } from '@/lib/chat/report-chat';
-import { type GapRetryJob, gapRetryProposals, gapRetryResultText, gapRetryStartedText, splitGapRetryActions } from '@/lib/chat/gap-retry';
+import {
+  type DraftItemIds,
+  type GapRetryJob,
+  draftKeyOf,
+  gapRetryProposals,
+  gapRetryResultText,
+  gapRetryStartedText,
+  reportIdOf,
+  splitGapRetryActions,
+} from '@/lib/chat/gap-retry';
 import { evidenceRows, pendingEvidenceExchange, splitEvidenceActions } from '@/lib/chat/evidence-ask';
 import { segmentChatText } from '@/lib/chat/timestamps';
 import { draftSnapshot, type ProposedAction } from '@/lib/edits/chat-edit';
@@ -45,6 +54,11 @@ const CHAT_FAILED = 'The chat service is unavailable right now. Please try again
 // A gap retry takes about a minute an item; the agent stops at five minutes, so the chat stops waiting at ten.
 const GAP_RETRY_POLL_MS = 3000;
 const GAP_RETRY_POLLS = 200;
+
+/** Every item of the draft, with the ids the gap retry maps between. */
+function draftItems(draft: EditDraft): DraftItemIds[] {
+  return [...draft.entities, ...draft.instruments, ...draft.assets];
+}
 
 /** The name a reviewer knows a draft item by, or its key when the draft has no such item. */
 function draftLabel(draft: EditDraft, key: string): string {
@@ -226,8 +240,9 @@ export function ReportChat({
       return;
     }
     // Each found box joins its item as a proposal beside it; nothing is cut until the reviewer confirms and saves.
-    const label = (key: string) => draftLabel(sent, key);
-    const outcome = edits?.apply(sent, gapRetryProposals(current));
+    const items = draftItems(sent);
+    const label = (reportId: string) => draftLabel(sent, draftKeyOf(items, reportId) ?? reportId);
+    const outcome = edits?.apply(sent, gapRetryProposals(current, items));
     postAssistant(gapRetryResultText(current, label), { applied: outcome?.applied, skipped: outcome?.skipped });
   }
 
@@ -297,7 +312,11 @@ export function ReportChat({
           const job = await gapRetryCall('/api/chat/gap-retry', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ videoId, itemKey: retry.itemKey }),
+            // The agent knows an item by its report id, not the draft's own key.
+            body: JSON.stringify({
+              videoId,
+              itemKey: retry.itemKey === null ? null : (reportIdOf(draftItems(sent), retry.itemKey) ?? retry.itemKey),
+            }),
           }).catch((cause: unknown) => {
             postAssistant(`The gap retry did not start: ${cause instanceof Error ? cause.message : 'it could not be reached.'}`);
             return null;
