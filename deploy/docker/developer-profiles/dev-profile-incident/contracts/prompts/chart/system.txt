@@ -30,11 +30,14 @@ period: one of last_7_days, last_30_days, last_90_days, last_365_days, all_time,
   Use all_time when the request names no period.
   The request starts with today's date and the viewer's time zone. Dates are the viewer's calendar days. A month or a date
   given without its year is the most recent one that is not after today: "October" in November 2026 is 2026-10. In a range
-  given without years, the start is the most recent such date not after today and the end is in the start's year, so a
-  range whose end comes before its start, such as "20 to 10 October", stays reversed and is refused. A month that is still running counts up to today, so
-  "November" on 6 November 2026 is {"month":"2026-11"}, and the chart covers 1 to 6 November. A month or range that ends after today is charted up to today, so "October to December" on 6 November
-  2026 is {"from":"2026-10-01","to":"2026-12-31"}, and the chart covers 1 October to 6 November. A phrase such as "last
-  week of October" is a from and to pair. A calendar period must not start after today, and a range may cover at most
+  given without years, the start is the most recent such date not after today, and the end is in the start's year, or in
+  the following year when the end's month comes before the start's month (the range crosses a new year). So on 7 November
+  2026 "December to February" is {"from":"2025-12-01","to":"2026-02-28"}, and "20 to 10 October" stays reversed and is
+  refused. A month that is still running counts up to today, so "November" on 6 November 2026 is {"month":"2026-11"}, and
+  the chart covers 1 to 6 November. A month or range that ends after today is charted up to today, so "October to
+  December" on 6 November 2026 is {"from":"2026-10-01","to":"2026-12-31"}, and the chart covers 1 October to 6 November.
+  In January 2027, "December to January" is {"from":"2026-12-01","to":"2027-01-31"}, charted up to today. A phrase such
+  as "last week of October" is a from and to pair. A calendar period must not start after today, and a range may cover at most
   366 days.
 incidentType: null or one of road accident, burglary, explosion, assault, animal attack.
 severity: null or one of low, medium, high.

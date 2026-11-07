@@ -167,6 +167,16 @@ describe('the words for a period', () => {
     assert.equal(calendarWords({ from: '2025-12-29', to: '2026-12-31' }, '2026-01-02'), '29 December 2025 to 2 January 2026 (to date)');
   });
 
+  test('the ranges the prompt reads from yearless requests chart as the rule says', () => {
+    assert.equal(calendarWords({ from: '2026-10-01', to: '2026-12-31' }, '2026-11-07'), '1 October to 7 November 2026 (to date)');
+    assert.deepEqual(calendarDays({ from: '2025-12-01', to: '2026-02-28' }, '2026-11-07'), { first: '2025-12-01', last: '2026-02-28' });
+    assert.equal(calendarWords({ from: '2025-12-01', to: '2026-02-28' }, '2026-11-07'), '1 December 2025 to 28 February 2026');
+    assert.deepEqual(calendarDays({ from: '2026-12-01', to: '2027-01-31' }, '2027-01-15'), { first: '2026-12-01', last: '2027-01-15' });
+    assert.equal(calendarWords({ from: '2026-12-01', to: '2027-01-31' }, '2027-01-15'), '1 December 2026 to 15 January 2027 (to date)');
+    assert.equal(calendarDays({ from: '2026-10-20', to: '2026-10-10' }, '2026-11-07'), null);
+    assert.equal(calendarDays({ from: '2026-10-01', to: '2025-12-31' }, '2026-11-07'), null);
+  });
+
   test('the maximum span is the one the allowlist publishes', () => {
     assert.equal(chartAllowlist().calendarPeriods.maxRangeDays, CALENDAR_MAX_DAYS);
     assert.equal(CALENDAR_MAX_DAYS, 366);
