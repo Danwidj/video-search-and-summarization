@@ -26,11 +26,14 @@ export function AppHeader({
   active,
   subtitle = 'Video intelligence',
   fullWidth = false,
+  workspaceTitle,
 }: {
   active?: 'analyze' | 'library' | 'dashboard';
   subtitle?: string;
   /** Edge to edge with small side padding (the report page), instead of the centred max-width container. */
   fullWidth?: boolean;
+  /** Replaces the brand with this plain title (the report page: "Report workspace"). */
+  workspaceTitle?: string;
 }) {
   return (
     <header className="print-hidden relative z-40 shrink-0 border-b border-ink/10 bg-white">
@@ -42,17 +45,21 @@ export function AppHeader({
       >
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex items-center gap-3 empty:hidden" id={HEADER_START_SLOT} />
-          <Link
-            className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            href="/"
-            aria-label="Incident Studio home"
-          >
-            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">IS</span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold tracking-tight">Incident Studio</span>
-              <span className="block truncate text-[11px] uppercase tracking-[0.2em] text-ink/50">{subtitle}</span>
-            </span>
-          </Link>
+          {workspaceTitle ? (
+            <span className="min-w-0 truncate text-lg font-semibold tracking-tight text-ink">{workspaceTitle}</span>
+          ) : (
+            <Link
+              className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              href="/"
+              aria-label="Incident Studio home"
+            >
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">IS</span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold tracking-tight">Incident Studio</span>
+                <span className="block truncate text-[11px] uppercase tracking-[0.2em] text-ink/50">{subtitle}</span>
+              </span>
+            </Link>
+          )}
         </div>
         <NavigationMenu aria-label="Primary navigation" className="hidden flex-none sm:flex" viewport={false}>
           <NavigationMenuList className="gap-0.5 rounded-full border border-ink/10 bg-[#dfe6d6] p-1">

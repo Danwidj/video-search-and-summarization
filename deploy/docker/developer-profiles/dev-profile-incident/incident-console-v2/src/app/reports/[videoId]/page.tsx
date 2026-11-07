@@ -20,7 +20,7 @@ export default async function ReportPage({
   return (
     <main className="flex h-dvh flex-col overflow-hidden bg-canvas text-ink">
       <div className="shrink-0">
-        <AppHeader active="library" fullWidth subtitle="Report workspace" />
+        <AppHeader fullWidth workspaceTitle="Report workspace" />
       </div>
       <div className="min-h-0 flex-1">
         <ReportView revisionId={revisionId} startSeconds={startSeconds} videoId={videoId} />
