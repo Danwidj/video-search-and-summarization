@@ -38,6 +38,7 @@ from vss_agents.api.incident_investigate import register_incident_investigate_ro
 from vss_agents.api.incident_revision_search import register_incident_revision_search_routes
 from vss_agents.api.incident_search import register_incident_search_routes
 from vss_agents.api.incident_video_check import register_incident_video_check_routes
+from vss_agents.api.incident_report_pdf import register_incident_report_pdf_routes
 from vss_agents.api.rtsp_delete import register_rtsp_delete_routes
 from vss_agents.api.rtsp_ingest import register_rtsp_ingest_routes
 from vss_agents.api.video_delete import register_video_delete_routes
@@ -157,6 +158,7 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         register_incident_box_describe_routes(app)
         register_incident_box_track_routes(app)
         register_incident_video_check_routes(app)
+        register_incident_report_pdf_routes(app)
         register_incident_investigate_routes(app, builder, self._create_session_manager)
         register_incident_draft_edits_routes(app)
         register_incident_evidence_asks_routes(app)

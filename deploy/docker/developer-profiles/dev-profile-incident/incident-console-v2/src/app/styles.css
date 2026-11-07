@@ -231,37 +231,6 @@
   }
 }
 
-@media print {
-  @page {
-    margin: 12mm;
-    size: A4 portrait;
-  }
-  html body {
-    background: white;
-    color: #12211b;
-  }
-  body .print-hidden {
-    display: none;
-  }
-  body .report-sheet {
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-  body .report-sheet video {
-    max-height: 75mm;
-  }
-  body .report-sheet details {
-    break-inside: avoid;
-  }
-  body .report-sheet details > div {
-    display: block;
-  }
-  body .report-sheet button {
-    color: inherit;
-  }
-}
-
 @theme inline {
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);

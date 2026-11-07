@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HEADER_END_SLOT, HEADER_START_SLOT } from '@/sections/shell/components/AppHeader';
+import { ReportPdfDialog } from '@/sections/reports/components/ReportPdfDialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { chatTarget, citationTitles } from '@/lib/chat/report-chat';
@@ -497,6 +498,12 @@ export function ReportPage({
         {slots?.end &&
           createPortal(
             <>
+              <ReportPdfDialog
+                currentRevisionId={report.revisionId}
+                revisions={revisions ?? []}
+                title={reportHeading(report)}
+                videoId={videoId}
+              />
               <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={videoId} />
               <Button
                 aria-expanded={chatOpen}

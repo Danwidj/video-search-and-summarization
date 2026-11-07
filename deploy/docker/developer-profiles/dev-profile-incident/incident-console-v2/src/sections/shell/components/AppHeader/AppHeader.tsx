@@ -38,7 +38,7 @@ export function AppHeader({
   const indicator = useSlidingIndicator(navRef, active ?? '');
 
   return (
-    <header className="print-hidden relative z-40 shrink-0 border-b border-ink/10 bg-white">
+    <header className="relative z-40 shrink-0 border-b border-ink/10 bg-white">
       <div
         className={cn(
           'mx-auto flex min-h-14 w-full items-center justify-between gap-3 px-4 py-2 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:gap-4',
