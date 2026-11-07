@@ -100,6 +100,27 @@ def _editor_question(question: str, draft: draft_edits.DraftSnapshot) -> str:
     return f"{question}\n\nThe draft (name items by their key):\n{draft.model_dump_json(exclude_none=True)}"
 
 
+_STOPPED_REASONS = {
+    "cap_reached": "The agent reached its tool step limit before it could answer",
+    "aborted:step_budget": "The agent reached its tool step limit before it could answer",
+    "timeout": "The agent ran out of time before it could answer",
+    "busy": "The model is busy, so the agent could not answer",
+    "error": "The agent hit an error before it could answer",
+}
+
+
+def _blank_answer_text(status: str, proposed: int) -> str:
+    """One plain sentence for a run that ended without an answer, saying how many changes it proposed."""
+    reason = _STOPPED_REASONS.get(status, "The agent stopped before it could answer")
+    if proposed == 0:
+        changes = "no changes were proposed"
+    elif proposed == 1:
+        changes = "1 change was proposed"
+    else:
+        changes = f"{proposed} changes were proposed"
+    return f"{reason}; {changes}."
+
+
 def create_incident_investigate_router(
     builder: WorkflowBuilder,
     create_session_manager: SessionManagerFactory,
@@ -143,9 +164,12 @@ def create_incident_investigate_router(
         logger.info(
             "Investigated %s: %s in %d ms, %d tool steps", video_id, result.status, result.wall_ms, len(result.steps)
         )
+        answer = result.answer
+        if not answer.strip():
+            answer = _blank_answer_text(result.status, len(result.actions))
         return InvestigateResponse(
             status=result.status,
-            answer=result.answer,
+            answer=answer,
             steps=[InvestigateStep(**step) for step in result.steps],
             actions=[InvestigateAction(**action) for action in result.actions],
             wall_ms=result.wall_ms,
