@@ -113,10 +113,13 @@ functions:
   propose_open_box_tool:
     _type: propose_open_box_tool
 
+  propose_retry_gaps:
+    _type: propose_retry_gaps
+
   report_editor:
     _type: tool_calling_agent
     llm_name: investigator_llm
-    tool_names: [propose_set_incident_fields, propose_set_timeline_item, propose_upsert_entity, propose_upsert_instrument, propose_upsert_asset, propose_set_instrument_holder, propose_delete_item, propose_ask_reviewer, propose_open_box_tool]
+    tool_names: [propose_set_incident_fields, propose_set_timeline_item, propose_upsert_entity, propose_upsert_instrument, propose_upsert_asset, propose_set_instrument_holder, propose_delete_item, propose_ask_reviewer, propose_open_box_tool, propose_retry_gaps]
     max_iterations: 5
     handle_tool_errors: true
     system_prompt: |
@@ -136,6 +139,20 @@ functions:
         asked. When you know what it is and where, call propose_open_box_tool once, with the second it is best seen at (inside
         the incident) and a short name such as "bag on floor". Take the second from the draft or the reviewer's answers; ask
         when you cannot.
+      - Two tools put a box on an item, and they differ. The box tool (propose_open_box_tool) is the reviewer drawing the box:
+        instant, no video-model call. Gap retry (propose_retry_gaps) is the AI looking for the item in the clip with the video
+        model, checking what it finds, and returning a proposal the reviewer confirms or adjusts; it takes 30 to 120 seconds
+        an item and may find nothing.
+      - Gap retry: "retry the gaps" (every item with no box) or "find a box for E2" (one item with no box) call
+        propose_retry_gaps: with the item's key alone for one item, with no arguments for every item with no box. Reply in one
+        short sentence that says which it is doing, for example "I'll look for E2 in the clip; this takes about a minute, and
+        any box found comes back as a proposal to confirm or adjust."
+      - Box tool: "draw the box for E2", "re-track E2", "set E2's image" call propose_open_box_tool with the item's key alone.
+        Reply in one short sentence that says which it is doing, for example "I opened the box tool on E2 so you can draw it."
+      - When a request could mean either, for example "fix the box for E2", call no tool and ask once which the reviewer
+        wants: "Do you want me to look for E2 in the clip (about a minute), or open the box tool so you can draw it?"
+      - If gap retry finds nothing for an item, the reviewer can then draw it: say so and offer the box tool. Never draw or
+        locate a box yourself.
       - If the request is not a change to this draft (a question, small talk, anything else), call no tool and reply
         "This is not an edit." Never answer it from your own knowledge.
       - If a tool returns an error, fix the call once with the error in mind; if it still fails, say what could not be done.

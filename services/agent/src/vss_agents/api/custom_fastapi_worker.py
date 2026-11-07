@@ -33,6 +33,7 @@ from vss_agents.api.incident_chat import register_incident_chat_routes
 from vss_agents.api.incident_draft_edits import register_incident_draft_edits_routes
 from vss_agents.api.incident_evidence_asks import register_incident_evidence_asks_routes
 from vss_agents.api.incident_evidence_embeddings import register_incident_evidence_embeddings_routes
+from vss_agents.api.incident_gap_retry import register_incident_gap_retry_routes
 from vss_agents.api.incident_investigate import register_incident_investigate_routes
 from vss_agents.api.incident_revision_search import register_incident_revision_search_routes
 from vss_agents.api.incident_search import register_incident_search_routes
@@ -159,6 +160,7 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         register_incident_investigate_routes(app, builder, self._create_session_manager)
         register_incident_draft_edits_routes(app)
         register_incident_evidence_asks_routes(app)
+        register_incident_gap_retry_routes(app)
         chart_generator_cfg = (getattr(self.config, "functions", None) or {}).get("chart_generator")
         chart_llm_name = getattr(chart_generator_cfg, "llm_name", None)
         register_incident_charts_routes(app, builder, str(chart_llm_name) if chart_llm_name else None)

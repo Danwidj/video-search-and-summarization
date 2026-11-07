@@ -250,3 +250,35 @@ def test_the_report_editor_prompt_opens_the_box_tool_on_an_item_instead_of_refus
     assert "call propose_open_box_tool with that item's key alone (no seconds or name)" in prompt
     assert "Never draw or locate a box yourself" in prompt
     assert "I can't do that in chat: there is no such item in the draft." in prompt
+
+
+async def _run_retry(args: dict):
+    async def ask() -> str:
+        try:
+            await agent_loop.run_guarded_tool(
+                "propose_retry_gaps", args, lambda: incident_editor.check_retry_gaps("retry_gaps", args)
+            )
+        except ValueError:
+            pass
+        return "done"
+
+    return await agent_loop.run_loop(ask, "V1", draft=DRAFT)
+
+
+async def test_a_gap_retry_of_one_item_or_of_every_gap_is_listed_as_an_action() -> None:
+    result = await _run_retry({"item_key": "p1"})
+    assert result.actions == [{"tool": "propose_retry_gaps", "args": {"item_key": "p1"}}]
+    result = await _run_retry({})
+    assert result.actions == [{"tool": "propose_retry_gaps", "args": {}}]
+
+
+async def test_a_gap_retry_of_an_item_not_in_the_draft_is_an_error_and_no_action() -> None:
+    result = await _run_retry({"item_key": "E9"})
+    assert result.actions == []
+    assert "there is no item E9 in the draft" in result.steps[0]["error"]
+
+
+def test_a_draft_item_is_named_by_its_label_or_name_in_a_gap_retry() -> None:
+    assert incident_editor._item_label(DRAFT, "k1") == "knife"
+    assert incident_editor._item_label(DRAFT, "p1") == "p1"
+    assert incident_editor._item_label(DRAFT, "E9") is None

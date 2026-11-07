@@ -1503,6 +1503,16 @@ def gap_retry_kind(gap: str | None) -> str | None:
     return None
 
 
+def stored_gap_for_retry(entry: dict[str, Any]) -> str | None:
+    """The gap a stored evidence entry's first look left, as :func:`gap_retry_kind` reads it.
+
+    The locate step writes ``object not located at ...`` when the detector found nothing and gave no other reason; that is
+    a plain miss, so it is None here. Any other ``image_gap`` is passed on unchanged.
+    """
+    gap = entry.get("image_gap")
+    return None if not gap or gap.startswith(NOT_LOCATED_GAP) else gap
+
+
 def tile_boxes(overlap: float = GAP_RETRY_TILE_OVERLAP) -> list[tuple[float, float, float, float]]:
     """The four overlapping quarters of a frame as ``(ymin, xmin, ymax, xmax)`` fractions (each ``0.5 + overlap`` wide)."""
     size = 0.5 + overlap
@@ -1591,6 +1601,7 @@ def retry_gap_item(
     stop_at: float | None = None,
     max_calls: int = GAP_RETRY_MAX_CALLS_PER_ITEM,
     max_checks: int = GAP_RETRY_MAX_CHECKS_PER_ITEM,
+    refusals: list[str] | None = None,
 ) -> CropResult | None:
     """Look again for one item the locate step left without a box; the new box, or None to keep the original gap.
 
@@ -1600,7 +1611,8 @@ def retry_gap_item(
     that passes :func:`box_problem`, and that box is kept only after ``checker.verify_box`` (the video model) says
     it shows the item (:func:`box_check_accepts`). At most ``max_calls`` detector calls and ``max_checks`` model
     checks are made, none after ``stop_at`` (a ``time.monotonic()`` value). A check that fails rejects its box and a
-    failed detector call skips its step; a stopped detector or the time limit ends the search with None.
+    failed detector call skips its step; a stopped detector or the time limit ends the search with None. ``refusals``,
+    when given, collects a plain reason for each box the model check turned down or could not run.
 
     Raises:
         CropCallCapReachedError: when the budgeted detector has no calls left (propagated, never swallowed).
@@ -1666,6 +1678,8 @@ def retry_gap_item(
             raise
         except Exception as exc:
             logger.warning("Gap retry box check failed: %s", exc)
+            if refusals is not None:
+                refusals.append("the video model check failed")
             return None
         if box_check_accepts(check, item_type, name):
             return found
@@ -1676,6 +1690,8 @@ def retry_gap_item(
             check.confidence,
             check.seen,
         )
+        if refusals is not None:
+            refusals.append(f"the video model did not confirm a box at {found.box_seconds}s")
         return None
 
     described = gap_retry_description_query(description, label)
@@ -1703,6 +1719,96 @@ def retry_gap_item(
 
 class _GapRetryStoppedError(Exception):
     """A gap retry reached its per-item call cap or the time it may use."""
+
+
+# A chat gap retry of one existing report (:meth:`CropEvidenceService.retry_report_gaps`): the detector calls across all its
+# items. Each item keeps the per-item caps above, and the request its own time (the caller's ``deadline``).
+REPORT_GAP_RETRY_MAX_CALLS = 40
+NOT_LOCATED_GAP = (
+    "object not located"  # the stored gap of an item the locate step found nothing for, with no reason kept
+)
+NO_BOX_REASON = "no box was found near the second it is seen"
+TIME_REASON = "the retry ran out of time"
+CALL_CAP_REASON = "the retry used all its detector calls"
+
+
+@dataclass(frozen=True)
+class GapRetryOutcome:
+    """One item's gap retry: the new box (``found``), or the plain reason there is none (``reason``)."""
+
+    found: CropResult | None
+    reason: str | None = None
+
+
+async def retry_gap_crops(
+    pending: Sequence[tuple[dict[str, Any], str | None]],
+    *,
+    video_ref: str | Path | np.ndarray,
+    video_id: str,
+    detector: Any,
+    checker: Any,
+    stop_at: float | None,
+    semaphore: asyncio.Semaphore,
+) -> dict[str, GapRetryOutcome]:
+    """Run :func:`retry_gap_item` for each ``(entry, gap)`` at once, one ``semaphore`` slot each, and say how each ended.
+
+    ``entry`` is an evidence entry (``item_id``, ``label``, ``item_type``, ``item_name``, ``description`` and
+    ``timestamp_seconds``) and ``gap`` the reason its first look failed (:func:`gap_retry_kind`). Nothing is stored. An item
+    whose search passes ``stop_at`` (a ``time.monotonic()`` value), or whose calls the budgeted ``detector`` refuses, ends with
+    a reason and never fails the others. Never raises.
+    """
+    outcomes: dict[str, GapRetryOutcome] = {}
+
+    async def _one(entry: dict[str, Any], gap: str | None) -> None:
+        item_id = entry["item_id"]
+        refusals: list[str] = []
+        async with semaphore:
+            timeout = None if stop_at is None else stop_at - time.monotonic()
+            if timeout is not None and timeout <= 0:
+                outcomes[item_id] = GapRetryOutcome(None, TIME_REASON)
+                return
+            try:
+                found = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        retry_gap_item,
+                        video_ref,
+                        entry["timestamp_seconds"],
+                        label=entry["label"],
+                        item_type=entry["item_type"],
+                        name=entry["item_name"],
+                        description=entry["description"],
+                        gap=gap,
+                        detector=detector,
+                        checker=checker,
+                        stop_at=stop_at,
+                        refusals=refusals,
+                    ),
+                    timeout=timeout,
+                )
+            except TimeoutError:
+                outcomes[item_id] = GapRetryOutcome(None, TIME_REASON)
+                return
+            except CropCallCapReachedError:
+                outcomes[item_id] = GapRetryOutcome(None, CALL_CAP_REASON)
+                return
+            except Exception as exc:
+                logger.warning("Gap retry failed for %s %s: %s", video_id, item_id, exc)
+                outcomes[item_id] = GapRetryOutcome(None, f"the retry failed: {type(exc).__name__}")
+                return
+        if found is None:
+            outcomes[item_id] = GapRetryOutcome(None, refusals[-1] if refusals else NO_BOX_REASON)
+            return
+        logger.info(
+            "Gap retry found a box for %s %s at %ss (was: %s)",
+            video_id,
+            item_id,
+            found.box_seconds,
+            gap or "not located",
+        )
+        outcomes[item_id] = GapRetryOutcome(found)
+
+    await asyncio.gather(*(_one(entry, gap) for entry, gap in pending))
+    return outcomes
 
 
 DUPLICATE_BOX_IOU = 0.8
@@ -2083,6 +2189,47 @@ class CropEvidenceService:
             item_type=item_type,
         )
 
+    async def retry_report_gaps(
+        self,
+        *,
+        video_ref: str | Path | np.ndarray,
+        video_id: str,
+        pending: Sequence[tuple[dict[str, Any], str | None]],
+        deadline: float,
+        detector: Any | None = None,
+        namer: Any | None = None,
+    ) -> dict[str, GapRetryOutcome]:
+        """Look again for the items of one existing report that have no box, within ``deadline`` (a ``time.monotonic()`` value).
+
+        The chat's gap retry, run without re-analysing the report: the same video-model check and per-item caps as the
+        analysis (:func:`retry_gap_crops`), and at most :data:`REPORT_GAP_RETRY_MAX_CALLS` detector calls for all the items.
+        With no detector or second-look client configured, nothing is looked for and each item says why. Never raises.
+        """
+        active = detector if detector is not None else self.detector
+        checker = namer if namer is not None else self.namer
+        if active is None or (hasattr(active, "is_available") and not active.is_available()):
+            return {
+                entry["item_id"]: GapRetryOutcome(None, "the box detector is not configured") for entry, _ in pending
+            }
+        if checker is None or not hasattr(checker, "verify_box"):
+            return {
+                entry["item_id"]: GapRetryOutcome(None, "the video model check is not configured")
+                for entry, _ in pending
+            }
+        if isinstance(active, DefaultDetector):
+            active = active.with_deadline(deadline)  # a stalled request ends with the budget
+        if isinstance(checker, DefaultDetector):
+            checker = checker.with_deadline(deadline)
+        return await retry_gap_crops(
+            pending,
+            video_ref=video_ref,
+            video_id=video_id,
+            detector=BudgetedDetector(active, CropCallBudget(REPORT_GAP_RETRY_MAX_CALLS)),
+            checker=checker,
+            stop_at=deadline,
+            semaphore=asyncio.Semaphore(EVIDENCE_CROP_CONCURRENCY),
+        )
+
     async def process_incident_report(
         self,
         *,
@@ -2265,46 +2412,19 @@ class CropEvidenceService:
             if not pending:
                 return
             retry_detector = BudgetedDetector(crop_detector, CropCallBudget(GAP_RETRY_MAX_CALLS))
-
-            async def _one(entry: dict[str, Any], crop: CropResult) -> None:
-                async with semaphore:
-                    timeout = None if stop_at is None else stop_at - time.monotonic()
-                    if timeout is not None and timeout <= 0:
-                        return
-                    try:
-                        found = await asyncio.wait_for(
-                            asyncio.to_thread(
-                                retry_gap_item,
-                                video_ref,
-                                entry["timestamp_seconds"],
-                                label=entry["label"],
-                                item_type=entry["item_type"],
-                                name=entry["item_name"],
-                                description=entry["description"],
-                                gap=crop.gap,
-                                detector=retry_detector,
-                                checker=checker,
-                                stop_at=stop_at,
-                            ),
-                            timeout=timeout,
-                        )
-                    except (TimeoutError, CropCallCapReachedError):
-                        return
-                    except Exception as exc:
-                        logger.warning("Gap retry failed for %s %s: %s", video_id, entry["item_id"], exc)
-                        return
-                if found is not None:
-                    logger.info(
-                        "Gap retry found a box for %s %s at %ss (was: %s)",
-                        video_id,
-                        entry["item_id"],
-                        found.box_seconds,
-                        crop.gap or "not located",
-                    )
-                    crops[entry["item_id"]] = found
-                    retried[entry["item_id"]] = found
-
-            await asyncio.gather(*(_one(entry, crop) for entry, crop in pending))
+            outcomes = await retry_gap_crops(
+                [(entry, crop.gap) for entry, crop in pending],
+                video_ref=video_ref,
+                video_id=video_id,
+                detector=retry_detector,
+                checker=checker,
+                stop_at=stop_at,
+                semaphore=semaphore,
+            )
+            for item_id, outcome in outcomes.items():
+                if outcome.found is not None:
+                    crops[item_id] = outcome.found
+                    retried[item_id] = outcome.found
 
         async def _upload(
             entry: dict[str, Any], track: track_evidence.Track | None, same_as: dict[str, Any] | None = None
