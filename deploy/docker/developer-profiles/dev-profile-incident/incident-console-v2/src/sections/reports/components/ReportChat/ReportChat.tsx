@@ -29,8 +29,9 @@ import {
   offersVideoCheck,
 } from '@/lib/chat/report-chat';
 import { segmentChatText } from '@/lib/chat/timestamps';
-import type { ChatCitation, ChatResponse, VideoOffer } from '@/modules/chat/domain/chat';
+import type { AppliedAction, ChatCitation, ChatResponse, ChatStep, SkippedAction, VideoOffer } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
+import { ChatStepsView } from './ChatStepsView';
 
 const SUGGESTIONS = ['Show the timeline of events'];
 
@@ -56,6 +57,10 @@ type ChatMessage = {
   videoOffer?: VideoOffer;
   /** Times the agent found the report does not hold. They stay plain text. */
   unknownTimes?: string[];
+  steps?: ChatStep[];
+  applied?: AppliedAction[];
+  skipped?: SkippedAction[];
+  wallMs?: number;
 };
 
 /** One conversation. The report page holds it, so closing the panel does not lose it. */
@@ -160,6 +165,10 @@ export function ReportChat({
             id: `msg-${messageSequence}`,
             answeredFrom: target.label,
             unknownTimes: payload.grounding?.unknownTimes,
+            steps: payload.message.steps,
+            applied: payload.message.applied,
+            skipped: payload.message.skipped,
+            wallMs: payload.message.wallMs,
           },
         ],
       });
@@ -348,6 +357,14 @@ export function ReportChat({
                               Check original video
                             </Button>
                           </div>
+                        )}
+                        {(Boolean(message.steps?.length) || Boolean(message.applied?.length) || Boolean(message.skipped?.length)) && (
+                          <ChatStepsView
+                            applied={message.applied}
+                            skipped={message.skipped}
+                            steps={message.steps}
+                            wallMs={message.wallMs}
+                          />
                         )}
                         <p className="mt-1.5 text-[10.5px] text-muted-foreground" data-testid="chat-answered-from">
                           {answerSourceLine(message.source, message.answeredFrom ?? '')}

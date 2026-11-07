@@ -18,8 +18,9 @@ import {
   MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
 import { citationHref, citationLabel, citationsByIncident, libraryChatRequestBody, matchingReports } from '@/lib/chat/library-chat';
-import type { ChatCitation, ChatGrounding, ChatResponse } from '@/modules/chat/domain/chat';
+import type { AppliedAction, ChatCitation, ChatGrounding, ChatResponse, ChatStep, SkippedAction } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
+import { ChatStepsView } from '@/sections/reports/components/ReportChat';
 
 const SUGGESTIONS = ['How many incidents involve a knife?', 'Which burglaries are high severity?', 'What happened most often?'];
 
@@ -34,6 +35,10 @@ type ChatMessage = {
   insufficientEvidence?: boolean;
   /** How the answer names each incident and item, the versions it read, and whether code composed it. */
   grounding?: Pick<ChatGrounding, 'incidentTitles' | 'itemNames' | 'versions' | 'candidates' | 'answeredBy'>;
+  steps?: ChatStep[];
+  applied?: AppliedAction[];
+  skipped?: SkippedAction[];
+  wallMs?: number;
 };
 
 const groupTitle = (titles: Record<string, string> | undefined, id: string) => {
@@ -74,7 +79,18 @@ export function LibraryChat() {
       if (!response.ok || !payload.message) throw new Error(payload.error || 'No answer returned');
       setSessionId(payload.sessionId);
       messageSequence += 1;
-      setMessages([...next, { ...payload.message, id: `library-msg-${messageSequence}`, grounding: payload.grounding }]);
+      setMessages([
+        ...next,
+        {
+          ...payload.message,
+          id: `library-msg-${messageSequence}`,
+          grounding: payload.grounding,
+          steps: payload.message.steps,
+          applied: payload.message.applied,
+          skipped: payload.message.skipped,
+          wallMs: payload.message.wallMs,
+        },
+      ]);
     } catch (cause) {
       setFailed(
         cause instanceof Error && !(cause instanceof TypeError)
@@ -206,6 +222,14 @@ export function LibraryChat() {
                           <Badge className="mt-2" data-testid="library-chat-insufficient" variant="secondary">
                             Not in the reports
                           </Badge>
+                        )}
+                        {(Boolean(message.steps?.length) || Boolean(message.applied?.length) || Boolean(message.skipped?.length)) && (
+                          <ChatStepsView
+                            applied={message.applied}
+                            skipped={message.skipped}
+                            steps={message.steps}
+                            wallMs={message.wallMs}
+                          />
                         )}
                       </BubbleContent>
                     </Bubble>

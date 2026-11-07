@@ -154,3 +154,55 @@ export async function sendVideoCheck(
   if (typeof body.content !== 'string' || body.source !== 'video') throw new Error('Agent returned an invalid video check');
   return { content: body.content, source: 'video' };
 }
+
+export function fromAgentInvestigateResponse(payload: unknown, sessionId?: string): ChatResponse {
+  const body = (payload ?? {}) as {
+    status?: string;
+    answer?: string;
+    steps?: Array<{ tool?: string; args?: unknown; ok?: boolean; ms?: number; error?: string | null }>;
+    actions?: Array<{ tool?: string; args?: unknown }>;
+    wall_ms?: number;
+  };
+  if (typeof body.answer !== 'string' || !Array.isArray(body.steps)) {
+    throw new Error('Agent returned an invalid investigate response');
+  }
+  return {
+    sessionId: sessionId || `investigate-${Date.now()}`,
+    message: {
+      role: 'assistant',
+      content: body.answer,
+      citations: [],
+      source: 'investigator',
+      status: body.status || 'ok',
+      steps: body.steps.map((s) => ({
+        tool: String(s.tool ?? ''),
+        args: (typeof s.args === 'object' && s.args !== null ? s.args : {}) as Record<string, unknown>,
+        ok: Boolean(s.ok),
+        ms: typeof s.ms === 'number' ? s.ms : 0,
+        error: typeof s.error === 'string' ? s.error : null,
+      })),
+      actions: Array.isArray(body.actions)
+        ? body.actions.map((a) => ({
+            tool: String(a.tool ?? ''),
+            args: (typeof a.args === 'object' && a.args !== null ? a.args : {}) as Record<string, unknown>,
+          }))
+        : [],
+      wallMs: typeof body.wall_ms === 'number' ? body.wall_ms : 0,
+    },
+  };
+}
+
+export async function sendAgentInvestigate(
+  agentUrl: string,
+  videoId: string,
+  question: string,
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
+  const response = await fetch(`${agentUrl.replace(/\/$/, '')}/api/v1/incidents/${encodeURIComponent(videoId)}/investigate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+    signal,
+  });
+  return fromAgentInvestigateResponse(await readUpstream(response, 'Agent /api/v1/incidents/{video_id}/investigate'));
+}

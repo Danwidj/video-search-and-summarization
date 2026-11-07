@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-07: Chat steps view ("What I did") renders the tool step log and applied/skipped draft changes under each chat reply
+- **Decision:** an expandable "What I did" disclosure is rendered directly under each assistant chat reply whenever steps or draft actions are present. It renders the step log from PR 517's investigator route (`POST /api/v1/incidents/{video_id}/investigate`) showing tools executed in order with status (ok/failed), duration (ms), parameters, and error message, plus changes applied and skipped against the draft (from 1B applier). Gated behind `INCIDENT_CHAT_STEPS_ENABLED`, checked per request in `src/app/api/chat/route.ts` and overridable per request via `x-chat-steps` header or `steps: true`.
+- **Why:** reviewers need visible proof of what the tool-calling agent did, which tools were chosen, and which proposed draft actions were applied or skipped. Phoenix traces require administrative access and cannot be inspected inline by reviewers in the console; rendering the step log directly in the conversation provides immediate, verifiable proof.
+- **Alternatives rejected:** putting the step log in the chat bubble text (muddies the conversation and disrupts plain reading); separate modal dialog (breaks conversational context); unconditional display (Plan B requires all new features to sit behind off-by-default flags).
+- **Links:** [console-reference](console-reference.md#report-chat), `ChatStepsView.tsx`, `chat-steps.ts`, `agent-chat.ts`, `src/app/api/chat/route.ts`.
+
 ### 2026-11-07: An evidence change the chat proposes is held beside the item until the reviewer confirms it
 - **Decision:** a re-track or set-image change for an existing item is stored as `proposal` on the draft item, not as `reviewer` or `imagePick`. Confirm runs `retrackDraftItem` or `setImagePick`; Adjust reuses the Edit track or Set image dialog and its Done confirms; `draftProblems` blocks Save while any proposal is open. Behind `INCIDENT_EVIDENCE_PROPOSALS_ENABLED`, read by the report page on each request.
 - **Why:** the detector cannot signal doubt (a car was boxed as "person near billboard"), so a box the chat chose must be seen by the reviewer; a rule in `draftProblems` makes "cannot be saved unconfirmed" a code fact. Confirm reusing the hand-edit functions means Save cuts crops exactly as before.
