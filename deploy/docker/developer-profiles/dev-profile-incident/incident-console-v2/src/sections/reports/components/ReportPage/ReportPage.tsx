@@ -592,6 +592,7 @@ export function ReportPage({
               <ResizableHandle aria-label="Resize video and timeline" disabled withHandle />
               <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="27.5%" id="report-timeline" minSize="15%">
                 <ReportTimeline
+                  bare={mode === 'edit'}
                   currentTime={currentTime}
                   onSeek={seek}
                   structured={draftStructured ?? report.structured}
@@ -650,9 +651,6 @@ export function ReportPage({
                   <ReportEditPane
                     a={compareReport?.structured ?? null}
                     aRevisionNo={compareReport?.revision.revisionNo ?? editBase.revisionNo}
-                    baseKind={editBase.report.revision.kind === 'human' ? 'human' : 'ai'}
-                    baseOfficial={editBase.report.official.officialRevisionId === editBase.revisionId}
-                    baseRevisionNo={editBase.revisionNo}
                     draft={draft}
                     assistantKeys={assistantKeys}
                     evidenceOpening={evidenceOpening}
@@ -684,15 +682,7 @@ export function ReportPage({
                     <span className="min-w-0 text-muted-foreground sm:flex-1">
                       {editBase && (
                         <>
-                          <b>Draft</b> from v{editBase.revisionNo} ·{' '}
-                          {changes ? (
-                            <>
-                              <b>{changes}</b> unsaved change{changes === 1 ? '' : 's'}
-                            </>
-                          ) : (
-                            'no changes yet'
-                          )}{' '}
-                          · official is <b>{officialLabel}</b>
+                          <b>Draft</b> from v{editBase.revisionNo} · unsaved · official is <b>{officialLabel}</b>
                         </>
                       )}
                     </span>

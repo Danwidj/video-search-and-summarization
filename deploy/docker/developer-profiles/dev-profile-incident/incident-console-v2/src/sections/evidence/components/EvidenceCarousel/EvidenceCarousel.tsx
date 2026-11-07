@@ -52,7 +52,7 @@ export function EvidenceCarousel({
       <div
         className={
           lanes
-            ? 'grid auto-cols-[min(24rem,calc(100vw-4rem))] grid-cols-[3.25rem] grid-flow-col grid-rows-[auto_auto] gap-x-3 gap-y-2 overflow-x-auto pb-3'
+            ? 'grid auto-cols-[min(15.5rem,calc(100vw-4rem))] grid-cols-[3.25rem] grid-flow-col grid-rows-[auto_auto] gap-x-3 gap-y-2 overflow-x-auto pb-3'
             : 'flex snap-x snap-mandatory gap-3 overflow-x-auto pb-3'
         }
         ref={rail}

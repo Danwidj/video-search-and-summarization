@@ -24,7 +24,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { clearOfficial, markOfficial } from '@/lib/reports/official-client';
 import { officialRevisionIdOf, shouldConfirmReplace } from '@/lib/reports/official-state';
 import { layoutVersions, shortVersionNote } from '@/lib/reports/version-graph';
-import { formatTimestamp } from '@/lib/time';
+import { formatDate, parseStoredTimestamp } from '@/lib/time';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 
 const LANE_WIDTH = 16;
@@ -107,6 +107,17 @@ export function ReportVersions({
             <Skeleton className="h-10 w-full rounded-xl" />
           </div>
         )}
+        {layout && mode === 'edit' && (
+          <div className="mx-2 mt-2 rounded-lg border border-dashed border-muted-foreground/50 px-3 py-2 text-xs" data-testid="draft-row">
+            <div className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Draft · unsaved</div>
+            <span>
+              <b>Your draft</b>{' '}
+              <span className="text-muted-foreground">
+                from v{revisions?.find((revision) => revision.revisionId === currentRevisionId)?.revisionNo ?? ''} · editable
+              </span>
+            </span>
+          </div>
+        )}
         {layout && (
           <ScrollArea className="min-h-0 px-2 py-1">
             <ol>
@@ -143,7 +154,7 @@ export function ReportVersions({
                         style={{ left: lane * LANE_WIDTH + LANE_WIDTH / 2 }}
                       />
                     </span>
-                    {mode === 'view' && !current && (
+                    {!current && mode === 'view' && (
                       <button
                         aria-label={`View v${revision.revisionNo}`}
                         className="absolute inset-0 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -151,10 +162,17 @@ export function ReportVersions({
                         type="button"
                       />
                     )}
+                    {!current && mode === 'edit' && (
+                      <button
+                        aria-label={`Edit from v${revision.revisionNo}`}
+                        className="absolute inset-0 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => onEditRevision?.(revision.revisionId)}
+                        type="button"
+                      />
+                    )}
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-x-2">
                         <b>v{revision.revisionNo}</b>
-                        <span className="text-muted-foreground">{formatTimestamp(revision.createdAt, 'time unknown')}</span>
                       </span>
                       <span className="flex items-center gap-1.5 text-muted-foreground">
                         <VersionPill kind={revision.kind === 'human' ? 'human' : 'ai'} official={official} />
@@ -182,22 +200,13 @@ export function ReportVersions({
                       </TooltipTrigger>
                       <TooltipContent>{starTitle}</TooltipContent>
                     </Tooltip>
-                    {mode === 'edit' && current ? (
-                      <Badge className="self-center px-2 py-0.5 text-[10.5px] font-bold" variant="default">
-                        Editing
-                      </Badge>
-                    ) : mode === 'edit' ? (
-                      <Button
-                        aria-label={`Edit from v${revision.revisionNo}`}
-                        className="h-6 self-center px-2 text-[10.5px] font-bold"
-                        onClick={() => onEditRevision?.(revision.revisionId)}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        Edit
-                      </Button>
-                    ) : current ? (
+                    <span className="flex shrink-0 flex-col items-end self-center whitespace-nowrap font-mono text-[11px] leading-4 text-muted-foreground">
+                      <span>{formatDate(revision.createdAt, 'time unknown')}</span>
+                      <span>
+                        {parseStoredTimestamp(revision.createdAt)?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) ?? ''}
+                      </span>
+                    </span>
+                    {mode === 'view' && current ? (
                       <Badge className="self-center px-2 py-0.5 text-[10.5px] font-bold" variant="default">
                         Viewing
                       </Badge>
