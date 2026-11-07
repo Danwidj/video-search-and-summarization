@@ -108,12 +108,15 @@ export function chatRequestBody({
   videoId,
   target,
   steps,
+  editDraft,
 }: {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   sessionId?: string;
   videoId: string;
   target: ChatTarget;
   steps?: boolean;
+  /** The draft snapshot (lib/edits/chat-edit.ts draftSnapshot): the chat may then change the draft. */
+  editDraft?: Record<string, unknown>;
 }) {
   return {
     messages,
@@ -122,6 +125,7 @@ export function chatRequestBody({
     versionId: target.versionId,
     ...(target.draftReport ? { draftReport: target.draftReport } : {}),
     ...(steps !== undefined ? { steps } : {}),
+    ...(editDraft ? { editDraft } : {}),
   };
 }
 

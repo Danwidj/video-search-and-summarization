@@ -29,6 +29,8 @@ import {
   offersVideoCheck,
 } from '@/lib/chat/report-chat';
 import { segmentChatText } from '@/lib/chat/timestamps';
+import { draftSnapshot, type ProposedAction } from '@/lib/edits/chat-edit';
+import type { EditDraft } from '@/modules/reports/domain/edit-draft';
 import type { AppliedAction, ChatCitation, ChatResponse, ChatStep, SkippedAction, VideoOffer } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
 import { ChatStepsView } from './ChatStepsView';
@@ -121,6 +123,7 @@ export function ReportChat({
   onSeek,
   durationSeconds = null,
   titles = {},
+  edits,
 }: {
   videoId: string;
   target: ChatTarget;
@@ -131,6 +134,14 @@ export function ReportChat({
   durationSeconds?: number | null;
   /** Each cited item's name (citationTitles), so a citation is shown without its id. */
   titles?: Record<string, string>;
+  /**
+   * Lets a question change the draft (flag INCIDENT_CHAT_EDITS_ENABLED). `current` is the draft as it is when the question
+   * is sent; `apply` takes the agent's proposals, made for that draft, and returns what it applied and skipped.
+   */
+  edits?: {
+    current: () => EditDraft;
+    apply: (sent: EditDraft, proposals: ProposedAction[]) => { applied: AppliedAction[]; skipped: SkippedAction[] };
+  };
 }) {
   const { messages, sessionId, busy, failed } = thread;
   const [question, setQuestion] = useState('');
@@ -145,16 +156,25 @@ export function ReportChat({
     messageSequence += 1;
     const next: ChatMessage[] = [...history, { id: `msg-${messageSequence}`, role: 'user', content: text }];
     onThreadChange({ messages: next, busy: true, failed: null });
+    const sent = edits?.current();
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
-          chatRequestBody({ messages: chatHistory(next).map(({ role, content }) => ({ role, content })), sessionId, videoId, target }),
+          chatRequestBody({
+            messages: chatHistory(next).map(({ role, content }) => ({ role, content })),
+            sessionId,
+            videoId,
+            target,
+            ...(sent ? { editDraft: draftSnapshot(sent) } : {}),
+          }),
         ),
       });
       const payload = (await readReply(response)) as Partial<ChatResponse> & { error?: string };
       if (!response.ok || !payload.message) throw new Error(payload.error || CHAT_FAILED);
+      // The edits join the draft in one change (one Undo), then the message says what happened to each.
+      const outcome = edits && sent && payload.message.actions?.length ? edits.apply(sent, payload.message.actions) : undefined;
       messageSequence += 1;
       onThreadChange({
         sessionId: payload.sessionId,
@@ -166,8 +186,8 @@ export function ReportChat({
             answeredFrom: target.label,
             unknownTimes: payload.grounding?.unknownTimes,
             steps: payload.message.steps,
-            applied: payload.message.applied,
-            skipped: payload.message.skipped,
+            applied: outcome?.applied ?? payload.message.applied,
+            skipped: outcome?.skipped ?? payload.message.skipped,
             wallMs: payload.message.wallMs,
           },
         ],

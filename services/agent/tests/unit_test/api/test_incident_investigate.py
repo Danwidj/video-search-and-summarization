@@ -28,6 +28,7 @@ import pytest
 from vss_agents.api.incident_investigate import ENABLED_ENV
 from vss_agents.api.incident_investigate import register_incident_investigate_routes
 from vss_agents.utils import agent_loop
+from vss_agents.utils import draft_edits
 
 URL = "/api/v1/incidents/V1/investigate"
 BODY = {"question": "who gets out of the car?"}
@@ -141,3 +142,54 @@ def test_an_agent_that_is_not_declared_is_a_501(on) -> None:
 def test_a_bad_body_is_a_422(on, body) -> None:
     client, _, _ = _client(lambda: _calls())
     assert client.post(URL, json=body).status_code == 422
+
+
+DRAFT = {"incident": {"title": "Fight"}, "entities": [{"key": "p1", "type": "human"}]}
+
+
+def test_a_draft_runs_the_editor_agent_with_the_draft_in_its_question(on, monkeypatch) -> None:
+    monkeypatch.setenv(draft_edits.ENABLED_ENV, "1")
+    seen: list = []
+
+    async def script() -> str:
+        seen.append(agent_loop.current().draft)
+        return await _calls(("propose_delete_item", {"item_key": "p1"}), final="Deleted.")
+
+    client, manager, create = _client(script)
+    data = client.post(URL, json={**BODY, "draft": DRAFT}).json()
+    assert create.await_args.args[1] == "report_editor"
+    assert data["actions"] == [{"tool": "propose_delete_item", "args": {"item_key": "p1"}}]
+    assert manager.questions[0].startswith(BODY["question"])
+    assert '"key":"p1"' in manager.questions[0]
+    assert seen[0].entities[0].key == "p1"
+
+
+def test_a_draft_with_draft_edits_off_is_a_404_and_no_agent_is_built(on, monkeypatch) -> None:
+    monkeypatch.delenv(draft_edits.ENABLED_ENV, raising=False)
+    client, _, create = _client(lambda: _calls())
+    assert client.post(URL, json={**BODY, "draft": DRAFT}).status_code == 404
+    create.assert_not_called()
+
+
+def test_a_request_without_a_draft_still_runs_the_investigator(on, monkeypatch) -> None:
+    monkeypatch.setenv(draft_edits.ENABLED_ENV, "1")
+    client, manager, create = _client(lambda: _calls())
+    client.post(URL, json=BODY)
+    assert create.await_args.args[1] == "investigator"
+    assert manager.questions == [BODY["question"]]
+
+
+def test_each_agent_gets_its_own_session_manager(on, monkeypatch) -> None:
+    monkeypatch.setenv(draft_edits.ENABLED_ENV, "1")
+    client, _, create = _client(lambda: _calls())
+    client.post(URL, json=BODY)
+    client.post(URL, json={**BODY, "draft": DRAFT})
+    client.post(URL, json={**BODY, "draft": DRAFT})
+    assert [call.args[1] for call in create.await_args_list] == ["investigator", "report_editor"]
+
+
+def test_a_draft_with_a_repeated_key_is_a_422(on, monkeypatch) -> None:
+    monkeypatch.setenv(draft_edits.ENABLED_ENV, "1")
+    client, _, _ = _client(lambda: _calls())
+    twin = {"incident": {}, "entities": [{"key": "a"}, {"key": "a"}]}
+    assert client.post(URL, json={**BODY, "draft": twin}).status_code == 422

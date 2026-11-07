@@ -226,3 +226,49 @@ test('a template (chat-contract-v1) answer has no flag and no grounding', async 
   assert.equal('insufficientEvidence' in payload.message, false);
   assert.equal('grounding' in payload, false);
 });
+
+test('with chat edits on, the draft goes to the investigate route and its actions come back for the page to apply', async () => {
+  process.env.INCIDENT_CHAT_EDITS_ENABLED = '1';
+  const actions = [{ tool: 'propose_set_incident_fields', args: { severity_level: 4 } }];
+  upstream.body = {
+    status: 'ok',
+    answer: 'Raised the severity.',
+    steps: [{ tool: 'propose_set_incident_fields', args: { severity_level: 4 }, ok: true, ms: 5 }],
+    actions,
+    wall_ms: 10,
+  };
+  const editDraft = { incident: { title: 'Fight' }, entities: [] };
+  const response = await post({ messages: [{ role: 'user', content: 'Make it severity 4' }], incidentId: 'V1', editDraft });
+  const body = await response.json();
+  assert.equal(upstream.calls.length, 1);
+  assert.match(upstream.calls[0].url, /\/api\/v1\/incidents\/V1\/investigate$/);
+  assert.deepEqual(upstream.calls[0].body, { question: 'Make it severity 4', draft: editDraft });
+  assert.deepEqual(body.message.actions, actions);
+  assert.equal(body.message.applied, undefined);
+});
+
+test('an editor run that used no tool was not an edit: the usual chat answers, as it does with edits off', async () => {
+  process.env.INCIDENT_CHAT_EDITS_ENABLED = '1';
+  const bodies = [{ status: 'ok', answer: 'This is not an edit.', steps: [], actions: [], wall_ms: 3 }, agentResponse];
+  globalThis.fetch = async (url, init) => {
+    upstream.calls.push({ url: String(url), body: JSON.parse(init.body) });
+    return new Response(JSON.stringify(bodies[upstream.calls.length - 1]), { status: 200 });
+  };
+  const response = await post({
+    messages: [{ role: 'user', content: 'What weapon?' }],
+    incidentId: 'V1',
+    editDraft: { incident: {} },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    upstream.calls.map((call) => call.url.split('/').slice(-1)[0]),
+    ['investigate', 'chat'],
+  );
+});
+
+test('with chat edits off the draft snapshot is ignored and nothing calls the investigate route', async () => {
+  delete process.env.INCIDENT_CHAT_EDITS_ENABLED;
+  await post({ messages: [{ role: 'user', content: 'Hi' }], incidentId: 'V1', editDraft: { incident: {} } });
+  assert.equal(upstream.calls.length, 1);
+  assert.match(upstream.calls[0].url, /\/incidents\/chat$/);
+});
