@@ -58,3 +58,13 @@ test('a column with no size gives no layout, so nothing is set while it is hidde
   }
   assert.equal(videoFitLayout(800, 900, 0), null);
 });
+
+test('the timeline takes the height its lanes need and versions take the rest', async () => {
+  const { timelinePanelHeight } = await import('../src/lib/ui/video-fit.ts');
+  const layout = videoFitLayout(1600, 1800, 16 / 9, 270);
+  assert.ok(Math.abs(layout.timeline - 15) < 1e-9, String(layout.timeline));
+  assert.ok(Math.abs(sum(layout) - 100) < 1e-9);
+  assert.ok(timelinePanelHeight(6) > timelinePanelHeight(2));
+  const tall = videoFitLayout(1600, 1800, 16 / 9, 10_000);
+  assert.ok(Math.abs(tall.versions - 15) < 1e-9, String(tall.versions));
+});

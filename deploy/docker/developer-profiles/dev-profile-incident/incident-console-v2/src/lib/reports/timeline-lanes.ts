@@ -47,7 +47,7 @@ export function buildTimelineLanes({ entities, instruments, assets }: Structured
   const lanes: TimelineLane[] = entities.map((entity) => ({
     id: entity.entityId,
     kind: 'entity',
-    title: `${entity.entityId} · ${entity.label || entity.type}`,
+    title: entity.label || entity.type,
     span: validSpan(entity.firstSeenSeconds, entity.lastSeenSeconds),
     markers: [
       { id: entity.entityId, kind: 'entity', label: entity.label || entity.type, seconds: entity.timestampSeconds },

@@ -47,7 +47,7 @@ import type { AppliedAction, ChatCitation, ChatResponse, ChatStep, SkippedAction
 import { formatClock } from '@/modules/reports/domain/normalize';
 import { ChatStepsView } from './ChatStepsView';
 
-const SUGGESTIONS = ['Show the timeline of events'];
+const SUGGESTIONS = ['Show the timeline of events', 'Draw the box for an entity', 'Look for an item in the clip'];
 
 const CHAT_FAILED = 'The chat service is unavailable right now. Please try again in a moment.';
 
@@ -378,32 +378,29 @@ export function ReportChat({
       className="flex h-full w-full flex-col overflow-hidden rounded-none border-0 bg-card text-card-foreground shadow-none"
       data-testid="report-chat"
     >
-      <div className="relative flex min-h-24 items-center border-b border-border/70 bg-muted/40 px-5 py-5 pr-14">
-        <div className="min-w-0">
-          <h2 className="text-lg font-bold tracking-tight text-foreground">Ask about this incident</h2>
-          <p className="mt-1.5">
-            <Badge
-              className="text-[11px] font-semibold"
-              data-testid="chat-target"
-              title="The chat follows the version you have selected"
-              variant="outline"
-            >
-              {target.label}
-            </Badge>
-          </p>
+      <div className="relative flex items-center justify-between gap-3 bg-muted/40 px-4 py-3 pr-10">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h2 className="text-base font-bold tracking-tight text-foreground">Ask about this incident</h2>
+          <Button
+            disabled={!messages.length || busy}
+            onClick={() => onThreadChange({ messages: [], sessionId: undefined, failed: null })}
+            size="xs"
+            type="button"
+            variant="outline"
+          >
+            New chat
+          </Button>
+          <Badge
+            className="text-[11px] font-semibold"
+            data-testid="chat-target"
+            title="The chat follows the version you have selected"
+            variant="outline"
+          >
+            {target.label}
+          </Badge>
         </div>
         <Button aria-label="Close chat" className="absolute top-3 right-3" onClick={onClose} size="icon-sm" type="button" variant="ghost">
           <XIcon aria-hidden="true" />
-        </Button>
-        <Button
-          className="absolute right-4 bottom-3"
-          disabled={!messages.length || busy}
-          onClick={() => onThreadChange({ messages: [], sessionId: undefined, failed: null })}
-          size="xs"
-          type="button"
-          variant="outline"
-        >
-          New chat
         </Button>
       </div>
       <MessageScrollerProvider>
@@ -411,31 +408,20 @@ export function ReportChat({
           <MessageScrollerViewport className="flex-1 overflow-auto px-3.5 py-3" ref={scrollerViewportRef}>
             <MessageScrollerContent className="flex flex-col gap-2.5">
               {!messages.length && (
-                <>
-                  <p className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-muted-foreground">
-                    Ask about the people, objects and events in this incident. Answers come from the stored report for the version you have
-                    open, not from a new look at the video. Times in an answer jump to that moment.
-                  </p>
-                  <p className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-muted-foreground">
-                    In Edit, two ways put a box on an item. "Draw the box for E2" opens the box tool so you draw it, at once. "Look for E2
-                    in the clip" has the video searched for it instead (about a minute an item); any box it finds comes back here to confirm
-                    or adjust.
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {SUGGESTIONS.map((suggestion) => (
-                      <Button
-                        className="h-auto px-2.5 py-1 text-left text-xs font-semibold"
-                        key={suggestion}
-                        onClick={() => void send(suggestion, [])}
-                        size="xs"
-                        type="button"
-                        variant="outline"
-                      >
-                        {suggestion}
-                      </Button>
-                    ))}
-                  </div>
-                </>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {SUGGESTIONS.map((suggestion) => (
+                    <Button
+                      className="h-auto px-2.5 py-1 text-left text-xs font-semibold"
+                      key={suggestion}
+                      onClick={() => void send(suggestion, [])}
+                      size="xs"
+                      type="button"
+                      variant="outline"
+                    >
+                      {suggestion}
+                    </Button>
+                  ))}
+                </div>
               )}
               {messages.map((message) =>
                 message.role === 'user' ? (
@@ -562,7 +548,7 @@ export function ReportChat({
           </MessageScrollerViewport>
         </MessageScroller>
       </MessageScrollerProvider>
-      <form className="flex gap-1.5 border-t border-border px-3 py-2.5" onSubmit={ask}>
+      <form className="flex gap-1.5 px-3 py-2.5" onSubmit={ask}>
         <Input
           aria-label="Question"
           className="h-8 min-w-0 flex-1 text-xs"

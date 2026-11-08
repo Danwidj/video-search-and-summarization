@@ -2,6 +2,7 @@
 
 'use client';
 
+import { ReportFieldRow, ReportFields } from '@/sections/reports/components/ReportFields/ReportFields';
 import { INCIDENT_HIGHLIGHT_KEY } from '@/lib/edits/chat-edit';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { PlusIcon } from 'lucide-react';
@@ -257,168 +258,151 @@ export function ReportEditPane({
         data-assistant-edit={assistantKeys.includes(INCIDENT_HIGHLIGHT_KEY) || undefined}
         data-testid="report-fields-compare"
       >
-        <CardContent className="p-0">
-          {officialMissing && (
-            <p className="m-0 border-b border-dashed border-border/70 px-3 py-2 text-xs text-ink-caption" data-testid="official-status">
-              No official version has been selected for this video. Star a version to make it official.
-            </p>
-          )}
-          <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1fr)] border-b border-border/70 text-xs" data-testid="compare-header">
-            <span aria-hidden />
-            <span className="px-3 py-2.5 font-semibold text-foreground">
-              v{aRevisionNo} <span className="font-normal text-muted-foreground">saved · read-only</span>
-            </span>
-            <span className="border-l border-border px-3 py-2.5 font-semibold text-foreground">
+        <ReportFields
+          title="Report fields"
+          columns={2}
+          notices={
+            officialMissing && (
+              <p className="mb-2 border-b border-dashed border-border/70 px-3 py-2 text-xs text-ink-caption" data-testid="official-status">
+                No official version has been selected for this video. Star a version to make it official.
+              </p>
+            )
+          }
+          draftLabel={
+            <>
               Draft <span className="font-normal text-muted-foreground">editable</span>
+            </>
+          }
+          savedLabel={
+            <>
+              v{aRevisionNo} <span className="font-normal text-muted-foreground">saved · read-only</span>
+            </>
+          }
+        >
+          <ReportFieldRow label="Title" saved={<span className="font-semibold">{title}</span>}>
+            <Input
+              aria-label="Draft title"
+              className="font-semibold"
+              onChange={(event) => patchIncident({ title: event.target.value })}
+              placeholder={title}
+              value={draft.incident.title}
+            />
+          </ReportFieldRow>
+          <ReportFieldRow label="Incident type" saved={capitalize(a?.incident.type ?? null)}>
+            <Select
+              onValueChange={(val) => patchIncident({ type: val === '__unclassified__' ? null : val })}
+              value={draft.incident.type ?? '__unclassified__'}
+            >
+              <SelectTrigger aria-label="Draft incident type" className="h-9 w-full bg-white text-xs">
+                <SelectValue placeholder="Choose…" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="__unclassified__">Choose…</SelectItem>
+                {EDITABLE_INCIDENT_TYPES.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {capitalize(type)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </ReportFieldRow>
+          <ReportFieldRow
+            label="Severity"
+            saved={
+              <span className={`rounded-full px-3 py-0.5 text-xs font-bold ${severityStyle(a?.incident.severityLevel ?? null)}`}>
+                {a?.incident.severityLevel ?? '—'}/5
+              </span>
+            }
+          >
+            <Select
+              onValueChange={(val) => patchIncident({ severity_level: val === '__none__' ? null : Number(val) })}
+              value={draft.incident.severity_level ? String(draft.incident.severity_level) : '__none__'}
+            >
+              <SelectTrigger
+                aria-label="Draft severity"
+                className={cn('h-9 w-full bg-white text-xs font-bold', severityStyle(draft.incident.severity_level))}
+              >
+                <SelectValue placeholder="Choose…" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="__none__">Choose…</SelectItem>
+                {[1, 2, 3, 4, 5].map((level) => (
+                  <SelectItem key={level} value={String(level)}>
+                    {level}/5
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </ReportFieldRow>
+          <ReportFieldRow
+            label="Time range"
+            saved={a?.incident.startSeconds != null ? `${clock(a.incident.startSeconds)}–${clock(a.incident.endSeconds)}` : 'Not recorded'}
+          >
+            <span className="flex flex-wrap items-center gap-1.5">
+              <span className="font-mono text-[11px] text-ink-caption">{clock(draft.incident.start_timestamp)}</span>
+              <Input
+                aria-label="Draft incident start in seconds"
+                className="h-8 w-20 text-xs"
+                inputMode="numeric"
+                min={0}
+                onChange={(event) =>
+                  patchIncident({
+                    start_timestamp: event.target.value === '' ? null : Math.max(0, Math.floor(Number(event.target.value))),
+                  })
+                }
+                step={1}
+                type="number"
+                value={draft.incident.start_timestamp ?? ''}
+              />
+              <span>–</span>
+              <Input
+                aria-label="Draft incident end in seconds"
+                className="h-8 w-20 text-xs"
+                inputMode="numeric"
+                min={0}
+                onChange={(event) =>
+                  patchIncident({
+                    end_timestamp: event.target.value === '' ? null : Math.max(0, Math.floor(Number(event.target.value))),
+                  })
+                }
+                step={1}
+                type="number"
+                value={draft.incident.end_timestamp ?? ''}
+              />
+              <span className="font-mono text-[11px] text-ink-caption">{clock(draft.incident.end_timestamp)}</span>
             </span>
-          </div>
-          <dl className="m-0">
-            <PairField
-              changed={draft.incident.title !== title}
-              label="Title"
-              left={<span>{title}</span>}
-              right={
-                <Input
-                  aria-label="Draft title"
-                  className="h-9 text-xs"
-                  onChange={(event) => patchIncident({ title: event.target.value })}
-                  placeholder={title}
-                  value={draft.incident.title}
-                />
-              }
+          </ReportFieldRow>
+          <ReportFieldRow
+            label="Summary"
+            saved={<span className="whitespace-pre-wrap">{a?.incident.description ?? 'No summary was recorded.'}</span>}
+          >
+            <Textarea
+              aria-label="Draft summary"
+              className="min-h-[92px] text-xs"
+              onChange={(event) => patchIncident({ description: event.target.value })}
+              value={draft.incident.description}
             />
-            <PairField
-              changed={(draft.incident.type ?? null) !== (a?.incident.type ?? null)}
-              label="Incident type"
-              left={capitalize(a?.incident.type ?? null)}
-              right={
-                <Select
-                  onValueChange={(val) => patchIncident({ type: val === '__unclassified__' ? null : val })}
-                  value={draft.incident.type ?? '__unclassified__'}
-                >
-                  <SelectTrigger aria-label="Draft incident type" className="h-9 w-full bg-white text-xs">
-                    <SelectValue placeholder="Choose…" />
-                  </SelectTrigger>
-                  <SelectContent position="popper">
-                    <SelectItem value="__unclassified__">Choose…</SelectItem>
-                    {EDITABLE_INCIDENT_TYPES.map((type) => (
-                      <SelectItem key={type} value={type}>
-                        {capitalize(type)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              }
+          </ReportFieldRow>
+          <ReportFieldRow
+            label="Severity rationale"
+            saved={
+              <span className="whitespace-pre-wrap text-foreground/75">
+                {a?.incident.severityReason ?? 'No severity rationale was recorded.'}
+              </span>
+            }
+          >
+            <Textarea
+              aria-label="Draft severity rationale"
+              className="min-h-[72px] text-xs"
+              onChange={(event) => patchIncident({ severity_reason: event.target.value })}
+              value={draft.incident.severity_reason}
             />
-            <PairField
-              changed={draft.incident.severity_level !== (a?.incident.severityLevel ?? null)}
-              label="Severity"
-              left={
-                <span className={`rounded-full px-3 py-0.5 text-xs font-bold ${severityStyle(a?.incident.severityLevel ?? null)}`}>
-                  {a?.incident.severityLevel ?? '—'}/5
-                </span>
-              }
-              right={
-                <Select
-                  onValueChange={(val) => patchIncident({ severity_level: val === '__none__' ? null : Number(val) })}
-                  value={draft.incident.severity_level ? String(draft.incident.severity_level) : '__none__'}
-                >
-                  <SelectTrigger
-                    aria-label="Draft severity"
-                    className={cn('h-9 w-full bg-white text-xs font-bold', severityStyle(draft.incident.severity_level))}
-                  >
-                    <SelectValue placeholder="Choose…" />
-                  </SelectTrigger>
-                  <SelectContent position="popper">
-                    <SelectItem value="__none__">Choose…</SelectItem>
-                    {[1, 2, 3, 4, 5].map((level) => (
-                      <SelectItem key={level} value={String(level)}>
-                        {level}/5
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              }
-            />
-            <PairField
-              changed={
-                draft.incident.start_timestamp !== (a?.incident.startSeconds ?? null) ||
-                draft.incident.end_timestamp !== (a?.incident.endSeconds ?? null)
-              }
-              label="Time range"
-              left={a?.incident.startSeconds != null ? `${clock(a.incident.startSeconds)}–${clock(a.incident.endSeconds)}` : 'Not recorded'}
-              right={
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <span className="font-mono text-[11px] text-ink-caption">{clock(draft.incident.start_timestamp)}</span>
-                  <Input
-                    aria-label="Draft incident start in seconds"
-                    className="h-8 w-20 text-xs"
-                    inputMode="numeric"
-                    min={0}
-                    onChange={(event) =>
-                      patchIncident({
-                        start_timestamp: event.target.value === '' ? null : Math.max(0, Math.floor(Number(event.target.value))),
-                      })
-                    }
-                    step={1}
-                    type="number"
-                    value={draft.incident.start_timestamp ?? ''}
-                  />
-                  <span>–</span>
-                  <Input
-                    aria-label="Draft incident end in seconds"
-                    className="h-8 w-20 text-xs"
-                    inputMode="numeric"
-                    min={0}
-                    onChange={(event) =>
-                      patchIncident({
-                        end_timestamp: event.target.value === '' ? null : Math.max(0, Math.floor(Number(event.target.value))),
-                      })
-                    }
-                    step={1}
-                    type="number"
-                    value={draft.incident.end_timestamp ?? ''}
-                  />
-                  <span className="font-mono text-[11px] text-ink-caption">{clock(draft.incident.end_timestamp)}</span>
-                </span>
-              }
-            />
-            <PairField
-              changed={(draft.incident.description ?? '') !== (a?.incident.description ?? '')}
-              label="Summary"
-              left={<span className="whitespace-pre-wrap">{a?.incident.description ?? 'No summary was recorded.'}</span>}
-              right={
-                <Textarea
-                  aria-label="Draft summary"
-                  className="min-h-[92px] text-xs"
-                  onChange={(event) => patchIncident({ description: event.target.value })}
-                  value={draft.incident.description}
-                />
-              }
-            />
-            <PairField
-              changed={(draft.incident.severity_reason ?? '') !== (a?.incident.severityReason ?? '')}
-              label="Severity rationale"
-              left={
-                <span className="whitespace-pre-wrap text-foreground/75">
-                  {a?.incident.severityReason ?? 'No severity rationale was recorded.'}
-                </span>
-              }
-              right={
-                <Textarea
-                  aria-label="Draft severity rationale"
-                  className="min-h-[72px] text-xs"
-                  onChange={(event) => patchIncident({ severity_reason: event.target.value })}
-                  value={draft.incident.severity_reason}
-                />
-              }
-            />
-          </dl>
-        </CardContent>
+          </ReportFieldRow>
+        </ReportFields>
       </Card>
 
       <Card className="mt-5 gap-0 overflow-hidden border-border/80 py-0" data-testid="evidence-compare">
-        <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-border/70 px-4 py-3">
+        <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-4 !pb-1 pt-1">
           <CardTitle className="text-base font-semibold">Evidence items</CardTitle>
           <Button data-testid="add-evidence" onClick={() => setBoxTool({ row: null })} size="sm" type="button">
             <PlusIcon aria-hidden="true" />
@@ -435,48 +419,48 @@ export function ReportEditPane({
             </p>
           </CardContent>
         ) : (
-          <div className="px-4 pt-3 pb-1">
-            <EvidenceCarousel controlsTarget={null} label="Saved and draft evidence items" lanes>
-              <div className="sticky left-0 z-10 row-span-2 grid grid-rows-subgrid gap-y-2 bg-background pr-3">
-                <div className="flex min-h-20 items-start pt-3 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
-                  v{aRevisionNo}
-                </div>
-                <div className="flex min-h-20 items-start pt-3 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
-                  Draft
-                </div>
+          <EvidenceCarousel label="Saved and draft evidence items" lanes>
+            <div className="row-span-2 mr-1 grid w-16 grid-rows-subgrid border-r border-border/70 pr-3">
+              <div className="flex flex-col items-center justify-center gap-0.5 rounded-md border-b border-border/70 bg-muted text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                <span>v{aRevisionNo}</span>
+                <span className="text-[10px] font-normal normal-case tracking-normal italic">saved</span>
               </div>
-              {pairing.rows.map((row) => (
-                <PairRowView
-                  aRevisionNo={aRevisionNo}
-                  aColour={(row.a && savedColours.get(savedItemId(row.a))) ?? STILL_BOX_COLOUR}
-                  assistantEdited={Boolean(row.b && assistantKeys.includes(row.b.key))}
-                  bColour={(row.b && draftColours.get(row.b.key)) ?? STILL_BOX_COLOUR}
-                  videoId={videoId}
-                  videoSrc={videoSrc}
-                  draft={draft}
-                  draftHolder={draftHolder}
-                  holderOptions={holderOptions}
-                  inherited={row.kind === 'entity' ? inherited(row) : ''}
-                  key={rowKey(row)}
-                  onRemove={remove}
-                  onEditTrack={editTrack}
-                  onSetImage={setImage}
-                  proposals={{
-                    onConfirm: () => row.b && onChange(confirmProposal(draft, row.b.key)),
-                    onAdjust: () => adjustProposal(row),
-                    onDismiss: () => row.b && onChange(dismissProposal(draft, row.b.key)),
-                  }}
-                  onRevert={revert}
-                  onSeek={onSeek}
-                  patchAsset={patchAsset}
-                  patchEntity={patchEntity}
-                  patchInstrument={patchInstrument}
-                  row={row}
-                  savedHolder={savedHolder}
-                />
-              ))}
-            </EvidenceCarousel>
-          </div>
+              <div className="flex flex-col items-center justify-center gap-0.5 rounded-md bg-primary/10 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                <span>Draft</span>
+                <span className="text-[10px] font-normal normal-case tracking-normal italic">editable</span>
+              </div>
+            </div>
+            {pairing.rows.map((row) => (
+              <PairRowView
+                aRevisionNo={aRevisionNo}
+                aColour={(row.a && savedColours.get(savedItemId(row.a))) ?? STILL_BOX_COLOUR}
+                assistantEdited={Boolean(row.b && assistantKeys.includes(row.b.key))}
+                bColour={(row.b && draftColours.get(row.b.key)) ?? STILL_BOX_COLOUR}
+                videoId={videoId}
+                videoSrc={videoSrc}
+                draft={draft}
+                draftHolder={draftHolder}
+                holderOptions={holderOptions}
+                inherited={row.kind === 'entity' ? inherited(row) : ''}
+                key={rowKey(row)}
+                onRemove={remove}
+                onEditTrack={editTrack}
+                onSetImage={setImage}
+                proposals={{
+                  onConfirm: () => row.b && onChange(confirmProposal(draft, row.b.key)),
+                  onAdjust: () => adjustProposal(row),
+                  onDismiss: () => row.b && onChange(dismissProposal(draft, row.b.key)),
+                }}
+                onRevert={revert}
+                onSeek={onSeek}
+                patchAsset={patchAsset}
+                patchEntity={patchEntity}
+                patchInstrument={patchInstrument}
+                row={row}
+                savedHolder={savedHolder}
+              />
+            ))}
+          </EvidenceCarousel>
         )}
       </Card>
 
@@ -541,39 +525,11 @@ function trackEditorProps(item: NonNullable<PairRow['b']>, saved: NonNullable<Pa
   };
 }
 
-const FIELD_COLUMNS = 'sm:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1fr)]';
-
 /**
  * One report field. Unchanged, it is a single row. Changed, the saved value sits on a red row and the draft on a green row
  * below it. The same elements stay mounted either way (only their classes change), so a draft input keeps its focus while
  * the first keystroke turns the field changed.
  */
-function PairField({
-  changed = false,
-  label,
-  left,
-  right,
-}: {
-  changed?: boolean;
-  label: string;
-  left: React.ReactNode;
-  right: React.ReactNode;
-}) {
-  const saved = changed ? 'bg-destructive/10' : '';
-  return (
-    <div className={`grid border-b border-border/70 last:border-b-0 ${FIELD_COLUMNS}`} data-changed={changed || undefined}>
-      <dt className={`px-3 pt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground ${saved}`}>{label}</dt>
-      <dd className={`m-0 min-w-0 px-3 py-2.5 text-sm leading-6 text-foreground ${saved}`}>{left}</dd>
-      {changed ? <div aria-hidden className="col-span-2 row-start-2 bg-signal/15" /> : null}
-      <dd
-        className={`m-0 min-w-0 border-l border-border px-3 py-2.5 text-sm leading-6 text-foreground ${changed ? 'row-start-2 col-start-3 bg-signal/15' : ''}`}
-      >
-        {right}
-      </dd>
-    </div>
-  );
-}
-
 interface ProposalControls {
   onConfirm: () => void;
   onAdjust: () => void;
@@ -733,7 +689,7 @@ function ReadCard({
       onSeek={onSeek}
       seconds={item.timestampSeconds}
     >
-      <p className="text-ink/60">{item.description}</p>
+      <p className="line-clamp-2 text-ink/60">{item.description}</p>
       {isSavedInstrument(item) && (
         <p className="text-ink/50">
           Threat {item.threatLevel ?? 'unrated'}
@@ -1069,7 +1025,7 @@ function CardFrame({
           </span>
         )}
       </button>
-      <CardHeader className="gap-0 border-b border-border/70 bg-primary/5 px-3 py-2.5">
+      <CardHeader className="gap-0 border-b border-border/70 bg-primary/5 px-3 !pb-2.5 pt-2.5">
         <CardTitle className="flex min-w-0 items-center gap-2 text-sm font-semibold">{header}</CardTitle>
       </CardHeader>
       <div className="flex flex-col gap-1 p-3">{children}</div>

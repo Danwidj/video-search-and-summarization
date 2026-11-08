@@ -29,12 +29,13 @@ import { HEADER_END_SLOT, HEADER_START_SLOT } from '@/sections/shell/components/
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { chatTarget, citationTitles } from '@/lib/chat/report-chat';
-import { videoFitLayout } from '@/lib/ui/video-fit';
+import { timelinePanelHeight, videoFitLayout } from '@/lib/ui/video-fit';
 import { seekTarget } from '@/lib/chat/timestamps';
 import { applyChatEdit, type ProposedAction } from '@/lib/edits/chat-edit';
 import type { BoxOpening } from '@/lib/evidence/box-tool';
 import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
 import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
+import { buildTimelineLanes } from '@/lib/reports/timeline-lanes';
 import {
   draftFromView,
   draftProblems,
@@ -92,28 +93,6 @@ export function ReportPage({
   const [playerDuration, setPlayerDuration] = useState<number | null>(null);
   // The stage is sized to the clip's own shape so a 4:3 clip is not letterboxed inside a 16:9 box.
   const [videoAspect, setVideoAspect] = useState(DEFAULT_VIDEO_ASPECT);
-  // The desktop workspace's left column: the video is sized to its width at the video's aspect ratio, and the timeline and
-  // versions take the rest. Measured on every column size change (window, divider, chat), before paint.
-  const workspace = useGroupRef();
-  const workspaceColumn = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const column = workspaceColumn.current;
-    if (!column) return;
-    const fit = () => {
-      const layout = videoFitLayout(column.clientWidth, column.clientHeight, videoAspect);
-      if (layout) {
-        workspace.current?.setLayout({
-          'report-video': layout.video,
-          'report-timeline': layout.timeline,
-          'report-versions': layout.versions,
-        });
-      }
-    };
-    fit();
-    const observer = new ResizeObserver(fit);
-    observer.observe(column);
-    return () => observer.disconnect();
-  }, [videoAspect, workspace]);
   const [pipSupported, setPipSupported] = useState(false);
   const [inPip, setInPip] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -219,6 +198,34 @@ export function ReportPage({
       selectedId: null,
     };
   }, [mode, draft, editBase, editingTrackKey, trackedItems, stillBoxes, selectedTrackId]);
+  const timelineLaneCount = useMemo(() => {
+    const structured = mode === 'edit' && draft ? draftToStructured(draft, videoId, overlay.frames) : (shownReport?.structured ?? null);
+    return structured ? buildTimelineLanes(structured).length : 0;
+  }, [mode, draft, videoId, overlay.frames, shownReport]);
+  const timelineHeight = timelinePanelHeight(timelineLaneCount);
+  // The desktop workspace's left column: the video is sized to its width at the video's aspect ratio, and the timeline and
+  // versions take the rest. Measured on every column size change (window, divider, chat), before paint.
+  const workspace = useGroupRef();
+  const workspaceColumn = useRef<HTMLDivElement>(null);
+  // The timeline panel is as tall as its lanes need, so it fits however many evidence items the version has.
+  useLayoutEffect(() => {
+    const column = workspaceColumn.current;
+    if (!column) return;
+    const fit = () => {
+      const layout = videoFitLayout(column.clientWidth, column.clientHeight, videoAspect, timelineHeight);
+      if (layout) {
+        workspace.current?.setLayout({
+          'report-video': layout.video,
+          'report-timeline': layout.timeline,
+          'report-versions': layout.versions,
+        });
+      }
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(column);
+    return () => observer.disconnect();
+  }, [timelineHeight, videoAspect, workspace]);
   const selectTrack = useCallback(
     (id: string | null) => setTrackSelection(id && shownReport ? { revisionId: shownReport.revisionId, id } : null),
     [shownReport],
@@ -361,6 +368,14 @@ export function ReportPage({
   const officialLabel = officialRevision ? `v${officialRevision.revisionNo}` : 'none';
   // Only in Edit mode: a draft kept while the reviewer looks back at View does not change what View's timeline shows.
   const draftStructured = mode === 'edit' && draft ? draftToStructured(draft, videoId, overlay.frames) : null;
+  // In View mode, reflect draft changes to fields and title if viewing the revision being edited before Save.
+  const viewReport =
+    draft && editBase && report.revisionId === editBase.revisionId
+      ? {
+          ...report,
+          structured: draftToStructured(draft, videoId, overlay.frames),
+        }
+      : report;
 
   // A request in flight may still change the draft, so Save waits for it.
   const chatBusy = Object.values(chatThreads).some((thread) => thread.busy);
@@ -592,7 +607,6 @@ export function ReportPage({
               <ResizableHandle aria-label="Resize video and timeline" disabled withHandle />
               <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="27.5%" id="report-timeline" minSize="15%">
                 <ReportTimeline
-                  bare={mode === 'edit'}
                   currentTime={currentTime}
                   onSeek={seek}
                   structured={draftStructured ?? report.structured}
@@ -644,7 +658,7 @@ export function ReportPage({
                     onSeek={seek}
                     onSelectTrack={selectTrack}
                     playerDuration={playerDuration}
-                    report={report}
+                    report={viewReport}
                     selectedTrackId={selectedTrackId}
                   />
                 ) : draft && editBase ? (
