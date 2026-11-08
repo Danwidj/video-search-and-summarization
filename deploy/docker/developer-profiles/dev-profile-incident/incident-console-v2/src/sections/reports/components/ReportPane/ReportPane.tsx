@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { VersionPill } from '@/components/version-pill';
 import { Card as UICard, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { evidenceDisplay } from '@/lib/evidence/evidence-view';
-import { formatTimestamp } from '@/lib/time';
 import { severityStyle } from '@/lib/ui/severity';
 import { cn } from '@/lib/utils';
 import { formatClock } from '@/modules/reports/domain/normalize';
@@ -87,51 +86,26 @@ export function ReportPane({
 
   return (
     <div className="px-5 pb-16 sm:px-8">
-      <UICard className="mt-5 gap-0 border-border/80 bg-card py-0 text-sm" data-testid="version-summary">
-        <CardHeader className="flex flex-row items-center gap-4 border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-4 py-4">
-          <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-background font-mono text-sm font-bold text-foreground shadow-xs ring-1 ring-border">
-            V{revision.revisionNo}
-          </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="text-base font-semibold">Now Viewing: Version {revision.revisionNo}</CardTitle>
-            </div>
-            <CardDescription className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" data-testid="revision-label">
-              <VersionPill
-                data-testid="official-status"
-                kind={revision.kind === 'human' ? 'human' : 'ai'}
-                official={report.official.isOfficial}
-              />
-              {revision.kind === 'ai' && <span>{run.model}</span>}
-              <span>{formatTimestamp(revision.createdAt, 'time unknown')}</span>
-              {revision.note && <span>· {revision.note}</span>}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="divide-y divide-border p-0">
-          {run.status === 'valid_after_structural_repair' && (
-            <p className="px-4 py-2 text-xs text-amber-800" data-testid="contract-repair-applied">
-              Contract repair applied (IDs only)
-            </p>
-          )}
-          {run.notesKind === 'legacy' && <p className="px-4 py-2 text-xs text-muted-foreground">Earlier prompt version</p>}
-          {officialMissing && (
-            <p
-              className="border-y border-dashed border-not-official-line bg-not-official-pill/60 px-4 py-2 text-xs text-ink-caption"
-              data-testid="official-status"
-            >
-              No official version has been selected for this video. Star a version to make it official.
-            </p>
-          )}
-        </CardContent>
-      </UICard>
-
       <UICard className="mt-5 gap-0 border-border/80 py-0" data-testid="report-fields-section">
         <CardHeader className="gap-1 border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-4 py-3.5">
           <CardTitle className="text-base font-semibold">Report fields</CardTitle>
           <CardDescription className="text-xs">Incident overview and model assessment</CardDescription>
         </CardHeader>
         <CardContent className="px-4 pb-3 pt-1">
+          {run.status === 'valid_after_structural_repair' && (
+            <p className="mb-2 px-4 py-2 text-xs text-amber-800" data-testid="contract-repair-applied">
+              Contract repair applied (IDs only)
+            </p>
+          )}
+          {run.notesKind === 'legacy' && <p className="mb-2 px-4 py-2 text-xs text-muted-foreground">Earlier prompt version</p>}
+          {officialMissing && (
+            <p
+              className="mb-2 border-b border-dashed border-not-official-line bg-not-official-pill/60 px-4 py-2 text-xs text-ink-caption"
+              data-testid="official-status"
+            >
+              No official version has been selected for this video. Star a version to make it official.
+            </p>
+          )}
           <dl className="m-0">
             <Row label="Title">
               <div className="flex items-start justify-between gap-3">
