@@ -81,12 +81,23 @@ class EvidenceExchange(BaseModel):
     transcript: list[EvidenceTurn] = Field(default_factory=list, max_length=12)
 
 
+class HistoryTurn(BaseModel):
+    """One earlier chat turn: the reviewer's question or the assistant's answer text, oldest first."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    text: str = Field(..., min_length=1, max_length=4000)
+
+
 class InvestigateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(..., min_length=1, max_length=500)
     draft: draft_edits.DraftSnapshot | None = None
     evidence: EvidenceExchange | None = None
+    # The last few chat turns before this question, so "the same item" and follow-ups resolve. Used by the editor only.
+    history: list[HistoryTurn] = Field(default_factory=list, max_length=6)
 
 
 class InvestigateStep(BaseModel):
@@ -116,12 +127,21 @@ class InvestigateResponse(BaseModel):
     wall_ms: int
 
 
-def _editor_question(question: str, draft: draft_edits.DraftSnapshot, evidence: EvidenceExchange | None) -> str:
+def _editor_question(
+    question: str,
+    draft: draft_edits.DraftSnapshot,
+    evidence: EvidenceExchange | None,
+    history: list[HistoryTurn],
+) -> str:
     """The editor agent's input: the request and the draft with each item's key, which the proposal tools name items by.
 
-    With a pending new-evidence exchange it also says how many questions were asked and what was said before.
+    It also carries the recent chat turns, and with a pending new-evidence exchange how many questions were asked and what was
+    said before.
     """
     text = f"{question}\n\nThe draft (name items by their key):\n{draft.model_dump_json(exclude_none=True)}"
+    if history:
+        earlier = "\n".join(f"{turn.role}: {turn.text}" for turn in history)
+        text = f"{text}\n\nThe chat so far, oldest first (resolve 'the same item' and follow-ups from it):\n{earlier}"
     if evidence is None:
         return text
     turns = "\n".join(f"{turn.role}: {turn.text}" for turn in evidence.transcript)
@@ -185,7 +205,11 @@ def create_incident_investigate_router(
         except Exception as exc:
             logger.error("Investigator agent %s is not configured: %s", name, type(exc).__name__)
             raise HTTPException(status_code=501, detail="The investigator is not configured on this profile") from exc
-        question = body.question if body.draft is None else _editor_question(body.question, body.draft, body.evidence)
+        question = (
+            body.question
+            if body.draft is None
+            else _editor_question(body.question, body.draft, body.evidence, body.history)
+        )
         questions_asked = body.evidence.questions_asked if body.evidence is not None else 0
 
         async def ask() -> str:

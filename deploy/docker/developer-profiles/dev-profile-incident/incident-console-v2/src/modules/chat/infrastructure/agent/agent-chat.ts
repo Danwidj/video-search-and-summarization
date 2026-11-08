@@ -155,6 +155,79 @@ export async function sendVideoCheck(
   return { content: body.content, source: 'video' };
 }
 
+/** The agent's gap retry job as the console reads it (its snake_case JSON, made camelCase here). */
+export interface AgentGapRetryJob {
+  jobId: string;
+  videoId: string;
+  revisionId: number | null;
+  status: 'running' | 'done';
+  items: Array<{
+    itemKey: string;
+    name: string;
+    status: 'pending' | 'found' | 'not_found' | 'not_retried';
+    reason: string | null;
+    seconds: number | null;
+    box: number[] | null;
+  }>;
+}
+
+type WireGapRetryJob = {
+  job_id?: unknown;
+  video_id?: unknown;
+  revision_id?: unknown;
+  status?: unknown;
+  items?: unknown;
+};
+
+function fromAgentGapRetry(body: WireGapRetryJob): AgentGapRetryJob {
+  if (typeof body.job_id !== 'string' || typeof body.video_id !== 'string' || !Array.isArray(body.items))
+    throw new Error('Agent returned an invalid gap retry');
+  return {
+    jobId: body.job_id,
+    videoId: body.video_id,
+    revisionId: typeof body.revision_id === 'number' ? body.revision_id : null,
+    status: body.status === 'done' ? 'done' : 'running',
+    items: body.items.map((raw) => {
+      const item = raw as Record<string, unknown>;
+      return {
+        itemKey: String(item.item_key ?? ''),
+        name: String(item.name ?? ''),
+        status: (['pending', 'found', 'not_found', 'not_retried'].includes(String(item.status))
+          ? item.status
+          : 'not_retried') as AgentGapRetryJob['items'][number]['status'],
+        reason: typeof item.reason === 'string' ? item.reason : null,
+        seconds: typeof item.seconds === 'number' ? item.seconds : null,
+        box: Array.isArray(item.box) ? item.box.map(Number) : null,
+      };
+    }),
+  };
+}
+
+/** Starts a gap retry of the report's items with no box (one item when `itemKey` is given); it returns at once. */
+export async function startGapRetry(
+  agentUrl: string,
+  videoId: string,
+  itemKey: string | null,
+  signal?: AbortSignal,
+): Promise<AgentGapRetryJob> {
+  const response = await fetch(`${agentUrl.replace(/\/$/, '')}/api/v1/incidents/${encodeURIComponent(videoId)}/gap-retries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(itemKey === null ? {} : { item_key: itemKey }),
+    signal,
+  });
+  return fromAgentGapRetry((await readUpstream(response, 'Agent gap retry')) as WireGapRetryJob);
+}
+
+/** Reads a gap retry job: its items as they stand, and whether it is done. */
+export async function readGapRetry(agentUrl: string, videoId: string, jobId: string, signal?: AbortSignal): Promise<AgentGapRetryJob> {
+  const response = await fetch(
+    `${agentUrl.replace(/\/$/, '')}/api/v1/incidents/${encodeURIComponent(videoId)}/gap-retries/${encodeURIComponent(jobId)}`,
+    { signal },
+  );
+  return fromAgentGapRetry((await readUpstream(response, 'Agent gap retry')) as WireGapRetryJob);
+}
+
 const STOPPED_REASONS = new Map<string, string>([
   ['cap_reached', 'The agent reached its tool step limit before it could answer'],
   ['aborted:step_budget', 'The agent reached its tool step limit before it could answer'],
@@ -218,6 +291,8 @@ export async function sendAgentInvestigate(
   draft?: Record<string, unknown>,
   /** The new-evidence exchange still open in the chat, with the draft. */
   evidence?: EvidenceExchange,
+  /** The last few chat turns before the question, so the editor resolves "the same item" (only with the draft). */
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>,
 ): Promise<ChatResponse> {
   const response = await fetch(`${agentUrl.replace(/\/$/, '')}/api/v1/incidents/${encodeURIComponent(videoId)}/investigate`, {
     method: 'POST',
@@ -226,6 +301,7 @@ export async function sendAgentInvestigate(
       question,
       ...(draft ? { draft } : {}),
       ...(evidence ? { evidence: { questions_asked: evidence.questionsAsked, transcript: evidence.transcript } } : {}),
+      ...(draft && history?.length ? { history } : {}),
     }),
     signal,
   });

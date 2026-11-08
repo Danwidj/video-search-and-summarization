@@ -223,4 +223,6 @@ export interface ReportLibraryItem {
   outcome?: 'valid_first_pass' | 'valid_after_structural_repair' | 'legacy' | null;
   /** The shown revision is the incident's official one (D6). */
   isOfficial?: boolean;
+  /** The video's length in seconds, as the analysis that made the shown revision read it; null when unrecorded. */
+  durationSeconds?: number | null;
 }

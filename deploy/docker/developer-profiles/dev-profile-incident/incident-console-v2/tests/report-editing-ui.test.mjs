@@ -98,7 +98,7 @@ test('edit mode pairs every evidence row with A and saves the whole draft as a n
   assert.match(editor, /pairReport/);
   assert.match(editor, /ReadCard/);
   assert.match(editor, /EditCard/);
-  assert.match(editor, /New in B/);
+  assert.match(editor, /Not in v4\./, 'an item missing from the saved version is a hatched Not in v4 card');
   assert.match(editor, /Deleted/);
   assert.match(editor, /Revert to v/);
   assert.match(editor, /Delete/);
@@ -144,26 +144,30 @@ test('the report page offers re-analysis', async () => {
 test('report chat uses the same title band as report sections', async () => {
   const chat = await readFile(new URL('reports/components/ReportChat/ReportChat.tsx', components), 'utf8');
   assert.doesNotMatch(chat, /border-l-primary/);
-  assert.match(chat, /text-lg font-bold tracking-tight/);
-  assert.match(chat, /<SheetClose asChild>/, 'the chat has an explicit close control');
+  assert.match(chat, /text-base font-bold tracking-tight/);
+  assert.match(chat, /onClick=\{onClose\}/, 'the chat has an explicit close control');
   assert.match(chat, /className="absolute top-3 right-3"/, 'the close control sits at the top-right');
   assert.match(chat, /rounded-none/, 'the chat title surface is flush with the browser edge');
   assert.doesNotMatch(chat, /Asking about \{target\.label\}/, 'the version badge omits the redundant prefix');
   const page = await readFile(new URL('reports/components/ReportPage/ReportPage.tsx', components), 'utf8');
-  assert.match(page, /showCloseButton=\{false\}/, 'the separately positioned default close button is disabled');
+  assert.match(page, /onClose=\{\(\) => setChatOpen\(false\)\}/, 'the close control closes the docked panel');
 });
 
 test('edit evidence pairs fit the evidence-card footprint', async () => {
   const edit = await readFile(new URL('reports/components/ReportEditPane/ReportEditPane.tsx', components), 'utf8');
   const carousel = await readFile(new URL('evidence/components/EvidenceCarousel/EvidenceCarousel.tsx', components), 'utf8');
   assert.match(edit, /<EvidenceCarousel[^>]* lanes>/, 'the A and B lanes sit in the carousel, which sets their width');
-  assert.match(carousel, /auto-cols-\[min\(24rem,calc\(100vw-4rem\)\)\]/, 'a pair is one evidence card wide');
+  assert.match(
+    carousel,
+    /auto-cols-\[min\(15\.5rem,calc\(100vw-4rem\)\)\]/,
+    'a pair is one 250 px evidence card wide, as the approved mockup',
+  );
   assert.doesNotMatch(`${edit}${carousel}`, /min\(42rem,calc\(100vw-4rem\)\)/, 'never the old double-width pair');
   assert.match(edit, /CardHeader className="gap-0 border-b/, 'an edit card has the same title band under its image as a View card');
   assert.match(edit, /max-w-88 gap-0 overflow-hidden/, 'the video and title content have no card-level gap');
   assert.match(edit, /<DraftVideoFrame/, 'a newly selected box is previewed from the browser-loaded video in its draft card');
   assert.match(edit, /testId="draft-evidence-video-preview"/);
-  assert.match(edit, /data-testid="edit-readonly-evidence-id"/, 'the read-only A card has the same ID badge as View');
+  assert.doesNotMatch(edit, /edit-readonly-evidence-id/, 'the Edit page shows no ID chip: the names identify the items');
   assert.match(edit, /kind=\{kind\}/, 'the read-only A card has the same image kind badge as View');
 });
 

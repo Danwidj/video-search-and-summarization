@@ -211,3 +211,20 @@ def test_duplicate_draft_keys_are_refused() -> None:
                 "assets": [{"key": "dup"}, {"key": "dup"}],
             }
         )
+
+
+def test_reviewer_labels_are_optional_and_kept_on_each_item() -> None:
+    labelled = DraftSnapshot.model_validate(
+        {
+            "incident": {},
+            "entities": [{"key": "entity-0", "reviewer_label": "E1", "reviewer_name": "person in purple"}],
+            "instruments": [{"key": "instrument-0", "reviewer_label": "I1", "reviewer_name": "crowbar"}],
+            "assets": [{"key": "asset-0", "reviewer_label": "A1", "reviewer_name": "till"}],
+        }
+    )
+    assert labelled.entities[0].reviewer_label == "E1"
+    assert labelled.instruments[0].reviewer_name == "crowbar"
+    assert labelled.assets[0].reviewer_label == "A1"
+    unlabelled = _draft()
+    assert unlabelled.entities[0].reviewer_label == ""
+    assert unlabelled.assets[0].reviewer_name == ""

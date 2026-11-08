@@ -5,6 +5,7 @@
 import Link from 'next/link';
 
 import { CheckIcon, MenuIcon } from 'lucide-react';
+import { LayoutGroup, motion } from 'framer-motion';
 
 import { Button } from '@/components/ui/button';
 import { NavigationMenu, NavigationMenuItem, NavigationMenuLink, NavigationMenuList } from '@/components/ui/navigation-menu';
@@ -44,32 +45,46 @@ export function AppHeader({
           <div className="flex items-center gap-3 empty:hidden" id={HEADER_START_SLOT} />
           <span className="min-w-0 truncate text-lg font-semibold tracking-tight text-ink capitalize">{subtitle}</span>
         </div>
-        <NavigationMenu aria-label="Primary navigation" className="hidden flex-none sm:flex" viewport={false}>
-          <NavigationMenuList className="gap-0.5 rounded-full border border-ink/10 bg-[#dfe6d6] p-1">
-            {NAV_ITEMS.map((item) => (
-              <NavigationMenuItem key={item.key}>
-                <NavigationMenuLink
-                  asChild
-                  active={active === item.key}
-                  className={cn(
-                    'h-8 justify-center rounded-full px-4 py-0 text-sm font-medium transition-colors duration-150',
-                    active === item.key
-                      ? 'bg-moss font-semibold text-white hover:bg-moss focus:bg-moss data-[active=true]:bg-moss data-[active=true]:text-white data-[active=true]:hover:bg-moss data-[active=true]:focus:bg-moss'
-                      : 'text-ink/70 hover:bg-white/60 hover:text-ink focus:bg-white/60 focus:text-ink',
-                  )}
-                >
-                  <Link
-                    aria-current={active === item.key ? 'page' : undefined}
-                    href={item.href}
-                    onClick={item.key === 'library' ? () => forgetLibraryState() : undefined}
-                  >
-                    {item.label}
-                  </Link>
-                </NavigationMenuLink>
-              </NavigationMenuItem>
-            ))}
-          </NavigationMenuList>
-        </NavigationMenu>
+        <LayoutGroup id="app-header-nav">
+          <NavigationMenu aria-label="Primary navigation" className="hidden flex-none sm:flex" viewport={false}>
+            <NavigationMenuList className="gap-0.5 rounded-full border border-ink/10 bg-[#dfe6d6] p-1">
+              {NAV_ITEMS.map((item) => {
+                const isSelected = active === item.key;
+                return (
+                  <NavigationMenuItem key={item.key}>
+                    <NavigationMenuLink
+                      asChild
+                      active={isSelected}
+                      className={cn(
+                        'relative h-8 justify-center rounded-full px-4 py-0 text-sm font-medium transition-colors duration-150',
+                        isSelected
+                          ? 'font-semibold text-white hover:text-white focus:text-white'
+                          : 'text-ink/70 hover:bg-white/60 hover:text-ink focus:bg-white/60 focus:text-ink',
+                      )}
+                    >
+                      <Link
+                        aria-current={isSelected ? 'page' : undefined}
+                        className="relative z-10"
+                        href={item.href}
+                        onClick={item.key === 'library' ? () => forgetLibraryState() : undefined}
+                      >
+                        {isSelected && (
+                          <motion.span
+                            aria-hidden
+                            className="absolute inset-0 -z-10 rounded-full bg-moss"
+                            layoutId="app-header-active-pill"
+                            transition={{ type: 'spring', bounce: 0.15, duration: 0.4 }}
+                          />
+                        )}
+                        {item.label}
+                      </Link>
+                    </NavigationMenuLink>
+                  </NavigationMenuItem>
+                );
+              })}
+            </NavigationMenuList>
+          </NavigationMenu>
+        </LayoutGroup>
         <div className="flex items-center justify-end gap-2">
           <div className="flex items-center gap-2 empty:hidden" id={HEADER_END_SLOT} />
           <DropdownMenu>
