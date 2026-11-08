@@ -262,5 +262,55 @@ class SafetyTests(unittest.TestCase):
         self.assertNotIn(json.dumps(BLANK), text)
 
 
+class FakeAgentHttp:
+    """Answers like the agent: one vector per distinct (item_type, item_id) in the request, recording each request body."""
+
+    def __init__(self) -> None:
+        self.bodies: list[dict] = []
+
+    def __call__(self, request, timeout=None):  # noqa: ANN001
+        body = json.loads(request.data.decode())
+        self.bodies.append(body)
+        seen: dict[tuple[str, str], dict] = {}
+        for item in body["evidence"]:
+            pair = (item["item_type"], item["item_id"])
+            seen.setdefault(
+                pair, {"item_type": pair[0], "item_id": pair[1], "embedding": NEW}
+            )
+        return io.BytesIO(json.dumps(list(seen.values())).encode())
+
+
+class AgentBatchTests(unittest.TestCase):
+    def test_rows_from_different_revisions_sharing_items_all_get_vectors(self) -> None:
+        # The 2026-11-09 failure: 32 rows of one batch covered only 2 distinct (item_type, item_id) pairs.
+        rows = [
+            row(152 + i, "entity", "E1", "man", f"A man in scene {i}.")
+            if i % 2 == 0
+            else row(152 + i, "asset", "A1", "bottle", f"A bottle in scene {i}.")
+            for i in range(32)
+        ]
+        http = FakeAgentHttp()
+        vectors = rc.Agent("http://127.0.0.1:8000", opener=http).embed(rows)
+        self.assertEqual(set(vectors), {r.key for r in rows})
+        for body in http.bodies:
+            pairs = [(i["item_type"], i["item_id"]) for i in body["evidence"]]
+            self.assertEqual(
+                len(pairs), len(set(pairs)), "a request never repeats an item pair"
+            )
+
+    def test_a_request_missing_items_is_refused(self) -> None:
+        rows = [row(1, "entity", "E1", "man", "a"), row(2, "entity", "E1", "man", "b")]
+
+        def short_answer(request, timeout=None):  # noqa: ANN001
+            return io.BytesIO(
+                json.dumps(
+                    [{"item_type": "entity", "item_id": "E1", "embedding": NEW}]
+                ).encode()
+            )
+
+        with self.assertRaises(ValueError):
+            rc.vectors_from_response(rows, json.loads(short_answer(None).read()))
+
+
 if __name__ == "__main__":
     unittest.main()

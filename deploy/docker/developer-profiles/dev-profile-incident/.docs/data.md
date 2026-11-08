@@ -278,7 +278,7 @@ The console obtains the embeddings (the agent's `POST /api/v1/incidents/evidence
 passes them in `p_crops`; it writes no table directly. Each vector is embedded from the row's own `item_name` and
 `description` (`"{item_name}: {description}"`, `evidenceSearchTexts`), so a row's text and its vector always agree; an
 item with an image but no text gets no vector and so no row ([decision](decisions.md#2026-11-09-evidence-vectors-are-embedded-from-the-text-the-crop-row-stores-and-an-item-with-no-text-gets-no-vector)).
-`scripts/reembed_evidence_crops.py` replaces the `embedding` of stored rows from their stored text (guarded, with a backup).
+`scripts/reembed_evidence_crops.py` replaces the `embedding` of stored rows from their stored text (guarded, with a backup). The agent answers per `(item_type, item_id)`, so the script sends each request with no item pair repeated, and refuses an answer that cannot be matched to one row.
 
 #### `set_revision_crops`
 

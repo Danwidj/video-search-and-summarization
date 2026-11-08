@@ -181,11 +181,36 @@ def evidence_body(rows: Iterable[Row]) -> dict[str, list[dict[str, str]]]:
     }
 
 
+def batches_without_repeats(rows: list[Row], size: int = BATCH) -> list[list[Row]]:
+    """Groups rows into requests of at most size items where no (item_type, item_id) pair appears twice.
+
+    The agent answers per (item_type, item_id), not per revision, so a request holding two rows of the same item
+    gets one answer for both (2026-11-09: 32 rows of one batch came back as 8 vectors).
+    """
+    batches: list[list[Row]] = []
+    pairs: list[set[tuple[str, str]]] = []
+    for r in rows:
+        pair = (r.item_type, r.item_id)
+        for batch, seen in zip(batches, pairs):
+            if len(batch) < size and pair not in seen:
+                batch.append(r)
+                seen.add(pair)
+                break
+        else:
+            batches.append([r])
+            pairs.append({pair})
+    return batches
+
+
 def vectors_from_response(rows: list[Row], payload: Any) -> dict[Key, list[float]]:
     """Checks the agent's answer: one 1024-number vector per row sent, matched by type and ID."""
     if not isinstance(payload, list):
         raise TypeError("the agent returned no embedding list")
     wanted = {(r.item_type, r.item_id): r.key for r in rows}
+    if len(wanted) != len(rows):
+        raise ValueError(
+            "two rows in one request share an item, so answers cannot be matched to rows"
+        )
     out: dict[Key, list[float]] = {}
     for item in payload:
         pair = (
@@ -313,8 +338,7 @@ class Agent:
 
     def embed(self, rows: list[Row]) -> dict[Key, list[float]]:
         out: dict[Key, list[float]] = {}
-        for start in range(0, len(rows), BATCH):
-            batch = rows[start : start + BATCH]
+        for batch in batches_without_repeats(rows):
             request = urllib.request.Request(
                 self._url,
                 json.dumps(evidence_body(batch)).encode(),
