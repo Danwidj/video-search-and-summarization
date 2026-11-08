@@ -101,7 +101,7 @@ The five qualities that shaped the design most, in priority order. Scenarios for
 
 ### Level 1: Containers
 
-**Figure 2. Container diagram for the incident profile (C4 level 2).** Containers are grouped by where they run: the laptop, the GPU workstation and the cloud services. The VSS Agent and the stock perception stack run on the GPU workstation; the console reaches the agent through an SSH tunnel. Arrow labels name the interaction in the arrow's direction. The VM flow and the Mock flow are marked on the arrows that belong to one of them only.
+**Figure 2. Container diagram for the incident profile (C4 level 2).** Containers are grouped by where they run: the laptop, the GPU workstation and the cloud services. The VSS Agent and the stock perception stack run on the GPU workstation; the console reaches the agent through an SSH tunnel. Arrow labels name the interaction in the arrow's direction. Colours mark stock VSS, built by the team and external services. The VM flow and the Mock flow are marked on the arrows that belong to one of them only.
 
 ![Container diagram: on the laptop, incident-console-v2, vlm-gateway and mock-backend; on the GPU workstation, the VSS Agent, the perception stack containers and Phoenix; in the cloud, Cloudflare R2, Supabase and the hosted model endpoints; arrows show the VM flow and the Mock flow](figures/figure-2-containers.drawio.svg)
 
@@ -159,6 +159,9 @@ The extension is a set of routes registered by the stock worker, one NAT tool, a
 | `video-check` route | Route | Behind `INCIDENT_VIDEO_CHECK_ENABLED` (off). A reviewer-confirmed fresh look at the original video by the VLM for a chat question, comparing the visual observation against the stored report answer |
 | `chart-requests` and `charts` routes | Routes | The agent's own LLM turns a dashboard request into a chart specification; the chart generator (`chart_generator`) places the figures the console sends into a Chart.js configuration that the browser draws, with a PNG fallback |
 | `investigate` route | Route | Behind `INCIDENT_INVESTIGATE_ENABLED` (off). A NAT `tool_calling_agent` (`investigator`) picks among registered tools to answer one question about one video, run through the toolkit's `SessionManager` so Phoenix records each tool call. `utils/agent_loop.py` adds the step log, a 5-step budget, a 90 s wall clock and detection of the toolkit's give-up answer. Read-only today |
+| `draft-edits` route | Route | Checks the report chat's proposed edits (fields, timeline items, entities, instruments, assets, holders, deletes) against the reviewer's unsaved draft by item key. Always on; writes nothing, the console applies the proposals and the reviewer saves |
+| `evidence-asks` route | Route | Checks the chat's new-evidence calls: a question for the reviewer (at most two) and opening the box tool at a second with a name. Writes nothing; the console reaches the same checks through the report editor's tools |
+| `gap-retries` routes (`POST`, `GET`) | Routes | Start a job that looks again for the items of a saved report that have no box (`retry_gap_crops`, shared with the analysis stage) and poll it. A found box is returned as a proposal; nothing is written. The agent keeps the last 20 jobs in memory |
 | `box/describe` and `box/track` routes | Routes | Name and describe a reviewer-drawn box with the VLM; follow the box through the clip with the object tracker. Nothing is stored |
 | Detector, zoom namer, evidence store, scratch store, perception client, embedder | Interfaces with one production implementation each | The remote VLM as the open-vocabulary detector and namer, object storage as the evidence and scratch store, HTTP clients for the perception stack and the embedding endpoint; in-memory and fake variants for tests |
 
@@ -203,7 +206,7 @@ A representative selection; each step names the building block that performs it.
 
 ### Analysis Run in Agent Mode
 
-**Figure 4. Analysis of an uploaded clip in agent mode (the vm mode default).** The sequence runs from the upload to the finished report. Person tracking runs beside the locate step, object tracking follows locate, each located person is matched to a track and re-cut, the zoomed second look runs before anything is stored (dropping crops called a different object), and each item's frame, crop and track are stored.
+**Figure 4. Analysis of an uploaded clip in agent mode (the vm mode default).** The sequence runs from the upload to the finished report. Person tracking runs beside the locate step, items left without a box get a gap retry, object tracking follows locate, each located person is matched to a track and re-cut, the zoomed second look runs before anything is stored (dropping crops called a different object), and each item's frame, crop and track are stored.
 
 ![Sequence diagram of an analysis in agent mode: upload and queue in the console, caption pass, report extraction by the hosted models, validation, locating and tracking evidence in parallel with the perception stack, storing evidence, saving the AI revision and finishing the job](figures/figure-4-analysis.drawio.svg)
 
@@ -244,8 +247,15 @@ A queued upload is a row in `analysis_jobs` ([Data layer](data.md#analysis_jobs)
 2. **Mark official** (console, agent, database): the console fetches the revision's evidence embeddings from the agent and calls a database function that sets the video's official pointer and rebuilds that incident's searchable crops; clearing removes them. An unreachable agent fails the mark and changes nothing.
 3. **Re-generation** (console, agent): the same analysis path on the stored object with a chosen model and an optional reviewer prompt; always a new run and a new AI branch that copies no earlier edit, never a change to the video row or the official pointer.
 4. **Chat** (console, agent): the panel sends the version on screen, or the draft being edited; template mode composes the answer from that version's report with no model call; grounded mode, behind an agent flag, answers from the version with a chat model and checked citations and answers library questions by a planned, counted search over report summaries.
-5. **Dashboard charts** (console, agent): the dashboard reads one database function that counts each video once (official revision, else newest). For a chart request the console sends its prompt and the request to the agent, whose own LLM picks a chart specification; the console validates it against its allowlist, computes the figures from the database itself, and asks the agent to draw them with the stock chart generator. The model never sees a figure.
-6. **Reviewer box tools** (console, agent): in edit mode the console proxies two agent routes: describe names a drawn box with the VLM, track follows it with the object tracker; nothing is stored until Save.
+5. **Dashboard charts** (console, agent): the dashboard reads one database function that counts each video once (official revision, else newest). For a chart request the console sends its prompt and the request to the agent, whose own LLM picks a chart specification; the console validates it against its allowlist, computes the figures from the database itself, and asks the agent to draw them with the stock chart generator. The model never sees a figure. Some requests draw in their own view (a dual-axis combo, a stacked bar by severity, a bubble chart, a threat-by-holder view) whatever kind the picker says.
+6. **Reviewer box tools** (console, agent): in edit mode the console proxies two agent routes: describe names a drawn box with the VLM, track follows it with the object tracker; nothing is stored until Save. The chat can open the box tool at a second with the name filled in, or on an existing item to redraw its box.
+7. **Chat gap retry** (console, agent): in edit mode the chat can ask the agent to look again for items of the saved report with no box. The console starts a job on the agent, polls it, and turns each found box into a proposal beside its item, to confirm or adjust before Save. Nothing is written by the job.
+
+**Figure 8. Retry missing boxes through chat.** The console starts a gap-retry job on the agent, which reads the saved report, reads the video and asks the hosted models to detect and check each item; the console polls the job and shows the boxes as proposals.
+
+![Sequence diagram of a gap retry through chat: the Reviewer asks, the console starts a job on the agent, the agent reads the saved report from Supabase and the video from R2, detects and checks each item with the hosted models, the console polls and proposes boxes beside the items](figures/figure-8-gap-retry.drawio.svg)
+
+The Edit page shows the saved version (read-only) and the draft in one compare layout: a changed field shows the saved value and the draft value on two rows, and evidence is two rows of cards. View and Edit share one report-fields template and evidence carousel. The Library card shows the video's length from the run's recorded duration, which the library summary function returns; no card probes a video.
 
 ## Deployment View
 

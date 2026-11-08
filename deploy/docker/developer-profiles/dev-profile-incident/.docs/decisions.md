@@ -2,6 +2,14 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-08: Architecture figures follow the deck diagram standards and export with the local drawio command
+- **Decision:** figures 2, 4 and 8 are the finals-deck draw.io diagrams (stock, built and external colours; 1800x830 page; Helvetica), exported with `drawio -x -f svg -e --theme light --embed-svg-fonts false` so each `.drawio.svg` stays small and opens for editing.
+- **Why:** one source per diagram keeps the docs and the deck from drifting; the default export embeds PNG text fallbacks and grows the file about twentyfold.
+- **Alternatives rejected:**
+  - *Keeping the older repo-only C4:* it lacked gap retry and the stock/built key.
+  - *Hosted draw.io tools:* diagram content must not leave the machine.
+- **Links:** [`architecture.md`](architecture.md)
+
 ### 2026-11-08: Chat gap retry is in scope, and it returns proposals the reviewer confirms
 - **Decision:** the reviewer can ask the report chat to retry the gaps of an existing report: every item with no box, or one named item. The editor calls `propose_retry_gaps`; the console starts a job on the agent (`POST /api/v1/incidents/{video_id}/gap-retries`) and polls it. The job runs the analysis's gap-retry stage (`retry_gap_crops`, the same video-model check and per-item caps) on the saved revision, with a request time cap of 300 s and 40 detector calls for all its items. Each box it finds becomes a set-image evidence proposal on its item, which the reviewer confirms or adjusts before Save. The agent writes nothing.
 - **Why:** a gap retry is useful after the analysis, and a reviewer should not have to re-run an analysis to get it. A retry takes 30 to 120 s an item, longer than the chat's 90 s step cap, so it runs as a job with progress. Proposals keep the reviewer in charge of what is saved; the video model's box is never kept on its own.
