@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The agent's evidence-embeddings endpoint: given a stored revision, or the
-// evidence entries of a revision not stored yet, it embeds each evidence crop
-// and returns one vector per item. The console passes the vectors to
-// set_official_revision or save_human_revision_with_crops, which write them with
-// the evidence_crops rows; the console never embeds anything itself.
+// The agent's evidence-embeddings endpoint: given evidence items with their
+// name and description, it embeds each one and returns one vector per item. The
+// console always sends the text each crop row will store (evidenceSearchTexts),
+// never a revision id: the agent would then read the bare evidence entries, which
+// for a placeholder or a reviewer's new image carry no text and embed as ": ".
+// The console passes the vectors to set_official_revision or
+// save_human_revision_with_crops, which write them with the evidence_crops rows;
+// the console never embeds anything itself.
 
 import type { ServiceConfiguration } from '@/lib/env';
-import type { EvidenceEmbedding, EvidenceEntry } from '@/modules/reports/domain/revision';
+import type { EvidenceEmbedding, EvidenceSearchText } from '@/modules/reports/domain/revision';
 
 export const EMBEDDING_DIMENSIONS = 1024;
 
@@ -106,29 +109,21 @@ export async function fetchSummaryEmbedding(
   return embedding as number[];
 }
 
-/** Asks the agent to embed the evidence of one stored revision. */
-export function fetchEvidenceEmbeddings(
-  config: ServiceConfiguration,
-  revisionId: number,
-  signal?: AbortSignal,
-): Promise<EvidenceEmbedding[]> {
-  return postEvidenceEmbeddings(config, { revision_id: revisionId }, signal);
+/** The agent's `evidence` body for items: type, ID, and the name and description the crop row stores (the passage text). */
+export function evidenceEmbeddingsBody(items: EvidenceSearchText[]): { evidence: EvidenceSearchText[] } {
+  return {
+    evidence: items.map(({ item_type, item_id, item_name, description }) => ({ item_type, item_id, item_name, description })),
+  };
 }
 
 /**
- * Asks the agent to embed evidence entries that are not stored yet (a revision being saved), so the crops
- * can be written in the same write as the revision. Each entry's item type, ID, name and description make its passage.
+ * Asks the agent to embed evidence texts (`evidenceSearchTexts`): each item's name and description as its crop row
+ * stores them, so the vector matches the card. Used for every searchable crop, stored revision or not.
  */
 export function fetchEvidenceItemEmbeddings(
   config: ServiceConfiguration,
-  evidence: EvidenceEntry[],
+  items: EvidenceSearchText[],
   signal?: AbortSignal,
 ): Promise<EvidenceEmbedding[]> {
-  const items = evidence.map((entry) => ({
-    item_type: entry.item_type,
-    item_id: entry.item_id,
-    item_name: typeof entry.item_name === 'string' ? entry.item_name : null,
-    description: typeof entry.description === 'string' ? entry.description : null,
-  }));
-  return postEvidenceEmbeddings(config, { evidence: items }, signal);
+  return postEvidenceEmbeddings(config, evidenceEmbeddingsBody(items), signal);
 }

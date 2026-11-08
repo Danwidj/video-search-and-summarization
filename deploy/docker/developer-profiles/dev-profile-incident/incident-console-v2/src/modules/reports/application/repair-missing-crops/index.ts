@@ -7,7 +7,8 @@
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import { officialCrops } from '@/modules/reports/domain/revision';
 import { confirmedSpans } from '@/modules/reports/application/confirmed-spans';
-import type { EmbedRevisionEvidence, ReadStoredJson } from '@/modules/reports/application/types';
+import { embedSearchableEvidence } from '@/modules/reports/application/embed-searchable-evidence';
+import type { EmbedEvidence, ReadStoredJson } from '@/modules/reports/application/types';
 
 export interface RepairedRevision {
   videoId: string;
@@ -32,7 +33,7 @@ export interface RepairReport {
  */
 export async function repairMissingCrops(
   { incidents, videos }: Pick<DbAdapters, 'incidents' | 'videos'>,
-  embed: EmbedRevisionEvidence,
+  embed: EmbedEvidence,
   { videoId, dryRun = true, limit, skip }: { videoId?: string; dryRun?: boolean; limit?: number; skip?: ReadonlySet<number> } = {},
   readTrack?: ReadStoredJson,
 ): Promise<RepairReport> {
@@ -44,7 +45,7 @@ export async function repairMissingCrops(
     try {
       const record = await incidents.getRevision(item.videoId, item.revisionId);
       if (!record) throw new Error('Revision not found');
-      const embeddings = await embed(item.revisionId);
+      const embeddings = await embedSearchableEvidence(record.payload, record.evidence, embed);
       // Written only if the revision is still the searchable one and still has no rows: a repair never overwrites
       // what another console, or a save that raced it, stored meanwhile.
       const stored = await videos.repairRevisionCrops(

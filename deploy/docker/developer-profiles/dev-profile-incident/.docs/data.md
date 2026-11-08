@@ -274,8 +274,11 @@ Entries without an `item_type` of `entity`/`instrument`/`asset`, without an `ite
 `timestamp_seconds` becomes 0; a missing slice or `frame` is stored as NULL; `embedding` is a 1024-number array or null. Returns
 `{videoId, officialRevisionId, crops}` where `crops` is the number of rows now stored.
 
-The console obtains the embeddings (the agent's `POST /api/v1/incidents/evidence-embeddings`) and
-passes them in `p_crops`; it writes no table directly.
+The console obtains the embeddings (the agent's `POST /api/v1/incidents/evidence-embeddings`, `evidence` form) and
+passes them in `p_crops`; it writes no table directly. Each vector is embedded from the row's own `item_name` and
+`description` (`"{item_name}: {description}"`, `evidenceSearchTexts`), so a row's text and its vector always agree; an
+item with an image but no text gets no vector and so no row ([decision](decisions.md#2026-11-09-evidence-vectors-are-embedded-from-the-text-the-crop-row-stores-and-an-item-with-no-text-gets-no-vector)).
+`scripts/reembed_evidence_crops.py` replaces the `embedding` of stored rows from their stored text (guarded, with a backup).
 
 #### `set_revision_crops`
 

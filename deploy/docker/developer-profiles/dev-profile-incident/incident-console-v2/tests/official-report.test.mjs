@@ -73,7 +73,15 @@ test("marking a revision official embeds its evidence through the agent and rebu
   const response = await call(PUT, { revisionId: 1 });
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).official, { videoId: repaired.videoId, officialRevisionId: 1, crops: 1 });
-  assert.deepEqual(agentCalls, [{ url: 'http://agent.test:8000/api/v1/incidents/evidence-embeddings', body: { revision_id: 1 } }]);
+  // The agent embeds the text the crop row stores (the entry has none, so the payload's), never the bare entry by revision id.
+  assert.deepEqual(agentCalls, [
+    {
+      url: 'http://agent.test:8000/api/v1/incidents/evidence-embeddings',
+      body: {
+        evidence: [{ item_type: 'entity', item_id: 'E1', item_name: 'human', description: 'Person attacking victim with object' }],
+      },
+    },
+  ]);
   const rpcs = db.requests.filter((r) => r.path.startsWith('rpc/'));
   assert.deepEqual(
     rpcs.map((r) => r.path),

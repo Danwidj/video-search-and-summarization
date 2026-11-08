@@ -7,25 +7,26 @@ import type { OfficialChange } from '@/modules/videos/domain/VideoRepository';
 import { StoreRejection } from '@/modules/shared/domain/common';
 import { officialCrops } from '@/modules/reports/domain/revision';
 import { confirmedSpans } from '@/modules/reports/application/confirmed-spans';
-import type { EmbedRevisionEvidence, ReadStoredJson } from '@/modules/reports/application/types';
+import { embedSearchableEvidence } from '@/modules/reports/application/embed-searchable-evidence';
+import type { EmbedEvidence, ReadStoredJson } from '@/modules/reports/application/types';
 
 /**
  * Marks a revision official (revisionId null clears it). Marking asks the
- * agent to embed the revision's evidence images and hands the vectors to the
- * store, which rebuilds the incident's evidence_crops in one transaction; a
+ * agent to embed the text of the revision's evidence items (as their crop rows
+ * store it) and hands the vectors to the store, which rebuilds the incident's evidence_crops in one transaction; a
  * failure leaves the previous official revision and crops untouched.
  */
 export async function setOfficialRevision(
   { incidents, videos }: Pick<DbAdapters, 'incidents' | 'videos'>,
   videoId: string,
   revisionId: number | null,
-  embed: EmbedRevisionEvidence,
+  embed: EmbedEvidence,
   readTrack?: ReadStoredJson,
 ): Promise<OfficialChange> {
   if (revisionId === null) return videos.setOfficialRevision(videoId, null, []);
   const record = await incidents.getRevision(videoId, revisionId);
   if (!record) throw new StoreRejection('not-found', `Revision not found for this video: ${revisionId}`);
-  const embeddings = record.evidence.some((entry) => entry.image) ? await embed(revisionId) : [];
+  const embeddings = await embedSearchableEvidence(record.payload, record.evidence, embed);
   return videos.setOfficialRevision(
     videoId,
     revisionId,

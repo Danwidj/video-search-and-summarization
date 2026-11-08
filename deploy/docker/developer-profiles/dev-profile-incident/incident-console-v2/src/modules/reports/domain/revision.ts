@@ -292,6 +292,39 @@ export function cropItemName(entry: { label?: unknown; item_name?: unknown; item
   return labelText(entry.label) ?? fallback?.label ?? labelText(entry.item_name) ?? fallback?.item_name ?? entry.item_type;
 }
 
+/** The text a searchable crop's vector is made from: the name and description its row stores and its evidence card shows. */
+export interface EvidenceSearchText {
+  item_type: EvidenceItemType;
+  item_id: string;
+  item_name: string;
+  description: string;
+}
+
+/** The name and description a crop row stores for an entry: the entry's own, else the payload's (a placeholder entry has none). */
+function cropText(entry: EvidenceEntry, fallback?: PayloadDetails): { item_name: string; description: string } {
+  return {
+    item_name: cropItemName(entry, fallback),
+    description: typeof entry.description === 'string' ? entry.description : (fallback?.description ?? ''),
+  };
+}
+
+/**
+ * The texts to embed for a revision's searchable crops: one per evidence entry with an image, built exactly as the crop
+ * row will store it (`officialCrops`), so a card and its vector always say the same thing. An entry with nothing to say (no
+ * description, and no name beyond its bare item type) is left out: it gets no vector and no crop, because a vector of
+ * empty text matches every query alike (decisions.md, 2026-11-09).
+ */
+export function evidenceSearchTexts(payload: ReportPayload, evidence: EvidenceEntry[]): EvidenceSearchText[] {
+  const details = payloadDetails(payload);
+  return evidence.flatMap((entry): EvidenceSearchText[] => {
+    if (!entry.image) return [];
+    const text = cropText(entry, details.get(`${entry.item_type}:${entry.item_id}`));
+    const name = text.item_name.trim();
+    if (!text.description.trim() && (!name || name === entry.item_type)) return [];
+    return [{ item_type: entry.item_type, item_id: entry.item_id, ...text }];
+  });
+}
+
 /** The item details the payload holds, used when an evidence entry (e.g. a gateway-mode placeholder) lacks them. */
 function payloadDetails(payload: ReportPayload): Map<string, PayloadDetails> {
   const details = new Map<string, PayloadDetails>();
@@ -425,8 +458,7 @@ export function officialCrops(
         slice_start_seconds: slice.start,
         slice_end_seconds: slice.end,
         frame: typeof entry.frame === 'string' && entry.frame.trim() ? entry.frame : null,
-        item_name: cropItemName(entry, fallback),
-        description: typeof entry.description === 'string' ? entry.description : (fallback?.description ?? ''),
+        ...cropText(entry, fallback),
         threat_level: integerOrNull(entry.threat_level) ?? fallback?.threat_level ?? null,
         holder_entity_id:
           typeof entry.holder_entity_id === 'string' && entry.holder_entity_id

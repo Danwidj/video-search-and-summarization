@@ -9,6 +9,7 @@ import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import type { RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
 import { confirmedSpans } from '@/modules/reports/application/confirmed-spans';
+import { embedSearchableEvidence } from '@/modules/reports/application/embed-searchable-evidence';
 import type { EmbedEvidence, EmbedSummary, ReadStoredJson, ReviewerEvidenceStore } from '@/modules/reports/application/types';
 import { storeReviewerItems } from '@/modules/reports/application/store-reviewer-items';
 import { StoreRejection } from '@/modules/shared/domain/common';
@@ -55,10 +56,10 @@ async function searchableCrops(
   embed: EmbedEvidence,
   readTrack?: ReadStoredJson,
 ): Promise<OfficialCrop[]> {
-  const withImages = evidence.filter((entry) => entry.image);
-  if (!withImages.length) return [];
+  if (!evidence.some((entry) => entry.image)) return [];
   try {
-    return officialCrops(payload, evidence, await embed(withImages), null, await confirmedSpans(evidence, readTrack));
+    const embeddings = await embedSearchableEvidence(payload, evidence, embed);
+    return officialCrops(payload, evidence, embeddings, null, await confirmedSpans(evidence, readTrack));
   } catch (error) {
     throw new SearchableStepError(error instanceof Error ? error.message : String(error));
   }

@@ -52,7 +52,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
     const revision = await saveHumanEdit(
       getDbAdapters(config),
       { videoId, parentId: parsed.data.parentId, edit, createdBy: parsed.data.editedBy, note: parsed.data.note },
-      (evidence) => fetchEvidenceItemEmbeddings(config, evidence),
+      (items) => fetchEvidenceItemEmbeddings(config, items),
       isR2Configured(config) ? new R2ReviewerEvidenceStore(config) : undefined,
       isR2Configured(config) ? readStoredJson(config) : undefined,
       (summary) => fetchSummaryEmbedding(config, summary),

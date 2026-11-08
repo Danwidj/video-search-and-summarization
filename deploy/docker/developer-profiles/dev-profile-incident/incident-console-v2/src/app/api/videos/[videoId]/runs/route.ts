@@ -4,7 +4,7 @@ import { readStoredJson } from '@/lib/r2/stored-json';
 import { NextResponse } from 'next/server';
 
 import { getAnalysisPorts, getDbAdapters } from '@/lib/container';
-import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
+import { fetchEvidenceItemEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { storeSearchableCrops } from '@/modules/reports/application/store-searchable-crops';
 import { analysisErrorResponse } from '@/lib/http/analysis-responses';
 import { runContractAnalysis } from '@/modules/analysis/application/run-contract-analysis';
@@ -104,7 +104,7 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
       getDbAdapters(config),
       videoId,
       revisionId,
-      (id) => fetchEvidenceEmbeddings(config, id),
+      (items) => fetchEvidenceItemEmbeddings(config, items),
       readStoredJson(config),
     );
     return NextResponse.json({

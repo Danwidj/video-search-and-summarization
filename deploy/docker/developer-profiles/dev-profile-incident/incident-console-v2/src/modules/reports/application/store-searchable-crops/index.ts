@@ -6,7 +6,8 @@
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import { officialCrops } from '@/modules/reports/domain/revision';
 import { confirmedSpans } from '@/modules/reports/application/confirmed-spans';
-import type { EmbedRevisionEvidence, ReadStoredJson } from '@/modules/reports/application/types';
+import { embedSearchableEvidence } from '@/modules/reports/application/embed-searchable-evidence';
+import type { EmbedEvidence, ReadStoredJson } from '@/modules/reports/application/types';
 
 /** What storing a new revision's crops did: the rows stored, or null when skipped or failed (error says why). */
 export interface SearchableCropsResult {
@@ -26,7 +27,7 @@ export async function storeSearchableCrops(
   { incidents, videos }: Pick<DbAdapters, 'incidents' | 'videos'>,
   videoId: string,
   revisionId: number,
-  embed: EmbedRevisionEvidence,
+  embed: EmbedEvidence,
   readTrack?: ReadStoredJson,
 ): Promise<SearchableCropsResult> {
   try {
@@ -34,7 +35,7 @@ export async function storeSearchableCrops(
     if (!video || video.officialRevisionId !== null) return { crops: null };
     const record = await incidents.getRevision(videoId, revisionId);
     if (!record) return { crops: null };
-    const embeddings = record.evidence.some((entry) => entry.image) ? await embed(revisionId) : [];
+    const embeddings = await embedSearchableEvidence(record.payload, record.evidence, embed);
     const spans = await confirmedSpans(record.evidence, readTrack);
     const crops = officialCrops(record.payload, record.evidence, embeddings, null, spans);
     return { crops: (await videos.setRevisionCrops(videoId, revisionId, crops)).crops };

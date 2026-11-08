@@ -9,7 +9,7 @@
 import { compactId } from '@/lib/ids';
 import { type AnalysisMode, type AnalysisPorts, runContractAnalysis } from '@/modules/analysis/application/run-contract-analysis';
 import { type SearchableCropsResult, storeSearchableCrops } from '@/modules/reports/application/store-searchable-crops';
-import type { EmbedRevisionEvidence } from '@/modules/reports/application/types';
+import type { EmbedEvidence } from '@/modules/reports/application/types';
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
 
 export interface UploadAnalysisInput {
@@ -32,7 +32,7 @@ export interface UploadAnalysisDeps {
   ports: AnalysisPorts;
   mode: AnalysisMode;
   db: Pick<DbAdapters, 'incidents' | 'videos'>;
-  embed: EmbedRevisionEvidence;
+  embed: EmbedEvidence;
   defaultModel: string;
   now: () => Date;
 }

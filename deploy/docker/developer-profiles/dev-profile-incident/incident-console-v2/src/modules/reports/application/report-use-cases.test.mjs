@@ -19,7 +19,7 @@ const { saveHumanEdit, SearchableStepError } = await import('@/modules/reports/a
 const { setOfficialRevision } = await import('@/modules/reports/application/set-official-revision');
 const { repairMissingCrops } = await import('@/modules/reports/application/repair-missing-crops');
 const { repairMissingEmbeddings } = await import('@/modules/reports/application/repair-missing-embeddings');
-const { officialCrops, evidenceSlice } = await import('@/modules/reports/domain/revision');
+const { officialCrops, evidenceSlice, evidenceSearchTexts } = await import('@/modules/reports/domain/revision');
 const { confirmedSpans } = await import('@/modules/reports/application/confirmed-spans');
 const { storeSearchableCrops } = await import('@/modules/reports/application/store-searchable-crops');
 const { deleteVideoAndReports } = await import('@/modules/reports/application/delete-video-and-reports');
@@ -167,18 +167,26 @@ function official(revisionRecords) {
   return { incidents, videos };
 }
 
+/** The text the agent must embed for withImage's E1: the entry carries none, so the payload's name and description. */
+const E1_TEXT = {
+  item_type: 'entity',
+  item_id: 'E1',
+  item_name: 'human',
+  description: 'A person wearing dark clothing and carrying a bag, walking on the sidewalk.',
+};
+
 test('marking official embeds the revision evidence through the agent and hands the vectors to the store', async () => {
   const ports = official([withImage('evidence/v/u/E1.jpg')]);
   const asked = [];
   const embedding = { itemType: 'entity', itemId: 'E1', embedding: [0.5] };
   assert.deepEqual(
-    await setOfficialRevision(ports, V, 1, async (id) => {
-      asked.push(id);
+    await setOfficialRevision(ports, V, 1, async (items) => {
+      asked.push(items);
       return [embedding];
     }),
     { videoId: V, officialRevisionId: 1, crops: 1 },
   );
-  assert.deepEqual(asked, [1]);
+  assert.deepEqual(asked, [[E1_TEXT]], 'the text the crop row stores, not the revision id');
   assert.deepEqual(
     ports.videos.officialCalls.map((call) => [call.videoId, call.revisionId, call.crops]),
     [
@@ -235,13 +243,13 @@ test('a new revision of a video with no official revision gets its crops from th
   const asked = [];
   const embedding = { itemType: 'entity', itemId: 'E1', embedding: [0.5] };
   assert.deepEqual(
-    await storeSearchableCrops(ports, V, 1, async (id) => {
-      asked.push(id);
+    await storeSearchableCrops(ports, V, 1, async (items) => {
+      asked.push(items);
       return [embedding];
     }),
     { crops: 1 },
   );
-  assert.deepEqual(asked, [1]);
+  assert.deepEqual(asked, [[E1_TEXT]], 'the text the crop row stores, not the revision id');
   assert.deepEqual(
     ports.videos.cropCalls.map((call) => [
       call.videoId,
@@ -252,6 +260,59 @@ test('a new revision of a video with no official revision gets its crops from th
   );
   assert.equal((await ports.videos.getVideo(V)).officialRevisionId, null, 'the official pointer is not changed');
   assert.deepEqual(ports.videos.officialCalls, []);
+});
+
+test('an item with no text anywhere is never embedded and gets no crop; the items with text still do', async () => {
+  const record = withImage('evidence/v/u/E1.jpg');
+  // E9 has an image but no name or description, on its entry or in the payload: embedding it would store the vector of ": ".
+  record.evidence.push({ item_type: 'entity', item_id: 'E9', image: 'evidence/v/u/E9.jpg', bounding_box: [1, 2, 3, 4] });
+  const ports = official([record]);
+  const asked = [];
+  assert.deepEqual(
+    await storeSearchableCrops(ports, V, 1, async (items) => {
+      asked.push(items);
+      return items.map((item) => ({ itemType: item.item_type, itemId: item.item_id, embedding: [0.5] }));
+    }),
+    { crops: 1 },
+  );
+  assert.deepEqual(asked, [[E1_TEXT]], 'E9 is not sent to the agent');
+  assert.deepEqual(
+    ports.videos.cropCalls.map((call) => call.crops.map((crop) => crop.item_id)),
+    [['E1']],
+  );
+
+  const blank = withImage('evidence/v/u/E1.jpg');
+  blank.payload = { ...blank.payload, entities: [] };
+  const none = official([blank]);
+  assert.deepEqual(await storeSearchableCrops(none, V, 1, async () => assert.fail('no text, nothing to embed')), { crops: 0 });
+});
+
+test('the searchable text of an item is what its crop row stores: the entry first, else the payload, never a bare type', () => {
+  const payload = {
+    entities: [{ entity_id: 'E1', type: 'human', label: 'man in blue shirt', description: 'A man in a blue shirt.' }],
+    instruments: [{ instrument_id: 'I1', name: 'bottle', label: 'spray bottle', description: 'A white bottle.' }],
+    assets: [],
+  };
+  const evidence = [
+    { item_type: 'entity', item_id: 'E1', image: 'e1.jpg' },
+    { item_type: 'instrument', item_id: 'I1', image: 'i1.jpg', item_name: 'knife', description: 'A knife.' },
+    { item_type: 'asset', item_id: 'A1', image: 'a1.jpg' },
+    { item_type: 'entity', item_id: 'E2', image: null, item_name: 'human', description: 'No image, not searchable.' },
+  ];
+  assert.deepEqual(evidenceSearchTexts(payload, evidence), [
+    { item_type: 'entity', item_id: 'E1', item_name: 'man in blue shirt', description: 'A man in a blue shirt.' },
+    { item_type: 'instrument', item_id: 'I1', item_name: 'spray bottle', description: 'A knife.' },
+  ]);
+  const embeddings = evidenceSearchTexts(payload, evidence).map((item) => ({
+    itemType: item.item_type,
+    itemId: item.item_id,
+    embedding: [1],
+  }));
+  assert.deepEqual(
+    officialCrops(payload, evidence, embeddings).map((crop) => [crop.item_id, crop.item_name, crop.description]),
+    evidenceSearchTexts(payload, evidence).map((item) => [item.item_id, item.item_name, item.description]),
+    'the crop row stores exactly the text that was embedded',
+  );
 });
 
 test('a new revision with no images clears the crops without calling the agent', async () => {

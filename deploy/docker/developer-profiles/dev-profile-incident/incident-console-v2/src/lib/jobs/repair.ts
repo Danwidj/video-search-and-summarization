@@ -13,7 +13,7 @@
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import { repairMissingCrops } from '@/modules/reports/application/repair-missing-crops';
 import { repairMissingEmbeddings } from '@/modules/reports/application/repair-missing-embeddings';
-import type { EmbedRevisionEvidence, EmbedSummary, ReadStoredJson } from '@/modules/reports/application/types';
+import type { EmbedEvidence, EmbedSummary, ReadStoredJson } from '@/modules/reports/application/types';
 
 export const REPAIR_INTERVAL_MS = 120_000;
 export const REPAIR_BATCH = 5;
@@ -21,7 +21,7 @@ export const FAILURE_COOLDOWN_MS = 10 * 60_000;
 
 export interface SearchableRepairDeps {
   db: Pick<DbAdapters, 'incidents' | 'videos'>;
-  embedCrops: EmbedRevisionEvidence;
+  embedCrops: EmbedEvidence;
   embedSummary: EmbedSummary;
   readTrack?: ReadStoredJson;
 }

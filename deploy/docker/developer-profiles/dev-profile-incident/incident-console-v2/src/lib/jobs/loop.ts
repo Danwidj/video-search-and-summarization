@@ -15,7 +15,7 @@ import { getAnalysisJobs, getDbAdapters, getUploadAnalysis } from '@/lib/contain
 import { getServiceConfiguration, isR2Configured, isSupabaseConfigured, requireAnalysisConfiguration } from '@/lib/env';
 import { createSearchableRepair, REPAIR_INTERVAL_MS } from '@/lib/jobs/repair';
 import { readStoredJson } from '@/lib/r2/stored-json';
-import { fetchEvidenceEmbeddings, fetchSummaryEmbedding } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
+import { fetchEvidenceItemEmbeddings, fetchSummaryEmbedding } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { analyseUpload } from '@/modules/analysis/application/analyse-upload';
 import { jobVideoId, runNextJob } from '@/modules/jobs/application';
 
@@ -68,7 +68,7 @@ export const repairSearchable = createSearchableRepair({
     if (!isSupabaseConfigured(config) || !config.agentUrl) return null;
     return {
       db: getDbAdapters(config),
-      embedCrops: (revisionId) => fetchEvidenceEmbeddings(config, revisionId),
+      embedCrops: (items) => fetchEvidenceItemEmbeddings(config, items),
       embedSummary: (summary) => fetchSummaryEmbedding(config, summary),
       readTrack: isR2Configured(config) ? readStoredJson(config) : undefined,
     };

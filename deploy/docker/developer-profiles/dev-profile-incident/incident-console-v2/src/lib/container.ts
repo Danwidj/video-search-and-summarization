@@ -26,7 +26,7 @@ import { R2VideoObjectStore } from '@/modules/analysis/infrastructure/r2/video-o
 import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 import { defaultContractCatalog } from '@/modules/contract/infrastructure/loader';
 import type { UploadAnalysisDeps } from '@/modules/analysis/application/analyse-upload';
-import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
+import { fetchEvidenceItemEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import type { AnalysisJobRepository } from '@/modules/jobs/domain/AnalysisJobRepository';
 import { SupabaseAnalysisJobAdapter } from '@/modules/jobs/infrastructure/supabase/analysis-jobs';
 
@@ -74,7 +74,7 @@ export function getUploadAnalysis(config: ServiceConfiguration): UploadAnalysisD
     ports: getAnalysisPorts(config),
     mode: config.analysisMode,
     db: getDbAdapters(config),
-    embed: (revisionId) => fetchEvidenceEmbeddings(config, revisionId),
+    embed: (items) => fetchEvidenceItemEmbeddings(config, items),
     defaultModel: config.vlmModel,
     now: () => new Date(),
   };

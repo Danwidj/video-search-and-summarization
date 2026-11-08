@@ -9,7 +9,7 @@ import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';
 import { repairMissingCrops } from '@/modules/reports/application/repair-missing-crops';
 import { repairMissingEmbeddings } from '@/modules/reports/application/repair-missing-embeddings';
-import { fetchEvidenceEmbeddings, fetchSummaryEmbedding } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
+import { fetchEvidenceItemEmbeddings, fetchSummaryEmbedding } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 
 export const maxDuration = 300;
 
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     }
     const config = getServiceConfiguration();
     const db = getDbAdapters(config);
-    const report = await repairMissingCrops(db, (id) => fetchEvidenceEmbeddings(config, id), parsed.data, readStoredJson(config));
+    const report = await repairMissingCrops(db, (items) => fetchEvidenceItemEmbeddings(config, items), parsed.data, readStoredJson(config));
     const embeddings = await repairMissingEmbeddings(db, (summary) => fetchSummaryEmbedding(config, summary), parsed.data);
     return NextResponse.json({ ...report, embeddings: embeddings.revisions });
   } catch (error) {

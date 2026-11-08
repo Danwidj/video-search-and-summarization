@@ -93,14 +93,18 @@ Use `context.scope: "incident"` with `incident_id` for one incident, or include 
 
 ## How evidence crops reach search
 
-There is no loader script. The analyze route crops each evidence item and uploads it to R2 (`evidence/<video key>/run-<N>/<itemId>.jpg`, plus `<itemId>-frame.jpg` beside it; key tree in [`.docs/data.md`](../../.docs/data.md)), listing the keys in the new `report_revisions.evidence`. Search reads `evidence_crops`, which holds each video's searchable revision (the official one, else the newest): the console calls `POST /api/v1/incidents/evidence-embeddings`, gets `{item_type, item_id, embedding}` back (1024 dimensions, the model search uses) and writes the rows itself. Which call writes them for each event (mark official, analysis or re-run, Save) is in [`.docs/data.md`](../../.docs/data.md#evidence_crops).
+There is no loader script. The analyze route crops each evidence item and uploads it to R2 (`evidence/<video key>/run-<N>/<itemId>.jpg`, plus `<itemId>-frame.jpg` beside it; key tree in [`.docs/data.md`](../../.docs/data.md)), listing the keys in the new `report_revisions.evidence`. Search reads `evidence_crops`, which holds each video's searchable revision (the official one, else the newest): the console calls `POST /api/v1/incidents/evidence-embeddings` with the text each row will store (`evidence` form: `item_type`, `item_id`, `item_name`, `description`; an item with no text is left out), gets `{item_type, item_id, embedding}` back (1024 dimensions, the model search uses) and writes the rows itself. Which call writes them for each event (mark official, analysis or re-run, Save) is in [`.docs/data.md`](../../.docs/data.md#evidence_crops).
 
 ```bash
 curl -sS -X POST http://localhost:8000/api/v1/incidents/evidence-embeddings \
-  -H 'Content-Type: application/json' -d '{"revision_id": 1}' | jq 'length, .[0] | del(.embedding)'
+  -H 'Content-Type: application/json' \
+  -d '{"evidence": [{"item_type": "instrument", "item_id": "I1", "item_name": "spray bottle", "description": "A white bottle."}]}' \
+  | jq 'length, .[0] | del(.embedding)'
 ```
 
-`404` means the revision does not exist; `503` means the database or embedding key is not configured. An empty `evidence_crops` table means no crops have been stored yet, not a broken search; a video whose newest revision has no rows is not searchable until its rows are written. Changing the embedding model means re-embedding every searchable revision.
+`503` means the embedding key is not configured; `502` means the embedding service failed. (The route's `revision_id` form embeds the stored entries as they are, which for a placeholder entry is the empty passage `": "`; the console does not use it.)
+
+**Re-embed stored rows** whose vector was made from empty text (rows that share one vector): `scripts/reembed_evidence_crops.py` (run from the profile directory with `.env.local` sourced and the `start.sh` tunnel up). It is a dry run by default (keys only, no agent call, no write). `--row REVISION_ID:ITEM_TYPE:ITEM_ID` (repeatable) or `--all-blank` selects rows; `--apply --backup-dir <dir outside the repo>` writes a JSONL backup first, then replaces only the `embedding` of rows that still hold the backed-up vector; `--restore <backup.jsonl> --apply` puts the old vectors back. Applying it to finals is ask-first. Hermetic tests: `python3 -m unittest discover -s scripts/tests`. An empty `evidence_crops` table means no crops have been stored yet, not a broken search; a video whose newest revision has no rows is not searchable until its rows are written. Changing the embedding model means re-embedding every searchable revision.
 
 ## Verify
 

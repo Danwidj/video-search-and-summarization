@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/container';
 import { setOfficialRevision } from '@/modules/reports/application/set-official-revision';
-import { AgentUnreachableError, fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
+import { AgentUnreachableError, fetchEvidenceItemEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';
 
@@ -27,7 +27,7 @@ export async function PUT(request: Request, context: { params: Promise<{ videoId
       getDbAdapters(config),
       videoId,
       parsed.data.revisionId,
-      (revisionId) => fetchEvidenceEmbeddings(config, revisionId),
+      (items) => fetchEvidenceItemEmbeddings(config, items),
       readStoredJson(config),
     );
     return NextResponse.json({ official: result });
@@ -46,9 +46,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ vid
   try {
     const { videoId } = await context.params;
     const config = getServiceConfiguration();
-    const result = await setOfficialRevision(getDbAdapters(config), videoId, null, (revisionId) =>
-      fetchEvidenceEmbeddings(config, revisionId),
-    );
+    const result = await setOfficialRevision(getDbAdapters(config), videoId, null, (items) => fetchEvidenceItemEmbeddings(config, items));
     return NextResponse.json({ official: result });
   } catch (error) {
     return rejectionResponse(error) ?? errorResponse(error, 'Could not clear the official revision');
