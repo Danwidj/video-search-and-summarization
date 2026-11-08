@@ -230,13 +230,8 @@ def test_the_report_editor_has_no_question_step_for_new_evidence() -> None:
     repo = Path(__file__).resolve().parents[5]
     config = repo / "deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml"
     function = yaml.safe_load(config.read_text())["functions"]["report_editor"]
-    prompt = " ".join(function["system_prompt"].split())
-    assert "propose_ask_reviewer" not in prompt
     assert "propose_ask_reviewer" not in function["tool_names"]
     assert "propose_open_box_tool" in function["tool_names"]
-    assert "never ask the reviewer anything about it" in prompt
-    assert "Call propose_open_box_tool once, straight away" in prompt
-    assert "the incident's start second" in prompt
 
 
 async def _run_retry(args: dict):

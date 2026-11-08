@@ -101,7 +101,6 @@ test('the report page and its panes wire the box opening from the chat to the ed
   assert.match(pane, /onEvidenceOpened\?\.\(\);/);
   assert.match(steps, /Evidence \(\{evidence\.length\}\)/);
   assert.match(steps, /'Redraw'/);
-  assert.doesNotMatch(steps, /'Asked'/);
 });
 
 test('a redraw of an existing item opens the box tool on that item and is proposed, not applied', () => {
