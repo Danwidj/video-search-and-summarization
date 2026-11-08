@@ -103,6 +103,23 @@ export function chatHistory<T extends { role: string; content: string; source?: 
   return messages.filter((message) => message.source !== 'video' && !(message.role === 'assistant' && message.content.trim() === ''));
 }
 
+/** The agent's cap on one earlier turn's text (InvestigateRequest.history). */
+export const EDITOR_HISTORY_TURN_CHARS = 4000;
+
+/**
+ * The last few chat turns before the question being asked, for the report editor: user and assistant text only, blank turns
+ * dropped, oldest first. The question is the last message, so it is left out. The agent takes at most six turns.
+ */
+export function editorHistory<T extends { role: string; content: string; source?: AnswerSource }>(
+  messages: T[],
+): Array<{ role: 'user' | 'assistant'; text: string }> {
+  return chatHistory(messages.slice(0, -1))
+    .filter((message): message is T & { role: 'user' | 'assistant' } => message.role === 'user' || message.role === 'assistant')
+    .map((message) => ({ role: message.role, text: message.content.trim().slice(0, EDITOR_HISTORY_TURN_CHARS) }))
+    .filter((turn) => turn.text !== '')
+    .slice(-6);
+}
+
 /** Whether a check can be offered: an offer about what came after a moment needs footage after it. */
 export function offersVideoCheck(offer: { fromSeconds?: number } | undefined, durationSeconds: number | null): boolean {
   if (!offer) return false;

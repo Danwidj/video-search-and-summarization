@@ -18,7 +18,7 @@ export function ReportThumbnail({
   thumbnailUrl,
   severity,
   kind,
-  duration,
+  durationSeconds,
   alt,
   previewVideoId,
   children,
@@ -26,7 +26,7 @@ export function ReportThumbnail({
   thumbnailUrl?: string;
   severity: number;
   kind?: ReportLibraryItem['kind'];
-  duration?: string;
+  durationSeconds?: number | null;
   alt: string;
   /** Plays this video, muted, over the screenshot while the card is hovered. */
   previewVideoId?: string;
@@ -49,7 +49,12 @@ export function ReportThumbnail({
       setReady(false);
     };
   }, [previewUrl]);
-  const { image: view, severityLabel, kindLabel } = libraryCardThumbnail({ thumbnailUrl, severity, kind: kind || 'ai' }, failed);
+  const {
+    image: view,
+    severityLabel,
+    kindLabel,
+    durationLabel,
+  } = libraryCardThumbnail({ thumbnailUrl, severity, kind: kind || 'ai', durationSeconds }, failed);
 
   return (
     <figure
@@ -100,8 +105,13 @@ export function ReportThumbnail({
       <span className="sr-only" data-testid="library-kind-badge">
         {kindLabel}
       </span>
-      {duration && (
-        <span className="absolute bottom-2 left-2.5 rounded bg-ink/80 px-1.5 py-0.5 font-mono text-[11px] text-white">{duration}</span>
+      {durationLabel && (
+        <span
+          className="absolute bottom-2 right-2.5 rounded bg-ink/80 px-1.5 py-0.5 font-mono text-[11px] text-white tabular-nums"
+          data-testid="library-duration-badge"
+        >
+          {durationLabel}
+        </span>
       )}
       {children}
     </figure>

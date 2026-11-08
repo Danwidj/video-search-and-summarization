@@ -75,6 +75,7 @@ export function IncidentCard({
       >
         <ReportThumbnail
           alt={`Video screenshot for ${displayTitle}`}
+          durationSeconds={item.durationSeconds}
           kind={item.kind}
           severity={item.severity}
           thumbnailUrl={item.thumbnailUrl}

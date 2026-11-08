@@ -8,7 +8,9 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { applyChatEdit, draftSnapshot, toApplierActions, INCIDENT_HIGHLIGHT_KEY } = await import('../src/lib/edits/chat-edit.ts');
+const { applyChatEdit, draftSnapshot, labelDraftKeys, toApplierActions, INCIDENT_HIGHLIGHT_KEY } = await import(
+  '../src/lib/edits/chat-edit.ts'
+);
 const { draftFromView } = await import('../src/modules/reports/domain/edit-draft.ts');
 const { buildReportView } = await import('./support/report-view.mjs');
 
@@ -138,4 +140,46 @@ test('a no-op action is skipped with its reason, not reported as applied', () =>
   );
   assert.deepEqual(result.changedKeys, []);
   assert.deepEqual(result.removedKeys, []);
+});
+
+test('the snapshot gives each item its reviewer label (E1, I1, A1) and name, not just its key', () => {
+  const draft = base();
+  const snapshot = draftSnapshot(draft);
+  assert.equal(snapshot.entities[0].reviewer_label, draft.entities[0].sourceId);
+  assert.equal(snapshot.entities[0].reviewer_name, draft.entities[0].label);
+});
+
+test('a new item has no reviewer label yet, so its name stands in for it', () => {
+  const draft = base();
+  draft.entities.push({ ...draft.entities[0], key: 'entity-new', sourceId: null, label: 'person in red' });
+  const entity = draftSnapshot(draft).entities.at(-1);
+  assert.equal(entity.reviewer_label, '');
+  assert.equal(entity.reviewer_name, 'person in red');
+});
+
+test('the reply shows a draft key as its item label, and a whole key only', () => {
+  const snapshot = {
+    entities: [{ key: 'entity-0', reviewer_label: 'E1', reviewer_name: 'person in purple' }],
+    instruments: [{ key: 'instrument-a', reviewer_label: 'I1', reviewer_name: 'knife' }],
+    assets: [],
+  };
+  assert.equal(
+    labelDraftKeys('Opened the box tool on entity-0 and instrument-a. entity-01 and xentity-0 stay.', snapshot),
+    'Opened the box tool on E1 and I1. entity-01 and xentity-0 stay.',
+  );
+});
+
+test('a key with no label shows its name, and a new item with neither shows as a new item', () => {
+  const snapshot = {
+    entities: [
+      { key: 'entity-0', reviewer_label: '', reviewer_name: 'person in purple' },
+      { key: 'entity-1', reviewer_label: '', reviewer_name: '' },
+    ],
+  };
+  assert.equal(labelDraftKeys('entity-0 and entity-1', snapshot), 'person in purple and the new item');
+});
+
+test('a reply with no key, or a snapshot with no items, is unchanged', () => {
+  assert.equal(labelDraftKeys('Nothing to change.', { entities: [] }), 'Nothing to change.');
+  assert.equal(labelDraftKeys('entity-0 is still here.', {}), 'entity-0 is still here.');
 });

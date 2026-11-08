@@ -40,7 +40,7 @@ export function NotOfficialPill({ className, ...props }: Omit<React.ComponentPro
   return (
     <span
       className={cn(
-        'inline-flex h-5 w-fit shrink-0 items-center rounded-full border border-dashed border-not-official-line bg-not-official-pill px-2 text-[11px] font-bold whitespace-nowrap text-ink-caption',
+        'inline-flex h-5 w-fit shrink-0 items-center rounded-full border border-dashed border-[#c9cfd3] bg-[#f4f6f2] px-2 text-[11px] font-bold whitespace-nowrap text-[#66706b]',
         className,
       )}
       {...props}

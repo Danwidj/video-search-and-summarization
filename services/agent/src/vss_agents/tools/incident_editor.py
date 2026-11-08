@@ -33,6 +33,7 @@ from nat.builder.function_info import FunctionInfo
 from nat.cli.register_workflow import register_function
 from nat.data_models.function import FunctionBaseConfig
 from pydantic import BaseModel
+from pydantic import Field
 
 from vss_agents.utils import agent_loop
 from vss_agents.utils import draft_edits
@@ -130,6 +131,21 @@ class ProposeOpenBoxToolConfig(FunctionBaseConfig, name="propose_open_box_tool")
     pass
 
 
+class ProposeRetryGapsConfig(FunctionBaseConfig, name="propose_retry_gaps"):
+    pass
+
+
+class RetryGaps(BaseModel):
+    """Which items to look again for in the video."""
+
+    item_key: str | None = Field(
+        None,
+        min_length=1,
+        max_length=128,
+        description="The draft item to look again for, by its key. Left out, every item of the report with no box.",
+    )
+
+
 _NOBODY = {"", "none", "null", "nobody"}
 
 
@@ -168,6 +184,33 @@ def _proposal(
     return register_function(config_type=config_type, framework_wrappers=[LLMFrameworkEnum.LANGCHAIN])(build)
 
 
+def _item_label(draft: draft_edits.DraftSnapshot, key: str) -> str | None:
+    """The label a reviewer knows a draft item by (its label, else its name), or None when the draft has no such item."""
+    items: list[draft_edits.DraftEntity | draft_edits.DraftInstrument | draft_edits.DraftAsset] = [
+        *draft.entities,
+        *draft.instruments,
+        *draft.assets,
+    ]
+    for item in items:
+        if item.key == key:
+            return item.label or getattr(item, "name", "") or key
+    return None
+
+
+async def check_retry_gaps(tool: str, args: dict[str, Any]) -> str:  # noqa: ARG001
+    """Check a gap retry request: the named item must be in the draft. The retry itself runs as a job the console starts."""
+    draft = agent_loop.current().draft
+    if draft is None:
+        raise ValueError("there is no draft to change")
+    key = args.get("item_key")
+    if key is None:
+        return "Retrying the gaps of the report: each box found comes back as a proposal for the reviewer to confirm."
+    label = _item_label(draft, key)
+    if label is None:
+        raise ValueError(f"there is no item {key} in the draft")
+    return f"Retrying the gap of {label}: its box comes back as a proposal for the reviewer to confirm."
+
+
 def _register(tool: str, config_type: type[FunctionBaseConfig]) -> Any:
     spec = draft_edits.TOOLS[tool]
     return _proposal(
@@ -200,4 +243,13 @@ propose_open_box_tool = _proposal(
     "Opens the box tool once: for new evidence at the second it is best seen, with its short name; or on an item already in "
     "the draft, by its item_key alone, to redraw its box or set its image. Proposes only; the reviewer draws the box.",
     check_new_evidence,
+)
+propose_retry_gaps = _proposal(
+    ProposeRetryGapsConfig,
+    "retry_gaps",
+    RetryGaps,
+    "Looks again in the video for the items of the saved report that have no box: all of them, or the one named by its "
+    "item_key. Each box found comes back as a proposal the reviewer confirms or adjusts; nothing is written. Use it when "
+    "asked to retry the gaps, or to find a box for an item.",
+    check_retry_gaps,
 )

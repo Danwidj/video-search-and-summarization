@@ -183,7 +183,7 @@ test('newEntityDraft creates a draft entity with a non-colliding canonical ID', 
   assert.ok(added.key.startsWith('entity-'));
 });
 
-test('timeline lane titles read E1 · label in both View and Edit modes', () => {
+test('timeline lane titles are the entity label in both View and Edit modes', () => {
   const draft = base();
   draft.entities[0].label = 'attacker';
   draft.entities[1].label = 'victim';
@@ -196,8 +196,8 @@ test('timeline lane titles read E1 · label in both View and Edit modes', () => 
   };
   const viewLanes = buildTimelineLanes(viewStructured);
   const editLanes = buildTimelineLanes(draftToStructured(draft));
-  assert.equal(viewLanes[0].title, 'E1 · attacker');
-  assert.equal(viewLanes[1].title, 'E2 · victim');
+  assert.equal(viewLanes[0].title, 'attacker');
+  assert.equal(viewLanes[1].title, 'victim');
   assert.equal(editLanes[0].title, viewLanes[0].title);
   assert.equal(editLanes[1].title, viewLanes[1].title);
   assert.deepEqual(
@@ -306,7 +306,7 @@ test('the timeline follows a rename and a Set image pick; a pick moves the thumb
   const draft = base();
   const before = editLanes(draft)[0];
   const renamed = { ...draft, entities: draft.entities.map((entity, i) => (i ? entity : { ...entity, label: 'attacker' })) };
-  assert.equal(editLanes(renamed)[0].title, `${draft.entities[0].canonicalId} · attacker`);
+  assert.equal(editLanes(renamed)[0].title, 'attacker');
   const picked = {
     ...draft,
     entities: draft.entities.map((entity, i) => (i ? entity : { ...entity, imagePick: { seconds: 5.5, box: [5, 5, 50, 50] } })),
@@ -333,7 +333,7 @@ test('an added entity gets a lane after the others, in the order Save stores, wi
   const entities = editLanes(added).filter((lane) => lane.kind === 'entity');
   assert.equal(entities.length, draft.entities.length + 1);
   const lane = entities.at(-1);
-  assert.match(lane.title, /· dog$/);
+  assert.match(lane.title, /^dog$/);
   assert.deepEqual(lane.span, { start: 3, end: 6 });
   assert.equal(lane.frame.src, '/api/reports/v1/frame?t=3');
 

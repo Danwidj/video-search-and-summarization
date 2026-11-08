@@ -34,6 +34,8 @@ export function draftSnapshot(draft: EditDraft): Record<string, unknown> {
       last_seen_seconds: entity.lastSeenSeconds,
       timestamp_seconds: entity.timestampSeconds,
       label: entity.label,
+      reviewer_label: entity.sourceId ?? '',
+      reviewer_name: entity.label,
     })),
     instruments: draft.instruments.map((instrument) => ({
       key: instrument.key,
@@ -43,6 +45,8 @@ export function draftSnapshot(draft: EditDraft): Record<string, unknown> {
       threat_level: instrument.threat_level,
       timestamp_seconds: instrument.timestampSeconds,
       label: instrument.label,
+      reviewer_label: instrument.sourceId ?? '',
+      reviewer_name: instrument.name,
     })),
     assets: draft.assets.map((asset) => ({
       key: asset.key,
@@ -50,8 +54,34 @@ export function draftSnapshot(draft: EditDraft): Record<string, unknown> {
       description: asset.description,
       timestamp_seconds: asset.timestampSeconds,
       label: asset.label,
+      reviewer_label: asset.sourceId ?? '',
+      reviewer_name: asset.name,
     })),
   };
+}
+
+const SNAPSHOT_ITEMS = ['entities', 'instruments', 'assets'] as const;
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The agent's reply with each draft key replaced by that item's label (E1) or, without one, its name. The reviewer never sees a
+ * key; the keys stay in the tool steps and actions. Reads the same snapshot the request was sent with.
+ */
+export function labelDraftKeys(text: string, snapshot: Record<string, unknown>): string {
+  let labelled = text;
+  for (const field of SNAPSHOT_ITEMS) {
+    const items = Array.isArray(snapshot[field]) ? (snapshot[field] as Array<Record<string, unknown>>) : [];
+    for (const item of items) {
+      if (typeof item.key !== 'string' || item.key === '') continue;
+      const shown = [item.reviewer_label, item.reviewer_name].find(
+        (value): value is string => typeof value === 'string' && value.trim() !== '',
+      );
+      const label = shown?.trim() ?? 'the new item';
+      const key = new RegExp(`(?<![\\w-])${escapeRegExp(item.key)}(?![\\w-])`, 'g');
+      labelled = labelled.replace(key, () => label);
+    }
+  }
+  return labelled;
 }
 
 export interface ProposedAction {
@@ -142,6 +172,10 @@ export function toApplierActions(draft: EditDraft, proposals: ProposedAction[]):
         break;
       case 'set_instrument_holder':
         push(tool, { instrumentKey: args.instrument_key, holderKey: args.holder_key ?? null });
+        break;
+      case 'change_evidence':
+        // A gap retry's found box (set image): the reviewer confirms it, the applier only proposes it.
+        push(tool, rename(args, { op: 'op', item_key: 'itemKey', seconds: 'seconds', box: 'box', reason: 'reason' }));
         break;
       case 'delete_item': {
         const collection = COLLECTIONS.find((name) => draft[name].some((item) => item.key === args.item_key));

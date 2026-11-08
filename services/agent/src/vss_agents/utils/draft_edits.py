@@ -80,6 +80,9 @@ class DraftEntity(_Strict):
     last_seen_seconds: float | None = Field(None, ge=0)
     timestamp_seconds: float | None = Field(None, ge=0)
     label: str = ""
+    # What the reviewer sees for the item: E1/I1/A1 and its name. Optional, so a console that does not send them still works.
+    reviewer_label: str = ""
+    reviewer_name: str = ""
 
 
 class DraftInstrument(_Strict):
@@ -90,6 +93,8 @@ class DraftInstrument(_Strict):
     threat_level: int | None = Field(None, ge=1, le=THREAT_MAX)
     timestamp_seconds: float | None = Field(None, ge=0)
     label: str = ""
+    reviewer_label: str = ""
+    reviewer_name: str = ""
 
 
 class DraftAsset(_Strict):
@@ -98,6 +103,8 @@ class DraftAsset(_Strict):
     description: str = ""
     timestamp_seconds: float | None = Field(None, ge=0)
     label: str = ""
+    reviewer_label: str = ""
+    reviewer_name: str = ""
 
 
 class DraftSnapshot(_Strict):

@@ -9,7 +9,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { chatTarget, draftReport, chatRequestBody } = await import('../src/lib/chat/report-chat.ts');
+const { chatTarget, draftReport, chatRequestBody, editorHistory } = await import('../src/lib/chat/report-chat.ts');
 const { toAgentChatBody } = await import('../src/modules/chat/infrastructure/agent/agent-chat.ts');
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
@@ -159,8 +159,9 @@ test('the conversation lives on the page, so closing the panel keeps it, and eac
 
 test('the player stays usable beside the chat, and a jump reaches the player on screen', () => {
   const page = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportPage', 'ReportPage.tsx'), 'utf8');
-  assert.match(page, /<Sheet modal=\{false\}/);
-  assert.match(page, /onInteractOutside=\{\(event\) => event\.preventDefault\(\)\}/, 'using the player does not close the chat');
+  assert.match(page, /<aside/, 'the chat is docked beside the page, not an overlay');
+  assert.match(page, /sm:w-\[28rem\]/, 'the docked panel keeps its current width');
+  assert.match(page, /<article[\s\S]*?min-w-0 flex-1/, 'the page content narrows by the panel width');
   assert.match(page, /ref=\{compactVideoRef\}/);
   assert.match(page, /\[videoRef\.current, compactVideoRef\.current\]\.find/);
 });
@@ -170,10 +171,11 @@ test('an answer sits on the muted bubble, so its times, citation titles and vers
   assert.match(chat, /<Message align="start"[^>]*>\s*<Bubble variant="muted">/);
 });
 
-test('the panel leads with the timeline question and says answers come from the stored report', () => {
+test('the panel leads with the timeline question and tool suggestions', () => {
   const chat = readFileSync(join(process.cwd(), 'src', 'sections', 'reports', 'components', 'ReportChat', 'ReportChat.tsx'), 'utf8');
-  assert.match(chat, /SUGGESTIONS = \['Show the timeline of events'\];/, 'one suggestion: the panel stays short (PR 491)');
-  assert.match(chat, /stored report for the version you have\s+open, not from a new look at the video/);
+  assert.match(chat, /Show the timeline of events/);
+  assert.match(chat, /Draw the box for an entity/);
+  assert.match(chat, /Look for an item in the clip/);
   assert.match(chat, /answerSourceLine\(message\.source, message\.answeredFrom \?\? ''\)/);
   assert.doesNotMatch(chat, /Searching evidence/, 'nothing is searched, so the panel does not say so');
 });
@@ -230,5 +232,37 @@ test('a video check runs only from its button, and its result is shown apart wit
   assert.match(chat, /does not\s+change the report/);
   assert.match(chat, /message\.source === 'video' \?/);
   assert.match(chat, /videoOffer: undefined/, 'an offer is spent once it runs');
-  assert.match(chat, /SUGGESTIONS = \['Show the timeline of events'\];/, 'still one chip');
+  assert.match(chat, /Show the timeline of events/);
+  assert.match(chat, /Draw the box for an entity/);
+  assert.match(chat, /Look for an item in the clip/);
+});
+
+test('the editor gets the last six user and assistant turns before the question, blanks and video checks left out', () => {
+  const turn = (role, content, source) => ({ role, content, ...(source ? { source } : {}) });
+  const messages = [
+    turn('user', 'q1'),
+    turn('assistant', 'a1'),
+    turn('assistant', '   '),
+    turn('user', 'q2'),
+    turn('assistant', 'video check', 'video'),
+    turn('user', 'q3'),
+    turn('assistant', 'a3'),
+    turn('user', 'q4'),
+    turn('assistant', 'a4'),
+    turn('user', 'the same item?'),
+  ];
+  assert.deepEqual(
+    editorHistory(messages).map((item) => item.text),
+    ['q1', 'a1', 'q2', 'q3', 'a3', 'q4', 'a4'].slice(-6),
+  );
+  assert.deepEqual(editorHistory(messages.slice(0, 2)), [{ role: 'user', text: 'q1' }]);
+  assert.deepEqual(editorHistory([turn('user', 'only question')]), []);
+});
+
+test('a long earlier turn is cut to the agent limit so the editor request still validates', () => {
+  const [turn] = editorHistory([
+    { role: 'assistant', content: 'x'.repeat(5000) },
+    { role: 'user', content: 'now' },
+  ]);
+  assert.equal(turn.text.length, 4000);
 });

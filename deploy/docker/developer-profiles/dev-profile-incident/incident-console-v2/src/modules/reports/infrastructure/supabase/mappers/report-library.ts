@@ -75,6 +75,7 @@ function reportSummary(item: Row): ReportLibraryItem {
     thumbnail: textOrNull(item.thumbnail),
     r2Key: textOrNull(item.r2Key),
     sensorId: textOrNull(item.sensorId),
+    durationSeconds: numberOrNull(item.durationSeconds),
   };
 }
 

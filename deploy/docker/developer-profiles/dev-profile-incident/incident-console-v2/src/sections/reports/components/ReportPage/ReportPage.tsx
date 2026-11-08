@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { ArrowLeftIcon, MessageSquareTextIcon, PictureInPicture2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useGroupRef } from 'react-resizable-panels';
 
 import { MutedVideo } from '@/components/muted-video';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -22,18 +23,19 @@ import {
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HEADER_END_SLOT, HEADER_START_SLOT } from '@/sections/shell/components/AppHeader';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { chatTarget, citationTitles } from '@/lib/chat/report-chat';
+import { timelinePanelHeight, videoFitLayout } from '@/lib/ui/video-fit';
 import { seekTarget } from '@/lib/chat/timestamps';
 import { applyChatEdit, type ProposedAction } from '@/lib/edits/chat-edit';
 import type { BoxOpening } from '@/lib/evidence/box-tool';
 import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
 import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
+import { buildTimelineLanes } from '@/lib/reports/timeline-lanes';
 import {
   draftFromView,
   draftProblems,
@@ -99,6 +101,15 @@ export function ReportPage({
   const startedAt = useRef(false);
 
   const [chatOpen, setChatOpen] = useState(false);
+  // Escape closes the docked chat wherever focus is, as it closed the sheet; a key a field already handled is left alone.
+  useEffect(() => {
+    if (!chatOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) setChatOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [chatOpen]);
   // The report's controls live in the shared app header: its two slots are found after mount and filled by portal.
   const [slots, setSlots] = useState<{ start: HTMLElement | null; end: HTMLElement | null } | null>(null);
   useEffect(() => {
@@ -187,6 +198,34 @@ export function ReportPage({
       selectedId: null,
     };
   }, [mode, draft, editBase, editingTrackKey, trackedItems, stillBoxes, selectedTrackId]);
+  const timelineLaneCount = useMemo(() => {
+    const structured = mode === 'edit' && draft ? draftToStructured(draft, videoId, overlay.frames) : (shownReport?.structured ?? null);
+    return structured ? buildTimelineLanes(structured).length : 0;
+  }, [mode, draft, videoId, overlay.frames, shownReport]);
+  const timelineHeight = timelinePanelHeight(timelineLaneCount);
+  // The desktop workspace's left column: the video is sized to its width at the video's aspect ratio, and the timeline and
+  // versions take the rest. Measured on every column size change (window, divider, chat), before paint.
+  const workspace = useGroupRef();
+  const workspaceColumn = useRef<HTMLDivElement>(null);
+  // The timeline panel is as tall as its lanes need, so it fits however many evidence items the version has.
+  useLayoutEffect(() => {
+    const column = workspaceColumn.current;
+    if (!column) return;
+    const fit = () => {
+      const layout = videoFitLayout(column.clientWidth, column.clientHeight, videoAspect, timelineHeight);
+      if (layout) {
+        workspace.current?.setLayout({
+          'report-video': layout.video,
+          'report-timeline': layout.timeline,
+          'report-versions': layout.versions,
+        });
+      }
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(column);
+    return () => observer.disconnect();
+  }, [timelineHeight, videoAspect, workspace]);
   const selectTrack = useCallback(
     (id: string | null) => setTrackSelection(id && shownReport ? { revisionId: shownReport.revisionId, id } : null),
     [shownReport],
@@ -329,6 +368,14 @@ export function ReportPage({
   const officialLabel = officialRevision ? `v${officialRevision.revisionNo}` : 'none';
   // Only in Edit mode: a draft kept while the reviewer looks back at View does not change what View's timeline shows.
   const draftStructured = mode === 'edit' && draft ? draftToStructured(draft, videoId, overlay.frames) : null;
+  // In View mode, reflect draft changes to fields and title if viewing the revision being edited before Save.
+  const viewReport =
+    draft && editBase && report.revisionId === editBase.revisionId
+      ? {
+          ...report,
+          structured: draftToStructured(draft, videoId, overlay.frames),
+        }
+      : report;
 
   // A request in flight may still change the draft, so Save waits for it.
   const chatBusy = Object.values(chatThreads).some((thread) => thread.busy);
@@ -447,9 +494,9 @@ export function ReportPage({
   }
 
   return (
-    <div className="h-full min-h-0 overflow-hidden">
+    <div className="flex h-full min-h-0 overflow-hidden">
       <article
-        className="report-sheet flex h-full min-h-0 flex-col overflow-hidden border-y border-border bg-card shadow-panel"
+        className="report-sheet flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-y border-border bg-card shadow-panel"
         data-testid="report-page"
       >
         {slots?.start &&
@@ -493,8 +540,8 @@ export function ReportPage({
 
         <ResizablePanelGroup className="min-h-0 flex-1" orientation="horizontal">
           <ResizablePanel className="hidden min-h-0 overflow-hidden lg:block" defaultSize="38%" maxSize="65%" minSize="25%">
-            <ResizablePanelGroup className="h-full" orientation="vertical">
-              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="45%" minSize="20%">
+            <ResizablePanelGroup className="h-full" elementRef={workspaceColumn} groupRef={workspace} orientation="vertical">
+              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="45%" id="report-video" minSize="20%">
                 <div
                   className="video-cell relative flex h-full min-h-0 min-w-0 items-center justify-center overflow-hidden bg-muted [container-type:size]"
                   data-testid="video-cell"
@@ -556,8 +603,9 @@ export function ReportPage({
                   </div>
                 </div>
               </ResizablePanel>
-              <ResizableHandle aria-label="Resize video and timeline" withHandle />
-              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="27.5%" minSize="15%">
+              {/* The video keeps its fitted height, so this divider is fixed; the timeline and versions divider below stays draggable. */}
+              <ResizableHandle aria-label="Resize video and timeline" disabled withHandle />
+              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="27.5%" id="report-timeline" minSize="15%">
                 <ReportTimeline
                   currentTime={currentTime}
                   onSeek={seek}
@@ -566,7 +614,7 @@ export function ReportPage({
                 />
               </ResizablePanel>
               <ResizableHandle aria-label="Resize timeline and versions" withHandle />
-              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="27.5%" minSize="15%">
+              <ResizablePanel className="min-h-0 overflow-hidden" defaultSize="27.5%" id="report-versions" minSize="15%">
                 <ReportVersions
                   currentRevisionId={mode === 'edit' && editBase ? editBase.revisionId : report.revisionId}
                   error={revisionsError}
@@ -610,16 +658,13 @@ export function ReportPage({
                     onSeek={seek}
                     onSelectTrack={selectTrack}
                     playerDuration={playerDuration}
-                    report={report}
+                    report={viewReport}
                     selectedTrackId={selectedTrackId}
                   />
                 ) : draft && editBase ? (
                   <ReportEditPane
                     a={compareReport?.structured ?? null}
                     aRevisionNo={compareReport?.revision.revisionNo ?? editBase.revisionNo}
-                    baseKind={editBase.report.revision.kind === 'human' ? 'human' : 'ai'}
-                    baseOfficial={editBase.report.official.officialRevisionId === editBase.revisionId}
-                    baseRevisionNo={editBase.revisionNo}
                     draft={draft}
                     assistantKeys={assistantKeys}
                     evidenceOpening={evidenceOpening}
@@ -651,15 +696,7 @@ export function ReportPage({
                     <span className="min-w-0 text-muted-foreground sm:flex-1">
                       {editBase && (
                         <>
-                          <b>Draft</b> from v{editBase.revisionNo} ·{' '}
-                          {changes ? (
-                            <>
-                              <b>{changes}</b> unsaved change{changes === 1 ? '' : 's'}
-                            </>
-                          ) : (
-                            'no changes yet'
-                          )}{' '}
-                          · official is <b>{officialLabel}</b>
+                          <b>Draft</b> from v{editBase.revisionNo} · unsaved · official is <b>{officialLabel}</b>
                         </>
                       )}
                     </span>
@@ -691,6 +728,43 @@ export function ReportPage({
           </ResizablePanel>
         </ResizablePanelGroup>
       </article>
+
+      {/* Docked beside the page, not over it: the page content narrows by the panel's width, so nothing sits under the chat. The player stays usable, so a jump can be watched, paused or scrubbed from there. */}
+      {chatOpen && (
+        <aside
+          aria-label="Ask about this incident"
+          className="flex h-full min-h-0 w-full shrink-0 flex-col border-l border-border bg-card sm:w-[28rem]"
+        >
+          {(() => {
+            const target = chatTarget(
+              mode === 'edit' && draft && editBase
+                ? { revision: editBase.report.revision, isOfficial: editBase.report.official.isOfficial, draft }
+                : { revision: report.revision, isOfficial: report.official.isOfficial, draft: null },
+            );
+            // Keyed by the version (and whether it is a draft), so each one has its own conversation.
+            const threadKey = chatThreadKey(target.versionId);
+            return (
+              <ReportChat
+                durationSeconds={playerDuration}
+                key={threadKey}
+                onClose={() => setChatOpen(false)}
+                onSeek={seek}
+                onThreadChange={(change) =>
+                  setChatThreads((threads) => ({
+                    ...threads,
+                    [threadKey]: { ...(threads[threadKey] ?? EMPTY_CHAT_THREAD), ...change },
+                  }))
+                }
+                target={target}
+                thread={chatThreads[threadKey] ?? EMPTY_CHAT_THREAD}
+                titles={citationTitles(mode === 'edit' && draft && editBase ? editBase.report.structured : report.structured)}
+                videoId={videoId}
+                edits={{ current: () => draftRef.current ?? draftFromView(report), apply: editFromChat }}
+              />
+            );
+          })()}
+        </aside>
+      )}
 
       <AlertDialog onOpenChange={setRevertConfirmOpen} open={revertConfirmOpen}>
         <AlertDialogContent>
@@ -764,48 +838,6 @@ export function ReportPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Not modal: the player stays usable beside the chat, so a jump can be watched, paused or scrubbed from there. */}
-      <Sheet modal={false} onOpenChange={setChatOpen} open={chatOpen}>
-        <SheetContent
-          className="flex flex-col p-0 sm:max-w-md"
-          onInteractOutside={(event) => event.preventDefault()}
-          showCloseButton={false}
-          side="right"
-        >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Ask about this incident</SheetTitle>
-            <SheetDescription>Conversational questions and answers about this incident</SheetDescription>
-          </SheetHeader>
-          {(() => {
-            const target = chatTarget(
-              mode === 'edit' && draft && editBase
-                ? { revision: editBase.report.revision, isOfficial: editBase.report.official.isOfficial, draft }
-                : { revision: report.revision, isOfficial: report.official.isOfficial, draft: null },
-            );
-            // Keyed by the version (and whether it is a draft), so each one has its own conversation.
-            const threadKey = chatThreadKey(target.versionId);
-            return (
-              <ReportChat
-                durationSeconds={playerDuration}
-                key={threadKey}
-                onSeek={seek}
-                onThreadChange={(change) =>
-                  setChatThreads((threads) => ({
-                    ...threads,
-                    [threadKey]: { ...(threads[threadKey] ?? EMPTY_CHAT_THREAD), ...change },
-                  }))
-                }
-                target={target}
-                thread={chatThreads[threadKey] ?? EMPTY_CHAT_THREAD}
-                titles={citationTitles(mode === 'edit' && draft && editBase ? editBase.report.structured : report.structured)}
-                videoId={videoId}
-                edits={{ current: () => draftRef.current ?? draftFromView(report), apply: editFromChat }}
-              />
-            );
-          })()}
-        </SheetContent>
-      </Sheet>
     </div>
   );
 }
