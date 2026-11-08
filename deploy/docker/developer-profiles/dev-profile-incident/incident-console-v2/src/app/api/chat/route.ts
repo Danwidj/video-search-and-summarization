@@ -7,7 +7,7 @@ import { CHAT_EDITOR_REFUSAL_PREFIX, editorHistory } from '@/lib/chat/report-cha
 import { labelDraftKeys } from '@/lib/edits/chat-edit';
 import { getServiceConfiguration, isChatStepsEnabled } from '@/lib/env';
 import { UpstreamError } from '@/lib/http';
-import type { ChatMessage, EvidenceExchange } from '@/modules/chat/domain/chat';
+import type { ChatMessage } from '@/modules/chat/domain/chat';
 
 export const maxDuration = 120;
 export async function POST(request: Request) {
@@ -22,8 +22,6 @@ export async function POST(request: Request) {
       steps?: boolean;
       /** The draft snapshot (lib/edits/chat-edit.ts) the page sends when the chat may edit. */
       editDraft?: Record<string, unknown>;
-      /** The new-evidence exchange still open in the chat (lib/chat/evidence-ask.ts), sent with the question. */
-      evidence?: EvidenceExchange;
     };
     if (!input.messages?.length) return NextResponse.json({ error: 'At least one message is required' }, { status: 400 });
     if (input.versionId != null && !(Number.isInteger(input.versionId) && input.versionId >= 1))
@@ -44,7 +42,7 @@ export async function POST(request: Request) {
         try {
           const { agentUrl } = config;
           const incidentId = input.incidentId as string;
-          // The new-evidence exchange and the recent chat go only with the draft: only the editor takes them.
+          // The recent chat goes only with the draft: only the editor takes it (a new-evidence request is read from it).
           const investigate = (draft?: Record<string, unknown>) =>
             sendAgentInvestigate(
               agentUrl,
@@ -52,7 +50,6 @@ export async function POST(request: Request) {
               lastQuestion,
               AbortSignal.timeout(115000),
               draft,
-              draft ? input.evidence : undefined,
               draft ? editorHistory(input.messages ?? []) : undefined,
             );
           // The editor's reply shows the reviewer labels (E1), never the draft keys (entity-0) the tools use.

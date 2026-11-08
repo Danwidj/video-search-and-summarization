@@ -13,11 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""``POST /api/v1/incidents/{video_id}/evidence-asks`` - check the orchestrator's new-evidence calls.
+"""``POST /api/v1/incidents/{video_id}/evidence-asks`` - check the orchestrator's new-evidence box tool calls.
 
 The route checks each call and returns the proposals that pass, with a reason for each that does not. It writes nothing and
-asks nothing: the console puts a question in the chat and opens the box tool. The report editor runs the same checks as
-its ``propose_ask_reviewer`` and ``propose_open_box_tool`` tools. See :mod:`vss_agents.utils.evidence_asks`.
+asks nothing: the console opens the box tool. The report editor runs the same checks as its ``propose_open_box_tool`` tool.
+See :mod:`vss_agents.utils.evidence_asks`.
 """
 
 from __future__ import annotations
@@ -41,7 +41,6 @@ class EvidenceAskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     incident: evidence_asks.IncidentWindow | None = None
-    questions_asked: int = Field(0, ge=0, le=evidence_asks.MAX_QUESTIONS)
     calls: list[evidence_asks.Call] = Field(min_length=1, max_length=MAX_CALLS)
 
 
@@ -51,11 +50,11 @@ def create_incident_evidence_asks_router() -> APIRouter:
     @router.post(
         "/api/v1/incidents/{video_id}/evidence-asks",
         response_model=evidence_asks.ProposalResult,
-        summary="Check new-evidence questions and the box tool opening; writes nothing",
+        summary="Check the box tool opening for new evidence; writes nothing",
         tags=["Incident Chat"],
     )
     async def propose_evidence_asks(video_id: str, body: EvidenceAskRequest) -> evidence_asks.ProposalResult:
-        result = evidence_asks.propose(body.incident, body.questions_asked, body.calls)
+        result = evidence_asks.propose(body.incident, body.calls)
         logger.info(
             "Evidence asks for %s: %d proposed, %d rejected", video_id, len(result.proposals), len(result.rejected)
         )

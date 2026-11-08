@@ -12,7 +12,7 @@ export interface ChatStepsViewProps {
   steps?: ChatStep[];
   applied?: AppliedAction[];
   skipped?: SkippedAction[];
-  /** The new-evidence steps: the question asked and the box tool's opening. They are not draft changes. */
+  /** The new-evidence steps: the box tool's opening. They are not draft changes. */
   evidence?: EvidenceRow[];
   wallMs?: number;
   className?: string;
@@ -121,7 +121,7 @@ export function ChatStepsView({
                   >
                     <div className="flex items-center gap-1.5">
                       <Badge className="px-1.5 py-0 text-[10px] font-medium text-foreground" variant="outline">
-                        {row.kind === 'asked' ? 'Asked' : row.kind === 'redraw' ? 'Redraw' : 'Opened'}
+                        {row.kind === 'redraw' ? 'Redraw' : 'Opened'}
                       </Badge>
                     </div>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">{row.text}</p>

@@ -146,26 +146,15 @@ def test_a_draft_runs_the_editor_agent_with_the_draft_in_its_question() -> None:
     assert seen[0].entities[0].key == "p1"
 
 
-def test_a_pending_evidence_exchange_goes_into_the_editor_input_and_counts_its_questions() -> None:
-    seen: list[int] = []
-
-    async def script() -> str:
-        seen.append(agent_loop.current().questions_asked)
-        return await _calls(("propose_open_box_tool", {"seconds": 12, "name": "Bag on floor"}), final="Opening it.")
-
-    client, manager, _ = _client(script)
-    evidence = {
-        "questions_asked": 1,
-        "transcript": [
-            {"role": "reviewer", "text": "I want to add a new evidence item, a bag on the floor"},
-            {"role": "assistant", "text": "Which shop is it in?"},
-        ],
-    }
-    data = client.post(URL, json={**BODY, "draft": DRAFT, "evidence": evidence}).json()
+def test_a_new_evidence_request_opens_the_box_tool_from_the_reviewers_message_with_no_question() -> None:
+    client, manager, _ = _client(
+        lambda: _calls(("propose_open_box_tool", {"seconds": 12, "name": "Bag on floor"}), final="Opening it.")
+    )
+    history = [{"role": "user", "text": "I want to add a new evidence item, a bag on the floor"}]
+    data = client.post(URL, json={**BODY, "draft": DRAFT, "history": history}).json()
     assert data["actions"] == [{"tool": "propose_open_box_tool", "args": {"seconds": 12, "name": "Bag on floor"}}]
-    assert seen == [1]
-    assert "1 of 2 questions asked so far" in manager.questions[0]
-    assert "assistant: Which shop is it in?" in manager.questions[0]
+    assert "user: I want to add a new evidence item, a bag on the floor" in manager.questions[0]
+    assert "questions asked" not in manager.questions[0]
 
 
 def test_the_recent_chat_goes_into_the_editor_input_oldest_first() -> None:
@@ -202,9 +191,9 @@ def test_more_than_six_history_turns_is_a_422() -> None:
     assert client.post(URL, json={**BODY, "draft": DRAFT, "history": history}).status_code == 422
 
 
-def test_an_evidence_exchange_with_more_than_two_questions_is_a_422() -> None:
+def test_the_retired_evidence_exchange_field_is_a_422() -> None:
     client, _, _ = _client(lambda: _calls())
-    evidence = {"questions_asked": 3, "transcript": []}
+    evidence = {"questions_asked": 1, "transcript": []}
     assert client.post(URL, json={**BODY, "draft": DRAFT, "evidence": evidence}).status_code == 422
 
 

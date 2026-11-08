@@ -246,24 +246,38 @@ test('the draft goes to the investigate route and its actions come back for the 
   assert.equal(body.message.applied, undefined);
 });
 
-test('the new-evidence exchange goes with the draft to the editor, in the agent shape', async () => {
+test('a new-evidence request goes to the editor with the draft and the chat, and its reply is the box opening only', async () => {
   upstream.body = {
     status: 'ok',
     answer: '',
-    steps: [{ tool: 'propose_ask_reviewer', args: { question: 'Which shop?' }, ok: true, ms: 4 }],
-    actions: [{ tool: 'propose_ask_reviewer', args: { question: 'Which shop?' } }],
+    steps: [{ tool: 'propose_open_box_tool', args: { seconds: 12, name: 'Bag on floor' }, ok: true, ms: 4 }],
+    actions: [{ tool: 'propose_open_box_tool', args: { seconds: 12, name: 'Bag on floor' } }],
     wall_ms: 5,
   };
-  const evidence = { questionsAsked: 1, transcript: [{ role: 'reviewer', text: 'a bag on the floor' }] };
   const response = await post({
+    messages: [
+      { role: 'user', content: 'there is a bag on the floor' },
+      { role: 'assistant', content: 'Opening it.' },
+      { role: 'user', content: 'near the till' },
+    ],
+    incidentId: 'V1',
+    editDraft: { incident: {}, entities: [] },
+  });
+  const body = await response.json();
+  assert.equal('evidence' in upstream.calls[0].body, false);
+  assert.ok(upstream.calls[0].body.history.some((turn) => turn.text === 'there is a bag on the floor'));
+  assert.deepEqual(body.message.actions, upstream.body.actions);
+});
+
+test('the route takes no question-count exchange: a request that sends one has it dropped, not forwarded', async () => {
+  upstream.body = { status: 'ok', answer: '', steps: [], actions: [], wall_ms: 5 };
+  await post({
     messages: [{ role: 'user', content: 'near the till' }],
     incidentId: 'V1',
     editDraft: { incident: {}, entities: [] },
-    evidence,
+    evidence: { questionsAsked: 1, transcript: [] },
   });
-  const body = await response.json();
-  assert.deepEqual(upstream.calls[0].body.evidence, { questions_asked: 1, transcript: evidence.transcript });
-  assert.deepEqual(body.message.actions, upstream.body.actions);
+  assert.equal('evidence' in upstream.calls[0].body, false);
 });
 
 test('an editor run that used no tool was not an edit: the usual chat answers, as it does without a draft', async () => {
