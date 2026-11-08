@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import { Fragment, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useState } from 'react';
+import { Fragment, type CSSProperties, type KeyboardEvent, type MouseEvent, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { CARD_HOVER_STILL } from '@/lib/ui/card-hover';
@@ -26,17 +26,9 @@ import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
 import { EvidenceCarousel } from '@/sections/evidence/components/EvidenceCarousel';
 import { EvidenceDetailDialog } from '@/sections/reports/components/EvidenceDetailDialog';
 import { PresenceBar } from '@/sections/reports/components/PresenceBar';
+import { ReportFieldRow, ReportFields } from '@/sections/reports/components/ReportFields/ReportFields';
 
 const capitalize = (value: string | null) => (value ? value[0].toUpperCase() + value.slice(1) : 'Unclassified');
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid gap-1 border-b border-border/70 py-2 last:border-b-0 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-4">
-      <dt className="pt-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</dt>
-      <dd className="m-0 min-w-0 text-sm leading-snug text-foreground">{children}</dd>
-    </div>
-  );
-}
 
 /**
  * The scrolling part of View mode: the version, its report fields, its evidence grouped by holder (each card opens in
@@ -65,7 +57,6 @@ export function ReportPane({
   const heldIds = new Set(structured.entities.flatMap((entity) => heldBy(entity.entityId).map((instrument) => instrument.instrumentId)));
   const unheld = structured.instruments.filter((instrument) => !heldIds.has(instrument.instrumentId));
   const [detail, setDetail] = useState<EvidenceDetailItem | null>(null);
-  const [carouselControlsTarget, setCarouselControlsTarget] = useState<HTMLElement | null>(null);
   const itemCount = structured.entities.length + structured.instruments.length + structured.assets.length;
   const tracked = new Map(trackedReportItems(structured).map((item) => [`${item.kind}:${item.id}`, item]));
   const cardProps = (item: EvidenceDetailItem) => {
@@ -87,87 +78,83 @@ export function ReportPane({
   return (
     <div className="px-5 pb-16 sm:px-8">
       <UICard className="mt-5 gap-0 border-border/80 py-0" data-testid="report-fields-section">
-        <CardHeader className="gap-1 border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-4 py-3.5">
-          <CardTitle className="text-base font-semibold">Report fields</CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-3 pt-1">
-          {run.status === 'valid_after_structural_repair' && (
-            <p className="mb-2 px-4 py-2 text-xs text-amber-800" data-testid="contract-repair-applied">
-              Contract repair applied (IDs only)
-            </p>
-          )}
-          {run.notesKind === 'legacy' && <p className="mb-2 px-4 py-2 text-xs text-muted-foreground">Earlier prompt version</p>}
-          {officialMissing && (
-            <p
-              className="mb-2 border-b border-dashed border-not-official-line bg-not-official-pill/60 px-4 py-2 text-xs text-ink-caption"
-              data-testid="official-status"
-            >
-              No official version has been selected for this video. Star a version to make it official.
-            </p>
-          )}
-          <dl className="m-0">
-            <Row label="Title">
-              <div className="flex items-start justify-between gap-3">
-                <span>{reportHeading(report)}</span>
-                <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                  <VersionPill kind={revision.kind === 'human' ? 'human' : 'ai'} official={report.official.isOfficial} />
-                  {incident.confidenceScore !== null && (
-                    <Badge className="font-mono text-[11px]" data-testid="confidence-tag" variant="secondary">
-                      {Math.round(incident.confidenceScore * 100)}% confidence
-                    </Badge>
-                  )}
-                </span>
-              </div>
-              {modelOutput?.title && modelOutput.title !== reportHeading(report) && (
-                <span className="mt-0.5 block text-xs text-muted-foreground/80" data-testid="title-edited">
-                  Set by a reviewer. The model&apos;s title: {modelOutput.title}
-                </span>
+        <ReportFields
+          title="Report fields"
+          notices={
+            <>
+              {run.status === 'valid_after_structural_repair' && (
+                <p className="mb-2 px-4 py-2 text-xs text-amber-800" data-testid="contract-repair-applied">
+                  Contract repair applied (IDs only)
+                </p>
               )}
-            </Row>
-            <Row label="Incident type">
-              {capitalize(incident.type)}
-              {modelOutput?.location ? ` · ${modelOutput.location}` : ''}
-              {differences.type && (
-                <span className="mt-0.5 block text-xs font-semibold text-destructive" data-testid="type-edited">
-                  Model classified this as {differences.type.model}; reviewer set {differences.type.current}.
-                </span>
-              )}
-            </Row>
-            <Row label="Severity">
-              <Badge className={`px-3 py-0.5 text-xs font-bold ${severityStyle(incident.severityLevel)}`} variant="outline">
-                {incident.severityLevel ?? '—'}/5
-              </Badge>
-            </Row>
-            <Row label="Time range">
-              {incident.startSeconds !== null ? (
-                <Button
-                  className="h-6 font-mono text-xs font-bold"
-                  onClick={() => onSeek(incident.startSeconds ?? 0)}
-                  size="sm"
-                  type="button"
-                  variant="outline"
+              {run.notesKind === 'legacy' && <p className="mb-2 px-4 py-2 text-xs text-muted-foreground">Earlier prompt version</p>}
+              {officialMissing && (
+                <p
+                  className="mb-2 border-b border-dashed border-not-official-line bg-not-official-pill/60 px-4 py-2 text-xs text-ink-caption"
+                  data-testid="official-status"
                 >
-                  {formatClock(incident.startSeconds)}
-                  {incident.endSeconds !== null ? `–${formatClock(incident.endSeconds)}` : ''}
-                </Button>
-              ) : (
-                'Not recorded'
+                  No official version has been selected for this video. Star a version to make it official.
+                </p>
               )}
-            </Row>
-            <Row label="Summary">
-              <span className="whitespace-pre-wrap">{incident.description ?? 'No summary was recorded.'}</span>
-            </Row>
-            <Row label="Severity rationale">
-              <span className="text-foreground/75">
-                {incident.severityReason ?? modelOutput?.severityReason ?? 'No severity rationale was recorded.'}
+            </>
+          }
+        >
+          <ReportFieldRow label="Title">
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-lg font-semibold">{reportHeading(report)}</span>
+              <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                <VersionPill kind={revision.kind === 'human' ? 'human' : 'ai'} official={report.official.isOfficial} />
+                {incident.confidenceScore !== null && (
+                  <Badge className="font-mono text-[11px]" data-testid="confidence-tag" variant="secondary">
+                    {Math.round(incident.confidenceScore * 100)}% confidence
+                  </Badge>
+                )}
               </span>
-            </Row>
-          </dl>
-        </CardContent>
+            </div>
+          </ReportFieldRow>
+          <ReportFieldRow label="Incident type">
+            {capitalize(incident.type)}
+            {modelOutput?.location ? ` · ${modelOutput.location}` : ''}
+            {differences.type && (
+              <span className="mt-0.5 block text-xs font-semibold text-destructive" data-testid="type-edited">
+                Model classified this as {differences.type.model}; reviewer set {differences.type.current}.
+              </span>
+            )}
+          </ReportFieldRow>
+          <ReportFieldRow label="Severity">
+            <Badge className={`px-3 py-0.5 text-xs font-bold ${severityStyle(incident.severityLevel)}`} variant="outline">
+              {incident.severityLevel ?? '—'}/5
+            </Badge>
+          </ReportFieldRow>
+          <ReportFieldRow label="Time range">
+            {incident.startSeconds !== null ? (
+              <Button
+                className="h-6 font-mono text-xs font-bold"
+                onClick={() => onSeek(incident.startSeconds ?? 0)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {formatClock(incident.startSeconds)}
+                {incident.endSeconds !== null ? `–${formatClock(incident.endSeconds)}` : ''}
+              </Button>
+            ) : (
+              'Not recorded'
+            )}
+          </ReportFieldRow>
+          <ReportFieldRow label="Summary">
+            <span className="whitespace-pre-wrap">{incident.description ?? 'No summary was recorded.'}</span>
+          </ReportFieldRow>
+          <ReportFieldRow label="Severity rationale">
+            <span className="text-foreground/75">
+              {incident.severityReason ?? modelOutput?.severityReason ?? 'No severity rationale was recorded.'}
+            </span>
+          </ReportFieldRow>
+        </ReportFields>
       </UICard>
 
       <UICard className="mt-5 gap-0 overflow-hidden border-border/80 py-0" data-testid="evidence-section">
-        <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-4 py-2">
+        <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-4 !pb-1 pt-1">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
             <CardTitle className="text-base font-semibold">Evidence items</CardTitle>
             <Badge className="font-mono text-[10px]" variant="secondary">
@@ -175,7 +162,6 @@ export function ReportPane({
             </Badge>
             <CardDescription className="text-xs">People, instruments and assets linked to this incident</CardDescription>
           </div>
-          <nav aria-label="Evidence navigation" className="flex min-h-8 shrink-0 gap-2" ref={setCarouselControlsTarget} />
         </CardHeader>
         {itemCount === 0 ? (
           <CardContent className="px-4 py-5">
@@ -187,8 +173,8 @@ export function ReportPane({
             </p>
           </CardContent>
         ) : (
-          <div className="px-4 pt-3 pb-1" data-testid="evidence-grid">
-            <EvidenceCarousel controlsTarget={carouselControlsTarget} label="Report evidence items">
+          <div data-testid="evidence-grid">
+            <EvidenceCarousel label="Report evidence items">
               {structured.entities.map((entity) => (
                 <Fragment key={entity.entityId}>
                   <Card {...cardProps(entityDetail(entity, structured.instruments))} />
@@ -306,7 +292,7 @@ function Card({
           src={shown.src}
         />
       </div>
-      <CardHeader className="gap-0 border-b border-border/70 bg-primary/5 px-3 py-2.5">
+      <CardHeader className="gap-0 border-b border-border/70 bg-primary/5 px-3 !pb-2.5 pt-2.5">
         <CardTitle className="flex items-center gap-2 text-sm font-semibold">
           <IdBadge id={item.id} />
           <span className="min-w-0">{item.title}</span>
@@ -314,7 +300,7 @@ function Card({
       </CardHeader>
       <CardContent className="flex flex-col gap-1 p-3">
         <EvidenceBadges badges={lines.badges} />
-        <p className="text-muted-foreground">{item.description}</p>
+        <p className="line-clamp-2 text-muted-foreground">{item.description}</p>
         {lines.holds && (
           <p>
             Holds <b>{lines.holds}</b>
@@ -326,7 +312,6 @@ function Card({
             Held by <b>{lines.heldBy}</b>
           </p>
         )}
-        {lines.onScreen && <p className="text-muted-foreground">{lines.onScreen}</p>}
         {lines.notTracked && (
           <p className="text-xs text-muted-foreground" data-testid="evidence-not-tracked">
             {lines.notTracked}
