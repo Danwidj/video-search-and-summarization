@@ -31,9 +31,9 @@ const capitalize = (value: string | null) => (value ? value[0].toUpperCase() + v
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid gap-1.5 border-b border-border/70 py-3.5 last:border-b-0 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-6">
+    <div className="grid gap-1 border-b border-border/70 py-2 last:border-b-0 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-4">
       <dt className="pt-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</dt>
-      <dd className="m-0 min-w-0 text-sm leading-6 text-foreground">{children}</dd>
+      <dd className="m-0 min-w-0 text-sm leading-snug text-foreground">{children}</dd>
     </div>
   );
 }
@@ -89,7 +89,6 @@ export function ReportPane({
       <UICard className="mt-5 gap-0 border-border/80 py-0" data-testid="report-fields-section">
         <CardHeader className="gap-1 border-b border-l-4 border-border/70 border-l-primary bg-primary/5 px-4 py-3.5">
           <CardTitle className="text-base font-semibold">Report fields</CardTitle>
-          <CardDescription className="text-xs">Incident overview and model assessment</CardDescription>
         </CardHeader>
         <CardContent className="px-4 pb-3 pt-1">
           {run.status === 'valid_after_structural_repair' && (
@@ -283,7 +282,13 @@ function Card({
         open();
       }}
       role="button"
-      style={selected ? ({ '--tw-ring-color': track?.colour ?? STILL_BOX_COLOUR } as CSSProperties) : undefined}
+      style={
+        selected
+          ? ({
+              '--tw-ring-color': track?.colour ?? STILL_BOX_COLOUR,
+            } as CSSProperties)
+          : undefined
+      }
       tabIndex={0}
     >
       <div data-testid="evidence-open">
