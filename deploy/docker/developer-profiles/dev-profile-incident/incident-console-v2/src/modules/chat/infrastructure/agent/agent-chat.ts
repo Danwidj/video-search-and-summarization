@@ -4,7 +4,7 @@
 // camelCase ChatRequest in, camelCase ChatResponse out.
 
 import { readUpstream } from '@/lib/http';
-import type { ChatCitation, ChatRequest, ChatResponse, EvidenceExchange, VideoCheckResult } from '@/modules/chat/domain/chat';
+import type { ChatCitation, ChatRequest, ChatResponse, VideoCheckResult } from '@/modules/chat/domain/chat';
 
 export function toAgentChatBody(request: ChatRequest): Record<string, unknown> {
   const { sessionId, messages, context, versionId, draftReport } = request;
@@ -289,8 +289,6 @@ export async function sendAgentInvestigate(
   signal?: AbortSignal,
   /** The reviewer's draft snapshot: the agent then runs its report editor and returns the edits as `actions`. */
   draft?: Record<string, unknown>,
-  /** The new-evidence exchange still open in the chat, with the draft. */
-  evidence?: EvidenceExchange,
   /** The last few chat turns before the question, so the editor resolves "the same item" (only with the draft). */
   history?: Array<{ role: 'user' | 'assistant'; text: string }>,
 ): Promise<ChatResponse> {
@@ -300,7 +298,6 @@ export async function sendAgentInvestigate(
     body: JSON.stringify({
       question,
       ...(draft ? { draft } : {}),
-      ...(evidence ? { evidence: { questions_asked: evidence.questionsAsked, transcript: evidence.transcript } } : {}),
       ...(draft && history?.length ? { history } : {}),
     }),
     signal,

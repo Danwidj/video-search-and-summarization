@@ -8,107 +8,46 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { evidenceRows, pendingEvidenceExchange, splitEvidenceActions } = await import('../src/lib/chat/evidence-ask.ts');
+const { evidenceRows, splitEvidenceActions } = await import('../src/lib/chat/evidence-ask.ts');
 const { chatRequestBody, chatTarget } = await import('../src/lib/chat/report-chat.ts');
+const { applyChatEdit } = await import('../src/lib/edits/chat-edit.ts');
+const { draftFromView } = await import('../src/modules/reports/domain/edit-draft.ts');
+const { buildReportView } = await import('./support/report-view.mjs');
 
-const user = (content) => ({ role: 'user', content });
-const asked = (content) => ({ role: 'assistant', content, questions: [content] });
-const answered = (content) => ({ role: 'assistant', content });
-const opened = (seconds, name) => ({ role: 'assistant', content: 'Opening the box tool.', openedBox: { seconds, name } });
+const fixture = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
+const view = buildReportView({ ...structuredClone(fixture), playbackUrl: 'https://signed.example/v.mp4' });
 
-test('no exchange is pending until the editor has asked the reviewer something', () => {
-  assert.equal(pendingEvidenceExchange([user('a bag on the floor')]), null);
-  assert.equal(pendingEvidenceExchange([user('who is in the red hood?'), answered('The man in the red hood.'), user('thanks')]), null);
-});
-
-test('the pending exchange holds the reviewer request and the questions, and counts the questions asked', () => {
-  const turns = [
-    user('I want to add a new evidence item, a bag on the floor'),
-    asked('Which shop is it in?'),
-    user('the till shop'),
-    asked('Which corner?'),
-    user('near the door'),
-  ];
-  assert.deepEqual(pendingEvidenceExchange(turns), {
-    questionsAsked: 2,
-    transcript: [
-      { role: 'reviewer', text: 'I want to add a new evidence item, a bag on the floor' },
-      { role: 'assistant', text: 'Which shop is it in?' },
-      { role: 'reviewer', text: 'the till shop' },
-      { role: 'assistant', text: 'Which corner?' },
-    ],
-  });
-});
-
-test('an editor reply that is not a question is left out of the transcript', () => {
-  const turns = [user('add a bag on the floor'), asked('Which shop?'), answered('Noted, one moment.'), user('the till shop')];
-  assert.deepEqual(pendingEvidenceExchange(turns).transcript, [
-    { role: 'reviewer', text: 'add a bag on the floor' },
-    { role: 'assistant', text: 'Which shop?' },
-  ]);
-});
-
-test('once the box tool has opened the exchange is over, and a new request starts a new one', () => {
-  const turns = [
-    user('add a bag'),
-    asked('Which shop?'),
-    user('till'),
-    opened(12, 'Bag'),
-    user('add a cup'),
-    asked('Which table?'),
-    user('by the door'),
-  ];
-  assert.deepEqual(pendingEvidenceExchange(turns), {
-    questionsAsked: 1,
-    transcript: [
-      { role: 'reviewer', text: 'add a cup' },
-      { role: 'assistant', text: 'Which table?' },
-    ],
-  });
-  assert.equal(pendingEvidenceExchange([user('add a bag'), opened(12, 'Bag'), user('thanks')]), null);
-});
-
-test('a reply that asks two questions counts both, and keeps both for the reply and the transcript', () => {
-  const turns = [
-    user('a bag on the floor, near the door'),
-    { role: 'assistant', content: 'Which shop?\nWhich corner?', questions: ['Which shop?', 'Which corner?'] },
-    user('the till shop, by the door'),
-  ];
-  assert.deepEqual(pendingEvidenceExchange(turns), {
-    questionsAsked: 2,
-    transcript: [
-      { role: 'reviewer', text: 'a bag on the floor, near the door' },
-      { role: 'assistant', text: 'Which shop?\nWhich corner?' },
-    ],
-  });
-  assert.deepEqual(evidenceRows(turns[1]), [
-    { kind: 'asked', text: 'Which shop?' },
-    { kind: 'asked', text: 'Which corner?' },
-  ]);
-  const split = splitEvidenceActions([
-    { tool: 'propose_ask_reviewer', args: { question: 'Which shop?' } },
-    { tool: 'propose_ask_reviewer', args: { question: 'Which corner?' } },
-  ]);
-  assert.deepEqual(split.questions, ['Which shop?', 'Which corner?']);
-});
-
-test('the questions become the reply, the box opening is taken out, and the other edits stay', () => {
+test('the box opening is taken out of the editor actions and the other edits stay', () => {
   const split = splitEvidenceActions([
     { tool: 'propose_set_incident_fields', args: { severity_level: 4 } },
-    { tool: 'propose_ask_reviewer', args: { question: 'Which shop?' } },
     { tool: 'propose_open_box_tool', args: { seconds: 12, name: 'Bag on floor' } },
   ]);
-  assert.deepEqual(split.questions, ['Which shop?']);
   assert.deepEqual(split.opening, { seconds: 12, name: 'Bag on floor' });
   assert.deepEqual(split.rest, [{ tool: 'propose_set_incident_fields', args: { severity_level: 4 } }]);
 });
 
+test('no question step exists: a question tool action is not an opening and is not dropped into the draft as one', () => {
+  const ask = { tool: 'propose_ask_reviewer', args: { question: 'Who left the bag?' } };
+  const split = splitEvidenceActions([ask], null);
+  assert.equal(split.opening, undefined);
+  assert.deepEqual(split.rest, [ask]);
+  const draft = draftFromView(view);
+  const before = structuredClone(draft);
+  const result = applyChatEdit(draft, draft, split.rest);
+  assert.deepEqual(result.applied, []);
+  assert.deepEqual(
+    result.skipped.map(({ tool, reason }) => ({ tool, reason })),
+    [{ tool: 'ask_reviewer', reason: 'unknown tool "ask_reviewer"' }],
+  );
+  assert.deepEqual(result.draft, before);
+  assert.deepEqual(result.changedKeys, []);
+});
+
 test('a new-evidence action without its fields is not shown or applied', () => {
-  const split = splitEvidenceActions([
-    { tool: 'propose_ask_reviewer', args: { question: '  ' } },
-    { tool: 'propose_open_box_tool', args: { seconds: 12, name: '' } },
-  ]);
-  assert.deepEqual(split, { questions: [], rest: [] });
+  assert.deepEqual(splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { seconds: 12, name: '' } }], null), {
+    rest: [],
+  });
+  assert.deepEqual(splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { name: 'Bag' } }], null), { rest: [] });
 });
 
 // The draft the chat was sent with: the agent checks an item's key against it.
@@ -137,18 +76,15 @@ test('an opening on an existing item is found by its key in the sent draft, and 
 
 test('an opening on an item the sent draft does not have, or with no draft, is not shown', () => {
   assert.deepEqual(splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { item_key: 'E9' } }], sentDraft), {
-    questions: [],
     rest: [],
   });
   assert.deepEqual(splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { item_key: 'p1' } }], null), {
-    questions: [],
     rest: [],
   });
 });
 
-test('each new-evidence step has its own row for What I did', () => {
-  assert.deepEqual(evidenceRows({ questions: ['Which shop?'], openedBox: { seconds: 75, name: 'Bag' } }), [
-    { kind: 'asked', text: 'Which shop?' },
+test('the new-evidence opening has its own row for What I did, and a reply with no opening has none', () => {
+  assert.deepEqual(evidenceRows({ openedBox: { seconds: 75, name: 'Bag' } }), [
     { kind: 'opened', text: 'Opened the box tool at 1:15 as "Bag"' },
   ]);
   assert.deepEqual(evidenceRows({ content: 'Noted.' }), []);
@@ -160,15 +96,13 @@ test('a redraw of an existing item has its own row, not an opening of new eviden
   ]);
 });
 
-test('the request sends the pending exchange, and sends nothing when none is pending', () => {
+test('the request carries the draft and no question-count exchange', () => {
   const target = chatTarget({
     revision: { revisionId: 7, revisionNo: 2, kind: 'human' },
     isOfficial: false,
     draft: null,
   });
-  const evidence = { questionsAsked: 1, transcript: [{ role: 'reviewer', text: 'a bag' }] };
   const messages = [{ role: 'user', content: 'near the till' }];
-  assert.equal(chatRequestBody({ messages, videoId: 'V1', target, evidence }).evidence, evidence);
   assert.equal('evidence' in chatRequestBody({ messages, videoId: 'V1', target }), false);
 });
 

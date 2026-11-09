@@ -13,14 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Proposal checks for new evidence: at most two questions to the reviewer, then open the box tool.
+"""Proposal checks for new evidence: the box tool opens at once, with no question to the reviewer first.
 
-Nothing here writes or asks anything. The report editor's ``propose_ask_reviewer`` and ``propose_open_box_tool`` tools
+Nothing here writes or asks anything. The report editor's ``propose_open_box_tool`` tool
 (:mod:`vss_agents.tools.incident_editor`) and the ``evidence-asks`` route (:mod:`vss_agents.api.incident_evidence_asks`)
-check each call here. The console carries out the proposals: ``ask_reviewer`` is the reply in the report chat, and
-``open_box_tool`` opens the box tool at that second with the name filled in, so the reviewer draws the box. With an
-``item_key`` it opens the box tool on that draft item at its own seen second, to redraw its box or set its image. No
-question may follow the box tool, and the box tool opens once.
+check each call here. The console carries out the proposal: ``open_box_tool`` opens the box tool at that second with the
+name filled in, so the reviewer draws the box. With an ``item_key`` it opens the box tool on that draft item at its own
+seen second, to redraw its box or set its image. The box tool opens once.
 """
 
 from __future__ import annotations
@@ -38,8 +37,6 @@ from pydantic import model_validator
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-MAX_QUESTIONS = 2
-
 
 class EvidenceAskError(ValueError):
     """A call the evidence flow cannot take. The message is plain words for the reviewer."""
@@ -55,10 +52,6 @@ class _Strict(BaseModel):
 class IncidentWindow(_Strict):
     start_timestamp: float | None = Field(None, ge=0)
     end_timestamp: float | None = Field(None, ge=0)
-
-
-class AskReviewer(_Strict):
-    question: str = Field(min_length=1, max_length=300)
 
 
 class OpenBoxTool(_Strict):
@@ -137,7 +130,6 @@ def _item_seconds(items: Mapping[str, float | None] | None, key: str) -> None:
 
 def propose(
     window: IncidentWindow | None,
-    questions_asked: int,
     calls: list[Call],
     items: Mapping[str, float | None] | None = None,
 ) -> ProposalResult:
@@ -146,23 +138,10 @@ def propose(
     ``items`` maps each draft item's key to the second it is seen at (None when it has none); ``None`` means no draft.
     """
     result = ProposalResult()
-    asked = questions_asked
     opened = False
     for call in calls:
         try:
-            if call.tool == "ask_reviewer":
-                question = AskReviewer.model_validate(call.args)
-                if opened:
-                    raise EvidenceAskError("The box tool is already open; no more questions for this evidence.")
-                if asked >= MAX_QUESTIONS:
-                    raise EvidenceAskError(
-                        f"Only {MAX_QUESTIONS} questions are allowed for one piece of evidence; open the box tool."
-                    )
-                asked += 1
-                result.proposals.append(
-                    Proposal(tool="ask_reviewer", args=question.model_dump(), summary="Ask the reviewer a question")
-                )
-            elif call.tool == "open_box_tool":
+            if call.tool == "open_box_tool":
                 args = OpenBoxTool.model_validate(call.args)
                 if opened:
                     raise EvidenceAskError("The box tool is already open for this evidence.")

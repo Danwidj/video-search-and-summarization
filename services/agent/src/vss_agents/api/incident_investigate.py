@@ -25,9 +25,8 @@ lists any ``propose_*`` tool's arguments as ``actions``.
 
 A request may carry the reviewer's unsaved ``draft``. It then runs the ``report_editor`` agent instead, whose tools are
 the ``propose_*`` edit checks of :mod:`vss_agents.tools.incident_editor`. Its ``actions`` are the edits the console
-applies to the draft; a run with no ``steps`` was not an edit request. A request may also carry ``evidence``: the
-new-evidence exchange still pending in the chat (questions asked so far, and the turns before this question). The editor
-sees it in its input, and its ``propose_ask_reviewer`` and ``propose_open_box_tool`` calls are checked against it.
+applies to the draft; a run with no ``steps`` was not an edit request. For new evidence the editor opens the box tool at
+once, from the reviewer's message in ``history``: it asks no question first.
 
 Status codes: 200 with the outcome, 422 for a request that does not validate, 501 when the
 profile does not declare the agent.
@@ -52,7 +51,6 @@ from pydantic import Field
 
 from vss_agents.utils import agent_loop
 from vss_agents.utils import draft_edits
-from vss_agents.utils import evidence_asks
 
 if TYPE_CHECKING:
     from nat.builder.workflow_builder import WorkflowBuilder
@@ -63,22 +61,6 @@ AGENT_FUNCTION = "investigator"
 EDITOR_FUNCTION = "report_editor"
 
 SessionManagerFactory = Callable[[Any, str], Awaitable[Any]]
-
-
-class EvidenceTurn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    role: Literal["reviewer", "assistant"]
-    text: str = Field(..., min_length=1, max_length=500)
-
-
-class EvidenceExchange(BaseModel):
-    """The new-evidence exchange pending in the chat: the questions asked so far, and the turns before the question now asked."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    questions_asked: int = Field(0, ge=0, le=evidence_asks.MAX_QUESTIONS)
-    transcript: list[EvidenceTurn] = Field(default_factory=list, max_length=12)
 
 
 class HistoryTurn(BaseModel):
@@ -95,7 +77,6 @@ class InvestigateRequest(BaseModel):
 
     question: str = Field(..., min_length=1, max_length=500)
     draft: draft_edits.DraftSnapshot | None = None
-    evidence: EvidenceExchange | None = None
     # The last few chat turns before this question, so "the same item" and follow-ups resolve. Used by the editor only.
     history: list[HistoryTurn] = Field(default_factory=list, max_length=6)
 
@@ -127,28 +108,16 @@ class InvestigateResponse(BaseModel):
     wall_ms: int
 
 
-def _editor_question(
-    question: str,
-    draft: draft_edits.DraftSnapshot,
-    evidence: EvidenceExchange | None,
-    history: list[HistoryTurn],
-) -> str:
+def _editor_question(question: str, draft: draft_edits.DraftSnapshot, history: list[HistoryTurn]) -> str:
     """The editor agent's input: the request and the draft with each item's key, which the proposal tools name items by.
 
-    It also carries the recent chat turns, and with a pending new-evidence exchange how many questions were asked and what was
-    said before.
+    It also carries the recent chat turns, so a new-evidence request resolves its second and name from the reviewer's message.
     """
     text = f"{question}\n\nThe draft (name items by their key):\n{draft.model_dump_json(exclude_none=True)}"
     if history:
         earlier = "\n".join(f"{turn.role}: {turn.text}" for turn in history)
         text = f"{text}\n\nThe chat so far, oldest first (resolve 'the same item' and follow-ups from it):\n{earlier}"
-    if evidence is None:
-        return text
-    turns = "\n".join(f"{turn.role}: {turn.text}" for turn in evidence.transcript)
-    return (
-        f"{text}\n\nNew evidence is being added in this chat: {evidence.questions_asked} of {evidence_asks.MAX_QUESTIONS} "
-        f"questions asked so far. The exchange before this message:\n{turns}"
-    )
+    return text
 
 
 _STOPPED_REASONS = {
@@ -205,20 +174,13 @@ def create_incident_investigate_router(
         except Exception as exc:
             logger.error("Investigator agent %s is not configured: %s", name, type(exc).__name__)
             raise HTTPException(status_code=501, detail="The investigator is not configured on this profile") from exc
-        question = (
-            body.question
-            if body.draft is None
-            else _editor_question(body.question, body.draft, body.evidence, body.history)
-        )
-        questions_asked = body.evidence.questions_asked if body.evidence is not None else 0
+        question = body.question if body.draft is None else _editor_question(body.question, body.draft, body.history)
 
         async def ask() -> str:
             async with manager.run(question) as runner:
                 return str(await runner.result(to_type=str))
 
-        result = await agent_loop.run_loop(
-            ask, video_id, wall_seconds=wall_seconds, draft=body.draft, questions_asked=questions_asked
-        )
+        result = await agent_loop.run_loop(ask, video_id, wall_seconds=wall_seconds, draft=body.draft)
         logger.info(
             "Investigated %s: %s in %d ms, %d tool steps", video_id, result.status, result.wall_ms, len(result.steps)
         )
