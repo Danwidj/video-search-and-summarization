@@ -58,8 +58,9 @@ export function ChartRequest() {
   const [text, setText] = useState('');
   const [chartKind, setChartKind] = useState<ChartKind>('bar');
   const loading = state.status === 'loading';
-  const run = ({ request, kind }: ChartExample) => {
+  const run = ({ request, kind, setsPicker }: ChartExample) => {
     setText(request);
+    if (setsPicker) setChartKind(kind);
     void submit(request, kind);
   };
   const onSubmit = (event: FormEvent) => {

@@ -29,3 +29,10 @@ test('each chip carries a chart kind that fits the dimension it asks for', () =>
   assert.equal(severity.kind, 'donut');
   assert.equal(kindFitsDimension(severity.kind, 'severity'), true);
 });
+
+test('a click sets the picker to the chip kind, except for the view, which leaves the picker alone', () => {
+  const [october, incidentTypes, severity] = CHART_EXAMPLES;
+  assert.equal(october.setsPicker, false);
+  assert.equal(incidentTypes.setsPicker, true);
+  assert.equal(severity.setsPicker, true);
+});
