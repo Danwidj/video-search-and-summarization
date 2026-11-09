@@ -10,6 +10,12 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { evidenceRows, splitEvidenceActions } = await import('../src/lib/chat/evidence-ask.ts');
 const { chatRequestBody, chatTarget } = await import('../src/lib/chat/report-chat.ts');
+const { applyChatEdit } = await import('../src/lib/edits/chat-edit.ts');
+const { draftFromView } = await import('../src/modules/reports/domain/edit-draft.ts');
+const { buildReportView } = await import('./support/report-view.mjs');
+
+const fixture = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
+const view = buildReportView({ ...structuredClone(fixture), playbackUrl: 'https://signed.example/v.mp4' });
 
 test('the box opening is taken out of the editor actions and the other edits stay', () => {
   const split = splitEvidenceActions([
@@ -21,10 +27,20 @@ test('the box opening is taken out of the editor actions and the other edits sta
 });
 
 test('no question step exists: a question tool action is not an opening and is not dropped into the draft as one', () => {
-  const split = splitEvidenceActions([{ tool: 'propose_open_box_tool', args: { seconds: 12, name: 'Bag' } }]);
-  assert.equal('questions' in split, false);
-  assert.deepEqual(split.rest, []);
-  assert.deepEqual(Object.keys(split).sort(), ['opening', 'rest']);
+  const ask = { tool: 'propose_ask_reviewer', args: { question: 'Who left the bag?' } };
+  const split = splitEvidenceActions([ask], null);
+  assert.equal(split.opening, undefined);
+  assert.deepEqual(split.rest, [ask]);
+  const draft = draftFromView(view);
+  const before = structuredClone(draft);
+  const result = applyChatEdit(draft, draft, split.rest);
+  assert.deepEqual(result.applied, []);
+  assert.deepEqual(
+    result.skipped.map(({ tool, reason }) => ({ tool, reason })),
+    [{ tool: 'ask_reviewer', reason: 'unknown tool "ask_reviewer"' }],
+  );
+  assert.deepEqual(result.draft, before);
+  assert.deepEqual(result.changedKeys, []);
 });
 
 test('a new-evidence action without its fields is not shown or applied', () => {
