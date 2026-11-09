@@ -4,9 +4,10 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 
 ### 2026-11-09: Ask for a chart shows three example chips, each sending its own chart kind
 
-- **Decision:** the panel offers exactly three example chips, in `chart-examples.ts`: "Break down each incident type by severity throughout October" (a stacked bar by severity per incident type, the captain's chip), "Incident distribution" (a donut) and "Severity breakdown" (a donut). Each chip submits with the kind it reads best in; a donut chip also sets the picker to Pie, so the picker shows what is drawn (the October view leaves the picker alone, since a view ignores it). The bar and line examples, and the bubble chart, are gone from the chips; the picker's options and typed requests are unchanged.
+- **Decision:** the panel offers exactly three example chips, in `chart-examples.ts`: "Break down each incident type by severity throughout October" (a stacked bar by severity per incident type, the captain's chip), "Share of each incident type throughout October" (a donut) and "Severity mix of assault incidents in the last 90 days" (a donut). The captain asked for specific full-sentence prompts after the first version ("Incident distribution" and "Severity breakdown") and the first two candidates were chosen from seven tried, with screenshots in the same folder. Each chip submits with the kind it reads best in; a donut chip also sets the picker to Pie, so the picker shows what is drawn (the October view leaves the picker alone, since a view ignores it). The bar and line examples, and the bubble chart, are gone from the chips; the picker's options and typed requests are unchanged.
 - **Why:** the captain found the example list cluttered and the plain bar and line charts ugly. A donut suits a whole, and both donut dimensions (incident type, severity) are pie-capable in `chart-spec.ts`.
 - **Alternatives rejected:**
+  - *Short labels such as "Incident distribution":* the captain wants specific prompts that read like the first chip.
   - *Keep the picker's kind for chips:* a chip would draw a bar unless the reviewer changed the picker first, which is the ugly default.
   - *Donut for "Official vs not yet" or "Reports by version":* two slices, which reads poorly.
   - *Keep the bubble chip:* the captain found the bubble chart ugly.

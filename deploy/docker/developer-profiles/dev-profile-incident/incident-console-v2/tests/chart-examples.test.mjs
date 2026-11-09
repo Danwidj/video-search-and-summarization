@@ -15,7 +15,11 @@ const { kindFitsDimension, drawnKind } = await import('../src/modules/dashboard/
 test('the panel offers exactly the three example chips, the October breakdown first', () => {
   assert.deepEqual(
     CHART_EXAMPLES.map((example) => example.request),
-    ['Break down each incident type by severity throughout October', 'Incident distribution', 'Severity breakdown'],
+    [
+      'Break down each incident type by severity throughout October',
+      'Share of each incident type throughout October',
+      'Severity mix of assault incidents in the last 90 days',
+    ],
   );
 });
 

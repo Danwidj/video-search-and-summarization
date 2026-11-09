@@ -17,8 +17,8 @@ export interface ChartExample {
 export const CHART_EXAMPLES: readonly ChartExample[] = [
   // A chart view: stacked bars by severity, one per incident type, for October.
   { request: 'Break down each incident type by severity throughout October', kind: 'stacked_bar', setsPicker: false },
-  // Incident types as a whole: a donut.
-  { request: 'Incident distribution', kind: 'donut', setsPicker: true },
-  // Severity bands as a whole: a donut.
-  { request: 'Severity breakdown', kind: 'donut', setsPicker: true },
+  // The share of each incident type in October: a donut.
+  { request: 'Share of each incident type throughout October', kind: 'donut', setsPicker: true },
+  // The severity mix of one incident type over 90 days: a donut.
+  { request: 'Severity mix of assault incidents in the last 90 days', kind: 'donut', setsPicker: true },
 ];
