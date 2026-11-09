@@ -13,6 +13,7 @@ import {
   type DrawnKind,
   type GeneratedChart,
 } from '@/modules/dashboard/domain/generated-chart';
+import { CHART_EXAMPLES, type ChartExample } from '@/sections/dashboard/components/ChartRequest/chart-examples';
 import { CHART_REQUEST_ID, CHART_REQUEST_INPUT_ID } from '@/sections/dashboard/chart-request-jump';
 import { useChartRequest } from '@/sections/dashboard/hooks/use-chart-request';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -37,18 +38,6 @@ const ChartJsView = dynamic(() => import('./ChartJsView').then((module) => modul
 
 export { CHART_REQUEST_ID, CHART_REQUEST_INPUT_ID };
 
-const EXAMPLES = [
-  'Incident distribution',
-  'Severity breakdown',
-  'Trends over time',
-  'Reports by hour',
-  'Official vs not yet',
-  'Reports per weekday',
-  'Reports by model',
-  'Evidence per report by incident type',
-  'Severity against evidence',
-  'Threat by holder type',
-];
 const KIND_LABELS: Record<ChartKind, string> = {
   bar: 'Bar',
   stacked_bar: 'Stacked bar',
@@ -69,9 +58,9 @@ export function ChartRequest() {
   const [text, setText] = useState('');
   const [chartKind, setChartKind] = useState<ChartKind>('bar');
   const loading = state.status === 'loading';
-  const run = (request: string) => {
+  const run = ({ request, kind }: ChartExample) => {
     setText(request);
-    void submit(request, chartKind);
+    void submit(request, kind);
   };
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -131,17 +120,17 @@ export function ChartRequest() {
           </form>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {EXAMPLES.map((example) => (
+          {CHART_EXAMPLES.map((example) => (
             <Button
               className="h-6 px-2 text-xs font-normal"
               disabled={loading}
-              key={example}
+              key={example.request}
               onClick={() => run(example)}
               size="sm"
               type="button"
               variant="outline"
             >
-              {example}
+              {example.request}
             </Button>
           ))}
         </div>

@@ -2,6 +2,16 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-09: Ask for a chart shows three example chips, each sending its own chart kind
+
+- **Decision:** the panel offers exactly three example chips, in `chart-examples.ts`: "Break down each incident type by severity throughout October" (a stacked bar by severity per incident type, the captain's chip), "Incident distribution" (a donut) and "Severity breakdown" (a donut). Each chip submits with the kind it reads best in, not the picker's kind. The bar and line examples, and the bubble chart, are gone from the chips; the picker's options and typed requests are unchanged.
+- **Why:** the captain found the example list cluttered and the plain bar and line charts ugly. A donut suits a whole, and both donut dimensions (incident type, severity) are pie-capable in `chart-spec.ts`.
+- **Alternatives rejected:**
+  - *Keep the picker's kind for chips:* a chip would draw a bar unless the reviewer changed the picker first, which is the ugly default.
+  - *Donut for "Official vs not yet" or "Reports by version":* two slices, which reads poorly.
+  - *Keep the bubble chip:* the captain found the bubble chart ugly.
+- **Links:** [`chart-examples.ts`](../incident-console-v2/src/sections/dashboard/components/ChartRequest/chart-examples.ts), [console reference](console-reference.md#dashboard-analytics-and-cross-filtering), [`chart-examples.test.mjs`](../incident-console-v2/tests/chart-examples.test.mjs)
+
 ### 2026-11-09: New evidence opens the box tool at once; the editor asks no question first
 - **Decision:** the report editor no longer asks the reviewer anything about new evidence. `propose_ask_reviewer` is removed (tool, `report_editor` `tool_names` entry, prompt text, and the `ask_reviewer` check in `utils/evidence_asks.py`). When the reviewer asks to add evidence, the editor calls `propose_open_box_tool` once, straight away, from the reviewer's message and the chat so far (`history`): the second it is best seen at (from the message or the draft, else the incident's start second) and a short name (a generic one when the message gives none). The console's `evidence` exchange is gone: no question count, no transcript, no question rows under "What I did". `POST /api/chat` sends the draft and the chat history only. The `evidence-asks` route no longer takes `questions_asked`. `propose_open_box_tool`, its window and item-key checks are unchanged.
 - **Why:** a teammate asked (2026-11-09) that the reviewer's first message be enough, with no two-step question round. Removing the tool is the only way to guarantee that no question comes before the box tool opens; a tool that is kept but told not to ask could still be called.
