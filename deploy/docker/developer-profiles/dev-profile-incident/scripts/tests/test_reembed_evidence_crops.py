@@ -268,7 +268,7 @@ class FakeAgentHttp:
     def __init__(self) -> None:
         self.bodies: list[dict] = []
 
-    def __call__(self, request, timeout=None):  # noqa: ANN001
+    def __call__(self, request, timeout=None):
         body = json.loads(request.data.decode())
         self.bodies.append(body)
         seen: dict[tuple[str, str], dict] = {}
@@ -301,7 +301,7 @@ class AgentBatchTests(unittest.TestCase):
     def test_a_request_missing_items_is_refused(self) -> None:
         rows = [row(1, "entity", "E1", "man", "a"), row(2, "entity", "E1", "man", "b")]
 
-        def short_answer(request, timeout=None):  # noqa: ANN001
+        def short_answer(request, timeout=None):
             return io.BytesIO(
                 json.dumps(
                     [{"item_type": "entity", "item_id": "E1", "embedding": NEW}]
