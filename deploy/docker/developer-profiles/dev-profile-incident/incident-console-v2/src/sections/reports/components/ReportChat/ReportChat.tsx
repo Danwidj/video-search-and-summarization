@@ -37,7 +37,7 @@ import {
   reportIdOf,
   splitGapRetryActions,
 } from '@/lib/chat/gap-retry';
-import { evidenceRows, pendingEvidenceExchange, splitEvidenceActions } from '@/lib/chat/evidence-ask';
+import { evidenceRows, splitEvidenceActions } from '@/lib/chat/evidence-ask';
 import { segmentChatText } from '@/lib/chat/timestamps';
 import { draftSnapshot, type ProposedAction } from '@/lib/edits/chat-edit';
 import type { BoxOpening } from '@/lib/evidence/box-tool';
@@ -98,8 +98,6 @@ type ChatMessage = {
   applied?: AppliedAction[];
   skipped?: SkippedAction[];
   wallMs?: number;
-  /** The reply's questions to the reviewer about new evidence, in order (its content is those questions, one per line). */
-  questions?: string[];
   /** The reply opened the box tool for new evidence at this second, with this name. */
   openedBox?: BoxOpening;
 };
@@ -262,16 +260,15 @@ export function ReportChat({
             videoId,
             target,
             ...(sent ? { editDraft: draftSnapshot(sent) } : {}),
-            evidence: pendingEvidenceExchange(next) ?? undefined,
           }),
         ),
       });
       const payload = (await readReply(response)) as Partial<ChatResponse> & { error?: string };
       if (!response.ok || !payload.message) throw new Error(payload.error || CHAT_FAILED);
-      // A question for the reviewer is the reply; a box opening goes to the page; the other edits join the draft in one
-      // change (one Undo), then the message says what happened to each.
+      // A box opening goes to the page; the other edits join the draft in one change (one Undo), then the message says
+      // what happened to each.
       const actions = payload.message.actions ?? [];
-      const { questions, opening, rest: afterEvidence } = splitEvidenceActions(actions, sent ?? null);
+      const { opening, rest: afterEvidence } = splitEvidenceActions(actions, sent ?? null);
       const { retries, rest } = splitGapRetryActions(afterEvidence);
       const outcome = edits && sent && actions.length ? edits.apply(sent, rest, opening) : undefined;
       messageSequence += 1;
@@ -293,7 +290,7 @@ export function ReportChat({
           ...next,
           {
             ...payload.message,
-            content: questions.length ? questions.join('\n') : payload.message.content,
+            content: payload.message.content,
             id: `msg-${messageSequence}`,
             answeredFrom: target.label,
             unknownTimes: payload.grounding?.unknownTimes,
@@ -301,7 +298,6 @@ export function ReportChat({
             applied: outcome?.applied ?? payload.message.applied,
             skipped: outcome?.skipped ?? payload.message.skipped,
             wallMs: payload.message.wallMs,
-            questions: questions.length ? questions : undefined,
             openedBox: opening,
           },
           ...started,

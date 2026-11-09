@@ -112,12 +112,6 @@ export interface SkippedAction {
   reason: string;
 }
 
-/** The new-evidence exchange still open in the report chat (lib/chat/evidence-ask.ts), sent with the question it leads to. */
-export interface EvidenceExchange {
-  questionsAsked: number;
-  transcript: Array<{ role: 'reviewer' | 'assistant'; text: string }>;
-}
-
 export interface ChatResponse {
   sessionId: string;
   message: {

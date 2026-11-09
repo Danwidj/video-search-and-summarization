@@ -15,8 +15,8 @@
 
 """Proposal tools for the report editor agent (``POST /api/v1/incidents/{video_id}/investigate`` with a ``draft``).
 
-One tool per entry of :data:`vss_agents.utils.draft_edits.TOOLS`, named ``propose_<tool>``, and two for new evidence:
-``propose_ask_reviewer`` and ``propose_open_box_tool`` (checked by :mod:`vss_agents.utils.evidence_asks`). Each checks the
+One tool per entry of :data:`vss_agents.utils.draft_edits.TOOLS`, named ``propose_<tool>``, and one for new evidence:
+``propose_open_box_tool`` (checked by :mod:`vss_agents.utils.evidence_asks`). Each checks the
 model's arguments against the reviewer's draft, which the route binds to the run (``agent_loop.current().draft``), and
 returns the proposal's summary. A rejected edit goes back to the model as the tool's error text so it can fix the call.
 Nothing is written: the route lists the arguments of every ``propose_*`` step as ``actions``, and the console applies them.
@@ -40,7 +40,7 @@ from vss_agents.utils import draft_edits
 from vss_agents.utils import evidence_asks
 
 Check = Callable[[str, dict[str, Any]], Awaitable[str]]
-NEW_EVIDENCE_TOOLS = ("ask_reviewer", "open_box_tool")
+NEW_EVIDENCE_TOOLS = ("open_box_tool",)
 
 
 async def propose(tool: str, args: dict[str, Any]) -> str:
@@ -67,8 +67,7 @@ def _seen_seconds(draft: draft_edits.DraftSnapshot) -> dict[str, float | None]:
 
 
 async def check_new_evidence(tool: str, args: dict[str, Any]) -> str:
-    """Check one new-evidence call against the incident window, the draft's items, the questions already asked and this run's
-    earlier calls.
+    """Check one new-evidence call against the incident window, the draft's items and this run's earlier calls.
 
     A rejected call is a ``ValueError``. The earlier calls are the ones that passed in this run, from the step log.
     """
@@ -86,7 +85,6 @@ async def check_new_evidence(tool: str, args: dict[str, Any]) -> str:
     )
     result = evidence_asks.propose(
         window,
-        run.questions_asked,
         [*earlier, evidence_asks.Call(tool=tool, args=args)],
         items=_seen_seconds(run.draft),
     )
@@ -120,10 +118,6 @@ class ProposeSetInstrumentHolderConfig(FunctionBaseConfig, name="propose_set_ins
 
 
 class ProposeDeleteItemConfig(FunctionBaseConfig, name="propose_delete_item"):
-    pass
-
-
-class ProposeAskReviewerConfig(FunctionBaseConfig, name="propose_ask_reviewer"):
     pass
 
 
@@ -229,13 +223,6 @@ propose_upsert_instrument = _register("upsert_instrument", ProposeUpsertInstrume
 propose_upsert_asset = _register("upsert_asset", ProposeUpsertAssetConfig)
 propose_set_instrument_holder = _register("set_instrument_holder", ProposeSetInstrumentHolderConfig)
 propose_delete_item = _register("delete_item", ProposeDeleteItemConfig)
-propose_ask_reviewer = _proposal(
-    ProposeAskReviewerConfig,
-    "ask_reviewer",
-    evidence_asks.AskReviewer,
-    "Asks the reviewer one short question about new evidence, at most two in all. Proposes only; the report chat shows it.",
-    check_new_evidence,
-)
 propose_open_box_tool = _proposal(
     ProposeOpenBoxToolConfig,
     "open_box_tool",

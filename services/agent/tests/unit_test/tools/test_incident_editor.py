@@ -91,7 +91,7 @@ async def _with_draft(call):
     return out[0]
 
 
-async def _run_evidence(*calls: tuple[str, dict], questions_asked: int = 0):
+async def _run_evidence(*calls: tuple[str, dict]):
     async def ask() -> str:
         for tool, args in calls:
             try:
@@ -102,43 +102,17 @@ async def _run_evidence(*calls: tuple[str, dict], questions_asked: int = 0):
                 continue
         return "done"
 
-    return await agent_loop.run_loop(ask, "V1", draft=DRAFT, questions_asked=questions_asked)
+    return await agent_loop.run_loop(ask, "V1", draft=DRAFT)
 
 
-async def test_a_question_then_the_box_tool_are_listed_as_actions() -> None:
-    result = await _run_evidence(
-        ("ask_reviewer", {"question": "Where in the shop?"}),
-        ("open_box_tool", {"seconds": 12, "name": "Bag on floor"}),
-    )
-    assert result.actions == [
-        {"tool": "propose_ask_reviewer", "args": {"question": "Where in the shop?"}},
-        {"tool": "propose_open_box_tool", "args": {"seconds": 12, "name": "Bag on floor"}},
-    ]
+async def test_the_box_tool_is_listed_as_the_only_action_for_new_evidence() -> None:
+    result = await _run_evidence(("open_box_tool", {"seconds": 12, "name": "Bag on floor"}))
+    assert result.actions == [{"tool": "propose_open_box_tool", "args": {"seconds": 12, "name": "Bag on floor"}}]
 
 
-async def test_a_third_question_is_refused_so_the_box_tool_must_open() -> None:
-    result = await _run_evidence(
-        ("ask_reviewer", {"question": "Where?"}),
-        ("ask_reviewer", {"question": "When?"}),
-        ("ask_reviewer", {"question": "Who?"}),
-    )
-    assert [action["args"]["question"] for action in result.actions] == ["Where?", "When?"]
-    assert "Only 2 questions" in result.steps[2]["error"]
-
-
-async def test_the_questions_asked_before_this_request_count_towards_the_limit() -> None:
-    result = await _run_evidence(("ask_reviewer", {"question": "Who?"}), questions_asked=2)
-    assert result.actions == []
-    assert "Only 2 questions" in result.steps[0]["error"]
-
-
-async def test_no_question_follows_the_box_tool() -> None:
-    result = await _run_evidence(
-        ("open_box_tool", {"seconds": 12, "name": "Bag"}),
-        ("ask_reviewer", {"question": "Who?"}),
-    )
-    assert [action["tool"] for action in result.actions] == ["propose_open_box_tool"]
-    assert "already open" in result.steps[1]["error"]
+def test_a_question_tool_no_longer_exists_so_no_question_can_be_asked_first() -> None:
+    assert not hasattr(incident_editor, "propose_ask_reviewer")
+    assert incident_editor.NEW_EVIDENCE_TOOLS == ("open_box_tool",)
 
 
 async def test_the_box_tool_opens_once_and_only_inside_the_incident() -> None:
@@ -155,9 +129,9 @@ async def test_the_box_tool_opens_once_and_only_inside_the_incident() -> None:
 async def test_no_draft_means_no_new_evidence_can_be_proposed() -> None:
     async def ask() -> str:
         await agent_loop.run_guarded_tool(
-            "propose_ask_reviewer",
-            {"question": "Who?"},
-            lambda: incident_editor.check_new_evidence("ask_reviewer", {"question": "Who?"}),
+            "propose_open_box_tool",
+            {"seconds": 12, "name": "Bag"},
+            lambda: incident_editor.check_new_evidence("open_box_tool", {"seconds": 12, "name": "Bag"}),
         )
         return "done"
 
@@ -250,6 +224,14 @@ def test_the_report_editor_prompt_opens_the_box_tool_on_an_item_instead_of_refus
     assert "call propose_open_box_tool with that item's key alone (no seconds or name)" in prompt
     assert "Never draw or locate a box yourself" in prompt
     assert "I can't do that in chat: there is no such item in the draft." in prompt
+
+
+def test_the_report_editor_has_no_question_step_for_new_evidence() -> None:
+    repo = Path(__file__).resolve().parents[5]
+    config = repo / "deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml"
+    function = yaml.safe_load(config.read_text())["functions"]["report_editor"]
+    assert "propose_ask_reviewer" not in function["tool_names"]
+    assert "propose_open_box_tool" in function["tool_names"]
 
 
 async def _run_retry(args: dict):
