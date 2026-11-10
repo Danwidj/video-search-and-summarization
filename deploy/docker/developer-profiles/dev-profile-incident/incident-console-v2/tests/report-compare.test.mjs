@@ -352,3 +352,54 @@ test('View keeps the saved timeline, also while a draft is kept: only Edit mode 
   assert.match(page, /const draftStructured = mode === 'edit' && draft \? draftToStructured\(draft, videoId, overlay\.frames\) : null;/);
   assert.match(page, /structured=\{draftStructured \?\? report\.structured\}/);
 });
+
+test("View after an Edit round trip keeps each unchanged item's full frame, box and track, as a fresh View load does", () => {
+  const saved = structuredClone(view.structured);
+  const [first, second] = saved.entities;
+  const evidence = (extra) => ({
+    image: null,
+    imageUrl: null,
+    frame: null,
+    frameUrl: null,
+    located: null,
+    boxSeconds: null,
+    imageGap: null,
+    boundingBox: null,
+    timestampSeconds: null,
+    uploaded: false,
+    track: null,
+    trackUrl: null,
+    trackFirstSeenSeconds: null,
+    trackLastSeenSeconds: null,
+    trackSource: null,
+    trackPartial: false,
+    trackGap: null,
+    boxSource: null,
+    addedByReviewer: false,
+    ...extra,
+  });
+  first.evidence = evidence({
+    image: 'evidence/v1/E1.jpg',
+    imageUrl: 'https://signed.example/E1-crop.jpg',
+    frame: 'evidence/v1/E1-frame.jpg',
+    frameUrl: 'https://signed.example/E1-frame.jpg',
+    boundingBox: [100, 100, 300, 300],
+    located: true,
+    track: 'evidence/v1/E1-track.json',
+    trackFirstSeenSeconds: 1,
+    trackLastSeenSeconds: 5,
+  });
+  second.evidence = evidence({ image: 'evidence/v1/E2.jpg', imageUrl: 'https://signed.example/E2-crop.jpg' });
+  const draft = draftFromView({ ...view, structured: saved });
+  draft.incident.description = 'Rewritten summary';
+  draft.entities[1].description = 'Rewritten entity';
+  const shown = draftToStructured(draft, 'v1', {}, saved);
+  assert.deepEqual(shown.entities[0].evidence, first.evidence, 'the unchanged item keeps its evidence whole');
+  assert.equal(shown.entities[1].description, 'Rewritten entity', 'the draft still supplies the text');
+  assert.deepEqual(shown.entities[1].evidence, second.evidence);
+  // A frame the reviewer picked still replaces the stored one.
+  const picked = draftToStructured(draft, 'v1', { [draft.entities[0].key]: { seconds: 3, box: [1, 2, 3, 4] } }, saved);
+  assert.equal(picked.entities[0].evidence.frameUrl, '/api/reports/v1/frame?t=3');
+  // Without the opened version the draft has only the crop: the case this guards against.
+  assert.equal(draftToStructured(draft, 'v1', {}).entities[0].evidence.frameUrl, null);
+});
