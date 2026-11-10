@@ -298,9 +298,16 @@ export function revertDraftItem(draft: EditDraft, a: Structured, row: PairRow): 
 
 /**
  * The draft as the structured shape the timeline and the cards read. `frames` (from `draftOverlay`, the video's source) names
- * the items whose evidence image Save will cut anew: they show that frame and box instead of the image they had.
+ * the items whose evidence image Save will cut anew: they show that frame and box instead of the image they had. `base` is
+ * the opened version: an item whose image the draft has not changed keeps that version's evidence whole (frame, box, track),
+ * because the draft holds only the crop and would otherwise show the crop where the version shows the full frame.
  */
-export function draftToStructured(draft: EditDraft, videoId?: string, frames: Record<string, DraftItemFrame> = {}): Structured {
+export function draftToStructured(
+  draft: EditDraft,
+  videoId?: string,
+  frames: Record<string, DraftItemFrame> = {},
+  base?: Structured,
+): Structured {
   const incident: StructuredIncident = {
     type: editableIncidentType(draft.incident.type),
     title: draft.incident.title,
@@ -315,27 +322,43 @@ export function draftToStructured(draft: EditDraft, videoId?: string, frames: Re
     severityReason: draft.incident.severity_reason,
     confidenceScore: null,
   };
-  const evidence = (key: string, image: string | null, imageUrl: string | null, seconds: number | null) => ({
-    image,
-    imageUrl: frames[key] && videoId ? null : imageUrl,
-    frame: null,
-    frameUrl: frames[key] && videoId ? videoFrameUrl(videoId, frames[key].seconds) : null,
-    located: null,
-    boxSeconds: frames[key]?.seconds ?? null,
-    imageGap: null,
-    boundingBox: frames[key]?.box ?? null,
-    timestampSeconds: seconds,
-    uploaded: false,
-    track: null,
-    trackUrl: null,
-    trackFirstSeenSeconds: null,
-    trackLastSeenSeconds: null,
-    trackSource: null,
-    trackPartial: false,
-    trackGap: null,
-    boxSource: null,
-    addedByReviewer: false,
-  });
+  const savedEvidence = new Map([
+    ...(base?.entities ?? []).map((item) => [`entity:${item.entityId}`, item.evidence] as const),
+    ...(base?.instruments ?? []).map((item) => [`instrument:${item.instrumentId}`, item.evidence] as const),
+    ...(base?.assets ?? []).map((item) => [`asset:${item.assetId}`, item.evidence] as const),
+  ]);
+  const evidence = (
+    kind: PairKind,
+    key: string,
+    sourceId: string | null,
+    image: string | null,
+    imageUrl: string | null,
+    seconds: number | null,
+  ) => {
+    const saved = sourceId ? savedEvidence.get(`${kind}:${sourceId}`) : null;
+    if (saved && !frames[key] && saved.image === image) return saved;
+    return {
+      image,
+      imageUrl: frames[key] && videoId ? null : imageUrl,
+      frame: null,
+      frameUrl: frames[key] && videoId ? videoFrameUrl(videoId, frames[key].seconds) : null,
+      located: null,
+      boxSeconds: frames[key]?.seconds ?? null,
+      imageGap: null,
+      boundingBox: frames[key]?.box ?? null,
+      timestampSeconds: seconds,
+      uploaded: false,
+      track: null,
+      trackUrl: null,
+      trackFirstSeenSeconds: null,
+      trackLastSeenSeconds: null,
+      trackSource: null,
+      trackPartial: false,
+      trackGap: null,
+      boxSource: null,
+      addedByReviewer: false,
+    };
+  };
   const entityIdByKey = new Map(draft.entities.map((entity) => [entity.key, entity.canonicalId]));
   return {
     incident,
@@ -347,7 +370,7 @@ export function draftToStructured(draft: EditDraft, videoId?: string, frames: Re
       firstSeenSeconds: entity.firstSeenSeconds,
       lastSeenSeconds: entity.lastSeenSeconds,
       label: entity.label,
-      evidence: evidence(entity.key, entity.image, entity.imageUrl, entity.timestampSeconds),
+      evidence: evidence('entity', entity.key, entity.sourceId, entity.image, entity.imageUrl, entity.timestampSeconds),
     })),
     instruments: draft.instruments.map((instrument) => ({
       instrumentId: instrument.key,
@@ -357,7 +380,14 @@ export function draftToStructured(draft: EditDraft, videoId?: string, frames: Re
       threatLevel: instrument.threat_level,
       timestampSeconds: instrument.timestampSeconds,
       label: instrument.label,
-      evidence: evidence(instrument.key, instrument.image, instrument.imageUrl, instrument.timestampSeconds),
+      evidence: evidence(
+        'instrument',
+        instrument.key,
+        instrument.sourceId,
+        instrument.image,
+        instrument.imageUrl,
+        instrument.timestampSeconds,
+      ),
     })),
     assets: draft.assets.map((asset) => ({
       assetId: asset.key,
@@ -365,7 +395,7 @@ export function draftToStructured(draft: EditDraft, videoId?: string, frames: Re
       description: asset.description,
       timestampSeconds: asset.timestampSeconds,
       label: asset.label,
-      evidence: evidence(asset.key, asset.image, asset.imageUrl, asset.timestampSeconds),
+      evidence: evidence('asset', asset.key, asset.sourceId, asset.image, asset.imageUrl, asset.timestampSeconds),
     })),
   };
 }

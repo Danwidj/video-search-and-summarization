@@ -373,7 +373,7 @@ export function ReportPage({
     draft && editBase && report.revisionId === editBase.revisionId
       ? {
           ...report,
-          structured: draftToStructured(draft, videoId, overlay.frames),
+          structured: draftToStructured(draft, videoId, overlay.frames, report.structured),
         }
       : report;
 
