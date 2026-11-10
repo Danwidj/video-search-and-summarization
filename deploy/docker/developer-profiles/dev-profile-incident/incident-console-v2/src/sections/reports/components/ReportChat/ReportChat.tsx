@@ -47,7 +47,12 @@ import type { AppliedAction, ChatCitation, ChatResponse, ChatStep, SkippedAction
 import { formatClock } from '@/modules/reports/domain/normalize';
 import { ChatStepsView } from './ChatStepsView';
 
-const SUGGESTIONS = ['Show the timeline of events', 'Draw the box for an entity', 'Look for an item in the clip'];
+const SUGGESTIONS = [
+  'Show the timeline of events',
+  'Draw the box for an entity',
+  'Look for an item in the clip',
+  'Shorten the summary into 2 sentences',
+];
 
 const CHAT_FAILED = 'The chat service is unavailable right now. Please try again in a moment.';
 

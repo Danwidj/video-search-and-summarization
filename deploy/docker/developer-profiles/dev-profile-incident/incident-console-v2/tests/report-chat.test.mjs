@@ -176,6 +176,7 @@ test('the panel leads with the timeline question and tool suggestions', () => {
   assert.match(chat, /Show the timeline of events/);
   assert.match(chat, /Draw the box for an entity/);
   assert.match(chat, /Look for an item in the clip/);
+  assert.match(chat, /Shorten the summary into 2 sentences/);
   assert.match(chat, /answerSourceLine\(message\.source, message\.answeredFrom \?\? ''\)/);
   assert.doesNotMatch(chat, /Searching evidence/, 'nothing is searched, so the panel does not say so');
 });
@@ -235,6 +236,7 @@ test('a video check runs only from its button, and its result is shown apart wit
   assert.match(chat, /Show the timeline of events/);
   assert.match(chat, /Draw the box for an entity/);
   assert.match(chat, /Look for an item in the clip/);
+  assert.match(chat, /Shorten the summary into 2 sentences/);
 });
 
 test('the editor gets the last six user and assistant turns before the question, blanks and video checks left out', () => {
