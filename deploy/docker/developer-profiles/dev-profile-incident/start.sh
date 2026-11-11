@@ -491,7 +491,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   # with its own LLM, so this laptop needs no gateway key.
 elif [ "$VSS_START_MODE" = "mock" ]; then
   # Each local service reads its own .env.local symlink to the shared
-  # ../.env.local (README.md §1, kept in place by .githooks/setup-worktree.sh).
+  # ../.env.local (README.md §2, kept in place by .githooks/setup-worktree.sh).
   for env_link in mock-backend/.env.local vlm-gateway/.env.local; do
     if [ ! -f "${SCRIPT_DIR}/${env_link}" ]; then
       echo "start.sh: ${env_link} is missing or does not resolve to the shared .env.local." >&2

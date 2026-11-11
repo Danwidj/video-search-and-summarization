@@ -89,7 +89,7 @@ Stale docs are a defect. Update in the same PR:
 | Topology, components, sequences | [`.docs/architecture.md`](.docs/architecture.md); what a console page or route does: [`.docs/console-reference.md`](.docs/console-reference.md) |
 | Implementation state, known issues, live VM config | [`.docs/status.md`](.docs/status.md) (rewrite, don't append) |
 | An architectural or tooling decision | New entry at the top of [`.docs/decisions.md`](.docs/decisions.md): Decision / Why / Alternatives rejected / Links, and remove or amend any entry it supersedes |
-| A doc or skill added, moved or renamed | [`README.md`](README.md) doc index and [`skills/README.md`](skills/README.md) |
+| A doc or skill added, moved or renamed | [`skills/README.md`](skills/README.md) |
 
 ## Docs map
 

@@ -242,6 +242,8 @@ The untracked deployment environment file on the VM (`.env.remote`) configures c
     - **Upload conversion (console):** every upload is converted to H.264 `yuv420p` MP4 (`crf 20`) with ffmpeg, capped at 5 GB, `maxDuration` 1800 s, and ffmpeg is stopped after 25 minutes.
     - **GPU pinning:** see rule 10.
 
+12. **Template defaults and optional blanks:** the agent config refuses to start when a setting it reads is unset, so the template gives working defaults to `EVAL_LLM_JUDGE_NAME`, `EVAL_LLM_JUDGE_BASE_URL`, `EVAL_DIR`, `DATASET_FILE_NAME` and `RTVI_VLM_BASE_URL`; `test-env-template.sh` fails when the config gains a setting a template-built file leaves unset. `VLM_MODEL` is an optional blank (the console falls back to its built-in model). `VLM_GATEWAY_BASE_URL` and `VLM_GATEWAY_API_KEY` are optional blanks the VM never needs: its Compose no longer includes the gateway, and the agent reads the pair only as an override of `VLM_BASE_URL` and `OPENAI_API_KEY`.
+
 > [!NOTE]
 > For the current live environment values and deployed model configurations on the VM, see [Current Status & Known Issues (Live VM Configuration Snapshot)](status.md#6-live-vm-configuration).
 
