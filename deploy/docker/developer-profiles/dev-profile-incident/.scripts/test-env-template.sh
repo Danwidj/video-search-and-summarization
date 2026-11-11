@@ -4,7 +4,9 @@
 #
 # Hermetic checks on the committed env template (.env) and compose.unused.env:
 # it sources cleanly, defines every setting once, defines a setting before any setting that
-# refers to it, keeps the lines the sed-based loaders read literal, and holds no real value.
+# refers to it, keeps the lines the sed-based loaders read literal, and holds no real value. It also
+# checks that a VM file copied from the template, loaded the way native-services.sh loads it, defines
+# every setting the agent config refers to (an unset one makes nat reject the whole config).
 #
 # Usage:
 #   bash deploy/docker/developer-profiles/dev-profile-incident/.scripts/test-env-template.sh
@@ -75,6 +77,29 @@ else ok; fi
 overlap="$(comm -12 <(sort <<<"$names") <(sed -nE 's/^([A-Z][A-Z0-9_]*)=.*/\1/p' "$UNUSED_FILE" | sort))"
 [ -z "$overlap" ] && ok || bad "in both .env and compose.unused.env: ${overlap}"
 if grep -vE '^(#|$|[A-Z][A-Z0-9_]*=$)' "$UNUSED_FILE" >/dev/null; then bad "compose.unused.env holds a value"; else ok; fi
+
+# The agent config must find every ${NAME} it refers to set to a value in a file built from the template,
+# loaded by vm_env_load with a stand-in `ip` (that is where HOST_IP comes from on the VM). nat treats an
+# unset or blank ${NAME} as no string and rejects the config. The section 1 settings get a dummy value, as
+# a machine fills them in; the optional Weave alias may stay blank. Comment lines and ${NAME:-default} references are skipped; the fallback
+# inside a default still counts.
+AGENT_CONFIG="${PROFILE_DIR}/../dev-profile-base/vss-agent/configs/config.yml"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+mkdir -p "$TMP/bin"
+printf '#!/usr/bin/env bash\necho "1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.77 uid 0"\n' >"$TMP/bin/ip"
+chmod +x "$TMP/bin/ip"
+sed -E '/^# 2\. /,$!s/^([A-Z][A-Z0-9_]*)=$/\1=dummy/' "$ENV_FILE" >"$TMP/.env.remote"
+needed="$(grep -vE '^[[:space:]]*#' "$AGENT_CONFIG" | grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*\}' | tr -d '${}' | sort -u)"
+[ -n "$needed" ] && ok || bad "found no \${NAME} references in ${AGENT_CONFIG}"
+unset_names="$(env -i PATH="$TMP/bin:$PATH" bash -c '
+  source "$1/.scripts/env-file.sh"
+  vm_env_load "$2" "$1" || exit 1
+  for n in $3; do
+    case " $4 " in *" $n "*) continue ;; esac
+    [ -n "${!n:-}" ] || echo "$n"
+  done' _ "$PROFILE_DIR" "$TMP/.env.remote" "$needed" "WEAVE_WORKFLOW_ALIAS" 2>&1)"
+[ -z "$unset_names" ] && ok || bad "the agent config refers to settings a template-built file leaves unset or blank: $(tr '\n' ' ' <<<"$unset_names")"
 
 echo "env-template: ${pass} passed, ${fail} failed"
 [ "$fail" -eq 0 ]
