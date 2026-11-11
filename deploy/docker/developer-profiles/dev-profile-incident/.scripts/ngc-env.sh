@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
 # Source the shared NVIDIA/NGC credential file into the current shell
-# (replaces the old `ngc-env-on` shell function from
-# deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh — same behavior, standalone script).
+# (replaces the old `ngc-env-on` shell function — same behavior, standalone script).
 #
 # /srv/rise-up/.ngc_env is a shared NVIDIA/NGC credential file for the whole
 # smu-rise-up group's single checkout — auto-sourcing it into every login
