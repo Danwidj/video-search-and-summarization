@@ -17,13 +17,12 @@ Everything this project adds lives in the incident profile:
 - **Deploy and run it:** [incident profile README](deploy/docker/developer-profiles/dev-profile-incident/README.md)
 - **How it is built:** [architecture](deploy/docker/developer-profiles/dev-profile-incident/.docs/architecture.md)
 - **Goals and scope:** [action plan](deploy/docker/developer-profiles/dev-profile-incident/.docs/action-plan.md)
-- **What works today:** [status](deploy/docker/developer-profiles/dev-profile-incident/.docs/status.md)
 
 The rest of the repository is the upstream blueprint, which the project builds on.
 
 ## Remaining work
 
-The [status document](deploy/docker/developer-profiles/dev-profile-incident/.docs/status.md) is the source of truth. In short:
+The main open items:
 
 - Run the held-out evaluation across several models; only the development pilots are done.
 - Turn on model-written chat answers once that evaluation validates them; chat answers are rule-based today.
