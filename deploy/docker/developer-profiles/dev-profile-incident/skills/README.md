@@ -14,7 +14,7 @@ Agent skills for operating the incident profile from natural language: start the
 | I want to | Use this skill |
 |---|---|
 | Set up secrets and launch the console, against the VM or the mock | [incident-start](incident-start/SKILL.md) |
-| Deploy, restart, inspect or fix services on `kwanz-ws` | [incident-operate-vm](incident-operate-vm/SKILL.md) |
+| Deploy, restart, inspect or fix services on the VM | [incident-operate-vm](incident-operate-vm/SKILL.md) |
 | Upload a clip, then generate, re-run, version or mark official an incident report | [incident-analyze-video](incident-analyze-video/SKILL.md) |
 | Search incident evidence, ask grounded follow-up questions, refresh evidence crops | [incident-search](incident-search/SKILL.md) |
 | Change or inspect the Supabase schema, apply a migration, query incident data, find a video in R2 | [incident-manage-database](incident-manage-database/SKILL.md) |
@@ -23,7 +23,7 @@ Agent skills for operating the incident profile from natural language: start the
 
 ## Pick between look-alikes
 
-- `incident-start` launches from the laptop; `incident-operate-vm` changes the backend on `kwanz-ws`. `start.sh --mode vm` heals the VM itself, so use the second only when that fails.
+- `incident-start` launches from the laptop; `incident-operate-vm` changes the backend on the VM. `start.sh --mode vm` heals the VM itself, so use the second only when that fails.
 - `incident-analyze-video` produces one report; `incident-run-eval` scores many predictions against ground truth.
 - `incident-manage-database` owns the schema and storage layout; `incident-analyze-video` owns the rows one analysis writes.
 - NVIDIA's `vss-deploy-profile` drives `dev-profile.sh`, which does not know this profile. Never use it to deploy or tear down the incident profile.
@@ -47,7 +47,7 @@ Claude Code needs no install step: [.claude/skills/](../../../../../.claude/skil
 
 ## Read more
 
-- [Operations runbook](../.docs/incident-profile-operations.md): what runs on `kwanz-ws`
+- [Operations runbook](../.docs/incident-profile-operations.md): what runs on the VM
 - [Architecture: Launch modes and connectivity](../.docs/architecture.md#launch-modes-and-connectivity): mock against vm
 - [Search spec](../.docs/mvp2/README.md): the contracts behind `incident-search`
 - [Status](../.docs/status.md): what works today

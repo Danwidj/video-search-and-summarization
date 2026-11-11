@@ -60,7 +60,7 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 - **Console code keeps the hexagonal layout:** routes get ports from `src/lib/container.ts`; only `src/modules/*/infrastructure/supabase/` and `src/lib/postgrest/` name tables, columns and `p_*` arguments. `npm test` enforces the import boundaries. Layout and rules: [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md).
 - **Revisions are never edited.** A reviewer's edit is a new `human` revision; the official version is the video's `official_revision_id`, chosen explicitly (never infer "latest run wins").
 - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only, never reports. Count runs by outcome, not raw rows.
-- **PostgREST only from `kwanz-ws`** (direct Postgres from the VM has been blocked on and off, so do not rely on it). PostgREST has no client transactions, so `report_revisions` inserts retry on a `revision_no` clash (SQLSTATE 23505).
+- **PostgREST only from the VM** (direct Postgres from the VM has been blocked on and off, so do not rely on it). PostgREST has no client transactions, so `report_revisions` inserts retry on a `revision_no` clash (SQLSTATE 23505).
 - **Storage:** R2 holds videos (`videos.filepath` is an **R2 key**, never a VST URL); Supabase holds rows; VIOS disk is only a cache.
 - **Secrets are server-side only:** never `NEXT_PUBLIC_` for a credential or URL; `/api/health` returns booleans only; the gateway owns `VLM_GATEWAY_API_KEY`.
 - **Remote models use `_type: openai`,** never `_type: nim`, with bare base URLs (no `/v1`); why: [`.docs/architecture.md`](.docs/architecture.md#model-inference).
@@ -68,7 +68,7 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 ## Boundaries
 
 - **Always:** run the component's checks; add the neighbouring SPDX header; update the affected `.docs/` file and skill in the same PR ([Docs rule](#docs-rule)).
-- **Ask first:** applying a migration to the live (finals) Supabase DB; restarting or stopping shared services on `kwanz-ws`; editing `generated.env.remote`; pruning native-service images; adding dependencies.
+- **Ask first:** applying a migration to the live (finals) Supabase DB; restarting or stopping shared services on the VM; editing `generated.env.remote`; pruning native-service images; adding dependencies.
 - **Never:**
   - Commit or print `.env.local`, keys or DSNs.
   - Write to, push to or apply anything to the frozen midterm Supabase project (`rfevukimyftzbxlehwel`), or edit `supabase/midterm/`; the only exceptions are its freeze and unfreeze files at the cutover.
@@ -100,7 +100,7 @@ Stale docs are a defect. Update in the same PR:
 | [`.docs/console-reference.md`](.docs/console-reference.md) | Changing what a console page shows or does, a console route, or the console's configuration |
 | [`.docs/data.md`](.docs/data.md) | Touching tables, the RPCs, cascades, security or R2 keys |
 | [`.docs/analysis-schema.md`](.docs/analysis-schema.md) | Touching report fields, prompts, VLM calls or output parsing |
-| [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) | Anything on `kwanz-ws` |
+| [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) | Anything on the VM |
 | [`.docs/vm-api-contracts.md`](.docs/vm-api-contracts.md) | Calling or changing a `vss-agent` HTTP endpoint or the tunnel ports |
 | [`.docs/decisions.md`](.docs/decisions.md) | Before reversing an existing choice |
 | [`.docs/mvp2/README.md`](.docs/mvp2/README.md) | Natural-language search work |
