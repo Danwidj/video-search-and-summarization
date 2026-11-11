@@ -139,5 +139,3 @@ In the same PR:
 - Extend `supabase/tests/test_baseline.py` for the new behaviour.
 - Update the table specs in [`.docs/data.md`](../../.docs/data.md).
 - Update [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md) if report fields moved.
-- Update [`.docs/status.md`](../../.docs/status.md) if the migration was applied live.
-- Add a [`.docs/decisions.md`](../../.docs/decisions.md) entry for any schema decision.

@@ -1,7 +1,7 @@
 # Experiment decision record: D9, D10, D11, D15 and Stage 0
 
 > **Status (2026-10-30):**
-> - **D9 v2: pre-registered** ([decisions.md](../decisions.md#2026-10-27-stage-2-prompt-selection-rule-d9-v2-pre-registered)).
+> - **D9 v2: pre-registered** ([decisions.md](../archive/decisions.md#2026-10-27-stage-2-prompt-selection-rule-d9-v2-pre-registered)).
 > - **D10 and D15:** approved as implemented.
 > - **D11:** caps enforced and retry-proof; the judge output is capped at 1,500 tokens ([methodology v1.1](../../eval/methodology/evaluation-methodology-v1.1.md)). The dollar limits are provisional.
 > - **Stage 1:** **ran 2026-10-28** on the frozen `ground-truth-v1.0` (AI-assisted, approved at the dataset level, not individually human-verified). Results: [`stage1-baselines.md`](../../eval/docs/experiments/stage1-baselines.md).

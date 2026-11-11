@@ -4,12 +4,12 @@ The architecture of `dev-profile-incident`, the incident search and reporting pr
 
 | If you need | Read |
 |---|---|
-| What is true today, known issues, live flags | [`status.md`](status.md) |
+| What is true today, known issues, live flags | [`status.md`](archive/status.md) |
 | What a console page shows or does, a console route, the console's configuration | [`console-reference.md`](console-reference.md) |
 | An agent HTTP contract | [`vm-api-contracts.md`](vm-api-contracts.md) |
 | Tables, database functions, object keys | [`data.md`](data.md) |
 | The report contract, validation and storage of model output | [`analysis-schema.md`](analysis-schema.md) |
-| Why something is the way it is | [`decisions.md`](decisions.md) |
+| Why something is the way it is | [`decisions.md`](archive/decisions.md) |
 | Natural-language search in depth | [`mvp2/README.md`](mvp2/README.md) |
 | How to launch, operate, analyse or migrate | [`skills/README.md`](../skills/README.md), [`incident-profile-operations.md`](incident-profile-operations.md) |
 
@@ -17,7 +17,7 @@ The architecture of `dev-profile-incident`, the incident search and reporting pr
 
 ### Purpose
 
-A reviewer uploads a surveillance or anomaly clip. A vision-language model (VLM) extracts a structured incident report: type, severity, confidence, a summary, and the entities, instruments and assets involved, each with the second it is seen. The report is stored as an append-only revision with the clip in object storage. The reviewer edits it into new revisions, marks one revision per video official, searches the whole archive in natural language over evidence items, asks questions about a report, and reads a dashboard that counts each video once. Goals and scope in full: [`action-plan.md`](action-plan.md).
+A reviewer uploads a surveillance or anomaly clip. A vision-language model (VLM) extracts a structured incident report: type, severity, confidence, a summary, and the entities, instruments and assets involved, each with the second it is seen. The report is stored as an append-only revision with the clip in object storage. The reviewer edits it into new revisions, marks one revision per video official, searches the whole archive in natural language over evidence items, asks questions about a report, and reads a dashboard that counts each video once. Goals and scope in full: [`action-plan.md`](archive/action-plan.md).
 
 ### Quality Goals
 
@@ -45,13 +45,13 @@ The five qualities that shaped the design most, in priority order. Scenarios for
 | Constraint | Background |
 |---|---|
 | Built on the stock VSS blueprint: the agent is NVIDIA's VSS Agent, run with the base developer profile's configuration plus the incident tool; the perception stack is the stock search profile's Compose services, started through the profile's tracking Compose file | Keeps the fork mergeable with upstream and the sponsor's blueprint recognisable; see [Stock VSS and What the Team Added](#stock-vss-and-what-the-team-added) |
-| Model inference is remote: VLM, LLM and embedding calls go to hosted OpenAI-compatible endpoints; no NVIDIA Inference Microservice (NIM) container runs locally | The profile is allotted one GPU on a shared host, and that GPU is reserved for the perception stack ([decision](decisions.md#2026-09-25-remote-brev-inference-no-local-gpu-nims)) |
-| One GPU on a shared host, other users on the same machine | Every container and native process that needs a GPU is pinned to that one device; shared services are started and restarted with care and on request ([decision](decisions.md#2026-10-19-pin-all-vss-docker-appliances-and-native-services-to-gpu-0-only), [decision](decisions.md#2026-10-22-concurrency-safe-native-service-startup-across-shared-vm-users)) |
-| The GPU host's Postgres wire protocol access to the managed database is unreliable: blocked before, open on 2026-11-07, cause unknown | Services on it stay on PostgREST over HTTPS; PostgREST holds no client transaction, so operations that must be atomic are database functions, and revision inserts retry on a unique-key clash ([decision](decisions.md#2026-09-17-agent-database-access-through-postgrest)) |
-| The agent has no authentication and holds the database service key | It binds its host's loopback interface; the console reaches it through an SSH tunnel that forwards only that endpoint ([decision](decisions.md#2026-10-18-console-and-agent-bind-loopback)) |
+| Model inference is remote: VLM, LLM and embedding calls go to hosted OpenAI-compatible endpoints; no NVIDIA Inference Microservice (NIM) container runs locally | The profile is allotted one GPU on a shared host, and that GPU is reserved for the perception stack ([decision](archive/decisions.md#2026-09-25-remote-brev-inference-no-local-gpu-nims)) |
+| One GPU on a shared host, other users on the same machine | Every container and native process that needs a GPU is pinned to that one device; shared services are started and restarted with care and on request ([decision](archive/decisions.md#2026-10-19-pin-all-vss-docker-appliances-and-native-services-to-gpu-0-only), [decision](archive/decisions.md#2026-10-22-concurrency-safe-native-service-startup-across-shared-vm-users)) |
+| The GPU host's Postgres wire protocol access to the managed database is unreliable: blocked before, open on 2026-11-07, cause unknown | Services on it stay on PostgREST over HTTPS; PostgREST holds no client transaction, so operations that must be atomic are database functions, and revision inserts retry on a unique-key clash ([decision](archive/decisions.md#2026-09-17-agent-database-access-through-postgrest)) |
+| The agent has no authentication and holds the database service key | It binds its host's loopback interface; the console reaches it through an SSH tunnel that forwards only that endpoint ([decision](archive/decisions.md#2026-10-18-console-and-agent-bind-loopback)) |
 | Hosted video models sample a bounded number of frames per request and rate-limit callers | Long clips get a caption pass before extraction; each console analyses one job at a time; object tracking runs under a detector-call budget and a time cap; the search critic is off by default |
 | Secrets never reach the browser; database and storage keys live only in server processes | The console exposes no credential or private URL to the client and its health route returns booleans only |
-| Two database projects, one per project phase: the finals project is live, the midterm project is a frozen read-only record | The migration folder is the schema authority; the record is never written to ([decision](decisions.md#2026-10-20-one-supabase-project-per-phase-finals-built-from-one-baseline-midterm-frozen)) |
+| Two database projects, one per project phase: the finals project is live, the midterm project is a frozen read-only record | The migration folder is the schema authority; the record is never written to ([decision](archive/decisions.md#2026-10-20-one-supabase-project-per-phase-finals-built-from-one-baseline-midterm-frozen)) |
 | Conventions: Apache-2.0 SPDX headers on every file; each component's checks run after every change; the docs and skills change in the same pull request as the behaviour they describe | The profile [`AGENTS.md`](../AGENTS.md) and the root `AGENTS.md` |
 
 ## Context and Scope
@@ -86,16 +86,16 @@ The five qualities that shaped the design most, in priority order. Scenarios for
 
 ## Solution Strategy
 
-1. **Reuse the stock VSS Agent and extend it in place.** The incident routes and the incident tools are registered through the stock worker and tool registry, so the agent is still NVIDIA's agent. It runs natively for second-level restarts; stock media and perception appliances stay in containers ([decision](decisions.md#2026-09-21-native-services-on-the-vm)).
-2. **Infer remotely.** VLM, LLM and embedding calls go to hosted OpenAI-compatible endpoints; the one local GPU is left to the perception stack ([decision](decisions.md#2026-09-25-remote-brev-inference-no-local-gpu-nims)).
-3. **One incident contract, two consumers.** The extraction prompt, JSON Schema, request settings, prompt registry and request goldens in `contracts/` are used by the console and vendored into the agent, with a strict validation policy and ID-only repair ([decision](decisions.md#2026-09-27-unified-contract-decisions-eval-console-agent), [policy](decisions.md#2026-09-27-validation-policy-core-scored-v1), [single source](decisions.md#2026-10-21-single-source-incident-contract-with-sync-script-and-txt-prompts), [goldens](decisions.md#2026-11-01-request-goldens-pin-every-model-request-checked-by-each-producer)).
-4. **Reports are append-only revisions with an explicit official pointer.** An analysis appends an AI revision, an edit appends a human revision, a re-run starts a new AI branch, and failed attempts are run records only ([decision](decisions.md#2026-10-23-versioned-report-revisions-as-jsonb-snapshots)).
-5. **Two analysis modes behind one console code path.** In agent mode the console calls the native agent, which extracts, locates, tracks and persists; in the Midterm flow the console calls the credential-holding gateway and persists itself. The Midterm flow is a backup that needs no GPU host and runs beside `mock-backend`, which mimics the backend ([decision](decisions.md#2026-10-23-the-agent-writes-jsonb-report-revisions)).
-6. **Object storage for media, the database for rows, local disks as caches.** Uploads go straight to object storage under readable keys that are never overwritten; the stock video storage service is not in the path ([decision](decisions.md#2026-10-31-vst-is-dropped-from-the-consoles-upload-path-uploads-go-to-r2-only), [naming](decisions.md#2026-10-28-r2-object-names-are-readable-and-deterministic-the-original-file-name-run-n-and-edit-n-never-a-hash-or-uuid)).
-7. **Search is embed-then-retrieve over per-item evidence crops**, with pgvector in the database, one search function for evidence and incident scoping, and a critic that is dormant by default ([decision](decisions.md#2026-10-18-remote-embeddings-and-remote-vlm-cropping-for-evidence-search), [decision](decisions.md#2026-10-28-incident-search-and-evidence-search-share-one-search-function-evidence-search-can-be-scoped-to-one-video-the-critic-is-off-by-default)).
-8. **Tracking reuses the stock perception stack per clip** for people, and a seeded tracker corrected by the detector for instruments and assets; both are soft stages ([decision](decisions.md#2026-10-31-person-tracking-runs-the-stock-perception-stack-from-its-own-script-behind-enable_tracking), [decision](decisions.md#2026-11-01-instruments-and-assets-are-followed-by-a-seeded-opencv-tracker-corrected-by-the-detector-flag-off-by-default)).
-9. **The console is hexagonal.** Routes get most ports from one composition root, and a few build an adapter or call one directly; only adapters know tables, columns and function arguments; a test enforces the import boundaries ([decision](decisions.md#2026-10-23-incident-console-v2-uses-a-feature-module-layout-under-src), [decision](decisions.md#2026-10-24-npm-test-enforces-the-consoles-hexagonal-import-boundaries)).
-10. **Long-running work is a database queue** with one in-process worker per console, so an analysis survives a closed tab ([decision](decisions.md#2026-10-31-background-analysis-jobs-a-supabase-table-and-one-in-process-loop-per-console)).
+1. **Reuse the stock VSS Agent and extend it in place.** The incident routes and the incident tools are registered through the stock worker and tool registry, so the agent is still NVIDIA's agent. It runs natively for second-level restarts; stock media and perception appliances stay in containers ([decision](archive/decisions.md#2026-09-21-native-services-on-the-vm)).
+2. **Infer remotely.** VLM, LLM and embedding calls go to hosted OpenAI-compatible endpoints; the one local GPU is left to the perception stack ([decision](archive/decisions.md#2026-09-25-remote-brev-inference-no-local-gpu-nims)).
+3. **One incident contract, two consumers.** The extraction prompt, JSON Schema, request settings, prompt registry and request goldens in `contracts/` are used by the console and vendored into the agent, with a strict validation policy and ID-only repair ([decision](archive/decisions.md#2026-09-27-unified-contract-decisions-eval-console-agent), [policy](archive/decisions.md#2026-09-27-validation-policy-core-scored-v1), [single source](archive/decisions.md#2026-10-21-single-source-incident-contract-with-sync-script-and-txt-prompts), [goldens](archive/decisions.md#2026-11-01-request-goldens-pin-every-model-request-checked-by-each-producer)).
+4. **Reports are append-only revisions with an explicit official pointer.** An analysis appends an AI revision, an edit appends a human revision, a re-run starts a new AI branch, and failed attempts are run records only ([decision](archive/decisions.md#2026-10-23-versioned-report-revisions-as-jsonb-snapshots)).
+5. **Two analysis modes behind one console code path.** In agent mode the console calls the native agent, which extracts, locates, tracks and persists; in the Midterm flow the console calls the credential-holding gateway and persists itself. The Midterm flow is a backup that needs no GPU host and runs beside `mock-backend`, which mimics the backend ([decision](archive/decisions.md#2026-10-23-the-agent-writes-jsonb-report-revisions)).
+6. **Object storage for media, the database for rows, local disks as caches.** Uploads go straight to object storage under readable keys that are never overwritten; the stock video storage service is not in the path ([decision](archive/decisions.md#2026-10-31-vst-is-dropped-from-the-consoles-upload-path-uploads-go-to-r2-only), [naming](archive/decisions.md#2026-10-28-r2-object-names-are-readable-and-deterministic-the-original-file-name-run-n-and-edit-n-never-a-hash-or-uuid)).
+7. **Search is embed-then-retrieve over per-item evidence crops**, with pgvector in the database, one search function for evidence and incident scoping, and a critic that is dormant by default ([decision](archive/decisions.md#2026-10-18-remote-embeddings-and-remote-vlm-cropping-for-evidence-search), [decision](archive/decisions.md#2026-10-28-incident-search-and-evidence-search-share-one-search-function-evidence-search-can-be-scoped-to-one-video-the-critic-is-off-by-default)).
+8. **Tracking reuses the stock perception stack per clip** for people, and a seeded tracker corrected by the detector for instruments and assets; both are soft stages ([decision](archive/decisions.md#2026-10-31-person-tracking-runs-the-stock-perception-stack-from-its-own-script-behind-enable_tracking), [decision](archive/decisions.md#2026-11-01-instruments-and-assets-are-followed-by-a-seeded-opencv-tracker-corrected-by-the-detector-flag-off-by-default)).
+9. **The console is hexagonal.** Routes get most ports from one composition root, and a few build an adapter or call one directly; only adapters know tables, columns and function arguments; a test enforces the import boundaries ([decision](archive/decisions.md#2026-10-23-incident-console-v2-uses-a-feature-module-layout-under-src), [decision](archive/decisions.md#2026-10-24-npm-test-enforces-the-consoles-hexagonal-import-boundaries)).
+10. **Long-running work is a database queue** with one in-process worker per console, so an analysis survives a closed tab ([decision](archive/decisions.md#2026-10-31-background-analysis-jobs-a-supabase-table-and-one-in-process-loop-per-console)).
 
 ## Building Block View
 
@@ -120,7 +120,7 @@ The five qualities that shaped the design most, in priority order. Scenarios for
 | Cloudflare R2 | S3-compatible object storage | Uploaded videos, thumbnails, evidence crops, frames and track files, scratch windows; private, read through signed URLs | External |
 | Hosted model endpoints | OpenAI-compatible HTTPS APIs | A VLM for extraction, captions, grounding, zoomed looks, box descriptions and the optional critic; an LLM for chart requests and grounded chat; a text-embedding model for evidence, revision and query vectors | External |
 
-Optional, outside the incident flow: the stock `video-analytics-api` and `behavior-analytics` services run natively, and Elasticsearch in a container, when the launcher is asked for analytics. Not started by the profile: Video IO & Storage (VIOS, also called VST), the HAProxy ingress, Redis, the SDR controller, the stock web UI and the NIM containers ([decision](decisions.md#2026-10-31-vst-is-dropped-from-the-consoles-upload-path-uploads-go-to-r2-only)).
+Optional, outside the incident flow: the stock `video-analytics-api` and `behavior-analytics` services run natively, and Elasticsearch in a container, when the launcher is asked for analytics. Not started by the profile: Video IO & Storage (VIOS, also called VST), the HAProxy ingress, Redis, the SDR controller, the stock web UI and the NIM containers ([decision](archive/decisions.md#2026-10-31-vst-is-dropped-from-the-consoles-upload-path-uploads-go-to-r2-only)).
 
 ### Level 2: The Console
 
@@ -228,7 +228,7 @@ The Midterm flow (`ANALYSIS_MODE=gateway`) keeps the same console code path and 
 
 ### Background Analysis Jobs
 
-A queued upload is a row in `analysis_jobs` ([Data layer](data.md#analysis_jobs)). One loop per console process claims the oldest job through a database function that locks the row and skips locked ones, heartbeats while it runs, and recovers a job whose heartbeat stops. The loop runs one job at a time and is not an HTTP request, so each model's own timeout bounds an analysis. The loop, the routes and the retry rules are in the [Console reference](console-reference.md#background-analysis-jobs). Every console pointed at the same database shares the queue ([Status](status.md#4-known-issues)).
+A queued upload is a row in `analysis_jobs` ([Data layer](data.md#analysis_jobs)). One loop per console process claims the oldest job through a database function that locks the row and skips locked ones, heartbeats while it runs, and recovers a job whose heartbeat stops. The loop runs one job at a time and is not an HTTP request, so each model's own timeout bounds an analysis. The loop, the routes and the retry rules are in the [Console reference](console-reference.md#background-analysis-jobs). Every console pointed at the same database shares the queue ([Status](archive/status.md#4-known-issues)).
 
 ### Evidence Search and Incident Search
 
@@ -273,7 +273,7 @@ The Edit page shows the saved version (read-only) and the draft in one compare l
 
 ### Native Processes and Containers
 
-The policy is to run a service natively whenever that is feasible, and in a container when it is not ([decision](decisions.md#2026-09-21-native-services-on-the-vm)):
+The policy is to run a service natively whenever that is feasible, and in a container when it is not ([decision](archive/decisions.md#2026-09-21-native-services-on-the-vm)):
 
 - **Native:** the VSS Agent, and the optional analytics services. A native process restarts in seconds after a code change, against a multi-minute image build, and the agent's virtual environment is installed editable from the checkout.
 - **Containers:** the media and perception appliances (NvStreamer, DeepStream perception) depend on CUDA and GStreamer toolchains that are not installable on the host, and the infrastructure appliances (Kafka, Logstash, Elasticsearch, Phoenix) gain nothing from running natively. The profile's Compose override pins every GPU-bound container to the one allotted device. The stock Compose files use fixed container names, so one perception stack runs per host.
@@ -283,13 +283,13 @@ The policy is to run a service natively whenever that is feasible, and in a cont
 
 The launcher is the one daily entry point ([`incident-start`](../skills/incident-start/SKILL.md)); the procedures and troubleshooting are in the [runbook](incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).
 
-- **vm mode** (the Final flow; the default, used for all UI and backend work): the launcher probes SSH to the host and resolves its address, inspects which containers and native services are up, deploys or starts only what is missing within bounded timeouts, starts the perception stack unless tracking is disabled, opens a backgrounded SSH tunnel that forwards only the agent's loopback endpoint, waits for the agent's health through it, and starts the console in agent mode. Leaving the launcher stops only the laptop-side processes and the tunnel; the host keeps running ([decision](decisions.md#2026-11-02-closing-startsh-leaves-the-vm-backend-running)).
+- **vm mode** (the Final flow; the default, used for all UI and backend work): the launcher probes SSH to the host and resolves its address, inspects which containers and native services are up, deploys or starts only what is missing within bounded timeouts, starts the perception stack unless tracking is disabled, opens a backgrounded SSH tunnel that forwards only the agent's loopback endpoint, waits for the agent's health through it, and starts the console in agent mode. Leaving the launcher stops only the laptop-side processes and the tunnel; the host keeps running ([decision](archive/decisions.md#2026-11-02-closing-startsh-leaves-the-vm-backend-running)).
 - **mock mode** (the Midterm flow; a backup that mimics the backend, never a fallback when the host is unreachable): the launcher starts the mock backend and the gateway on the laptop and runs the console in the Midterm flow; no SSH is used.
 - **Connectivity:** the console talks to the agent through the tunnel, and to object storage and the database directly; the agent talks to the perception stack on its own host, and to object storage, the database and the model endpoints directly. The agent itself listens only on its host's loopback interface, so the tunnel is the one way in.
 
 ### Two Supabase Projects (One per Phase)
 
-There is one database project per project phase ([decision](decisions.md#2026-10-20-one-supabase-project-per-phase-finals-built-from-one-baseline-midterm-frozen)). **Finals** is the live database: the console, the agent and the mocks all point at it. **Midterm** is the frozen record of the earlier phase: read-only, never pushed to, kept in the repository as an archive. Finals was built from one baseline migration and filled once from midterm by a one-way copy; the versioned-report schema and its functions were applied on top through the migration folder, which remains the schema authority ([`supabase/README.md`](../supabase/README.md)). Object storage is shared by both projects: the same keys, no copy. Which settings point each component at the live project, and the cutover checklist, are in the [`incident-manage-database`](../skills/incident-manage-database/SKILL.md) skill; the state of each migration is in [`status.md`](status.md#3-database-status).
+There is one database project per project phase ([decision](archive/decisions.md#2026-10-20-one-supabase-project-per-phase-finals-built-from-one-baseline-midterm-frozen)). **Finals** is the live database: the console, the agent and the mocks all point at it. **Midterm** is the frozen record of the earlier phase: read-only, never pushed to, kept in the repository as an archive. Finals was built from one baseline migration and filled once from midterm by a one-way copy; the versioned-report schema and its functions were applied on top through the migration folder, which remains the schema authority ([`supabase/README.md`](../supabase/README.md)). Object storage is shared by both projects: the same keys, no copy. Which settings point each component at the live project, and the cutover checklist, are in the [`incident-manage-database`](../skills/incident-manage-database/SKILL.md) skill; the state of each migration is in [`status.md`](archive/status.md#3-database-status).
 
 ## Crosscutting Concepts
 
@@ -307,13 +307,13 @@ Object storage holds the media; the database holds rows; local disks on the host
 
 ### Model Inference
 
-All model calls are remote and OpenAI-compatible ([decision](decisions.md#2026-09-25-remote-brev-inference-no-local-gpu-nims)). The rules, and why they hold:
+All model calls are remote and OpenAI-compatible ([decision](archive/decisions.md#2026-09-25-remote-brev-inference-no-local-gpu-nims)). The rules, and why they hold:
 
 1. **Client type.** The agent's LLM and VLM clients are configured as OpenAI-type clients, never as NIM-type clients: the NIM LangChain client leaks client-only parameters (such as the SSL-verification flag) into the HTTP request body, which standard OpenAI-compatible endpoints reject with a bad-request error.
 2. **Base URLs carry no version path.** The agent and the LangChain clients append the API version segment themselves, so a configured base URL that already ends with it produces a wrong path.
 3. **One credential, many roles.** One server-side key serves the agent's LLM and VLM; the gateway holds its own copy of the hosted key for the console's Midterm flow, so the browser never sees it.
 4. **Capabilities the models must have.** The LLM must support tool calling for the stock top agent and schema-constrained output for incident reporting and chart specifications; the VLM must accept a video by URL with schema-constrained output (inline base64 video gave the same results in the contract pilot) and images for the grounding, zoom and box-description calls. The allowlisted VLMs, their request settings and per-model timeouts are in the contract settings; the console, the agent and the job loop take each model's own timeout.
-5. **Sparse frames.** Hosted video models sample a bounded number of frames per request, so a long clip is seen sparsely; the caption pass exists to recover short actions, and how sampling behaves per model is an open question recorded in [`status.md`](status.md#4-known-issues).
+5. **Sparse frames.** Hosted video models sample a bounded number of frames per request, so a long clip is seen sparsely; the caption pass exists to recover short actions, and how sampling behaves per model is an open question recorded in [`status.md`](archive/status.md#4-known-issues).
 6. **Embeddings** come from one text-embedding model on an OpenAI-compatible embeddings endpoint, used for evidence passages, revision summaries and queries alike, so cosine distance is meaningful; no local embedding model runs in the product.
 
 ### Secrets and Access Control
@@ -326,11 +326,11 @@ Nothing optional fails an analysis: a caption, locate, zoom, tracking or embeddi
 
 ### Observability and Provenance
 
-Every analysis returns its provenance: the agent's code identity, the flags that were in effect, and per stage the model, the prompt hashes from the registry, the HTTP attempts sent, failed and refused by a cap, the tokens and the time. The console keeps it in the run's immutable attempt record with the request, the raw response, the validation result and any repair ([decision](decisions.md#2026-11-01-every-analysis-returns-its-run-provenance-and-the-console-keeps-it-in-the-runs-notes)). Search records every typed query and its ranked results. NAT agent tool and workflow spans are traced to Phoenix (incident model calls are remote and not traced to Phoenix). Health endpoints exist on the console, the agent and the gateway; the launcher waits on the agent's before it starts the console.
+Every analysis returns its provenance: the agent's code identity, the flags that were in effect, and per stage the model, the prompt hashes from the registry, the HTTP attempts sent, failed and refused by a cap, the tokens and the time. The console keeps it in the run's immutable attempt record with the request, the raw response, the validation result and any repair ([decision](archive/decisions.md#2026-11-01-every-analysis-returns-its-run-provenance-and-the-console-keeps-it-in-the-runs-notes)). Search records every typed query and its ranked results. NAT agent tool and workflow spans are traced to Phoenix (incident model calls are remote and not traced to Phoenix). Health endpoints exist on the console, the agent and the gateway; the launcher waits on the agent's before it starts the console.
 
 ### Configuration and Feature Flags
 
-Configuration describes roles here; the names and values are in the [runbook](incident-profile-operations.md), the skills and the live-configuration section of [`status.md`](status.md).
+Configuration describes roles here; the names and values are in the [runbook](incident-profile-operations.md), the skills and the live-configuration section of [`status.md`](archive/status.md).
 
 - **Console:** the analysis mode (gateway or agent), the default model from the allowlist, where the agent or mock and the gateway are, the database and object-storage settings, the contract directory, and a switch that keeps the job loop stopped. A model port is built only when its location is configured; the analysis refuses the mode whose port is missing.
 - **Agent:** flags for person tracking, object tracking, set-of-marks prompting, the caption pass, the zoomed second look, the chat mode, the search critic and the experimental settings; the perception stack's locations; the embedding endpoint; the object-storage and database settings. The host-side start script applies the profile's defaults (tracking, object tracking and the caption pass on) unless the host's own settings turn them off.
@@ -342,38 +342,38 @@ Each container is checked on its own, hermetically. The console runs Biome and t
 
 ## Architecture Decisions
 
-The decisions that still shape the profile, newest first within each theme, with their records in [`decisions.md`](decisions.md). The log keeps every decision with its alternatives; a reversed decision is removed from it, and this table changes with it.
+The decisions that still shape the profile, newest first within each theme, with their records in [`decisions.md`](archive/decisions.md). The log keeps every decision with its alternatives; a reversed decision is removed from it, and this table changes with it.
 
 | Theme | Decision | Record |
 |---|---|---|
-| Platform | Remote inference on hosted endpoints; no local NIM containers | [2026-09-25](decisions.md#2026-09-25-remote-brev-inference-no-local-gpu-nims) |
-| Platform | The agent and the optional analytics services run natively; appliances stay in containers | [2026-09-21](decisions.md#2026-09-21-native-services-on-the-vm) |
-| Platform | Every GPU-bound service is pinned to the one allotted GPU | [2026-10-19](decisions.md#2026-10-19-pin-all-vss-docker-appliances-and-native-services-to-gpu-0-only) |
-| Platform | The console and the agent bind loopback; the tunnel forwards only the agent | [2026-10-18](decisions.md#2026-10-18-console-and-agent-bind-loopback) |
-| Platform | Leaving the launcher leaves the host's backend running | [2026-11-02](decisions.md#2026-11-02-closing-startsh-leaves-the-vm-backend-running) |
-| Data | Agent database access through PostgREST | [2026-09-17](decisions.md#2026-09-17-agent-database-access-through-postgrest) |
-| Data | One database project per phase; finals from one baseline; midterm frozen | [2026-10-20](decisions.md#2026-10-20-one-supabase-project-per-phase-finals-built-from-one-baseline-midterm-frozen) |
-| Data | Report revisions are append-only JSONB snapshots with an explicit official pointer | [2026-10-23](decisions.md#2026-10-23-versioned-report-revisions-as-jsonb-snapshots) |
-| Data | The agent writes the AI revision in agent mode | [2026-10-23](decisions.md#2026-10-23-the-agent-writes-jsonb-report-revisions) |
-| Data | Uploads go straight to object storage; the stock video storage is dropped from the path | [2026-10-31](decisions.md#2026-10-31-vst-is-dropped-from-the-consoles-upload-path-uploads-go-to-r2-only) |
-| Data | Object keys are readable and deterministic, never hashes | [2026-10-28](decisions.md#2026-10-28-r2-object-names-are-readable-and-deterministic-the-original-file-name-run-n-and-edit-n-never-a-hash-or-uuid) |
-| Data | A video with no official revision is searchable through its newest revision | [2026-10-23](decisions.md#2026-10-23-a-video-with-no-official-revision-is-searchable-through-its-newest-revision) |
-| Contract | One contract for the console and the agent, with the `core-scored-v1` policy | [2026-09-27](decisions.md#2026-09-27-unified-contract-decisions-eval-console-agent), [2026-09-27](decisions.md#2026-09-27-validation-policy-core-scored-v1) |
-| Contract | Every other prompt lives in one registry; request goldens pin every producer's request | [2026-11-01](decisions.md#2026-11-01-every-model-prompt-besides-p1-and-rp1-lives-in-one-registry-contractsprompts), [2026-11-01](decisions.md#2026-11-01-request-goldens-pin-every-model-request-checked-by-each-producer) |
-| Contract | Every analysis returns its run provenance | [2026-11-01](decisions.md#2026-11-01-every-analysis-returns-its-run-provenance-and-the-console-keeps-it-in-the-runs-notes) |
-| Search | Remote embeddings and a remote-VLM detector for evidence crops | [2026-10-18](decisions.md#2026-10-18-remote-embeddings-and-remote-vlm-cropping-for-evidence-search) |
-| Search | One search function for evidence and incident scoping; the critic off by default | [2026-10-28](decisions.md#2026-10-28-incident-search-and-evidence-search-share-one-search-function-evidence-search-can-be-scoped-to-one-video-the-critic-is-off-by-default) |
-| Search | Multi-subagent routing and full real-time indexing dropped from MVP2 | [2026-10-24](decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2) |
-| Evidence | The whole frame with a box is shown, the crop is kept for search | [2026-10-31](decisions.md#2026-10-31-evidence-shows-the-whole-frame-with-a-box-not-a-crop) |
-| Evidence | Person tracking runs the stock perception stack per clip, behind a launcher switch | [2026-10-31](decisions.md#2026-10-31-person-tracking-runs-the-stock-perception-stack-from-its-own-script-behind-enable_tracking) |
-| Evidence | Instruments and assets are followed by a seeded tracker corrected by the detector | [2026-11-01](decisions.md#2026-11-01-instruments-and-assets-are-followed-by-a-seeded-opencv-tracker-corrected-by-the-detector-flag-off-by-default) |
-| Evidence | The caption pass runs before P1 and is on by default in vm mode | [2026-10-31](decisions.md#2026-10-31-chunked-captioning-before-p1-the-gateways-fixed-2-fps-and-ignored-num_frames), [2026-11-01](decisions.md#2026-11-01-the-caption-pass-is-on-by-default-in-vm-mode-ffmpeg-comes-from-a-repo-local-static-build) |
-| Evidence | The zoomed second look renames a located item from its close-up | [2026-10-31](decisions.md#2026-10-31-zoomed-second-look-renames-a-located-item-from-its-close-up) |
-| Console | A feature-module (hexagonal) layout with import boundaries enforced by a test | [2026-10-23](decisions.md#2026-10-23-incident-console-v2-uses-a-feature-module-layout-under-src), [2026-10-24](decisions.md#2026-10-24-npm-test-enforces-the-consoles-hexagonal-import-boundaries) |
-| Console | Background analysis jobs: a database queue and one in-process loop per console | [2026-10-31](decisions.md#2026-10-31-background-analysis-jobs-a-supabase-table-and-one-in-process-loop-per-console) |
-| Console | Dashboard chart requests are read by the agent's own LLM and drawn by the stock chart generator | [2026-10-31](decisions.md#2026-10-31-dashboard-chart-requests-a-model-picks-an-allowlisted-spec-our-code-fetches-the-figures-and-vss-chart_generator-draws-them), [2026-11-02](decisions.md#2026-11-02-dashboard-chart-requests-are-read-by-the-vss-agents-own-llm-not-the-local-vlm-gateway) |
-| Chat | Grounded chat answers from one report version behind a mode switch; template mode stays the default | [2026-11-02](decisions.md#2026-11-02-grounded-chat-answers-from-one-report-version-with-a-chat-model-behind-a-mode-switch-gate-m2-approved-by-the-chatbot-feature-owner) |
-| Documentation | This page follows C4 and arc42 views in NVIDIA's blueprint style and carries no deployment values | [2026-11-03](decisions.md#2026-11-03-architecture-documentation-follows-c4-and-arc42-views-in-nvidias-blueprint-style-and-carries-no-deployment-values) |
+| Platform | Remote inference on hosted endpoints; no local NIM containers | [2026-09-25](archive/decisions.md#2026-09-25-remote-brev-inference-no-local-gpu-nims) |
+| Platform | The agent and the optional analytics services run natively; appliances stay in containers | [2026-09-21](archive/decisions.md#2026-09-21-native-services-on-the-vm) |
+| Platform | Every GPU-bound service is pinned to the one allotted GPU | [2026-10-19](archive/decisions.md#2026-10-19-pin-all-vss-docker-appliances-and-native-services-to-gpu-0-only) |
+| Platform | The console and the agent bind loopback; the tunnel forwards only the agent | [2026-10-18](archive/decisions.md#2026-10-18-console-and-agent-bind-loopback) |
+| Platform | Leaving the launcher leaves the host's backend running | [2026-11-02](archive/decisions.md#2026-11-02-closing-startsh-leaves-the-vm-backend-running) |
+| Data | Agent database access through PostgREST | [2026-09-17](archive/decisions.md#2026-09-17-agent-database-access-through-postgrest) |
+| Data | One database project per phase; finals from one baseline; midterm frozen | [2026-10-20](archive/decisions.md#2026-10-20-one-supabase-project-per-phase-finals-built-from-one-baseline-midterm-frozen) |
+| Data | Report revisions are append-only JSONB snapshots with an explicit official pointer | [2026-10-23](archive/decisions.md#2026-10-23-versioned-report-revisions-as-jsonb-snapshots) |
+| Data | The agent writes the AI revision in agent mode | [2026-10-23](archive/decisions.md#2026-10-23-the-agent-writes-jsonb-report-revisions) |
+| Data | Uploads go straight to object storage; the stock video storage is dropped from the path | [2026-10-31](archive/decisions.md#2026-10-31-vst-is-dropped-from-the-consoles-upload-path-uploads-go-to-r2-only) |
+| Data | Object keys are readable and deterministic, never hashes | [2026-10-28](archive/decisions.md#2026-10-28-r2-object-names-are-readable-and-deterministic-the-original-file-name-run-n-and-edit-n-never-a-hash-or-uuid) |
+| Data | A video with no official revision is searchable through its newest revision | [2026-10-23](archive/decisions.md#2026-10-23-a-video-with-no-official-revision-is-searchable-through-its-newest-revision) |
+| Contract | One contract for the console and the agent, with the `core-scored-v1` policy | [2026-09-27](archive/decisions.md#2026-09-27-unified-contract-decisions-eval-console-agent), [2026-09-27](archive/decisions.md#2026-09-27-validation-policy-core-scored-v1) |
+| Contract | Every other prompt lives in one registry; request goldens pin every producer's request | [2026-11-01](archive/decisions.md#2026-11-01-every-model-prompt-besides-p1-and-rp1-lives-in-one-registry-contractsprompts), [2026-11-01](archive/decisions.md#2026-11-01-request-goldens-pin-every-model-request-checked-by-each-producer) |
+| Contract | Every analysis returns its run provenance | [2026-11-01](archive/decisions.md#2026-11-01-every-analysis-returns-its-run-provenance-and-the-console-keeps-it-in-the-runs-notes) |
+| Search | Remote embeddings and a remote-VLM detector for evidence crops | [2026-10-18](archive/decisions.md#2026-10-18-remote-embeddings-and-remote-vlm-cropping-for-evidence-search) |
+| Search | One search function for evidence and incident scoping; the critic off by default | [2026-10-28](archive/decisions.md#2026-10-28-incident-search-and-evidence-search-share-one-search-function-evidence-search-can-be-scoped-to-one-video-the-critic-is-off-by-default) |
+| Search | Multi-subagent routing and full real-time indexing dropped from MVP2 | [2026-10-24](archive/decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2) |
+| Evidence | The whole frame with a box is shown, the crop is kept for search | [2026-10-31](archive/decisions.md#2026-10-31-evidence-shows-the-whole-frame-with-a-box-not-a-crop) |
+| Evidence | Person tracking runs the stock perception stack per clip, behind a launcher switch | [2026-10-31](archive/decisions.md#2026-10-31-person-tracking-runs-the-stock-perception-stack-from-its-own-script-behind-enable_tracking) |
+| Evidence | Instruments and assets are followed by a seeded tracker corrected by the detector | [2026-11-01](archive/decisions.md#2026-11-01-instruments-and-assets-are-followed-by-a-seeded-opencv-tracker-corrected-by-the-detector-flag-off-by-default) |
+| Evidence | The caption pass runs before P1 and is on by default in vm mode | [2026-10-31](archive/decisions.md#2026-10-31-chunked-captioning-before-p1-the-gateways-fixed-2-fps-and-ignored-num_frames), [2026-11-01](archive/decisions.md#2026-11-01-the-caption-pass-is-on-by-default-in-vm-mode-ffmpeg-comes-from-a-repo-local-static-build) |
+| Evidence | The zoomed second look renames a located item from its close-up | [2026-10-31](archive/decisions.md#2026-10-31-zoomed-second-look-renames-a-located-item-from-its-close-up) |
+| Console | A feature-module (hexagonal) layout with import boundaries enforced by a test | [2026-10-23](archive/decisions.md#2026-10-23-incident-console-v2-uses-a-feature-module-layout-under-src), [2026-10-24](archive/decisions.md#2026-10-24-npm-test-enforces-the-consoles-hexagonal-import-boundaries) |
+| Console | Background analysis jobs: a database queue and one in-process loop per console | [2026-10-31](archive/decisions.md#2026-10-31-background-analysis-jobs-a-supabase-table-and-one-in-process-loop-per-console) |
+| Console | Dashboard chart requests are read by the agent's own LLM and drawn by the stock chart generator | [2026-10-31](archive/decisions.md#2026-10-31-dashboard-chart-requests-a-model-picks-an-allowlisted-spec-our-code-fetches-the-figures-and-vss-chart_generator-draws-them), [2026-11-02](archive/decisions.md#2026-11-02-dashboard-chart-requests-are-read-by-the-vss-agents-own-llm-not-the-local-vlm-gateway) |
+| Chat | Grounded chat answers from one report version behind a mode switch; template mode stays the default | [2026-11-02](archive/decisions.md#2026-11-02-grounded-chat-answers-from-one-report-version-with-a-chat-model-behind-a-mode-switch-gate-m2-approved-by-the-chatbot-feature-owner) |
+| Documentation | This page follows C4 and arc42 views in NVIDIA's blueprint style and carries no deployment values | [2026-11-03](archive/decisions.md#2026-11-03-architecture-documentation-follows-c4-and-arc42-views-in-nvidias-blueprint-style-and-carries-no-deployment-values) |
 
 ## Quality Requirements
 
@@ -397,7 +397,7 @@ Scenarios in the arc42 short form: a source and stimulus, the response, and how 
 
 ## Risks and Technical Debt
 
-Open items are tracked in [Status](status.md#4-known-issues) with stable numbers; the architectural ones:
+Open items are tracked in [Status](archive/status.md#4-known-issues) with stable numbers; the architectural ones:
 
 - **The analysis queue is shared** by every console pointed at the same database, so a job may run on another person's console and code version; the opt-out is a per-console switch and jobs carry no owner yet.
 - **The contract still carries the timeline** the console no longer shows; removing it means a contract version bump across the agent and the console.
@@ -436,8 +436,8 @@ Open items are tracked in [Status](status.md#4-known-issues) with stable numbers
 
 ## Conventions
 
-- **Structure:** arc42's section order; C4's context, container, component and deployment views; a representative runtime view; decisions recorded in [`decisions.md`](decisions.md) and listed here.
+- **Structure:** arc42's section order; C4's context, container, component and deployment views; a representative runtime view; decisions recorded in [`decisions.md`](archive/decisions.md) and listed here.
 - **Diagrams:** draw.io diagrams stored in `figures/` as `.drawio.svg` files, which display as images and open for editing in draw.io; each has a numbered caption with its type and scope, and a key when a shape or style means something; every arrow is labelled in its direction.
 - **Naming:** full names with the abbreviation in parentheses on first use; NVIDIA's names for stock components (VSS Agent, Video IO & Storage, developer profile, microservice).
 - **Scope:** explanation only. Page behaviour and routes are in [`console-reference.md`](console-reference.md), contracts in [`vm-api-contracts.md`](vm-api-contracts.md), schema in [`data.md`](data.md), procedures in the skills and the runbook. No ports, hosts, addresses, user or machine names, GPU indices, paths, bucket names, private URLs, secrets or environment-file references appear here; when one is needed, link to where it lives.
-- **Maintenance:** update this page in the same change as any topology, component or sequence change ([docs rule](../AGENTS.md#docs-rule)); record a new or reversed decision in [`decisions.md`](decisions.md) and adjust the decisions table.
+- **Maintenance:** update this page in the same change as any topology, component or sequence change ([docs rule](../AGENTS.md#docs-rule)); record a new or reversed decision in [`decisions.md`](archive/decisions.md) and adjust the decisions table.

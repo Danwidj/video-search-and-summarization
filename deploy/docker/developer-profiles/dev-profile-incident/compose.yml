@@ -15,10 +15,9 @@
 
 # Developer profile: incident search & reporting capstone.
 #
-# See .docs/action-plan.md for the full plan. This profile reuses NVIDIA's
-# bp_developer_search compose tag (BP_PROFILE in .env is left unchanged) so the
-# resulting compose-profile set is a superset of everything the base + search
-# pipelines need. Unlike dev-profile-search we do not pull in a
+# This profile reuses NVIDIA's bp_developer_search compose tag (BP_PROFILE in
+# .env is left unchanged) so the resulting compose-profile set is a superset of
+# everything the base + search pipelines need. Unlike dev-profile-search we do not pull in a
 # kibana-init-container block - this profile does not use Kibana.
 
 # The profile adds no services of its own: the vlm-gateway runs natively from

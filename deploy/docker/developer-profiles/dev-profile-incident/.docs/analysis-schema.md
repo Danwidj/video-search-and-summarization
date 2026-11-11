@@ -3,7 +3,7 @@
 This document describes how incident analysis output is defined, validated, stored and shown.
 
 > [!NOTE]
-> Since `incident-contract-v3`, **eval, `incident-console-v2` (gateway and agent mode) and `vss-agent` share one contract**: the same prompt, schema and P1 settings in [`../contracts/`](../contracts/README.md). Decisions: [`decisions.md`](decisions.md).
+> Since `incident-contract-v3`, **eval, `incident-console-v2` (gateway and agent mode) and `vss-agent` share one contract**: the same prompt, schema and P1 settings in [`../contracts/`](../contracts/README.md). Decisions: [`decisions.md`](archive/decisions.md).
 
 ---
 
@@ -84,7 +84,7 @@ Every attempt that reaches the model has one outcome:
 
 Failed attempts never create a revision or evidence rows, and never appear as reports.
 
-**Timeline removal (in progress):** the report timeline is being removed ([decision](decisions.md#2026-10-28-the-report-timeline-is-being-removed)); until it lands, the contract is unchanged; the console no longer shows the timeline (below).
+**Timeline removal (in progress):** the report timeline is being removed ([decision](archive/decisions.md#2026-10-28-the-report-timeline-is-being-removed)); until it lands, the contract is unchanged; the console no longer shows the timeline (below).
 
 **Unscored output is not displayed:** the console shows no timeline, no model-reported uncertainties and no list of unscored-field issues (run history and run details). The issues stay recorded in `model_runs.notes` under `validation.firstPass`.
 

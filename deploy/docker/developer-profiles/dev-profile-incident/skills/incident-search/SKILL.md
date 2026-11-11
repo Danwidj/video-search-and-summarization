@@ -14,7 +14,6 @@ Use this skill for MVP2 natural-language search across the incident archive, gro
 Canonical facts:
 
 - Architecture, storage and contracts: [`.docs/mvp2/README.md`](../../.docs/mvp2/README.md)
-- Current corpus and live status: [`.docs/status.md`](../../.docs/status.md)
 - Search request/response: [`search-contract-v1`](../../contracts/search-contract-v1/README.md)
 - Chat request/response: [`chat-contract-v1`](../../contracts/chat-contract-v1/README.md); grounded mode (`INCIDENT_CHAT_MODE=grounded`, off by default) answers with [`chat-contract-v2`](../../contracts/chat-contract-v2/README.md)
 - Crop implementation and R2 layout: [`.docs/data.md`](../../.docs/data.md) and [`.docs/incident-profile-operations.md`](../../.docs/incident-profile-operations.md)

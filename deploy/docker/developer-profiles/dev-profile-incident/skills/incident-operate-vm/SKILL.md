@@ -11,7 +11,7 @@ metadata:
 
 The VM is a **shared** team workstation. Every action here affects teammates.
 
-Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-profile-operations.md) (topology, runbook, verification) and [`.docs/status.md` §6](../../.docs/status.md#6-live-vm-configuration) (live env snapshot).
+Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-profile-operations.md) (topology, runbook, verification).
 
 ## Never
 
@@ -84,7 +84,7 @@ Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_ur
 The file is untracked and lives on the VM only; the VM has no `.env.local`, and `.githooks/setup-worktree.sh` does not recreate one there. Create it with `cp .env .env.remote` in the profile folder and fill in section 1; the scripts stop with that command when it is missing and never fall back to `.env`. Compose calls pass `compose.unused.env` before it. Rules (why for each: [operations §5](../../.docs/incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote)):
 
 - `VSS_APPS_DIR` and `VSS_DATA_DIR` are absolute paths.
-- `HOST_IP` set to the VM's internal LAN IP (it changes with DHCP and `vm-ensure-docker.sh` rewrites stale entries, and the native scripts supply a blank one for the run; the current value is in [status §6](../../.docs/status.md)) and `EXTERNAL_IP=localhost`. Reach the VM by its Tailscale name.
+- `HOST_IP` set to the VM's internal LAN IP (it changes with DHCP and `vm-ensure-docker.sh` rewrites stale entries, and the native scripts supply a blank one for the run) and `EXTERNAL_IP=localhost`. Reach the VM by its Tailscale name.
 - `VSS_AGENT_CONFIG_FILE` points at the **dev-profile-base** config. The search config lacks `report_agent`.
 - `REPORT_REFERENCE_BASE_DIR` is set (for example `/tmp`).
 - `LLM_MODEL_TYPE=openai` and `VLM_MODEL_TYPE=openai`, with bare Brev URLs.
@@ -128,4 +128,4 @@ One `./start.sh --mode vm` brings up tracking and the caption pass. Each is on b
 
 ## After changing anything
 
-If you changed a port, service, env rule or script, update [`.docs/incident-profile-operations.md`](../../.docs/incident-profile-operations.md). If the live config changed, also update the [`.docs/status.md`](../../.docs/status.md) snapshot, in the same PR.
+If you changed a port, service, env rule or script, update [`.docs/incident-profile-operations.md`](../../.docs/incident-profile-operations.md) in the same PR.

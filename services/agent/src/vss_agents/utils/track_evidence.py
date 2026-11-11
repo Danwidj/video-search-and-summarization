@@ -22,7 +22,7 @@ box. :func:`first_seen_sample` then picks the sample to re-cut the evidence imag
 binary, a stack that is down or a stream that never produces a frame returns a ``skipped`` reason and never raises
 to the analysis.
 
-Time base (measured against the video, see ``.docs/decisions.md``): DeepStream numbers frames from the first frame it
+Time base (measured against the video, see ``.docs/archive/decisions.md``): DeepStream numbers frames from the first frame it
 decodes (id 2 on every recorded clip) and loses nothing at the start, so frame ``n`` shows video second ``n / fps``.
 DeepStream publishes only frames with objects, so the last id can fall short of the clip's frame count; that is the
 tail not yet read, not a start loss. At the end of the file DeepStream reconnects and replays the clip with the
