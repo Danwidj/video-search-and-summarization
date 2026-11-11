@@ -12,8 +12,7 @@ agents:
 
 # Incident profile: deployment
 
-<!-- TODO(video): replace this block with the demo video -->
-> **Demo video:** the demo video will be added here.
+<img src=".docs/figures/demo.gif" width="800" alt="Walkthrough of the incident console: the incident library, one incident's report with its video and tracked boxes, its evidence images, the model's first version of the report, and back to the library" />
 
 ## 1. What you need
 
