@@ -1,6 +1,7 @@
 # Incident Search and Reporting
 
-<!-- TODO(video): pitch video goes here -->
+<!-- TODO(video): replace this block with the pitch video -->
+> **Demo video:** the pitch video will be added here.
 
 A video-driven incident search and reporting system: upload a clip, get a structured incident report, review it, and search the evidence in plain language.
 
@@ -16,7 +17,6 @@ Everything this project adds lives in the incident profile:
 
 - **Deploy and run it:** [incident profile README](deploy/docker/developer-profiles/dev-profile-incident/README.md)
 - **How it is built:** [architecture](deploy/docker/developer-profiles/dev-profile-incident/.docs/architecture.md)
-- **Goals and scope:** [action plan](deploy/docker/developer-profiles/dev-profile-incident/.docs/action-plan.md)
 
 The rest of the repository is the upstream blueprint, which the project builds on.
 
