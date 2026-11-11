@@ -11,6 +11,9 @@ agents:
 
 # Incident profile: deployment
 
+<!-- TODO(video): replace this block with the demo video -->
+> **Demo video:** the demo video will be added here.
+
 How to deploy and run the incident search and reporting system. The backend runs on a GPU VM (the workstation); the web console runs on your laptop and reaches the backend through an SSH tunnel. Coding agents start at [AGENTS.md](AGENTS.md).
 
 ## 1. What you need
