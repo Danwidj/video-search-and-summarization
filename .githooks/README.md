@@ -52,8 +52,8 @@ the env is current.
 
 No `uv` venv is prepared: `start.sh` runs `uv sync` for `mock-backend` and
 `vlm-gateway` and `npm install` for `incident-console-v2` on every launch.
-(A former fourth step synced the v1 console's venv; v1 is archived under
-`dev-profile-incident/archived/incident-console/`.) Every step warns and
+(A former fourth step synced the v1 console's venv; the v1 console has been
+removed.) Every step warns and
 continues on failure - a broken env never blocks a git operation.
 
 The git-lfs invocations are preserved from the original VM hook; on

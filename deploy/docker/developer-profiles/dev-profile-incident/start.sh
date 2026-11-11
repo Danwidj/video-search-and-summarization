@@ -25,8 +25,7 @@
 # --search flag (search is always on).
 #
 # Both modes launch incident-console-v2 (Next.js, port 3200), the only active
-# console. The Streamlit v1 console is archived under archived/incident-console/
-# and is never started.
+# console. The Streamlit v1 console was removed (git history keeps it).
 #
 # Architecture (Native vs Docker Split):
 #   - DOCKER SERVICES: Phoenix (the trace viewer used for eval), plus
