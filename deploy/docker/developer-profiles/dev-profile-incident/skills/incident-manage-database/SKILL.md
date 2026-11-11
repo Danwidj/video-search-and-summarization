@@ -12,7 +12,7 @@ metadata:
 There is **one Supabase project per phase**:
 
 - **Finals** is the live team database. There is no staging copy, so treat every write as production.
-- **Midterm** (`rfevukimyftzbxlehwel`) is a frozen, read-only record. **Never write to it, push to it or apply anything to it**, apart from `supabase/midterm/freeze_midterm.sql` (once, at the cutover) or `unfreeze_midterm.sql` (rollback only).
+- **Midterm** (`rfevukimyftzbxlehwel`) is a frozen, read-only record. **Never write to it, push to it or apply anything to it**, apart from `archived/supabase/midterm/freeze_midterm.sql` (once, at the cutover) or `unfreeze_midterm.sql` (rollback only).
 
 Canonical facts: [`.docs/data.md`](../../.docs/data.md) (table specs, report revisions, RPCs, cascades, security, R2 layout). Schema files and harness: [`supabase/README.md`](../../supabase/README.md). Which component points at which project: [`.docs/architecture.md`](../../.docs/architecture.md#two-supabase-projects-one-per-phase).
 
@@ -37,10 +37,10 @@ Natural-language search queries evidence items through the service-role-only `/r
 
 ## Rules
 
-- **Migrations are the schema authority.** Finals is built by `supabase/migrations/20261020000000_finals_baseline.sql`; every change is a new timestamped file `supabase/migrations/YYYYMMDDHHMMSS_<what>.sql` after it. Never edit the baseline once finals has it, never add to `supabase/midterm/`, and never hand-edit the live DB without a matching migration file.
+- **Migrations are the schema authority.** Finals is built by `supabase/migrations/20261020000000_finals_baseline.sql`; every change is a new timestamped file `supabase/migrations/YYYYMMDDHHMMSS_<what>.sql` after it. Never edit the baseline once finals has it, never add to `archived/supabase/midterm/`, and never hand-edit the live DB without a matching migration file.
 - **Test before applying:** extend and run the SQL harness (below) in the same PR. It applies every file in `supabase/migrations/` in order.
 - **Dry-run first, then ask** before applying for real. Applying is live and shared.
-- **Videos carry `content_sha256`** (unique where set); `supabase/r2/backfill_content_hash.py` (dry run unless `--apply`, stops on two videos with the same content, deletes nothing) fills it from R2 for rows without one.
+- **Videos carry `content_sha256`** (unique where set); `archived/supabase/r2/backfill_content_hash.py` (dry run unless `--apply`, stops on two videos with the same content, deletes nothing) fills it from R2 for rows without one.
 - **After applying, run `supabase/tests/security_check.sql`** against finals: 0 rows expected.
 - **Security on every new object:** RLS on every new table; `SET search_path = ''` and no `SECURITY DEFINER` on every function; nothing for `PUBLIC`/`anon`/`authenticated`. The harness and the security check fail otherwise. Default privileges only cover objects created by `postgres`.
 - **Cascades are real.** Deleting a `videos` row cascades through its revisions, their `evidence_crops` and the `query_results` that name those revisions. `model_runs` and `report_revisions` are linked by a required foreign key, so a revision needs its run row first. The append-only trigger permits only the video cascade, so delete a video rather than a revision.
@@ -56,6 +56,10 @@ cd deploy/docker/developer-profiles/dev-profile-incident/supabase/tests
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py   # finals schema
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py     # midterm freeze files
 ```
+
+### Build a new database from empty
+
+`./.scripts/setup-database.sh --env-file <file>` (file holds `INCIDENT_DB_DSN` of an empty project; tested by `.scripts/test-setup-database.sh`). It applies `supabase/migrations/` in order, records the versions, runs `security_check.sql` and refuses a target that already has the schema. Never point it at finals or midterm. It is not `db push`: the shared `20261028090000` version stops the CLI on an empty database.
 
 ### Apply a migration to finals
 
@@ -110,7 +114,7 @@ Finals has no legacy JWT keys: the server key is `sb_secret_...` and the public 
 | `eval/db_postgrest.py` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
 | Archived `archived/incident-console/db_postgrest.py` | `apikey` + always `Authorization: Bearer` | No (archived; never point it at finals) |
 | `supabase/tests/probe_api.sh` | `apikey`; Bearer only for `eyJ...` keys | Yes |
-| `supabase/copy/`, `parity_check.py`, `supabase` CLI | Direct DSN, no key | Not affected |
+| `archived/supabase/copy/`, `parity_check.py`, `supabase` CLI | Direct DSN, no key | Not affected |
 
 Follow-ups (not in this change): pin a minimum `supabase` version in `services/agent/pyproject.toml` and lock it in `uv.lock`.
 
@@ -128,7 +132,7 @@ Follow-ups (not in this change): pin a minimum `supabase` version in `services/a
 
 ### Old R2 names
 
-Objects written before 2026-10-28 were renamed once by `supabase/r2/migrate_r2_names.py`; see the script's module docstring and [`supabase/README.md`](../../supabase/README.md#layout).
+Objects written before 2026-10-28 were renamed once by `archived/supabase/r2/migrate_r2_names.py`; see the script's module docstring and [`supabase/README.md`](../../supabase/README.md#layout).
 
 ## After changing anything
 

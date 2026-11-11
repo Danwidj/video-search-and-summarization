@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 <!--
 agents:
   read-when: Deploying or starting the incident profile; adding, moving or renaming a doc or skill.
-  owns: the deployment steps (prerequisites, copy and fill in .env, symlinks, start, check, stop) and the documentation index.
+  owns: the deployment steps (prerequisites, copy and fill in .env, symlinks, database setup, start, check, stop) and the documentation index.
   rules: Update the index below in the same change as any doc or skill you add, move or rename. Setting names only, never values.
 -->
 
@@ -60,6 +60,8 @@ The scripts stop with this command if the file is missing; there is no fallback 
 | `VLM_GATEWAY_URL`, `VLM_GATEWAY_API_KEY`, `VLM_GATEWAY_BASE_URL`, `VLM_MODEL` | laptop | Local model gateway. Mock mode only |
 
 Leave `VSS_AGENT_HOST` on loopback. More rules for the VM file: [operations runbook](.docs/incident-profile-operations.md).
+
+**Database (new, empty Supabase project only):** once `INCIDENT_DB_DSN` is filled in `.env.local`, run `./.scripts/setup-database.sh --env-file .env.local` on the laptop. It creates every table and function from [supabase/migrations](supabase/migrations/) and stops if the database already has the schema ([details](supabase/README.md#build-a-new-database)).
 
 ## 3. Start
 
@@ -116,11 +118,11 @@ Never use NVIDIA's `dev-profile.sh` for this profile: its `down` deletes the VM'
 | [vlm-gateway](vlm-gateway/README.md) | Key-holding proxy for the mock flow |
 | [mock-backend](mock-backend/README.md) | Two zero-GPU mocks that mimic the backend |
 | [contracts](contracts/README.md) | The incident contract: prompt, schema, goldens |
-| [supabase](supabase/README.md) | Database schema and SQL harness; the [midterm record](supabase/midterm/README.md) is frozen |
+| [supabase](supabase/README.md) | Database schema (migrations) and SQL harness |
 | [eval](eval/README.md) | The P1/RP1 benchmark |
 | [skills](skills/README.md) | Agent skills for operating the profile |
 | [.scripts](.scripts/README.md), [.dotfiles](.dotfiles/README.md) | Lifecycle scripts; optional VM shell setup |
-| [archived](archived/README.md) | Retired code, read-only |
+| [archived](archived/README.md) | Retired code and the frozen midterm database record, read-only |
 
 ## Read more
 

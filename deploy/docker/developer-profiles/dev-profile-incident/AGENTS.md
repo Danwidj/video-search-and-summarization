@@ -18,7 +18,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Standalone search mock :7778 (stock search-profile routes plus incident search from the :7777 finals snapshot) | Active |
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
 | `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v4`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([schema](.docs/analysis-schema.md)) |
-| `supabase/` | SQL, Python | Finals schema authority (`migrations/`: one baseline, then later finals migrations), SQL harness (`tests/`), midterm-to-finals copy (`copy/`) | Active. `supabase/midterm/` is the frozen midterm record: never push |
+| `supabase/` | SQL, Python | Finals schema authority (`migrations/`: one baseline, then later finals migrations), SQL harness (`tests/`) | Active. The frozen midterm record, copy and R2 scripts are in `archived/supabase/`: never push |
 | `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
 | `archived/` | - | Retired v1 console, kept as read-only history | **Archived** (see Boundaries) |
 | `services/agent/` (outside this dir) | Python, NAT | `POST /api/v1/incidents/{id}/analyze`, `incident_report_gen` (writes `report_revisions`), `POST /api/v1/incidents/evidence-embeddings`, search over `evidence_crops`, `utils/incident_db.py` | Follow [`services/agent/AGENTS.md`](../../../../services/agent/AGENTS.md) |
@@ -71,7 +71,7 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 - **Ask first:** applying a migration to the live (finals) Supabase DB; restarting or stopping shared services on the VM; editing `generated.env.remote`; pruning native-service images; adding dependencies.
 - **Never:**
   - Commit or print `.env.local`, keys or DSNs.
-  - Write to, push to or apply anything to the frozen midterm Supabase project (`rfevukimyftzbxlehwel`), or edit `supabase/midterm/`; the only exceptions are its freeze and unfreeze files at the cutover.
+  - Write to, push to or apply anything to the frozen midterm Supabase project (`rfevukimyftzbxlehwel`), or edit `archived/supabase/midterm/`; the only exceptions are its freeze and unfreeze files at the cutover.
   - Run `dev-profile.sh down` or `up` for this profile (it wipes the VM model cache and does not know the profile).
   - Start the Docker `vss-agent` while the native one runs.
   - Change, run or import from anything under `archived/`.

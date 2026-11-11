@@ -7,7 +7,7 @@ This document defines the relational database schema (Supabase PostgreSQL), the 
 
 ## 1. Supabase PostgreSQL Schema
 
-There is one Supabase project per project phase ([decision](decisions.md#2026-10-20-one-supabase-project-per-phase-finals-built-from-one-baseline-midterm-frozen)): **finals** is the live database and **midterm** (`rfevukimyftzbxlehwel`) is a frozen, read-only record. The finals schema is the baseline [`supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql) plus the later migrations in the same folder. Each migration and what it adds is listed in [Supabase README: layout](../supabase/README.md#layout); which are applied to finals is in [Status: database](status.md#3-database-status); how they are applied is in the `incident-manage-database` skill. The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres. The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md).
+There is one Supabase project per project phase ([decision](decisions.md#2026-10-20-one-supabase-project-per-phase-finals-built-from-one-baseline-midterm-frozen)): **finals** is the live database and **midterm** (`rfevukimyftzbxlehwel`) is a frozen, read-only record. The finals schema is the baseline [`supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql) plus the later migrations in the same folder. Each migration and what it adds is listed in [Supabase README: layout](../supabase/README.md#layout); which are applied to finals is in [Status: database](status.md#3-database-status); how they are applied is in the `incident-manage-database` skill. The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres. The midterm history is archived, never to be pushed, in [`archived/supabase/midterm/`](../archived/supabase/midterm/README.md).
 
 Evidence entries and run notes written before the privacy blur was removed ([decision](decisions.md#2026-11-02-the-privacy-blur-is-removed-entirely)) may still carry `blur_regions`, `heads`, `privacy` or `blurFaces`; nothing reads them.
 
@@ -50,7 +50,7 @@ Primary registry of ingested video assets.
 | `duration` | `INTEGER` | NULLABLE | Video duration in integer seconds |
 | `source` | `VARCHAR(512)` | NULLABLE | Ingestion source or camera stream name. NULL for console uploads since 2026-10-31 (uploads no longer go through VST); older upload rows keep the VST sensor id they were given. |
 | `official_revision_id` | `BIGINT` | NULLABLE; composite FK `(id, official_revision_id)` → `report_revisions(video_id, id)` | The video's official report revision. NULL = awaiting selection. Set/cleared only by `set_official_revision`. The old `selected_model_run_id`, `selected_by` and `selected_at` columns are gone. |
-| `content_sha256` | `CHAR(64)` | NULLABLE; CHECK lower-case hex; UNIQUE where not NULL (`videos_content_sha256_key`) | SHA-256 of the file as uploaded, before conversion; a repeat upload is refused before anything is stored. Older videos were backfilled from their stored R2 object (`supabase/r2/backfill_content_hash.py`), so for a converted one it is the hash of the converted bytes. NULL for a seeded clip or a video not yet backfilled. |
+| `content_sha256` | `CHAR(64)` | NULLABLE; CHECK lower-case hex; UNIQUE where not NULL (`videos_content_sha256_key`) | SHA-256 of the file as uploaded, before conversion; a repeat upload is refused before anything is stored. Older videos were backfilled from their stored R2 object (`archived/supabase/r2/backfill_content_hash.py`), so for a converted one it is the hash of the converted bytes. NULL for a seeded clip or a video not yet backfilled. |
 | `official_since` | `TIMESTAMP` | NULLABLE | Naive UTC time the current official revision was marked; NULL when there is none. Set when the pointer moves to a different revision, kept when the same one is marked again, cleared with the pointer. Rows marked before the column existed were backfilled with the official revision's `created_at` (the real time was never recorded). |
 
 #### `queries`
@@ -459,7 +459,7 @@ Database access is split across two client implementations according to operatio
 - **Role bypass:** Application services (`incident-console-v2`, `vss-agent`, `mock-backend`) authenticate via HTTPS PostgREST using `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (`service_role`); laptop tooling (the copy and parity scripts) connects over the Postgres wire protocol using `INCIDENT_DB_DSN` (`postgres`). Both roles hold `BYPASSRLS`. On Supabase `postgres` is not a superuser; it skips RLS through `BYPASSRLS`, not superuser status. `FORCE ROW LEVEL SECURITY` is not applied: it only subjects table owners (here `postgres`) to RLS, and `BYPASSRLS` overrides it.
 - **Signups:** create the finals project with email signups turned off; nobody uses Supabase Auth, and an open signup would let anyone with the public key mint an `authenticated` user (who could still reach nothing).
 
-**Midterm** had RLS on only `evidence_crops` and `query_results` and gave `anon`/`authenticated` full access to the other tables. `supabase/midterm/freeze_midterm.sql` closes that at the cutover and makes midterm read-only ([`../supabase/midterm/README.md`](../supabase/midterm/README.md)).
+**Midterm** had RLS on only `evidence_crops` and `query_results` and gave `anon`/`authenticated` full access to the other tables. `archived/supabase/midterm/freeze_midterm.sql` closes that at the cutover and makes midterm read-only ([`../archived/supabase/midterm/README.md`](../archived/supabase/midterm/README.md)).
 
 ---
 
@@ -534,7 +534,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
    `services/agent/src/vss_agents/utils/crop_evidence.py` (`batch_id` is `run-<N>`, allocated by
    `next_run_batch_id`); reviewer replacements from `uploadedEvidenceKey` in
    `incident-console-v2/src/modules/reports/domain/revision.ts` (`edit-<N>`).
-   Objects written before 2026-10-28 were renamed by `supabase/r2/migrate_r2_names.py` (copy, verify, update
+   Objects written before 2026-10-28 were renamed by `archived/supabase/r2/migrate_r2_names.py` (copy, verify, update
    the rows; the live rename has been run on finals and the old copies and orphaned objects were deleted by hand afterwards). `model_runs.notes` keeps the old key as history.
 3. **Durability Verification:**
    `verifyR2Video` performs `HeadObject` after a direct upload (requiring the exact expected nonzero byte length)

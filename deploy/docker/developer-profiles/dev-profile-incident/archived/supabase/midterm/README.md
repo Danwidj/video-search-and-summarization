@@ -1,15 +1,15 @@
 # Midterm database: frozen record — never push
 
 This folder is the record of the **midterm** Supabase project (`rfevukimyftzbxlehwel`). The finals
-project is built from scratch by [`../migrations/`](../migrations/) and filled by
-[`../copy/`](../copy/) (see [`../README.md`](../README.md)). Nothing here is ever applied to finals.
+project is built from scratch by [`supabase/migrations/`](../../../supabase/migrations/) and filled by
+[`../copy/`](../copy/) (see [`supabase/README.md`](../../../supabase/README.md)). Nothing here is ever applied to finals.
 
 - **Not a CLI workdir.** `supabase db push` only reads `<workdir>/supabase/migrations/`, so these
   files can never be pushed by accident. Pushing the finals folder at midterm fails too: midterm's
-  history lists versions that no longer exist in `../migrations/` ("remote migration versions not
+  history lists versions that no longer exist in `supabase/migrations/` ("remote migration versions not
   found").
 - **Unchanged.** The 14 files in `migrations/` were moved here with `git mv` and are byte for byte
-  what midterm was built from. Do not edit them; a finals change is a new file in `../migrations/`.
+  what midterm was built from. Do not edit them; a finals change is a new file in `supabase/migrations/`.
 
 ## What is in here
 
@@ -22,7 +22,7 @@ project is built from scratch by [`../migrations/`](../migrations/) and filled b
 
 `midterm_base_tables.sql` plus the applied migrations below rebuilds midterm exactly (all 22
 tables and all 14 live function bodies, compared with the live catalog on 2026-10-20).
-[`../tests/test_freeze.py`](../tests/test_freeze.py) builds that replica locally and proves the
+[`supabase/tests/test_freeze.py`](../../../supabase/tests/test_freeze.py) builds that replica locally and proves the
 freeze and unfreeze files:
 
 ```bash
@@ -53,5 +53,5 @@ reason finals starts from a clean baseline.
 
 Security on midterm before the freeze: RLS on only `evidence_crops` and `query_results`;
 `anon`/`authenticated` held every privilege on the other 20 tables; `insert_incident` was
-executable by `PUBLIC`. Background: [`../../.docs/decisions.md`](../../.docs/decisions.md)
+executable by `PUBLIC`. Background: [`../../../.docs/decisions.md`](../../../.docs/decisions.md)
 ("One Supabase project per phase").
