@@ -68,7 +68,7 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 ## Boundaries
 
 - **Always:** run the component's checks; add the neighbouring SPDX header; update the affected `.docs/` file and skill in the same PR ([Docs rule](#docs-rule)).
-- **Ask first:** applying a migration to the live (finals) Supabase DB; restarting or stopping shared services on the VM; editing `generated.env.remote`; pruning native-service images; adding dependencies.
+- **Ask first:** applying a migration to the live (finals) Supabase DB; restarting or stopping shared services on the VM; editing `.env.remote`; pruning native-service images; adding dependencies.
 - **Never:**
   - Commit or print `.env.local`, keys or DSNs.
   - Commit screenshots: they are evidence for the PR description only.

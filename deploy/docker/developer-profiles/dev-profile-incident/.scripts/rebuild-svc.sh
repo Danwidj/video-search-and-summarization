@@ -16,6 +16,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
+# shellcheck source=env-file.sh
+source "${SCRIPT_DIR}/env-file.sh"
 
 if [ -z "${1:-}" ]; then
   echo "usage: rebuild-svc.sh <service> [more services...]" >&2
@@ -47,15 +49,14 @@ if [ "${#docker_svcs[@]}" -gt 0 ]; then
   echo "=== Rebuilding Docker service(s): ${docker_svcs[*]} ==="
   compose_dir="${REPO_ROOT}/deploy/docker"
   profile_dir="${compose_dir}/developer-profiles/dev-profile-incident"
-  if [ -f "${profile_dir}/generated.env.remote" ]; then
-    generated_env="${profile_dir}/generated.env.remote"
-  elif [ -f "${profile_dir}/generated.env" ]; then
-    generated_env="${profile_dir}/generated.env"
-  else
+  env_file="$(vm_env_file "${profile_dir}")"
+  if [ -z "${env_file}" ]; then
     echo "rebuild-svc.sh: no env file found. Create it on the VM from the template and fill in section 1:" >&2
-    echo "  cp ${profile_dir}/.env ${profile_dir}/generated.env.remote" >&2
+    echo "  cp ${profile_dir}/.env ${profile_dir}/.env.remote" >&2
     exit 1
   fi
+  # A blank VSS_APPS_DIR or VSS_DATA_DIR in the file gets its default (a filled-in value wins).
+  vm_env_defaults "${env_file}" "${profile_dir}"
 
-  (cd "${compose_dir}" && docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file "${profile_dir}/compose.unused.env" --env-file "${generated_env}" -p mdx up -d --yes --build --force-recreate "${docker_svcs[@]}")
+  (cd "${compose_dir}" && docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file "${profile_dir}/compose.unused.env" --env-file "${env_file}" -p mdx up -d --yes --build --force-recreate "${docker_svcs[@]}")
 fi

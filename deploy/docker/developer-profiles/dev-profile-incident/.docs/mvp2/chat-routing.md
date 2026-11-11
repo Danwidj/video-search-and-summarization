@@ -173,7 +173,7 @@ Frozen questions replayed through the code with no model call: **no route change
 1. **Re-run the frozen questions on the final prompt** (about 72,000 tokens), and run the judged checks or a human review.
 2. **Plan for the shared key:** its limit of 4 parallel requests was hit during this work. A rate limit now gets the report's own answer or a request to try again.
 3. **Video pilot (paid, needs approval):** see below.
-4. **Turn on:** set `INCIDENT_CHAT_MODE=routed` in `generated.env.remote` (ask first) and restart `vss-agent`. It needs a chat endpoint (`INCIDENT_CHAT_BASE_URL`, else `LLM_BASE_URL`). Video checks need `INCIDENT_VIDEO_CHECK_ENABLED=1` too.
+4. **Turn on:** set `INCIDENT_CHAT_MODE=routed` in `.env.remote` (ask first) and restart `vss-agent`. It needs a chat endpoint (`INCIDENT_CHAT_BASE_URL`, else `LLM_BASE_URL`). Video checks need `INCIDENT_VIDEO_CHECK_ENABLED=1` too.
 5. **Roll back:** unset the settings and restart. Template mode needs no console change.
 
 ## Video checks: what remains

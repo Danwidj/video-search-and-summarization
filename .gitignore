@@ -23,6 +23,7 @@ deploy/docker/rag-secret.override.yml
 # rendering). Runtime state only, never source.
 .run/
 .tools/
+.data/
 .tmp/
 
 *.log

@@ -9,10 +9,11 @@
 # Takes the VM from "whatever state" to "these Docker appliances are running",
 # failing with a specific message (never hanging) at each step:
 #   1. repo checkout present (clones <repo-url> if it is missing)
-#   2. generated.env.remote present (secrets: cannot be created here), and its
-#      HOST_IP equal to the VM's current LAN address (backed up, then fixed: a
-#      stale HOST_IP makes Kafka advertise a dead address and the broker health
-#      check hang)
+#   2. .env.remote (else the old name generated.env.remote) present (secrets: cannot
+#      be created here), and its HOST_IP equal to the VM's current LAN address
+#      (backed up, then rewritten when stale, blank or missing: a stale HOST_IP makes
+#      Kafka advertise a dead address and the broker health check hang). A blank
+#      VSS_APPS_DIR or VSS_DATA_DIR is supplied for the run (the file is not changed)
 #   3. docker usable
 #   4. images of the services (and their dependencies) present, else pulled
 #   5. `docker compose up -d --yes <services>` under a timeout (--yes: recreate on config mismatch, never prompt), with diagnostics on
@@ -33,7 +34,9 @@ shift 4
 SERVICES=("$@")
 
 PROFILE_DIR="developer-profiles/dev-profile-incident"
-ENV_FILE="${PROFILE_DIR}/generated.env.remote"
+# The VM env file is .env.remote; generated.env.remote is the old name and is used when it is the only one.
+# (This script runs from a pipe, so it cannot source env-file.sh and repeats its logic.)
+ENV_FILE="${PROFILE_DIR}/.env.remote"
 say() { echo "[vm] $*"; }
 fail() { local rc="$1"; shift; echo "[vm] ERROR: $*" >&2; exit "$rc"; }
 
@@ -49,21 +52,47 @@ fi
 cd "${REPO_ROOT}/deploy/docker" || fail 10 "cannot enter ${REPO_ROOT}/deploy/docker"
 
 # 2. env file and HOST_IP
-if [ ! -f "$ENV_FILE" ]; then
-  fail 11 "${REPO_ROOT}/deploy/docker/${ENV_FILE} not found. It holds secrets, so create it by hand: cp ${REPO_ROOT}/deploy/docker/${PROFILE_DIR}/.env ${REPO_ROOT}/deploy/docker/${ENV_FILE} and fill in the real values (.docs/incident-profile-operations.md section 5)."
+if [ ! -f "$ENV_FILE" ] && [ -f "${PROFILE_DIR}/generated.env.remote" ]; then
+  ENV_FILE="${PROFILE_DIR}/generated.env.remote"
+elif [ -f "$ENV_FILE" ] && [ -f "${PROFILE_DIR}/generated.env.remote" ]; then
+  say "both .env.remote and generated.env.remote exist; using .env.remote."
 fi
+if [ ! -f "$ENV_FILE" ]; then
+  fail 11 "${REPO_ROOT}/deploy/docker/${PROFILE_DIR}/.env.remote not found. It holds secrets, so create it by hand: cp ${REPO_ROOT}/deploy/docker/${PROFILE_DIR}/.env ${REPO_ROOT}/deploy/docker/${PROFILE_DIR}/.env.remote and fill in section 1 (.docs/incident-profile-operations.md section 5)."
+fi
+env_name="$(basename "$ENV_FILE")"
 vm_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1)"
 env_ip="$(sed -n 's/^HOST_IP=//p' "$ENV_FILE" | head -n 1 | tr -d "\"' ")"
-if [ -n "$vm_ip" ] && [ -n "$env_ip" ] && [ "$vm_ip" != "$env_ip" ]; then
+if [ -z "$vm_ip" ] && [ -z "$env_ip" ]; then
+  fail 11 "cannot determine this VM's address ('ip -4 route get 1.1.1.1' gave none) and HOST_IP is blank in ${ENV_FILE}. Set HOST_IP there to the VM's LAN address, then re-run."
+fi
+if [ -n "$vm_ip" ] && [ "$vm_ip" != "$env_ip" ]; then
   backup="${ENV_FILE}.bak-$(date +%Y%m%d-%H%M%S)"
-  say "HOST_IP in generated.env.remote is ${env_ip} but this VM is ${vm_ip}; backing up to ${backup} and updating it."
+  if [ -n "$env_ip" ]; then
+    say "HOST_IP in ${env_name} is ${env_ip} but this VM is ${vm_ip}; backing up to ${backup} and updating it."
+  else
+    say "HOST_IP in ${env_name} is blank or missing; backing up to ${backup} and setting it to this VM's ${vm_ip}."
+  fi
   cp -p "$ENV_FILE" "$backup" || fail 11 "could not back up ${ENV_FILE}"
-  # Rewrite in place (cat >) so the file keeps its owner, group and mode.
-  if ! { sed "s|^HOST_IP=.*|HOST_IP=${vm_ip}|" "$backup" >"${backup}.new" && cat "${backup}.new" >"$ENV_FILE"; }; then
+  # Rewrite in place (cat >) so the file keeps its owner, group and mode. A missing key is appended.
+  if grep -q '^HOST_IP=' "$backup"; then
+    sed "s|^HOST_IP=.*|HOST_IP=${vm_ip}|" "$backup" >"${backup}.new"
+  else
+    { cat "$backup"; printf 'HOST_IP=%s\n' "$vm_ip"; } >"${backup}.new"
+  fi
+  if ! cat "${backup}.new" >"$ENV_FILE"; then
     fail 11 "could not update HOST_IP in ${ENV_FILE}"
   fi
   rm -f "${backup}.new"
   say "HOST_IP is now ${vm_ip}; 'up' recreates the containers whose environment changed."
+fi
+# Blank or missing VSS_APPS_DIR / VSS_DATA_DIR: supply them for this run only (a filled-in value wins).
+file_value() { sed -n "s/^$1=//p" "$ENV_FILE" | head -n 1 | tr -d "\"' "; }
+if [ -z "${VSS_APPS_DIR:-}" ] && [ -z "$(file_value VSS_APPS_DIR)" ]; then
+  export VSS_APPS_DIR="$PWD"
+fi
+if [ -z "${VSS_DATA_DIR:-}" ] && [ -z "$(file_value VSS_DATA_DIR)" ]; then
+  export VSS_DATA_DIR="${REPO_ROOT}/.data"
 fi
 
 # 3. docker usable (sudo only when passwordless, as before)
@@ -124,7 +153,7 @@ if [ "$rc" -ne 0 ]; then
       "${DOCKER[@]}" logs --tail 8 "$c" 2>&1 | sed 's/^/    /' >&2 || true
     fi
   done
-  echo "[vm] Hint: a stuck Kafka/broker check usually means HOST_IP in generated.env.remote (now ${env_ip:-unset}; VM is ${vm_ip:-unknown}) is not this VM's address. Fix it and re-run; containers made with the old value are recreated by 'up'." >&2
+  echo "[vm] Hint: a stuck Kafka/broker check usually means HOST_IP in ${env_name} (now ${env_ip:-unset}; VM is ${vm_ip:-unknown}) is not this VM's address. Fix it and re-run; containers made with the old value are recreated by 'up'." >&2
   [ "$rc" -eq 124 ] && exit 124
   exit 14
 fi
