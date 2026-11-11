@@ -44,20 +44,27 @@ Running `.githooks/activate.sh` once per clone keeps these links (and the copy, 
 **VM**, in this folder of the VM's checkout (default `/srv/rise-up/vss`, changed with `VSS_REPO_ROOT`):
 
 ```bash
-cp .env generated.env.remote
+cp .env .env.remote
 ```
 
-The scripts stop with this command if the file is missing; there is no fallback to `.env`.
+The scripts stop with this command if the file is missing; there is no fallback to `.env`. The older name `generated.env.remote` is still accepted when it is the only one; if both exist, `.env.remote` wins and the script says so.
 
 | Section 1 setting | Where | Meaning |
 |---|---|---|
-| `VSS_SSH_HOST` | laptop | SSH host name or address of the VM. No default. `VSS_SSH_USER` or `VSS_SSH_TARGET` are optional extras ([start.sh](start.sh) header) |
-| `HOST_IP`, `VSS_APPS_DIR`, `VSS_DATA_DIR` | VM | The VM's address (`start.sh` corrects a stale one), the absolute path of `deploy/docker` in the checkout, and the data folder |
-| `NGC_CLI_API_KEY`, `HF_TOKEN`, `OPENAI_API_KEY` | VM | Keys for container images, model downloads and the model endpoint |
-| `LLM_BASE_URL`, `LLM_NAME`, `VLM_NAME` | VM | Model endpoint (no `/v1`) and model names |
 | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`, `INCIDENT_DB_DSN` | both | The Supabase project |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | both | The Cloudflare R2 bucket |
-| `VLM_GATEWAY_URL`, `VLM_GATEWAY_API_KEY`, `VLM_GATEWAY_BASE_URL`, `VLM_MODEL` | laptop | Local model gateway. Mock mode only |
+| `VLM_GATEWAY_BASE_URL`, `VLM_GATEWAY_API_KEY` | both | Upstream model endpoint and key of the gateway. The profile's Compose file requires the base URL on the VM too, so it must be filled in on both |
+| `VSS_SSH_HOST` | laptop only | SSH host name or address of the VM. No default. `VSS_SSH_USER` or `VSS_SSH_TARGET` are optional extras ([start.sh](start.sh) header) |
+| `NGC_CLI_API_KEY`, `OPENAI_API_KEY` | VM only | Keys for container images and the model endpoint |
+| `LLM_BASE_URL`, `LLM_NAME`, `VLM_NAME` | VM only | Model endpoint (no `/v1`) and model names |
+
+Section 2 holds defaults. Three of them are blank on purpose and the VM scripts fill them in for each run (a value you type wins, and the file is left alone except `HOST_IP`):
+
+- `HOST_IP`: the VM's address. `vm-ensure-docker.sh` writes it into `.env.remote` (after a backup) when it is blank, missing or stale, and stops if it cannot find the address.
+- `VSS_APPS_DIR`: the checkout's `deploy/docker`.
+- `VSS_DATA_DIR`: `<checkout>/.data` (git-ignored, shared by everyone using the checkout).
+
+`VLM_MODEL` is optional: the console falls back to its built-in model.
 
 Leave `VSS_AGENT_HOST` on loopback. More rules for the VM file: [operations runbook](.docs/incident-profile-operations.md).
 

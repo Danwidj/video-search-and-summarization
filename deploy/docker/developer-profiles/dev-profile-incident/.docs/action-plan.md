@@ -34,4 +34,4 @@ Delivered: evidence crops at VLM item timestamps, pgvector search over them (one
 2. **1 video = 1 incident:** `videos.id` is the incident id; every `report_revisions` row names its `video_id` ([`data.md`](data.md#the-report-model)).
 3. **Stateless users:** reviewer names (`report_revisions.created_by`) are plain text; there is no account table.
 
-The other standing rules (analysis modes, storage, append-only revisions, PostgREST from the VM, GPU 0 only) are in the profile [`AGENTS.md`](../AGENTS.md#architecture-rules), [`decisions.md`](decisions.md) and the [GPU rule](incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote).
+The other standing rules (analysis modes, storage, append-only revisions, PostgREST from the VM, GPU 0 only) are in the profile [`AGENTS.md`](../AGENTS.md#architecture-rules), [`decisions.md`](decisions.md) and the [GPU rule](incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote).

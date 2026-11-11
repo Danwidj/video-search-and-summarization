@@ -30,7 +30,7 @@ services:
       # NVIDIA-hosted OpenAI-compatible endpoint base URL.
       # No default: set VLM_GATEWAY_BASE_URL in .env.local (compose stops with this message when it is missing).
       - VLM_GATEWAY_BASE_URL=${VLM_GATEWAY_BASE_URL:?set VLM_GATEWAY_BASE_URL in .env.local}
-      # API key for the upstream endpoint. MUST be set in generated.env.remote for VM deploy.
+      # API key for the upstream endpoint. MUST be set in .env.remote for VM deploy.
       # Empty here - the real value is injected at deploy time.
       - VLM_GATEWAY_API_KEY=${VLM_GATEWAY_API_KEY:-}
       # Host port the gateway listens on (compose maps it via host networking).

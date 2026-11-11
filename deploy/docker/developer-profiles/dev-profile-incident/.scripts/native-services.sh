@@ -24,6 +24,8 @@ umask 002
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
+# shellcheck source=env-file.sh
+source "${SCRIPT_DIR}/env-file.sh"
 
 # Ensure common user binary locations are on PATH
 export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:/usr/local/bin:${PATH}"
@@ -104,18 +106,14 @@ remove_pid_if_match() {
 # Environment loading
 # -----------------------------------------------------------------------------
 load_env() {
-  local env_file="${ENV_FILE:-}"
+  local env_file="${ENV_FILE:-}" profile_dir="${REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident"
   if [ -z "${env_file}" ]; then
-    if [ -f "${REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote" ]; then
-      env_file="${REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote"
-    else
-      env_file="$(command ls "${REPO_ROOT}"/deploy/docker/developer-profiles/dev-profile-*/generated.env* 2>/dev/null | head -1 || true)"
-    fi
+    env_file="$(vm_env_file "${profile_dir}")"
   fi
 
   if [ -z "${env_file}" ] || [ ! -f "${env_file}" ]; then
     echo "native-services.sh: no env file found. Create it on the VM from the template and fill in section 1:" >&2
-    echo "  cp ${REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/.env ${REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote" >&2
+    echo "  cp ${profile_dir}/.env ${profile_dir}/.env.remote" >&2
     exit 1
   fi
   # Export vars from env file safely, ignoring comments and blanks
@@ -123,6 +121,8 @@ load_env() {
   # shellcheck disable=SC1090
   source "${env_file}"
   set +a
+  # A blank VSS_APPS_DIR or VSS_DATA_DIR in the file gets its default (a filled-in value wins).
+  vm_env_defaults "${env_file}" "${profile_dir}"
 }
 
 load_env
