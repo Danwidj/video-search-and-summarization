@@ -12,7 +12,7 @@
 #   tracking-stack.sh restart-perception  restart only perception-2d-fusion and wait for ready
 #
 # Overrides:
-#   TRACKING_ENV_FILE         env file (default: <profile>/generated.env.remote)
+#   TRACKING_ENV_FILE         env file (default: <profile>/.env.remote, else the old name generated.env.remote)
 #   TRACKING_COMPOSE_PROJECT  compose project (default: COMPOSE_PROJECT_NAME in the env file, else mdx)
 #   TRACKING_READY_TIMEOUT    seconds to wait for perception to be ready (default: 900; the first start builds TensorRT engines)
 #
@@ -29,7 +29,9 @@ export PATH="${HOME}/.local/bin:/usr/local/bin:${PATH}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROFILE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DOCKER_DIR="$(cd "${PROFILE_DIR}/../.." && pwd)"
-ENV_FILE="${TRACKING_ENV_FILE:-${PROFILE_DIR}/generated.env.remote}"
+# shellcheck source=env-file.sh
+source "${SCRIPT_DIR}/env-file.sh"
+ENV_FILE="${TRACKING_ENV_FILE:-$(vm_env_file "$PROFILE_DIR")}"
 READY_TIMEOUT="${TRACKING_READY_TIMEOUT:-900}"
 
 # Service names, in start order (batches are brought up and awaited in turn).
@@ -42,13 +44,11 @@ STOP_SERVICES=(vss-video-analytics-api-fusion perception-2d-fusion nvstreamer-2d
 say() { echo "[tracking] $*"; }
 fail() { echo "[tracking] ERROR: $*" >&2; exit 1; }
 
-# Reads one key from the env file without sourcing it (it holds secrets).
-env_value() {
-  sed -n "s/^$1=//p" "$ENV_FILE" | head -n 1 | sed -e "s/[[:space:]]*#.*$//" -e "s/^[\"']//" -e "s/[\"']$//"
-}
+env_value() { vm_env_value "$ENV_FILE" "$1"; }
 
 setup() {
-  [ -f "$ENV_FILE" ] || fail "env file not found: ${ENV_FILE} (see .docs/incident-profile-operations.md section 5)."
+  [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ] || fail "env file not found: ${PROFILE_DIR}/.env.remote (cp ${PROFILE_DIR}/.env ${PROFILE_DIR}/.env.remote and fill in section 1; .docs/incident-profile-operations.md section 5)."
+  vm_env_defaults "$ENV_FILE" "$PROFILE_DIR"
   [ -f "${DOCKER_DIR}/compose.yml" ] || fail "no compose.yml in ${DOCKER_DIR}."
   PROJECT="${TRACKING_COMPOSE_PROJECT:-$(env_value COMPOSE_PROJECT_NAME)}"
   PROJECT="${PROJECT:-mdx}"
@@ -74,7 +74,7 @@ set_host_ip() {
   vm_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1)"
   env_ip="$(env_value HOST_IP)"
   [ -n "$vm_ip" ] || vm_ip="$env_ip"
-  [ -n "$vm_ip" ] || fail "cannot determine the VM address and HOST_IP is not set in ${ENV_FILE}."
+  [ -n "$vm_ip" ] || fail "cannot determine the VM address (ip route get 1.1.1.1 gave none) and HOST_IP is blank in ${ENV_FILE}."
   if [ -n "$env_ip" ] && [ "$vm_ip" != "$env_ip" ]; then
     say "HOST_IP in the env file is ${env_ip} but this VM is ${vm_ip}; using ${vm_ip} for this run (the file is not changed)."
   fi
@@ -84,10 +84,11 @@ set_host_ip() {
 
 # The compose volumes for Elasticsearch, Kafka and the API are bind mounts of $VSS_DATA_DIR/data_log/...
 # and fail to mount when the directory is missing (dev-profile.sh creates them). Idempotent.
+# VSS_DATA_DIR is the env file's value, else the default vm_env_defaults exported (<checkout>/.data).
 stage_dirs() {
   local data_dir d
-  data_dir="$(env_value VSS_DATA_DIR)"
-  [ -n "$data_dir" ] || fail "VSS_DATA_DIR is not set in ${ENV_FILE}."
+  data_dir="${VSS_DATA_DIR:-$(env_value VSS_DATA_DIR)}"
+  [ -n "$data_dir" ] || fail "VSS_DATA_DIR is blank and has no default."
   for d in analytics_cache elastic/data elastic/logs kafka vss_video_analytics_api nvstreamer/vst_data; do
     mkdir -p "${data_dir}/data_log/${d}"
     chmod 777 "${data_dir}/data_log/${d}" 2>/dev/null || true
@@ -98,8 +99,8 @@ stage_dirs() {
 # it vss-rtvi-cv exits at start). Same download as dev-profile.sh. Idempotent.
 stage_model() {
   local data_dir models onnx key tmp
-  data_dir="$(env_value VSS_DATA_DIR)"
-  [ -n "$data_dir" ] || fail "VSS_DATA_DIR is not set in ${ENV_FILE}."
+  data_dir="${VSS_DATA_DIR:-$(env_value VSS_DATA_DIR)}"
+  [ -n "$data_dir" ] || fail "VSS_DATA_DIR is blank and has no default."
   models="${data_dir}/models"
   onnx="${models}/rtdetr_warehouse_v1.0.2.fp16.onnx"
   if [ -s "$onnx" ]; then

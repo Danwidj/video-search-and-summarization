@@ -11,7 +11,7 @@ Specification for the PR 119 eval workstream ([MVP2 overview](README.md#4-delive
 > - **Start:** at [§10](#10-work-order-and-definition-of-done). Agree the [§8](#8-proposals-awaiting-approval) proposals first and record each in [`decisions.md`](../decisions.md).
 > - **Before a live run:** decide where retrieval labels and manifests are stored (open item 1 below), and upload and analyse a few real videos, because the finals search corpus may be empty (§1.2).
 > - **Out of scope:** the multi-subagent routing config and full RT-CV / RT-Embed indexing were dropped, so Track F stays deferred (§5).
-> - **Compute:** the VM uses GPU 0 only ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)); offline detector and embedding experiments run off the VM (§6.1).
+> - **Compute:** the VM uses GPU 0 only ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote)); offline detector and embedding experiments run off the VM (§6.1).
 > - **Access:** each developer uses their own credentials in their own local `.env.local`, never committed or shared in chat. The variable names are in [§1.1](#11-eval-p1rp1-extraction-benchmark) (Configuration).
 >
 > **Open items for the eval owner**
@@ -77,7 +77,7 @@ Paths are relative to the profile directory, except paths starting with `service
 | Detector | `DefaultDetector` asks the remote VLM for one `bbox_2d` on the keyframe at the item's `timestamp_seconds`. With no box the item is kept as `located: false` (whole frame, no crop). It sits behind the `OpenVocabularyDetector` port. | `services/agent/src/vss_agents/utils/crop_evidence.py`; [decisions](../decisions.md) 2026-10-18 |
 | Latency and cost signals | Only the end-to-end `execution_time_ms`. Critic token usage and per-call latency are not recorded. | `incident_search.py` |
 | `/analyze` | Runs the **same one-shot P1 call** as gateway mode and `eval/`, using the vendored copy of the same contract. It skips RP1 when `skip_rp1` is set. The model defaults to the VM's `VLM_NAME`; a request may name any allowlisted `model`. When the detector is available (`DefaultDetector` needs `VLM_GATEWAY_API_KEY` or `OPENAI_API_KEY`), best-effort cropping runs after P1 inside the same request: one remote VLM box call per entity, instrument and asset (up to 4 attempts each on 429/5xx), uploaded to R2 when R2 is configured and listed in the AI revision's `evidence`. It does not change the report, but it adds paid calls and wall-clock time to every `/analyze` response. There is no perception, tool calling or subagents. | `services/agent/src/vss_agents/tools/incident_report_gen.py`; `services/agent/src/vss_agents/api/incident_analyze.py` |
-| Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000` (its models and embeddings are remote; on the VM VSS uses GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)). Both mocks (:7777, launched by `start.sh --mode mock`, and standalone :7778) answer from one finals snapshot captured 2026-10-24, scoring hits by the share of query words they contain, with placeholder critic verdicts and crop URLs; the snapshot was regenerated on 2026-10-25 and holds the six finals AI revisions, without the three test videos the cleanup removed. Both mocks implement `hide_rejected` and the 0.0 `min_similarity` default. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
+| Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000` (its models and embeddings are remote; on the VM VSS uses GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote)). Both mocks (:7777, launched by `start.sh --mode mock`, and standalone :7778) answer from one finals snapshot captured 2026-10-24, scoring hits by the share of query words they contain, with placeholder critic verdicts and crop URLs; the snapshot was regenerated on 2026-10-25 and holds the six finals AI revisions, without the three test videos the cleanup removed. Both mocks implement `hide_rejected` and the 0.0 `min_similarity` default. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
 
 ## 2. Tracks (proposed, P-1)
 
@@ -312,7 +312,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
   - MiniLM and OpenAI embeddings
   - image or hybrid embeddings
   - an image-only critic
-- **Where experiments run:** off the VM (developer GPU or CPU; on the VM VSS may use GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)), against snapshots, with no change to the route, migrations or VM.
+- **Where experiments run:** off the VM (developer GPU or CPU; on the VM VSS may use GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote)), against snapshots, with no change to the route, migrations or VM.
 - **Ask first:** new dependencies and new API keys.
 - **Adoption is separate:** using a result in production needs a new `decisions.md` entry superseding the current one, agreed by the owning workstream.
 
@@ -392,7 +392,7 @@ These are proposed evaluation policies, not agreed decisions. Once one is approv
 
 1. **Query sourcing:** human-written operator queries, or LLM-proposed queries with human verification, within §3.3?
 2. **Track F fairness:** how to normalise token budgets and timeouts between one call and a multi-call pipeline.
-3. **Detector hosting:** if a candidate clearly beats `DefaultDetector`, where could it run, given that on the VM only GPU 0 is available ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)) and a local detector on the VM was rejected (2026-10-18)?
+3. **Detector hosting:** if a candidate clearly beats `DefaultDetector`, where could it run, given that on the VM only GPU 0 is available ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote)) and a local detector on the VM was rejected (2026-10-18)?
 4. **Optional direct timing runs:** not planned. Direct timing at production `top_k = K` (§3.6) may be added later as a separate experiment if its paid critic calls get budget approval.
 
 ## 10. Work order and definition of done

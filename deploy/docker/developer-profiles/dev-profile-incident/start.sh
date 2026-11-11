@@ -40,7 +40,7 @@
 # caption pass. start.sh starts the tracking stack (ENABLE_TRACKING=false
 # skips it); native-services.sh starts vss-agent with
 # INCIDENT_TRACKING_ENABLED=true and INCIDENT_CHUNKING_ENABLED=1 (20 s windows,
-# 2 s overlap) unless generated.env.remote sets them (false or 0 turns one off,
+# 2 s overlap) unless .env.remote sets them (false or 0 turns one off,
 # then restart the agent), and installs a static ffmpeg/ffprobe into the VM
 # checkout's .tools/ffmpeg on the agent's first start (.scripts/media-tools.sh).
 # With either piece off the analysis still runs without it.
@@ -65,7 +65,7 @@
 #          then proceeds to the tunnel.
 #      Starting Docker services runs .scripts/vm-ensure-docker.sh on the VM
 #      (piped over SSH): it clones the repo if the checkout is missing, fixes a
-#      stale HOST_IP in generated.env.remote (backed up first), pulls missing
+#      stale HOST_IP in .env.remote (backed up first), pulls missing
 #      images, then runs `docker compose up -d --yes` under a timeout (--yes
 #      recreates volumes/containers that no longer match the config instead
 #      of prompting). Every step is

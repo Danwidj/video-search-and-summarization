@@ -427,7 +427,7 @@ assert_eq "yes" "$([ -e "$bad_models/nanotrack_head_sim.onnx" ] && echo yes || e
 
 # A missing env file stops with the copy step, and the committed .env template is never used as a fallback.
 missing_out="$(ENV_FILE="$TMP/no-such.env" bash "$SUT" status 2>&1 || true)"
-assert_contains "$missing_out" "generated.env.remote" "a missing env file names the copy step"
+assert_contains "$missing_out" ".env.remote" "a missing env file names the copy step"
 assert_contains "$missing_out" "cp " "a missing env file shows the cp command"
 
 echo ""

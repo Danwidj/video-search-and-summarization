@@ -3,6 +3,7 @@
 .env.local
 **/.env.local
 **/.env.remote
+*.bkp
 
 # The complete human-labelled ground-truth workbook (real annotations of real
 # surveillance clips) kept at the profile root as the source for the ground-truth
