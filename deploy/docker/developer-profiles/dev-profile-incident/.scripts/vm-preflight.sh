@@ -18,7 +18,9 @@
 #   2. VSS_SSH_USER set -> used as the VM username.
 #   3. ~/.ssh/config User for VSS_SSH_HOST (via `ssh -G`).
 #   4. Fall back to $USER / $(whoami).
-VSS_SSH_HOST="${VSS_SSH_HOST:-kwanz-ws}"
+# VSS_SSH_HOST has no default: it comes from the environment or .env.local (vm-host.sh).
+source "$(dirname "${BASH_SOURCE[0]}")/vm-host.sh"
+vm_require_ssh_host "$(basename "${0:-vm-preflight.sh}")" || exit 1
 if [ -z "${VSS_SSH_TARGET:-}" ]; then
   ssh_config_user="$(ssh -G "${VSS_SSH_HOST}" 2>/dev/null | awk '/^user / {print $2}' || true)"
   vm_user="${VSS_SSH_USER:-${ssh_config_user:-${USER:-$(whoami)}}}"
@@ -93,7 +95,7 @@ vm_explain_ssh_failure() {
   esac
   if [ "$peer_online" = "false" ]; then
     echo "  Cause: Tailscale is up, but '$VSS_SSH_HOST' is OFFLINE in the tailnet (last seen: ${peer_lastseen:-unknown})." >&2
-    echo "  Fix:   the VM is powered off or its tailscaled/network is down. Ask someone with access to kwanz-ws to power it on or run 'sudo systemctl restart tailscaled' there." >&2
+    echo "  Fix:   the VM is powered off or its tailscaled/network is down. Ask someone with access to the VM to power it on or run 'sudo systemctl restart tailscaled' there." >&2
     return 0
   fi
 

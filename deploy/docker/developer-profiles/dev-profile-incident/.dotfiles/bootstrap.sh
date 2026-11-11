@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Idempotent, per-account dotfiles/QoL bootstrap for kwanz-ws (shared
+# Idempotent, per-account dotfiles/QoL bootstrap for the shared GPU workstation (shared
 # multi-user Ubuntu VM). Opt-in: run this from your OWN account only.
 # It never touches another account's files. See README.md.
 #
