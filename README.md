@@ -20,19 +20,6 @@ Everything this project adds lives in the incident profile:
 
 The rest of the repository is the upstream blueprint, which the project builds on.
 
-## Remaining work
-
-The main open items:
-
-- Run the held-out evaluation across several models; only the development pilots are done.
-- Turn on model-written chat answers once that evaluation validates them; chat answers are rule-based today.
-- Check the recent tracking and evidence fixes in a full end-to-end analysis; they are unit-tested only.
-- Apply the pending database migrations that three dashboard chart views and the Library duration badge wait for.
-- Give background analysis jobs an owner, so one console does not pick up another console's job.
-- Finish report export to PDF; a report prints only through the browser today.
-- Remove the unused report timeline from the report contract, and merge the next contract version.
-- Do one more browser check of every screen after the latest interface fixes.
-
 ## Team
 
 <!-- TODO(team): names, course, supervisor -->
