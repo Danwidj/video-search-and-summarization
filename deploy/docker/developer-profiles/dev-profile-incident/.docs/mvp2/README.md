@@ -1,7 +1,7 @@
 # MVP2: Natural-Language Evidence Search with Object Crops
 
 **Profile:** `dev-profile-incident`
-**Target:** Zero-GPU local workstation and `kwanz-ws` (2x NVIDIA RTX A6000 48 GB, of which VSS uses GPU 0 only: [Operations runbook: GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote))
+**Target:** Zero-GPU local workstation and the VM (2x NVIDIA RTX A6000 48 GB, of which VSS uses GPU 0 only: [Operations runbook: GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote))
 **Status:** search, chat and crops delivered; the retrieval eval is in progress ([Status: MVP2 search](../status.md#2-mvp2-natural-language-evidence-search))
 
 ---
@@ -138,7 +138,7 @@ The PR task docs assume the following conventions and environment setup. This se
 ### Environment
 
 - **Zero-GPU local development:** `mock-backend/base_profile_mock/` (port 7777) provides a full mock of vss-agent API + VST + inference behind one FastAPI process. `mock-backend/search_profile_mock/` (port 7778) adds search-profile mock for MVP2 prep. `vlm-gateway/` (port 8600) holds the Brev key server-side.
-- **GPU-backed VM:** `kwanz-ws`, GPU 0 only ([Operations runbook: GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)). `start.sh --mode vm` opens the tunnel to the native `vss-agent` on port 8000, which `native-services.sh` runs on the VM. Docker appliances (Phoenix and the person-tracking stack; Elasticsearch also with `ENABLE_ANALYTICS=true`) run in compose. HAProxy, VIOS and Redis are removed.
+- **GPU-backed VM:** the VM, GPU 0 only ([Operations runbook: GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)). `start.sh --mode vm` opens the tunnel to the native `vss-agent` on port 8000, which `native-services.sh` runs on the VM. Docker appliances (Phoenix and the person-tracking stack; Elasticsearch also with `ENABLE_ANALYTICS=true`) run in compose. HAProxy, VIOS and Redis are removed.
 - **Secrets:** Server-side only. `VLM_GATEWAY_API_KEY` owned by gateway, not browser (`NEXT_PUBLIC_` never used for credentials). `/api/health` returns booleans only.
 
 ### Conventions

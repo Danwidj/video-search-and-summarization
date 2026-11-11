@@ -1,6 +1,6 @@
 # VM dotfiles
 
-An optional shell setup for `kwanz-ws`, the Ubuntu VM that several accounts share. One idempotent bash script, `bootstrap.sh`, sets up your own account only; it is not team-wide provisioning.
+An optional shell setup for the VM, the Ubuntu VM that several accounts share. One idempotent bash script, `bootstrap.sh`, sets up your own account only; it is not team-wide provisioning.
 
 ## Run it
 
@@ -36,4 +36,4 @@ Then start a new shell, or run `source ~/.bashrc`. Running it again picks up cha
 ## Read more
 
 - [.scripts](../.scripts/README.md): the deploy-lifecycle commands
-- [Operations runbook](../.docs/incident-profile-operations.md): running `kwanz-ws`
+- [Operations runbook](../.docs/incident-profile-operations.md): running the VM

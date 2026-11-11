@@ -1,6 +1,6 @@
 ---
 name: incident-operate-vm
-description: Use to deploy, restart, inspect, debug or tear down the incident backend on the kwanz-ws VM - native services (vss-agent, analytics) via native-services.sh, Docker appliances (Phoenix, plus the person-tracking stack started by default; VIOS, HAProxy and Redis are removed) via compose, generated.env.remote, and the agent editable reinstall. Not for the laptop launch (use incident-start) and never via NVIDIA's dev-profile.sh / vss-deploy-profile.
+description: Use to deploy, restart, inspect, debug or tear down the incident backend on the VM - native services (vss-agent, analytics) via native-services.sh, Docker appliances (Phoenix, plus the person-tracking stack started by default; VIOS, HAProxy and Redis are removed) via compose, generated.env.remote, and the agent editable reinstall. Not for the laptop launch (use incident-start) and never via NVIDIA's dev-profile.sh / vss-deploy-profile.
 license: Apache-2.0
 metadata:
   version: "0.1.5"
@@ -9,9 +9,9 @@ metadata:
 ---
 # Incident Operate VM
 
-`kwanz-ws` is a **shared** team workstation. Every action here affects teammates.
+The VM is a **shared** team workstation. Every action here affects teammates.
 
-Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-profile-operations.md) (topology, runbook, verification) and [`.docs/status.md` §6](../../.docs/status.md#6-live-vm-configuration-kwanz-ws) (live env snapshot).
+Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-profile-operations.md) (topology, runbook, verification) and [`.docs/status.md` §6](../../.docs/status.md#6-live-vm-configuration) (live env snapshot).
 
 ## Never
 
@@ -41,7 +41,7 @@ Paths on the VM: repo `/srv/rise-up/vss`, scripts `/srv/rise-up/vss/deploy/docke
 ### 1. Inspect before acting
 
 ```bash
-ssh kwanz-ws
+ssh "$VSS_SSH_HOST"
 cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts
 ./status.sh                       # docker compose -p mdx ps + native status + GPU status
 ./health.sh                       # agent :8000/health
