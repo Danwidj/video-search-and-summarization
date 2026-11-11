@@ -61,6 +61,7 @@ if [ ! -f "$ENV_FILE" ]; then
   fail 11 "${REPO_ROOT}/deploy/docker/${PROFILE_DIR}/.env.remote not found. It holds secrets, so create it by hand: cp ${REPO_ROOT}/deploy/docker/${PROFILE_DIR}/.env ${REPO_ROOT}/deploy/docker/${PROFILE_DIR}/.env.remote and fill in section 1 (.docs/incident-profile-operations.md section 5)."
 fi
 env_name="$(basename "$ENV_FILE")"
+# Same detection as vm_host_ip in env-file.sh (test-env-file.sh checks the two stay identical).
 vm_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1)"
 env_ip="$(sed -n 's/^HOST_IP=//p' "$ENV_FILE" | head -n 1 | tr -d "\"' ")"
 if [ -z "$vm_ip" ] && [ -z "$env_ip" ]; then

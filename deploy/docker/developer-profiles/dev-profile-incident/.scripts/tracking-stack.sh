@@ -48,7 +48,7 @@ env_value() { vm_env_value "$ENV_FILE" "$1"; }
 
 setup() {
   [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ] || fail "env file not found: ${PROFILE_DIR}/.env.remote (cp ${PROFILE_DIR}/.env ${PROFILE_DIR}/.env.remote and fill in section 1; .docs/incident-profile-operations.md section 5)."
-  vm_env_defaults "$ENV_FILE" "$PROFILE_DIR"
+  vm_env_defaults "$ENV_FILE" "$PROFILE_DIR" || exit 1
   [ -f "${DOCKER_DIR}/compose.yml" ] || fail "no compose.yml in ${DOCKER_DIR}."
   PROJECT="${TRACKING_COMPOSE_PROJECT:-$(env_value COMPOSE_PROJECT_NAME)}"
   PROJECT="${PROJECT:-mdx}"
@@ -71,7 +71,7 @@ compose() { (cd "$DOCKER_DIR" && "${COMPOSE[@]}" "$@"); }
 # address. Exported (the shell wins over --env-file) so the secrets file is never rewritten here.
 set_host_ip() {
   local vm_ip env_ip
-  vm_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1)"
+  vm_ip="$(vm_host_ip)"
   env_ip="$(env_value HOST_IP)"
   [ -n "$vm_ip" ] || vm_ip="$env_ip"
   [ -n "$vm_ip" ] || fail "cannot determine the VM address (ip route get 1.1.1.1 gave none) and HOST_IP is blank in ${ENV_FILE}."

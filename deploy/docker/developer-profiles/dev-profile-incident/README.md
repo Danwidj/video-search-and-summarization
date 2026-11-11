@@ -59,9 +59,11 @@ The scripts stop with this command if the file is missing; there is no fallback 
 
 Section 2 holds defaults. Three of them are blank on purpose and the VM scripts fill them in for each run (a value you type wins, and the file is left alone except `HOST_IP`):
 
-- `HOST_IP`: the VM's address. `vm-ensure-docker.sh` writes it into `.env.remote` (after a backup) when it is blank, missing or stale, and stops if it cannot find the address.
+- `HOST_IP`: the VM's address. `vm-ensure-docker.sh` writes it into `.env.remote` (after a backup) when it is blank, missing or stale. `native-services.sh`, `rebuild-svc.sh` and `tracking-stack.sh` use it for the run without changing the file. Each stops if it cannot find the address.
 - `VSS_APPS_DIR`: the checkout's `deploy/docker`.
 - `VSS_DATA_DIR`: `<checkout>/.data` (git-ignored, shared by everyone using the checkout).
+
+The eval settings (`EVAL_LLM_JUDGE_NAME`, `EVAL_LLM_JUDGE_BASE_URL`, `EVAL_DIR`, `DATASET_FILE_NAME`) and `RTVI_VLM_BASE_URL` have working defaults, because the agent config reads them and refuses to start when one is unset. `test-env-template.sh` fails when the config gains a setting the template leaves unset.
 
 Optional blanks: `VLM_MODEL` (the console falls back to its built-in model), and `VLM_GATEWAY_BASE_URL` with `VLM_GATEWAY_API_KEY`. The laptop needs the gateway pair only for mock mode and `eval/`; the VM never needs it (its Compose no longer includes the gateway, and the agent reads the pair only as an override of `VLM_BASE_URL` and `OPENAI_API_KEY`).
 
