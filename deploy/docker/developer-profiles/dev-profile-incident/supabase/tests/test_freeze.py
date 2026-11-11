@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 """freeze_midterm.sql / unfreeze_midterm.sql on a local replica of midterm (schema rebuilt from
-midterm/midterm_base_tables.sql + the applied midterm/migrations/).
+archived/supabase/midterm/midterm_base_tables.sql + the applied archived/supabase/midterm/migrations/).
 
     cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
 """
@@ -15,7 +15,8 @@ from psycopg import errors
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-MIGRATIONS = ROOT / "midterm" / "migrations"
+ARCHIVE = ROOT.parent / "archived" / "supabase"
+MIGRATIONS = ARCHIVE / "midterm" / "migrations"
 APPLIED = ["20260917141225", "20260925031000", "20260926120000", "20260927120000", "20260927130000", "20260927140000",
            "20260927150000", "20260927160000", "20260927170000", "20260927180000", "20260928000000", "20261016120000"]
 
@@ -32,12 +33,12 @@ with tempfile.TemporaryDirectory() as tmp:
         admin.execute("ALTER DEFAULT PRIVILEGES FOR ROLE owner_pg IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role")
     owner_uri = uri.replace("postgres:@", "owner_pg:@", 1)
     with psycopg.connect(owner_uri, autocommit=True) as conn:
-        conn.execute((ROOT / "midterm" / "midterm_base_tables.sql").read_text())
+        conn.execute((ARCHIVE / "midterm" / "midterm_base_tables.sql").read_text())
         for version in APPLIED:
             conn.execute(next(MIGRATIONS.glob(f"{version}_*.sql")).read_text())
         conn.execute("INSERT INTO videos (id) VALUES ('v1'); INSERT INTO model_runs (id, model_name) VALUES ('r1', 'm')")
         conn.execute("SELECT insert_incident('v1', 'r1', 'assault', '0', '1', 1, 'd', 3, 0.5)")
-        freeze = (ROOT / "midterm" / "freeze_midterm.sql").read_text().replace("ALTER ROLE postgres", "ALTER ROLE owner_pg")
+        freeze = (ARCHIVE / "midterm" / "freeze_midterm.sql").read_text().replace("ALTER ROLE postgres", "ALTER ROLE owner_pg")
         conn.execute(freeze)
     with psycopg.connect(owner_uri, autocommit=True) as conn:
         assert conn.execute("SHOW default_transaction_read_only").fetchone()[0] == "on"
@@ -67,7 +68,7 @@ with tempfile.TemporaryDirectory() as tmp:
                 pass
         print("ok   anon is locked out")
         conn.execute("RESET ROLE")
-        conn.execute((ROOT / "midterm" / "unfreeze_midterm.sql").read_text().replace("ALTER ROLE postgres", "ALTER ROLE owner_pg"))
+        conn.execute((ARCHIVE / "midterm" / "unfreeze_midterm.sql").read_text().replace("ALTER ROLE postgres", "ALTER ROLE owner_pg"))
     with psycopg.connect(owner_uri, autocommit=True) as conn:
         assert conn.execute("SHOW default_transaction_read_only").fetchone()[0] == "off"
         conn.execute("SET ROLE service_role")

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Hermetic tests for migrate_r2_names.py: an in-memory bucket and database, no network.
 
-cd supabase/r2 && uv run --no-project --with boto3 --with pytest pytest -q
+cd archived/supabase/r2 && uv run --no-project --with boto3 --with pytest pytest -q
 """
 
 from __future__ import annotations

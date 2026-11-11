@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Fill videos.content_sha256 for every video that has none, from its R2 object. Deletes nothing.
 
-    cd supabase/r2 && uv run --no-project --with boto3 python backfill_content_hash.py \
-        --env-file ../../.env.local [--apply]
+    cd archived/supabase/r2 && uv run --no-project --with boto3 python backfill_content_hash.py \
+        --env-file ../../../.env.local [--apply]
 
 Dry run by default: it streams each video's object from R2, hashes it (SHA-256, lower-case hex) and prints
 the plan. With --apply it sets the hash on each row that has none (PATCH filtered on content_sha256 being

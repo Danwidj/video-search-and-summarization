@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Give every existing R2 object a readable name, by copy. Nothing is ever deleted.
 
-    cd supabase/r2 && uv run --no-project --with boto3 python migrate_r2_names.py \
-        --env-file ../../.env.local [--sensors-file sensors.json] [--manifest manifest.json] [--apply]
+    cd archived/supabase/r2 && uv run --no-project --with boto3 python migrate_r2_names.py \
+        --env-file ../../../.env.local [--sensors-file sensors.json] [--manifest manifest.json] [--apply]
 
 Dry run by default: it lists the bucket, reads the database and prints the plan (old key to new key),
 the objects it cannot place, and the names it had to derive. With --apply it, in this order:
