@@ -19,12 +19,6 @@ A reviewer uploads a surveillance or anomaly clip in a web console. A vision-lan
 
 Deploy and run it from the [incident profile README](deploy/docker/developer-profiles/dev-profile-incident/README.md). The rest of the repository is the upstream blueprint, which the project builds on.
 
-## Team
-
-<!-- TODO(team): names, course, supervisor -->
-
-Team details to be added.
-
 ## Acknowledgements and licence
 
 Built on the [NVIDIA AI Blueprint for Video Search and Summarization](https://github.com/NVIDIA-AI-Blueprints/video-search-and-summarization). The licence is unchanged from upstream: see [LICENSE](LICENSE).
