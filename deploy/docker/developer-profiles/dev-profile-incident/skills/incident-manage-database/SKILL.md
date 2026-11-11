@@ -112,7 +112,6 @@ Finals has no legacy JWT keys: the server key is `sb_secret_...` and the public 
 | `mock-backend/base_profile_mock` (mock mode) | Same `incident_db`, its own venv | Yes: its `uv.lock` pins `supabase` 2.31.0 |
 | `incident-console-v2` `src/lib/postgrest/client.ts` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
 | `eval/db_postgrest.py` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
-| Archived `archived/incident-console/db_postgrest.py` | `apikey` + always `Authorization: Bearer` | No (archived; never point it at finals) |
 | `supabase/tests/probe_api.sh` | `apikey`; Bearer only for `eyJ...` keys | Yes |
 | `archived/supabase/copy/`, `parity_check.py`, `supabase` CLI | Direct DSN, no key | Not affected |
 

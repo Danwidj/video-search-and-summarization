@@ -36,8 +36,7 @@
 #
 # No uv venv is prepared here: start.sh runs `uv sync` for mock-backend and
 # vlm-gateway and `npm install` for incident-console-v2 on every launch. (The
-# former Part C synced the venv of the v1 console, now archived under
-# dev-profile-incident/archived/incident-console/.)
+# former Part C synced the venv of the v1 console, since removed.)
 #
 # This script must NEVER fail the calling git command: every best-effort
 # step warns and continues, and the script always exits 0, so a broken env

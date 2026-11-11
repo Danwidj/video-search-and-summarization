@@ -39,4 +39,3 @@ Shell scripts that start, check and stop the incident backend. The laptop-side s
 - [incident-start skill](../skills/incident-start/SKILL.md): `start.sh` modes, what each starts and its cleanup on exit
 - [Operations runbook: Laptop to VM connectivity](../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting)
 - [Architecture: Native processes and containers](../.docs/architecture.md#native-processes-and-containers)
-- [.dotfiles](../.dotfiles/README.md): optional shell setup for the VM

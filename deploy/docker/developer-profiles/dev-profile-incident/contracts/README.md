@@ -25,7 +25,7 @@ The single source of truth for incident extraction (`incident-contract-v4`): one
 | [experiments/](experiments/README.md) | The append-only prompt registry for the prompt experiments. It is not part of the contract: `sync.py` does not vendor it |
 | [search-contract-v1](search-contract-v1/README.md), [chat-contract-v1](chat-contract-v1/README.md), [chat-contract-v2](chat-contract-v2/README.md), [chat-contract-v3](chat-contract-v3/README.md) | The search and chat HTTP contracts (v2 is the grounded chat answer, v3 the routed one) |
 | `sync.py` | Copies the contract and the agent's prompts into the agent; `--check` reports drift |
-| `test_schema.py`, `test-schema.mjs` | Schema validation tests |
+| `test_schema.py` | Schema validation tests |
 
 ## Change the contract
 

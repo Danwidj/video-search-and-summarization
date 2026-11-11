@@ -47,14 +47,14 @@ done
 # Section 1 is only what a machine must fill in. These are blank defaults the scripts supply, or optional,
 # so they sit in section 2 (a filled-in value still wins), and settings nothing reads are gone.
 section2="$(awk '/^# 2\. /{f=1} f' "$ENV_FILE")"
-for key in HOST_IP VSS_APPS_DIR VSS_DATA_DIR VLM_MODEL; do
+for key in HOST_IP VSS_APPS_DIR VSS_DATA_DIR VLM_MODEL VLM_GATEWAY_BASE_URL VLM_GATEWAY_API_KEY; do
   grep -qE "^${key}=$" <<<"$section2" && ok || bad "${key} must be a blank line in section 2"
 done
 for key in HF_TOKEN VLM_GATEWAY_URL; do
   grep -qE "^${key}=" "$ENV_FILE" && bad "${key} is read by nothing this profile starts; it must stay out of the template" || ok
 done
 section1="$(awk '/^# 2\. /{exit} {print}' "$ENV_FILE")"
-for key in INCIDENT_SUPABASE_URL INCIDENT_SUPABASE_SERVICE_ROLE_KEY INCIDENT_DB_DSN R2_ACCOUNT_ID R2_ACCESS_KEY R2_SECRET_KEY R2_BUCKET VLM_GATEWAY_BASE_URL VLM_GATEWAY_API_KEY VSS_SSH_HOST NGC_CLI_API_KEY OPENAI_API_KEY LLM_BASE_URL LLM_NAME VLM_NAME; do
+for key in INCIDENT_SUPABASE_URL INCIDENT_SUPABASE_SERVICE_ROLE_KEY INCIDENT_DB_DSN R2_ACCOUNT_ID R2_ACCESS_KEY R2_SECRET_KEY R2_BUCKET VSS_SSH_HOST NGC_CLI_API_KEY OPENAI_API_KEY LLM_BASE_URL LLM_NAME VLM_NAME; do
   grep -qE "^${key}=$" <<<"$section1" && ok || bad "${key} must be a blank line in section 1"
 done
 # The header names the VM file .env.remote, not the old name.

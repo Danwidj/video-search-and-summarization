@@ -21,5 +21,6 @@
 # pipelines need. Unlike dev-profile-search we do not pull in a
 # kibana-init-container block - this profile does not use Kibana.
 
-include:
-  - path: ./vlm-gateway/compose.yml
+# The profile adds no services of its own: the vlm-gateway runs natively from
+# start.sh, and the VM services come from compose.override.yml.
+services: {}
