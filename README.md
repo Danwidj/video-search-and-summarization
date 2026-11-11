@@ -11,14 +11,13 @@ This is a final year project built by students at Singapore Management Universit
 
 A reviewer uploads a surveillance or anomaly clip in a web console. A vision-language model writes a structured, timestamped incident report (type, severity, summary, the people, instruments and assets involved) with evidence images cut from the video. Reviewers edit the report into new versions, mark one version official, search past incidents and evidence in natural language, ask questions about a report in a chat panel, and follow the totals on a dashboard.
 
+## Architecture
+
+![Containers of the incident system](deploy/docker/developer-profiles/dev-profile-incident/.docs/figures/figure-2-containers.drawio.svg)
+
 ## Get started
 
-Everything this project adds lives in the incident profile:
-
-- **Deploy and run it:** [incident profile README](deploy/docker/developer-profiles/dev-profile-incident/README.md)
-- **How it is built:** [architecture](deploy/docker/developer-profiles/dev-profile-incident/.docs/architecture.md)
-
-The rest of the repository is the upstream blueprint, which the project builds on.
+Deploy and run it from the [incident profile README](deploy/docker/developer-profiles/dev-profile-incident/README.md). The rest of the repository is the upstream blueprint, which the project builds on.
 
 ## Team
 
