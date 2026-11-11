@@ -75,7 +75,10 @@ if ! timeout 30 docker info >/dev/null 2>&1; then
     fail 12 "docker is not usable for $(id -un): the daemon is down, hung, or this user is not in the 'docker' group. Try 'sudo systemctl start docker' on the VM, then re-run."
   fi
 fi
-COMPOSE=("${DOCKER[@]}" compose -f compose.yml -f "${PROFILE_DIR}/compose.override.yml" --env-file "$ENV_FILE")
+# compose.unused.env first, so the real env file wins. A checkout older than this script lacks it; skip it then.
+UNUSED_ENV=()
+[ -f "${PROFILE_DIR}/compose.unused.env" ] && UNUSED_ENV=(--env-file "${PROFILE_DIR}/compose.unused.env")
+COMPOSE=("${DOCKER[@]}" compose -f compose.yml -f "${PROFILE_DIR}/compose.override.yml" ${UNUSED_ENV[@]+"${UNUSED_ENV[@]}"} --env-file "$ENV_FILE")
 
 if [ "${#SERVICES[@]}" -eq 0 ]; then
   say "no Docker services requested."
