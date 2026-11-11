@@ -101,9 +101,9 @@ The five qualities that shaped the design most, in priority order. Scenarios for
 
 ### Level 1: Containers
 
-**Figure 2. Container diagram for the incident profile (C4 level 2).** Containers are grouped by where they run: the laptop, the GPU workstation and the cloud services. The VSS Agent and the stock perception stack run on the GPU workstation; the console reaches the agent through an SSH tunnel. Arrow labels name the interaction in the arrow's direction. Colours mark stock VSS, built by the team and external services. The VM flow and the Midterm flow are marked on the arrows that belong to one of them only.
+**Figure 2. Container diagram for the incident profile (C4 level 2).** Containers are grouped by where they run: the laptop, the GPU workstation and the cloud services. The VSS Agent and the stock perception stack run on the GPU workstation; the console reaches the agent through an SSH tunnel. Arrow labels name the interaction in the arrow's direction. Colours mark stock VSS, built by the team and external services. The Final flow and the Midterm flow are marked on the arrows that belong to one of them only.
 
-![Container diagram: on the laptop, incident-console-v2, vlm-gateway and mock-backend; on the GPU workstation, the VSS Agent, the perception stack containers and Phoenix; in the cloud, Cloudflare R2, Supabase and the hosted model endpoints; arrows show the VM flow and the Midterm flow](figures/figure-2-containers.drawio.svg)
+![Container diagram: on the laptop, incident-console-v2, vlm-gateway and mock-backend; on the GPU workstation, the VSS Agent, the perception stack containers and Phoenix; in the cloud, Cloudflare R2, Supabase and the hosted model endpoints; arrows show the Final flow and the Midterm flow](figures/figure-2-containers.drawio.svg)
 
 | Container | Technology | Responsibility | Origin |
 |---|---|---|---|
@@ -218,7 +218,7 @@ A representative selection; each step names the building block that performs it.
 6. **Persist** (agent): the AI revision with its evidence and summary embedding. The agent inserts a placeholder run row only when the console's does not exist yet.
 7. **Record** (console): the console validates the raw output again, writes the immutable attempt record on its run row, verifies the agent's revision (and inserts one only when the agent returned none), embeds the new revision's evidence through the agent and stores the searchable crops when the video has no official revision yet, then finishes the job with the video and revision ids. A failed attempt finishes the job as failed with the reason and leaves a run record, never a report.
 
-### Analysis Run in the Mock Flow
+### Analysis Run in the Midterm Flow
 
 The Midterm flow (`ANALYSIS_MODE=gateway`) keeps the same console code path and swaps the model port: the console builds the identical P1 request, the gateway forwards it with the server-side credential, and the console persists the result itself. It is a backup that runs without the GPU host, started by the launcher's mock mode. The console never calls the agent or `mock-backend` during a Midterm flow analysis. No detector runs, so the evidence entries have no images and no searchable crops are stored.
 

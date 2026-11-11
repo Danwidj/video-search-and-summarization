@@ -1,6 +1,6 @@
 # VLM gateway
 
-A small proxy that holds the hosted (Brev) inference key on the server, so the console can call the hosted VLMs in the mock flow without exposing the key. Mock mode only: in vm mode the console never calls it.
+A small proxy that holds the hosted (Brev) inference key on the server, so the console can call the hosted VLMs in the Midterm flow without exposing the key. Mock mode only: in vm mode the console never calls it.
 
 ## Run it
 
