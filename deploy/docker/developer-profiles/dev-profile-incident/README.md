@@ -84,6 +84,8 @@ Run from this folder, on your laptop (never on the VM):
 | `./start.sh --mode vm --no-console` | Backend and tunnel only |
 | `./start.sh --mode mock` | No VM and no GPU: a local mock that mimics the backend. A backup only; verify real work in vm mode |
 
+The diagrams call the two flows the Midterm flow (run with `--mode mock`) and the Final flow (run with `--mode vm`); the flags keep their names.
+
 What vm mode starts, in order:
 
 1. **On the VM, over SSH:** checks what is running and starts only what is missing. It clones the checkout if there is none, pulls missing images, and starts Phoenix (trace viewer) in Docker and the agent (`vss-agent`, port 8000) as a native process.
@@ -121,7 +123,7 @@ Never use NVIDIA's `dev-profile.sh` for this profile: its `down` deletes the VM'
 | Folder | What it is |
 |---|---|
 | [incident-console-v2](incident-console-v2/README.md) | The Next.js console |
-| [vlm-gateway](vlm-gateway/README.md) | Key-holding proxy for the mock flow |
+| [vlm-gateway](vlm-gateway/README.md) | Key-holding proxy for the Midterm flow |
 | [mock-backend](mock-backend/README.md) | Two zero-GPU mocks that mimic the backend |
 | [contracts](contracts/README.md) | The incident contract: prompt, schema, goldens |
 | [supabase](supabase/README.md) | Database schema (migrations) and SQL harness |
