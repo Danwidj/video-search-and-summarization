@@ -23,6 +23,12 @@ the env is current.
 
 ## Shared setup (`setup-worktree.sh`)
 
+**VM checkout.** A `dev-profile-incident` that has a `.env.remote` and no
+`.env.local` is the VM's checkout: the VM runs on `.env.remote` and is not
+expected to have a `.env.local`. There steps 1 and 3 below do nothing, so a pull
+never recreates a blank `.env.local` or the per-service `.env.local` links. A
+laptop checkout (it has `.env.local`, or neither file) is set up as described.
+
 1. **dev-profile-incident root `.env.local` (real secrets).** Outside the
    main worktree, when the main worktree has
    `deploy/docker/developer-profiles/dev-profile-incident/.env.local`, copy it

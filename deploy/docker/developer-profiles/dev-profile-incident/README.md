@@ -39,7 +39,7 @@ ln -sfn ../.env.local vlm-gateway/.env.local
 ln -sfn ../.env.local mock-backend/.env.local
 ```
 
-Running `.githooks/activate.sh` once per clone keeps these links (and the copy, in new worktrees) in place ([.githooks](../../../../.githooks/README.md)).
+Running `.githooks/activate.sh` once per clone keeps these links (and the copy, in new worktrees) in place ([.githooks](../../../../.githooks/README.md)). The hook leaves a VM checkout alone: where the folder has a `.env.remote` and no `.env.local`, it creates neither `.env.local` nor the links.
 
 **VM**, in this folder of the VM's checkout (default `/srv/rise-up/vss`, changed with `VSS_REPO_ROOT`):
 
@@ -47,7 +47,7 @@ Running `.githooks/activate.sh` once per clone keeps these links (and the copy, 
 cp .env .env.remote
 ```
 
-The scripts stop with this command if the file is missing; there is no fallback to `.env`. The older name `generated.env.remote` is still accepted when it is the only one; if both exist, `.env.remote` wins and the script says so.
+The VM is not expected to have a `.env.local`. The scripts stop with this command if the file is missing; there is no fallback to `.env`. The older name `generated.env.remote` is still accepted when it is the only one; if both exist, `.env.remote` wins and the script says so.
 
 | Section 1 setting | Where | Meaning |
 |---|---|---|

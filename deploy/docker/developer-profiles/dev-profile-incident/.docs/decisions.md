@@ -2,6 +2,16 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-11: The git hook leaves a VM checkout without `.env.local` alone
+
+**Decision:** `.githooks/setup-worktree.sh` treats a profile folder that has a `.env.remote` and no `.env.local` as the VM's checkout and skips Part 0 (seed or refresh `.env.local`) and Part B (the per-service `.env.local` links) there. A checkout with `.env.local`, or with neither file, is set up as before. `.scripts/test-setup-worktree.sh` covers both shapes.
+
+**Why:** The VM runs on `.env.remote` only. The hook recreated a blank `.env.local` from the template on every pull, which looked like a missing secrets file and, on a shared box, invited real values into a second file.
+
+**Alternatives rejected:** A hostname or environment-variable check (needs setup on each machine; the two files already say which machine it is); deleting the hook on the VM (the next `activate.sh` brings it back).
+
+**Links:** [`.githooks/README.md`](../../../../../.githooks/README.md), [README §2](../README.md).
+
 ### 2026-11-11: A template-built VM file must start the agent, and a test keeps it so
 
 **Decision:** `native-services.sh` loads the env file through `vm_env_load` (`.scripts/env-file.sh`): a blank `HOST_IP` gets the VM's address (`vm_host_ip`, the same detection as `vm-ensure-docker.sh`) before the file is read, so `VST_INTERNAL_URL` and `PHOENIX_ENDPOINT` are built from it; a typed value wins; no address stops the script. `rebuild-svc.sh` and `tracking-stack.sh` use the same default. The template gains non-secret defaults in section 2 for `EVAL_LLM_JUDGE_NAME`, `EVAL_LLM_JUDGE_BASE_URL`, `EVAL_DIR`, `DATASET_FILE_NAME` and `RTVI_VLM_BASE_URL` (the values NVIDIA's `dev-profile-base/.env` uses) and an optional blank `WEAVE_WORKFLOW_ALIAS`; they left `compose.unused.env`. `test-env-template.sh` fails when the agent config refers to a setting a template-built file leaves unset or blank.

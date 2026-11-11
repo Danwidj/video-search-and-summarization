@@ -81,7 +81,7 @@ Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_ur
 
 ### 4. `.env.remote` rules
 
-The file is untracked and lives on the VM only. Create it with `cp .env .env.remote` in the profile folder and fill in section 1; the scripts stop with that command when it is missing and never fall back to `.env`. Compose calls pass `compose.unused.env` before it. Rules (why for each: [operations §5](../../.docs/incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote)):
+The file is untracked and lives on the VM only; the VM has no `.env.local`, and `.githooks/setup-worktree.sh` does not recreate one there. Create it with `cp .env .env.remote` in the profile folder and fill in section 1; the scripts stop with that command when it is missing and never fall back to `.env`. Compose calls pass `compose.unused.env` before it. Rules (why for each: [operations §5](../../.docs/incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote)):
 
 - `VSS_APPS_DIR` and `VSS_DATA_DIR` are absolute paths.
 - `HOST_IP` set to the VM's internal LAN IP (it changes with DHCP and `vm-ensure-docker.sh` rewrites stale entries, and the native scripts supply a blank one for the run; the current value is in [status §6](../../.docs/status.md)) and `EXTERNAL_IP=localhost`. Reach the VM by its Tailscale name.
