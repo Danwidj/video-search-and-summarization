@@ -7,7 +7,7 @@
 #   (add --prod for a production console build; it rebuilds on every run)
 #
 # Modes (via --mode or VSS_START_MODE, default: vm):
-#   vm    — real VM agent (checks/deploys <vm-host> over SSH, opens the SSH
+#   vm    — real VM agent (checks/deploys the VM over SSH, opens the SSH
 #           tunnel for the agent on :8000 only; uploads go straight from the
 #           console to R2, and the VM runs no VST/HAProxy). Exports
 #           ANALYSIS_MODE=agent so v2 calls the agent's
@@ -34,7 +34,7 @@
 #     (ENABLE_TRACKING, on by default; see below). VIOS/VST, HAProxy and Redis
 #     are no longer part of the deployment: uploads go straight to R2.
 #   - NATIVE SERVICES: Fast-iterating application modules running directly
-#     on <vm-host> (vss-agent via NAT framework, plus optional analytics
+#     on the VM (vss-agent via NAT framework, plus optional analytics
 #     video-analytics-api and behavior-analytics).
 #
 # Default analysis stack (vm mode): one run brings up person tracking and the
@@ -72,7 +72,7 @@
 #      of prompting). Every step is
 #      bounded and fails with a message instead of hanging.
 #   3. The tunnel step is laptop-side only (same hostname guard the old
-#      `mdx-tunnel-incident` alias had — refuse if run ON <vm-host>:
+#      `mdx-tunnel-incident` alias had — refuse if run ON the VM:
 #      forwarding the VM to itself is at best a no-op). It is backgrounded
 #      here so the script can continue, and is torn down automatically when
 #      the console exits (Ctrl-C).
@@ -97,9 +97,11 @@
 #                            resolved non-interactively by vm-preflight.sh:
 #                            VSS_SSH_USER env var, else ~/.ssh/config User,
 #                            else $USER/whoami. No prompt is ever shown.
-#                            VSS_SSH_HOST (default: <vm-host>) sets the host.
+#                            VSS_SSH_HOST sets the host (required, no default).
 #   VSS_SSH_USER             VM username override (see VSS_SSH_TARGET above)
-#   VSS_SSH_HOST             VM hostname (default: <vm-host>)
+#   VSS_SSH_HOST             VM hostname (required in vm mode, no default): set it in the
+#                            environment or in .env.local. The laptop guard compares it
+#                            with this machine's short hostname
 #   VSS_REPO_ROOT            the VM's shared checkout (default: /srv/rise-up/vss)
 #   VSS_REPO_URL             git URL to clone if the VM has no checkout (default: this
 #                            clone's `origin`)
@@ -176,9 +178,19 @@ case "$VSS_START_MODE" in
     ;;
 esac
 
-# Laptop-side only: refuse to run ON <vm-host>
-if [ "$(hostname -s 2>/dev/null)" = "<vm-host>" ]; then
-  echo "start.sh: run this from your laptop, not on <vm-host> (it SSHes to the VM, forwards laptop ports to it, and runs v2 locally)." >&2
+# VM host: VSS_SSH_HOST from the environment or .env.local, no default. Mock mode never
+# SSHes, so it needs the host only for the laptop guard below, when one is configured.
+# shellcheck source=.scripts/vm-host.sh
+source "${SCRIPT_DIR}/.scripts/vm-host.sh"
+if [ "$VSS_START_MODE" = vm ]; then
+  vm_require_ssh_host start.sh || exit 1
+else
+  vm_load_ssh_host
+fi
+
+# Laptop-side only: refuse to run ON the VM
+if vm_running_on_host; then
+  echo "start.sh: run this from your laptop, not on the VM (it SSHes to the VM, forwards laptop ports to it, and runs v2 locally)." >&2
   exit 1
 fi
 

@@ -164,7 +164,7 @@ class TestHttpClient:
 
     @pytest.mark.asyncio
     async def test_has_stream_reads_the_nested_get_stream_info_by_camera_id(self):
-        # The live response (<vm-host>, 2026-11-07): the count and the list sit under a nested "stream-info".
+        # The live response (the VM, 2026-11-07): the count and the list sit under a nested "stream-info".
         live = {
             "reason": "GET_LIVE_STREAM_INFO_SUCCESS",
             "status": "HTTP/1.1 200 OK",

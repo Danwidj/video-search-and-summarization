@@ -230,9 +230,9 @@ def test_reinserting_an_incident_replaces_its_evidence_and_matches(tmp_path):
 
 @pytest.fixture
 def finals_style_env(monkeypatch):
-    """Credentials shaped like the finals project's, so any database access would have somewhere to go."""
-    monkeypatch.setenv("INCIDENT_DB_DSN", "postgresql://postgres.finals:secret@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres")
-    monkeypatch.setenv("INCIDENT_SUPABASE_URL", "https://finals-project.supabase.co")
+    """Credentials shaped like a hosted project's, so any database access would have somewhere to go."""
+    monkeypatch.setenv("INCIDENT_DB_DSN", "postgresql://postgres.project:secret@db.example.test:5432/postgres")
+    monkeypatch.setenv("INCIDENT_SUPABASE_URL", "https://project.example.test")
     monkeypatch.setenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", "placeholder-service-role-key")
     db_module.reset_cache()
 

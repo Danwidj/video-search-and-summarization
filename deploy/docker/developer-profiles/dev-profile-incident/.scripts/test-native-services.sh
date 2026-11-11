@@ -342,7 +342,7 @@ tar -cJf "$release/$build.tar.xz" -C "$release" "$build"
 (cd "$release" && sha256sum "$build.tar.xz" >checksums.sha256)
 
 tools="$TMP/tools"
-# The "missing" checks need a host without ffmpeg on the bare PATH (true on <vm-host> and macOS).
+# The "missing" checks need a host without ffmpeg on the bare PATH (true on the workstation and macOS).
 if [ -z "$(PATH="$BARE_PATH:/usr/local/bin" command -v ffmpeg || true)" ]; then
   missing_out="$(PATH="$BARE_PATH" VSS_MEDIA_TOOLS_DIR="$tools" bash "$MEDIA" check || true)"
   assert_contains "$missing_out" "^ffmpeg MISSING" "check reports a missing ffmpeg"

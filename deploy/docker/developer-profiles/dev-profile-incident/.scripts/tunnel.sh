@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# <vm-host> backend tunnel — LAPTOP SIDE ONLY (replaces the old
+# VM backend tunnel — LAPTOP SIDE ONLY (replaces the old
 # `mdx-tunnel-incident` shell alias from deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh — same
 # behavior, standalone script).
 #
-# The laptop-local incident-console-v2 reaches the real <vm-host> agent (:8000)
+# The laptop-local incident-console-v2 reaches the real VM agent (:8000)
 # through this SSH tunnel instead of the mock. Unlike every other script in
 # this directory, this one runs on YOUR LAPTOP, not on the VM: it forwards a
-# laptop-local port to the VM. Do not run it on <vm-host> itself (forwarding
+# laptop-local port to the VM. Do not run it on the VM itself (forwarding
 # the VM to itself is at best a no-op).
 #
 # Only :8000 is forwarded. The console uploads straight to R2, and the VM no
@@ -26,8 +26,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=vm-preflight.sh
 source "${SCRIPT_DIR}/vm-preflight.sh"
 
-if [ "$(hostname -s 2>/dev/null)" = "<vm-host>" ]; then
-  echo "tunnel.sh: run this from your laptop, not on <vm-host> (it forwards laptop ports to the VM)." >&2
+if vm_running_on_host; then
+  echo "tunnel.sh: run this from your laptop, not on the VM (it forwards laptop ports to the VM)." >&2
   exit 1
 fi
 

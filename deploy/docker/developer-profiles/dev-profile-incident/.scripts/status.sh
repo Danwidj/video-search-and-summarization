@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # status.sh — Report deploy status of Docker appliance containers AND native
-# processes on <vm-host>.
+# processes on the VM.
 #
 # Runs on the VM against the local docker daemon and native process manager.
 

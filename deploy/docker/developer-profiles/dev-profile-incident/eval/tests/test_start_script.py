@@ -57,21 +57,31 @@ def test_start_script_rejects_invalid_mode():
     assert "VSS_START_MODE must be 'vm' or 'mock'" in res.stderr
 
 
+def _profile_copy(tmp_path: Path) -> Path:
+    """A copy of start.sh and its host helper in a profile dir with no .env.local, so the real one is never read."""
+    profile = tmp_path / "profile"
+    (profile / ".scripts").mkdir(parents=True)
+    shutil.copy(START_SH_PATH, profile / "start.sh")
+    shutil.copy(START_SH_PATH.parent / ".scripts" / "vm-host.sh", profile / ".scripts" / "vm-host.sh")
+    return profile / "start.sh"
+
+
 def _run_on_fake_vm(tmp_path: Path, args: list[str], extra_env: dict[str, str] | None = None):
-    """Run start.sh with `hostname` faked to <vm-host> so it exits at the laptop guard, after mode validation."""
+    """Run start.sh with `hostname` faked to vm-host and VSS_SSH_HOST=vm-host so it exits at the laptop guard, after mode validation."""
     fake_bin_dir = tmp_path / "bin"
     fake_bin_dir.mkdir()
     fake_hostname = fake_bin_dir / "hostname"
-    fake_hostname.write_text("#!/bin/sh\necho <vm-host>\n")
+    fake_hostname.write_text("#!/bin/sh\necho vm-host\n")
     fake_hostname.chmod(0o755)
 
     env = os.environ.copy()
     env.pop("VSS_START_MODE", None)
     env["PATH"] = f"{fake_bin_dir}:{env.get('PATH', '')}"
+    env["VSS_SSH_HOST"] = "vm-host"
     env.update(extra_env or {})
 
     return subprocess.run(
-        [str(START_SH_PATH), *args],
+        [str(_profile_copy(tmp_path)), *args],
         capture_output=True,
         text=True,
         env=env,
@@ -88,7 +98,7 @@ def test_start_script_accepts_canonical_modes(tmp_path: Path, args: list[str], e
     assert res.returncode == 1
     assert "must be 'vm' or 'mock'" not in res.stderr
     assert "deprecated" not in res.stderr
-    assert "run this from your laptop, not on <vm-host>" in res.stderr
+    assert "run this from your laptop, not on the VM" in res.stderr
 
 
 @pytest.mark.parametrize(("args", "extra_env"), [(["--mode", "local"], None), ([], {"VSS_START_MODE": "local"})])
@@ -99,29 +109,42 @@ def test_start_script_local_is_deprecated_alias_for_mock(
     assert res.returncode == 1
     assert "mode 'local' is deprecated; use 'mock'" in res.stderr
     assert "must be 'vm' or 'mock'" not in res.stderr
-    assert "run this from your laptop, not on <vm-host>" in res.stderr
+    assert "run this from your laptop, not on the VM" in res.stderr
 
 
-def test_start_script_refuses_to_run_on_vm_host(tmp_path: Path):
-    """start.sh must refuse to run directly on the VM (<vm-host>)."""
+def test_start_script_refuses_to_run_on_the_vm_host(tmp_path: Path):
+    """start.sh must refuse to run directly on the VM (local short hostname equals the configured host's)."""
     fake_bin_dir = tmp_path / "bin"
     fake_bin_dir.mkdir()
     fake_hostname = fake_bin_dir / "hostname"
-    fake_hostname.write_text("#!/bin/sh\necho <vm-host>\n")
+    fake_hostname.write_text("#!/bin/sh\necho vm-host\n")
     fake_hostname.chmod(0o755)
 
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin_dir}:{env.get('PATH', '')}"
+    env["VSS_SSH_HOST"] = "vm-host.example.test"
 
     res = subprocess.run(
-        [str(START_SH_PATH)],
+        [str(_profile_copy(tmp_path))],
         capture_output=True,
         text=True,
         env=env,
         check=False,
     )
     assert res.returncode == 1
-    assert "run this from your laptop, not on <vm-host>" in res.stderr
+    assert "run this from your laptop, not on the VM" in res.stderr
+
+
+def test_start_script_vm_mode_stops_when_host_is_unset(tmp_path: Path):
+    """vm mode has no default host: with VSS_SSH_HOST unset (env and .env.local) it stops and names the setting."""
+    env = os.environ.copy()
+    env.pop("VSS_SSH_HOST", None)
+    env.pop("VSS_START_MODE", None)
+    res = subprocess.run(
+        [str(_profile_copy(tmp_path)), "--mode", "vm"], capture_output=True, text=True, env=env, check=False
+    )
+    assert res.returncode == 1
+    assert "VSS_SSH_HOST is not set" in res.stderr
 
 
 def test_start_script_shellcheck():
@@ -222,6 +245,8 @@ def _fake_mock_mode_profile(tmp_path: Path) -> tuple[Path, dict[str, str], Path]
     (profile / "mock-backend" / ".env.local").write_text("")
     (profile / "vlm-gateway" / ".env.local").write_text("")
     shutil.copy2(START_SH_PATH, profile / "start.sh")
+    (profile / ".scripts").mkdir()
+    shutil.copy2(START_SH_PATH.parent / ".scripts" / "vm-host.sh", profile / ".scripts" / "vm-host.sh")
 
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
