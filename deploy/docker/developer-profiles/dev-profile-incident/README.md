@@ -121,8 +121,8 @@ Never use NVIDIA's `dev-profile.sh` for this profile: its `down` deletes the VM'
 | [supabase](supabase/README.md) | Database schema (migrations) and SQL harness |
 | [eval](eval/README.md) | The P1/RP1 benchmark |
 | [skills](skills/README.md) | Agent skills for operating the profile |
-| [.scripts](.scripts/README.md), [.dotfiles](.dotfiles/README.md) | Lifecycle scripts; optional VM shell setup |
-| [archived](archived/README.md) | Retired code and the frozen midterm database record, read-only |
+| [.scripts](.scripts/README.md) | Lifecycle scripts |
+| [archived](archived/README.md) | The frozen midterm database record, copy and R2 scripts, read-only |
 
 ## Read more
 

@@ -9,7 +9,7 @@ metadata:
 ---
 # Incident Run Eval
 
-`eval/` is its own `uv` project. It shares no runtime with other services. Its scoring code began as a verbatim copy of the v1 console's modules (v1 is archived under `archived/incident-console/`).
+`eval/` is its own `uv` project. It shares no runtime with other services. Its scoring code began as a verbatim copy of the v1 console's modules (the retired v1 console, removed from the repository; git history keeps it).
 
 Canonical facts:
 - Setup and variables: [`eval/README.md`](../../eval/README.md)
@@ -190,4 +190,4 @@ The rules are fixed by [`evaluation-methodology-v1.0`](../../eval/methodology/ev
 ## After changing anything
 
 - If methodology or results change, update `eval/docs/vlm_benchmark_results.md`.
-- `eval/` is the only maintained copy of the scoring code. Never update `archived/incident-console/` to match it.
+- `eval/` is the only maintained copy of the scoring code.

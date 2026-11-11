@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # VM backend tunnel — LAPTOP SIDE ONLY (replaces the old
-# `mdx-tunnel-incident` shell alias from deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh — same
+# `mdx-tunnel-incident` shell alias — same
 # behavior, standalone script).
 #
 # The laptop-local incident-console-v2 reaches the real VM agent (:8000)
