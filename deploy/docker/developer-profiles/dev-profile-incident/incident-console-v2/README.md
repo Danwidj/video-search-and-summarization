@@ -7,7 +7,7 @@ The Next.js web console for the incident profile. Upload a clip, run the VLM ana
 From the profile folder (`deploy/docker/developer-profiles/dev-profile-incident/`):
 
 ```bash
-./start.sh --mode vm   # the agent on <vm-host> over an SSH tunnel
+./start.sh --mode vm   # the agent on the VM over an SSH tunnel
 ```
 
 The console opens on `http://127.0.0.1:3200`; `GET /api/health` should report `ready`. That is `next dev`; for a production build add `--prod` (`./start.sh --mode vm --prod`: `npm run build`, then `npm run start`, same port 3200). To pick up a code change in a production console, stop it and run the same command again; it rebuilds each time. Details: [operations](../.docs/incident-profile-operations.md).

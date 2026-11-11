@@ -11,7 +11,7 @@ Specification for the PR 119 eval workstream ([MVP2 overview](README.md#4-delive
 > - **Start:** at [§10](#10-work-order-and-definition-of-done). Agree the [§8](#8-proposals-awaiting-approval) proposals first and record each in [`decisions.md`](../decisions.md).
 > - **Before a live run:** decide where retrieval labels and manifests are stored (open item 1 below), and upload and analyse a few real videos, because the finals search corpus may be empty (§1.2).
 > - **Out of scope:** the multi-subagent routing config and full RT-CV / RT-Embed indexing were dropped, so Track F stays deferred (§5).
-> - **Compute:** `<vm-host>` uses GPU 0 only ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)); offline detector and embedding experiments run off the VM (§6.1).
+> - **Compute:** the VM uses GPU 0 only ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)); offline detector and embedding experiments run off the VM (§6.1).
 > - **Access:** each developer uses their own credentials in their own local `.env.local`, never committed or shared in chat. The variable names are in [§1.1](#11-eval-p1rp1-extraction-benchmark) (Configuration).
 >
 > **Open items for the eval owner**
@@ -67,7 +67,7 @@ Paths are relative to the profile directory, except paths starting with `service
 
 | Piece | Current implementation | Source |
 |---|---|---|
-| Search route | `POST /api/v1/incidents/search` in `vss-agent` (`search-contract-v1`), live on `<vm-host>` | `services/agent/src/vss_agents/api/incident_search.py` |
+| Search route | `POST /api/v1/incidents/search` in `vss-agent` (`search-contract-v1`), live on the VM | `services/agent/src/vss_agents/api/incident_search.py` |
 | Corpus | `evidence_crops`: one row per evidence item of each video's searchable revision (its official revision, else its newest), keyed `(revision_id, item_type, item_id)`, `embedding vector(1024)`, HNSW cosine. `search_evidence_items` returns only those rows. | [`data.md`](../data.md#evidence_crops); `supabase/migrations/20261023000000_report_revisions_schema.sql`, `20261023000200_searchable_latest_revision.sql` |
 | Corpus size | Current counts: [status](../status.md#3-database-status) | |
 | Embeddings | `nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions. The **text** `"{name}: {description}"` is embedded (`passage`), and so is the query (`query`). Crops are not embedded. | `services/agent/src/vss_agents/utils/embeddings.py` |
@@ -77,7 +77,7 @@ Paths are relative to the profile directory, except paths starting with `service
 | Detector | `DefaultDetector` asks the remote VLM for one `bbox_2d` on the keyframe at the item's `timestamp_seconds`. With no box the item is kept as `located: false` (whole frame, no crop). It sits behind the `OpenVocabularyDetector` port. | `services/agent/src/vss_agents/utils/crop_evidence.py`; [decisions](../decisions.md) 2026-10-18 |
 | Latency and cost signals | Only the end-to-end `execution_time_ms`. Critic token usage and per-call latency are not recorded. | `incident_search.py` |
 | `/analyze` | Runs the **same one-shot P1 call** as gateway mode and `eval/`, using the vendored copy of the same contract. It skips RP1 when `skip_rp1` is set. The model defaults to the VM's `VLM_NAME`; a request may name any allowlisted `model`. When the detector is available (`DefaultDetector` needs `VLM_GATEWAY_API_KEY` or `OPENAI_API_KEY`), best-effort cropping runs after P1 inside the same request: one remote VLM box call per entity, instrument and asset (up to 4 attempts each on 429/5xx), uploaded to R2 when R2 is configured and listed in the AI revision's `evidence`. It does not change the report, but it adds paid calls and wall-clock time to every `/analyze` response. There is no perception, tool calling or subagents. | `services/agent/src/vss_agents/tools/incident_report_gen.py`; `services/agent/src/vss_agents/api/incident_analyze.py` |
-| Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000` (its models and embeddings are remote; on `<vm-host>` VSS uses GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)). Both mocks (:7777, launched by `start.sh --mode mock`, and standalone :7778) answer from one finals snapshot captured 2026-10-24, scoring hits by the share of query words they contain, with placeholder critic verdicts and crop URLs; the snapshot was regenerated on 2026-10-25 and holds the six finals AI revisions, without the three test videos the cleanup removed. Both mocks implement `hide_rejected` and the 0.0 `min_similarity` default. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
+| Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000` (its models and embeddings are remote; on the VM VSS uses GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)). Both mocks (:7777, launched by `start.sh --mode mock`, and standalone :7778) answer from one finals snapshot captured 2026-10-24, scoring hits by the share of query words they contain, with placeholder critic verdicts and crop URLs; the snapshot was regenerated on 2026-10-25 and holds the six finals AI revisions, without the three test videos the cleanup removed. Both mocks implement `hide_rejected` and the 0.0 `min_similarity` default. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
 
 ## 2. Tracks (proposed, P-1)
 
@@ -242,7 +242,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
   - corpus manifest hash and query set hash
   - every `query_id`
   - timestamps
-- **Where the metadata comes from.** The search API returns none of the agent git SHA, critic model, critic delay or embedding model. Before each run the operator records them from `<vm-host>` (read-only):
+- **Where the metadata comes from.** The search API returns none of the agent git SHA, critic model, critic delay or embedding model. Before each run the operator records them from the VM (read-only):
   - the git SHA of the VM checkout (`/srv/rise-up/vss`);
   - the values of `VLM_NAME`, `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`, `EVIDENCE_EMBEDDING_MODEL` and `EVIDENCE_EMBEDDING_BASE_URL` that the running agent was started with (environment is captured at process start; see the `incident-operate-vm` skill);
   - only those named values. Never copy whole environment files, keys or DSNs into results, logs or commits.
@@ -250,7 +250,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 
   | Purpose | Needed | Notes |
   |---|---|---|
-  | Live search | SSH tunnel to `<vm-host>` (`start.sh --mode vm` or `.scripts/tunnel.sh`), agent at `http://localhost:8000` | Team VM access; no key in the harness |
+  | Live search | SSH tunnel to the VM (`start.sh --mode vm` or `.scripts/tunnel.sh`), agent at `http://localhost:8000` | Team VM access; no key in the harness |
   | Corpus manifest, drift check, raw-path RPC | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | `evidence_crops` and `search_evidence_items` are `service_role` only (RLS) |
   | Raw-path query embedding | `EVIDENCE_EMBEDDING_API_KEY` (or `NVIDIA_API_KEY`), with `EVIDENCE_EMBEDDING_BASE_URL` and `EVIDENCE_EMBEDDING_MODEL` | The Brev gateway key returns HTTP 403 on `/v1/embeddings`; adding a key to the harness host is ask-first (§6.1) |
   | Labelling contact sheets, Track D frames, Track X signed video URLs | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | Crop URLs in search responses are presigned for one hour, so labelling reads crops from R2 directly |
@@ -312,7 +312,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
   - MiniLM and OpenAI embeddings
   - image or hybrid embeddings
   - an image-only critic
-- **Where experiments run:** off `<vm-host>` (developer GPU or CPU; on `<vm-host>` VSS may use GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)), against snapshots, with no change to the route, migrations or VM.
+- **Where experiments run:** off the VM (developer GPU or CPU; on the VM VSS may use GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)), against snapshots, with no change to the route, migrations or VM.
 - **Ask first:** new dependencies and new API keys.
 - **Adoption is separate:** using a result in production needs a new `decisions.md` entry superseding the current one, agreed by the owning workstream.
 
@@ -392,7 +392,7 @@ These are proposed evaluation policies, not agreed decisions. Once one is approv
 
 1. **Query sourcing:** human-written operator queries, or LLM-proposed queries with human verification, within §3.3?
 2. **Track F fairness:** how to normalise token budgets and timeouts between one call and a multi-call pipeline.
-3. **Detector hosting:** if a candidate clearly beats `DefaultDetector`, where could it run, given that on `<vm-host>` only GPU 0 is available ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)) and a local detector on the VM was rejected (2026-10-18)?
+3. **Detector hosting:** if a candidate clearly beats `DefaultDetector`, where could it run, given that on the VM only GPU 0 is available ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)) and a local detector on the VM was rejected (2026-10-18)?
 4. **Optional direct timing runs:** not planned. Direct timing at production `top_k = K` (§3.6) may be added later as a separate experiment if its paid critic calls get budget approval.
 
 ## 10. Work order and definition of done
@@ -423,7 +423,7 @@ Each item is its own PR from `main`, rebased onto `main` before merge. This hand
 | Step | Needs before it can start | Open decision or dependency |
 |---|---|---|
 | 2. Query set, labels, corpus manifest | Approval of P-2 (protocol) and P-3 (manifest pinning); a non-empty corpus | Query sourcing (Q1); where labels and the manifest are stored (open item 1: storage for labels and manifests is undecided) |
-| 3. Retrieval harness `eval/scripts/eval_retrieval.py` | Step 2; the live agent (running on `<vm-host>:8000`, [status](../status.md#7-archive) known issue 5); SSH tunnel and the credentials in §3.7 | P-4 (validity flags), P-7 (repeats); mapping each search hit to a `Candidate` with key `(revision_id, item_type, item_id)`, `similarity_score` and `critic.verdict`, in `rank` order; the run directory layout (P-6 for reports) |
+| 3. Retrieval harness `eval/scripts/eval_retrieval.py` | Step 2; the live agent (running on the VM's port 8000, [status](../status.md#7-archive) known issue 5); SSH tunnel and the credentials in §3.7 | P-4 (validity flags), P-7 (repeats); mapping each search hit to a `Candidate` with key `(revision_id, item_type, item_id)`, `similarity_score` and `critic.verdict`, in `rank` order; the run directory layout (P-6 for reports) |
 | 4. Critic ablation report | Step 3 output; `summarize` gives the list metrics and differences | Critic-call cost per list and latency tables are still to write (§3.6); token figures wait on the search route (§7) |
 | 5. Tracks E, D and X | Their inputs (a corpus snapshot, framing labels, the 55-video split) | P-1 (track structure), P-5 (Track X run ids); Track E can reuse `retrieval_metrics` on in-memory rankings; Track X scores offline (`eval/offline_store.py`) |
 

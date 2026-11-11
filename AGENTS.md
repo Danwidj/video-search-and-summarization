@@ -24,7 +24,7 @@ This fork adds a video-driven incident search and reporting system (sponsored by
 
 ## Environment Pointers
 
-- **Run and verify on the VM:** run all UI and backend work with `./start.sh --mode vm` against the `<vm-host>` vss-agent, never `--mode mock`. If the VM is unreachable, stop and report it; do not fall back to mock. The mock backend is a mock that mimics the backend, not the real one.
+- **Run and verify on the VM:** run all UI and backend work with `./start.sh --mode vm` against the VM's vss-agent, never `--mode mock`. If the VM is unreachable, stop and report it; do not fall back to mock. The mock backend is a mock that mimics the backend, not the real one.
 - **Mock server (a backup that mimics the backend):** see [`mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) for the mock server. There is no mock of the Postgres schema (do not conflate the two); the SQL harness in [`supabase/tests/`](deploy/docker/developer-profiles/dev-profile-incident/supabase/README.md) tests the real schema on a throwaway local Postgres.
 - **Automatic environment setup:** [`.githooks/`](.githooks/README.md) keeps untracked `.env` files, `.env.local` copies and the incident profile's `.env.local` symlinks in sync across worktrees. Run `.githooks/activate.sh` once per clone.
 

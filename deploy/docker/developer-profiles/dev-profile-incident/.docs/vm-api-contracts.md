@@ -1,6 +1,6 @@
 # VM API contracts (frontend reference)
 
-HTTP contracts of the native `vss-agent` on `<vm-host>` and the SSH tunnel the frontend uses to reach them. VM side only. Source of truth: `services/agent/src/vss_agents/api/` (Pydantic models) and `custom_fastapi_worker.py` (route registration). Last checked against the code on 2026-11-03; the live VM was last checked on 2026-10-24 (below).
+HTTP contracts of the native `vss-agent` on the VM and the SSH tunnel the frontend uses to reach them. VM side only. Source of truth: `services/agent/src/vss_agents/api/` (Pydantic models) and `custom_fastapi_worker.py` (route registration). Last checked against the code on 2026-11-03; the live VM was last checked on 2026-10-24 (below).
 
 ## Tunnel
 

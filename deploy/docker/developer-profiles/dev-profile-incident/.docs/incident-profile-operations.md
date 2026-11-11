@@ -8,10 +8,10 @@ quirks, and verification checklists.
 
 ## 1. Environments and Access
 
-The team shares a remote GPU development workstation (`<vm-host>`), accessible via Tailscale VPN.
+The team shares a remote GPU development workstation, accessible via Tailscale VPN.
 
 - **Host Hardware:** 2× NVIDIA RTX A6000 (48 GB VRAM each), AMD Threadripper PRO 5975WX (32 cores / 64 threads), 251 GiB RAM, 1.8 TB NVMe storage. VSS uses GPU 0 only ([GPU rule](#5-vm-deployment-configuration-principles-generatedenvremote), item 10).
-- **Tailscale Hostname:** `<vm-host>` (the LAN address changes with DHCP; see [status](status.md#6-live-vm-configuration-<vm-host>)).
+- **Tailscale Hostname:** `<vm-host>.<tailnet>.ts.net` (the LAN address changes with DHCP; see [status](status.md#6-live-vm-configuration)).
 - **VM Working Directory:** `/srv/rise-up/vss` (root checkout).
 - **NGC Credentials on VM:** `/srv/rise-up/.ngc_env` (load via `set -a; source /srv/rise-up/.ngc_env; set +a` or `source .scripts/ngc-env.sh`; `VSS_NGC_ENV` overrides the file).
 
@@ -19,7 +19,7 @@ The team shares a remote GPU development workstation (`<vm-host>`), accessible v
 
 ## 2. Native vs. Docker Service Split
 
-Fast-iterating application modules run directly as native processes on `<vm-host>` rather than inside
+Fast-iterating application modules run directly as native processes on the VM rather than inside
 Docker containers. This reduces code-change cycles from ~3-minute container rebuilds to ~2-second process restarts.
 Phoenix (the trace viewer used for eval) and the person-tracking stack (Kafka, Elasticsearch, Logstash, NvStreamer, perception, video-analytics API; default on, [below](#person-tracking-stack-scriptstracking-stacksh-enable_trackingtrue)) run in Docker. VIOS/VST, HAProxy and Redis are removed from the deployment: `start.sh` neither starts nor checks them ([decision](decisions.md#2026-10-31-vst-is-dropped-from-the-consoles-upload-path-uploads-go-to-r2-only)).
 
@@ -40,7 +40,7 @@ standard streams to `/srv/rise-up/vss/.run/<service>.log`, and polls health endp
 
 ```bash
 # SSH into the workstation
-ssh <vm-host>
+ssh "$VSS_SSH_HOST"
 cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts
 
 # Check service status
@@ -99,14 +99,14 @@ are dead weight on disk. Running `skills/incident-operate-vm/scripts/prune-nativ
 and stopped containers after confirming the native virtual environment (`services/agent/.venv/bin/nat`) exists:
 
 ```bash
-ssh <vm-host> "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/skills/incident-operate-vm/scripts/prune-native-images.sh"
+ssh "$VSS_SSH_HOST" "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/skills/incident-operate-vm/scripts/prune-native-images.sh"
 ```
 
 If the native agent virtual environment is not present, the script prompts before proceeding. Use
 `--non-interactive` only in an already-authorized automation context:
 
 ```bash
-ssh <vm-host> "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/skills/incident-operate-vm/scripts/prune-native-images.sh --non-interactive"
+ssh "$VSS_SSH_HOST" "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/skills/incident-operate-vm/scripts/prune-native-images.sh --non-interactive"
 ```
 
 ### Virtual Environment & Editable Agent Reinstall (`services/agent`)
@@ -138,7 +138,7 @@ The primary UI (`incident-console-v2`) runs locally on developer laptops. Runnin
 
 ### SSH Port Tunneling (Manual / Standalone)
 
-`start.sh --mode vm` manages the tunnel automatically. It forwards only `localhost:8000` to the agent on the VM loopback, so no VM address is needed. If you need to open or test the tunnel manually for debugging (do **not** run this on `<vm-host>` itself):
+`start.sh --mode vm` manages the tunnel automatically. It forwards only `localhost:8000` to the agent on the VM loopback, so no VM address is needed. If you need to open or test the tunnel manually for debugging (do **not** run this on the VM itself):
 
 ```bash
 cd deploy/docker/developer-profiles/dev-profile-incident
@@ -157,9 +157,9 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
 ### SSH Username Resolution & Troubleshooting
 
 `start.sh` (in `vm` mode) and `.scripts/tunnel.sh` source `.scripts/vm-preflight.sh`, which resolves the SSH login target non-interactively with no prompts:
-1. **Explicit Target:** If `VSS_SSH_TARGET` is set (e.g. `user@<vm-host>`), it is used directly.
-2. **Explicit User:** If `VSS_SSH_USER` is set, it overrides the username while using `VSS_SSH_HOST` (default: `<vm-host>`).
-3. **SSH Config User:** If neither is set, the scripts inspect `~/.ssh/config` for `Host <vm-host>` (via `ssh -G "${VSS_SSH_HOST}"`).
+1. **Explicit Target:** If `VSS_SSH_TARGET` is set (e.g. `user@<vm-host>.<tailnet>.ts.net`), it is used directly.
+2. **Explicit User:** If `VSS_SSH_USER` is set, it overrides the username while using `VSS_SSH_HOST` (no default: set it in `.env.local` or the environment to your own host or SSH config alias).
+3. **SSH Config User:** If neither is set, the scripts inspect `~/.ssh/config` for the `Host` entry named by `VSS_SSH_HOST` (via `ssh -G "${VSS_SSH_HOST}"`).
 4. **Local Fallback:** Falls back to your local machine `$USER` / `whoami`.
 
 **Mode Isolation & Preflight Check:**
@@ -183,17 +183,17 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
 **Reachable VM, services down or missing:** `start.sh` lists what is missing and runs `.scripts/vm-ensure-docker.sh` on the VM (piped over SSH, so the laptop copy always runs). It clones the repo if `VSS_REPO_ROOT` has no checkout, stops with instructions if `generated.env.remote` is missing (secrets cannot be generated), rewrites a stale `HOST_IP` there to the VM's current address (timestamped `.bak-` copy first), pulls images that are not on the VM (`docker compose pull --ignore-buildable --include-deps --policy missing`; `mdx-*` images are built by `up`), and runs `docker compose up -d --yes` under `VSS_COMPOSE_UP_TIMEOUT` (default 600 s). `--yes` answers compose's "volume exists but doesn't match configuration. Recreate?" prompt with yes, so volumes and containers whose config changed are recreated instead of start.sh hanging on stdin (the 2026-11-02 hang; `.scripts/tracking-stack.sh` does the same). Bind-volume data on the host is not deleted by the recreate. On a timeout it prints container states and the last Kafka / broker health-check log lines. Its exit codes: 10 repo, 11 env file, 12 docker, 13 pull, 14 up, 124 timeout. Native services start under `VSS_NATIVE_START_TIMEOUT` (default 300 s). A stale `HOST_IP` was the cause of the 2026-10-18 hang: the Kafka broker health check never passed.
 
 **Troubleshooting Gotchas:**
-- **SSH Preflight Fails:** `start.sh` prints the cause and next step (table above). Beyond that, ensure your `Host <vm-host>` entry in `~/.ssh/config` has the correct `HostName` and `User`.
+- **SSH Preflight Fails:** `start.sh` prints the cause and next step (table above). Beyond that, ensure your `Host` entry for `VSS_SSH_HOST` in `~/.ssh/config` has the correct `HostName` and `User`.
 - **Tunnel never comes up:** `start.sh` tells apart a laptop port already in use, a tunnel that exited (SSH connection or forward blocked, or `VSS_AGENT_HOST` on the VM bound to LAN instead of `127.0.0.1`: agent healthy on the VM but unreachable at loopback), and an agent that crashed after starting (read `$VSS_REPO_ROOT/.run/vss-agent.log`). It forwards only `:8000`; the console does not use `vss-haproxy-ingress` (`:7777`).
-- **Wrong User Account:** Each teammate has a provisioned account on `<vm-host>`. Configure `User <your-vm-username>` under `Host <vm-host>` in `~/.ssh/config` (or set `export VSS_SSH_USER="<your-vm-username>"` in your shell rc). No interactive prompt is shown.
+- **Wrong User Account:** Each teammate has a provisioned account on the VM. Configure `User <your-vm-username>` under your `Host` entry for `VSS_SSH_HOST` in `~/.ssh/config` (or set `export VSS_SSH_USER="<your-vm-username>"` in your shell rc). No interactive prompt is shown.
 
 ---
 
 ## 4. Safe Deployment Principles
 
 1. **Deploy Exclusively via `start.sh` (or Direct Compose on VM):**
-   `deploy/docker/scripts/dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`) and must NOT be used directly for the incident profile. `./start.sh --mode mock` and `./start.sh --mode vm` are THE standard way to set up and launch everything from your laptop. On `<vm-host>` itself, backend appliances are managed via Docker Compose (`docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>`) and native services via `.scripts/native-services.sh`.
-2. **NEVER Run `dev-profile.sh down` on `<vm-host>`:**
+   `deploy/docker/scripts/dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`) and must NOT be used directly for the incident profile. `./start.sh --mode mock` and `./start.sh --mode vm` are THE standard way to set up and launch everything from your laptop. On the VM itself, backend appliances are managed via Docker Compose (`docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>`) and native services via `.scripts/native-services.sh`.
+2. **NEVER Run `dev-profile.sh down` on the VM:**
    `deploy/docker/scripts/dev-profile.sh down` executes `docker compose down -v` and deletes the entire persistent data directory
    (`VSS_DATA_DIR`), destroying tens of gigabytes of cached model weights. Always use:
    ```bash
@@ -222,7 +222,7 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
 
 ## 5. VM Deployment Configuration Principles (`generated.env.remote`)
 
-The untracked deployment environment file on `<vm-host>` (`generated.env.remote`) configures container volume mounts, networking, and remote inference routing. Follow these standing principles when configuring the environment:
+The untracked deployment environment file on the VM (`generated.env.remote`) configures container volume mounts, networking, and remote inference routing. Follow these standing principles when configuring the environment:
 
 1. **Absolute App and Data Directories:** `VSS_APPS_DIR` must point to the absolute path of `deploy/docker` on the host filesystem so Docker Compose `include:` directives resolve correctly. `VSS_DATA_DIR` must point to the persistent data volume on the host.
 2. **Dual-IP Network Topology:** `HOST_IP` must be set to the workstation's internal network IP (`.scripts/vm-ensure-docker.sh` detects and updates stale entries automatically) for inter-container communication, while `EXTERNAL_IP` must be `localhost` so response URLs function over developer SSH port tunnels.
@@ -232,10 +232,10 @@ The untracked deployment environment file on `<vm-host>` (`generated.env.remote`
 6. **Remote Endpoint Format** and 7. **Client Type Enforcement:** bare base URLs and `_type: openai` (`LLM_MODEL_TYPE` / `VLM_MODEL_TYPE`); the rules and reasons are in [`architecture.md`](architecture.md#model-inference).
 8. **Search Embedding Credentials:** Search query embeddings and evidence crop loader embeddings use the NVIDIA-hosted endpoint (`https://integrate.api.nvidia.com/v1/embeddings`) with `NVIDIA_API_KEY` (or `NGC_CLI_API_KEY`) from `generated.env.remote`; the Brev key cannot call `/v1/embeddings`. Can be overridden with `EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, and `EVIDENCE_EMBEDDING_API_KEY`. The loader and search route must use the same model (`nvidia/llama-nemotron-embed-vl-1b-v2` at 1024 dimensions).
 9. **Loopback Agent Bind:** `VSS_AGENT_HOST` defaults to `127.0.0.1` because the agent has no authentication and holds the database admin key. An old `VSS_AGENT_HOST=0.0.0.0` in `generated.env.remote` must be removed or updated to `127.0.0.1`. The tunnel forwards `-L 8000:127.0.0.1:8000`, which resolves on the VM. Rolling this out needs an agent restart (`native-services.sh restart vss-agent`). The browser-side `vss-ui` (which calls `${HOST_IP}:8000`) is not deployed in this profile.
-10. **GPU rule: only GPU 0 is used on `<vm-host>`; GPU 1 is never used, because it belongs to another user.** Every VSS Docker service and native process is pinned to GPU 0 (`CUDA_VISIBLE_DEVICES=0`, `NVIDIA_VISIBLE_DEVICES=0`, `RT_CV_DEVICE_ID=0`, `RT_EMBED_DEVICE_ID=0`, `RTVI_EMBED_NVIDIA_VISIBLE_DEVICES=0`, `FIXED_SHARED_DEVICE_IDS=0`, `RESERVED_DEVICE_IDS=0` in `.env`; `device_ids: ["0"]` on `streamprocessing-ms`, `sensor-ms` and `rtvi-embed` and both `*_VISIBLE_DEVICES` variables on all five GPU services in `compose.override.yml`; `CUDA_VISIBLE_DEVICES` and `NVIDIA_VISIBLE_DEVICES` defaulted to 0 in `start.sh`, `native-services.sh`, and `vm-ensure-docker.sh`). That covers the services `start.sh` runs (`nvstreamer-2d-fusion`, `perception-2d-fusion` and the other tracking-stack containers, native `vss-agent`) and the stock services it never starts (`rtvi-embed`, `sensor-ms`). Never move a VSS workload to GPU 1, even when GPU 0 is busy ([decision](decisions.md#2026-10-19-pin-all-vss-docker-appliances-and-native-services-to-gpu-0-only)).
+10. **GPU rule: only GPU 0 is used on the VM; GPU 1 is never used, because it belongs to another user.** Every VSS Docker service and native process is pinned to GPU 0 (`CUDA_VISIBLE_DEVICES=0`, `NVIDIA_VISIBLE_DEVICES=0`, `RT_CV_DEVICE_ID=0`, `RT_EMBED_DEVICE_ID=0`, `RTVI_EMBED_NVIDIA_VISIBLE_DEVICES=0`, `FIXED_SHARED_DEVICE_IDS=0`, `RESERVED_DEVICE_IDS=0` in `.env`; `device_ids: ["0"]` on `streamprocessing-ms`, `sensor-ms` and `rtvi-embed` and both `*_VISIBLE_DEVICES` variables on all five GPU services in `compose.override.yml`; `CUDA_VISIBLE_DEVICES` and `NVIDIA_VISIBLE_DEVICES` defaulted to 0 in `start.sh`, `native-services.sh`, and `vm-ensure-docker.sh`). That covers the services `start.sh` runs (`nvstreamer-2d-fusion`, `perception-2d-fusion` and the other tracking-stack containers, native `vss-agent`) and the stock services it never starts (`rtvi-embed`, `sensor-ms`). Never move a VSS workload to GPU 1, even when GPU 0 is busy ([decision](decisions.md#2026-10-19-pin-all-vss-docker-appliances-and-native-services-to-gpu-0-only)).
 
 > [!NOTE]
-> For the current live environment values and deployed model configurations on `<vm-host>`, see [Current Status & Known Issues (Live VM Configuration Snapshot)](status.md#6-live-vm-configuration-<vm-host>).
+> For the current live environment values and deployed model configurations on the VM, see [Current Status & Known Issues (Live VM Configuration Snapshot)](status.md#6-live-vm-configuration).
 
 ---
 

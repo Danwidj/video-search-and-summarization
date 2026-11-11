@@ -435,7 +435,7 @@ Database access is split across two client implementations according to operatio
      (deliberately NOT `INCIDENT_DB_DSN`, which the direct-Postgres tooling uses); unset means the
      feature is unavailable, no fallback.
    - **Network Constraint / DPI Blocking Rationale:** This split exists because the deployment VM
-     (`<vm-host>`) used to block the raw Postgres wire protocol on port 5432, so only the HTTPS-based
+     (the VM) used to block the raw Postgres wire protocol on port 5432, so only the HTTPS-based
      PostgREST route worked for the agent from there. On 2026-11-07 a `select 1` through the
      Supabase connection pooler connected from both the VM and the laptop, on ports 5432 and 6543.
      The block has come and gone and the cause of the change is not established (the VM's network
@@ -466,7 +466,7 @@ Database access is split across two client implementations according to operatio
 ## 2. Cloudflare R2 Storage Architecture
 
 Cloudflare R2 provides S3-compatible, permanent object storage for all video media and evidence images.
-Local disks on `<vm-host>` are treated as temporary caches only.
+Local disks on the VM are treated as temporary caches only.
 
 ### Bucket Key Tree Layout
 

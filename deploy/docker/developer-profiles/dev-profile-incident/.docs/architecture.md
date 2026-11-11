@@ -86,7 +86,7 @@ The five qualities that shaped the design most, in priority order. Scenarios for
 
 ## Solution Strategy
 
-1. **Reuse the stock VSS Agent and extend it in place.** The incident routes and the incident tools are registered through the stock worker and tool registry, so the agent is still NVIDIA's agent. It runs natively for second-level restarts; stock media and perception appliances stay in containers ([decision](decisions.md#2026-09-21-native-services-on-<vm-host>)).
+1. **Reuse the stock VSS Agent and extend it in place.** The incident routes and the incident tools are registered through the stock worker and tool registry, so the agent is still NVIDIA's agent. It runs natively for second-level restarts; stock media and perception appliances stay in containers ([decision](decisions.md#2026-09-21-native-services-on-the-vm)).
 2. **Infer remotely.** VLM, LLM and embedding calls go to hosted OpenAI-compatible endpoints; the one local GPU is left to the perception stack ([decision](decisions.md#2026-09-25-remote-brev-inference-no-local-gpu-nims)).
 3. **One incident contract, two consumers.** The extraction prompt, JSON Schema, request settings, prompt registry and request goldens in `contracts/` are used by the console and vendored into the agent, with a strict validation policy and ID-only repair ([decision](decisions.md#2026-09-27-unified-contract-decisions-eval-console-agent), [policy](decisions.md#2026-09-27-validation-policy-core-scored-v1), [single source](decisions.md#2026-10-21-single-source-incident-contract-with-sync-script-and-txt-prompts), [goldens](decisions.md#2026-11-01-request-goldens-pin-every-model-request-checked-by-each-producer)).
 4. **Reports are append-only revisions with an explicit official pointer.** An analysis appends an AI revision, an edit appends a human revision, a re-run starts a new AI branch, and failed attempts are run records only ([decision](decisions.md#2026-10-23-versioned-report-revisions-as-jsonb-snapshots)).
@@ -273,7 +273,7 @@ The Edit page shows the saved version (read-only) and the draft in one compare l
 
 ### Native Processes and Containers
 
-The policy is to run a service natively whenever that is feasible, and in a container when it is not ([decision](decisions.md#2026-09-21-native-services-on-<vm-host>)):
+The policy is to run a service natively whenever that is feasible, and in a container when it is not ([decision](decisions.md#2026-09-21-native-services-on-the-vm)):
 
 - **Native:** the VSS Agent, and the optional analytics services. A native process restarts in seconds after a code change, against a multi-minute image build, and the agent's virtual environment is installed editable from the checkout.
 - **Containers:** the media and perception appliances (NvStreamer, DeepStream perception) depend on CUDA and GStreamer toolchains that are not installable on the host, and the infrastructure appliances (Kafka, Logstash, Elasticsearch, Phoenix) gain nothing from running natively. The profile's Compose override pins every GPU-bound container to the one allotted device. The stock Compose files use fixed container names, so one perception stack runs per host.
@@ -347,7 +347,7 @@ The decisions that still shape the profile, newest first within each theme, with
 | Theme | Decision | Record |
 |---|---|---|
 | Platform | Remote inference on hosted endpoints; no local NIM containers | [2026-09-25](decisions.md#2026-09-25-remote-brev-inference-no-local-gpu-nims) |
-| Platform | The agent and the optional analytics services run natively; appliances stay in containers | [2026-09-21](decisions.md#2026-09-21-native-services-on-<vm-host>) |
+| Platform | The agent and the optional analytics services run natively; appliances stay in containers | [2026-09-21](decisions.md#2026-09-21-native-services-on-the-vm) |
 | Platform | Every GPU-bound service is pinned to the one allotted GPU | [2026-10-19](decisions.md#2026-10-19-pin-all-vss-docker-appliances-and-native-services-to-gpu-0-only) |
 | Platform | The console and the agent bind loopback; the tunnel forwards only the agent | [2026-10-18](decisions.md#2026-10-18-console-and-agent-bind-loopback) |
 | Platform | Leaving the launcher leaves the host's backend running | [2026-11-02](decisions.md#2026-11-02-closing-startsh-leaves-the-vm-backend-running) |

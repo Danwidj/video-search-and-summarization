@@ -258,7 +258,7 @@ The local `base_profile_mock` implements
 report generator. The real `vss-agent` analyze route
 (`services/agent/src/vss_agents/api/incident_analyze.py`, merged in PR #38)
 is served by the `vss-agent` process that runs natively from this repo's
-source on <vm-host> (see the profile README's "Native vs. Docker Service
+source on the VM (see the profile README's "Native vs. Docker Service
 Split"). `POST /api/v1/search` is still unbuilt (MVP2), so the client keeps
 returning a "not implemented yet" notice for that one.
 
@@ -322,10 +322,10 @@ uv run python scripts/eval_run.py                             # all models x all
 uv run python scripts/eval_aggregate.py                       # eval_data/results/summary.json
 ```
 
-### Real backend on <vm-host> via SSH tunnel (Phase 4)
+### Real backend on the VM via SSH tunnel (Phase 4)
 
 The console runs on your laptop; the real backend (vss-agent, LLM/VLM NIMs)
-runs on <vm-host>. An SSH tunnel connects the two — same pattern as the
+runs on the VM. An SSH tunnel connects the two — same pattern as the
 base-profile VSS UI tunnel. The mock LLM above stays laptop-only for the
 zero-GPU loop; use this path when you want the real backend instead. (Or run
 `../start.sh` to automate this — see that profile's README.)
@@ -429,7 +429,7 @@ ignored `generated.env.local` / `generated.env.remote` copy passed to
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY` / `R2_SECRET_KEY` / `R2_BUCKET` | Cloudflare R2 for video clips + evidence screenshots (`r2_videos.py`) | The R2 bucket the captain uploaded footage to; put keys in `.env.local` |
 | `INCIDENT_SUPABASE_URL` | Supabase project URL (`https://<project_ref>.supabase.co`) | Supabase Project Settings -> API. Used by `vss_agents.utils.incident_db` when running the local mock backend (`start.sh --mode local`) or direct agent tests |
 | `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | Supabase `service_role` secret JWT | Supabase Project Settings -> API. Server-side only; put key in `.env.local` |
-| `INCIDENT_AGENT_BASE_URL` | Base URL of vss-agent's upload + AI-trigger API | The running `vss-agent` service (`VSS_AGENT_PORT`, default `8000`); via the Phase 4 SSH tunnel this stays `http://localhost:8000` (see "Real backend on <vm-host> via SSH tunnel" above) |
+| `INCIDENT_AGENT_BASE_URL` | Base URL of vss-agent's upload + AI-trigger API | The running `vss-agent` service (`VSS_AGENT_PORT`, default `8000`); via the Phase 4 SSH tunnel this stays `http://localhost:8000` (see "Real backend on the VM via SSH tunnel" above) |
 | `INCIDENT_LLM_BASE_URL` | OpenAI-compatible chat-completions base URL | `mock_llm_server.py` locally (`http://localhost:8900/v1`); the tunneled real NIM (`http://localhost:30081/v1`) under the Phase 4 tunnel above; vss-agent's `LLM_BASE_URL` / a real NIM on the VM |
 | `INCIDENT_LLM_API_KEY` | Optional bearer token sent with `INCIDENT_LLM_BASE_URL` requests (only when non-empty) | Empty for `mock_llm_server.py`; the real endpoint's key otherwise |
 | `INCIDENT_JUDGE_MODEL` | Model name sent for LLM-as-a-judge description scoring (default `incident-judge`, what `mock_llm_server.py` accepts) | A real model id when `INCIDENT_LLM_BASE_URL` is a real endpoint |

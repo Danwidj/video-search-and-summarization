@@ -1,6 +1,6 @@
 # Lifecycle scripts
 
-Shell scripts that start, check and stop the incident backend. The laptop-side scripts open and check the SSH tunnel; the VM-side scripts run the native services and Docker appliances on `<vm-host>`. [start.sh](../start.sh) calls most of them for you.
+Shell scripts that start, check and stop the incident backend. The laptop-side scripts open and check the SSH tunnel; the VM-side scripts run the native services and Docker appliances on the VM. [start.sh](../start.sh) calls most of them for you.
 
 ## What is inside
 
@@ -26,7 +26,7 @@ Shell scripts that start, check and stop the incident backend. The laptop-side s
 
 ## Rules
 
-- Run `start.sh`, `tunnel.sh` and `tunnel-check.sh` on the laptop only, never on `<vm-host>`.
+- Run `start.sh`, `tunnel.sh` and `tunnel-check.sh` on the laptop only, never on the VM.
 - Never run `down.sh` with `-v`, and never run `dev-profile.sh down` for this profile.
 
 ## Read more
@@ -34,4 +34,4 @@ Shell scripts that start, check and stop the incident backend. The laptop-side s
 - [incident-start skill](../skills/incident-start/SKILL.md): `start.sh` modes, what each starts and its cleanup on exit
 - [Operations runbook: Laptop to VM connectivity](../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting)
 - [Architecture: Native processes and containers](../.docs/architecture.md#native-processes-and-containers)
-- [.dotfiles](../.dotfiles/README.md): optional shell setup for `<vm-host>`
+- [.dotfiles](../.dotfiles/README.md): optional shell setup for the VM

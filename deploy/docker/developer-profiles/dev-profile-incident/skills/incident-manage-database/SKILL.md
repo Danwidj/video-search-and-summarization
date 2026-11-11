@@ -20,7 +20,7 @@ Canonical facts: [`.docs/data.md`](../../.docs/data.md) (table specs, report rev
 
 | Caller / network | Client | Credentials |
 |---|---|---|
-| Agent on `<vm-host>` (port 5432 DPI-blocked) | PostgREST over HTTPS (`supabase-py`) | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` |
+| Agent on the VM (port 5432 DPI-blocked) | PostgREST over HTTPS (`supabase-py`) | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` |
 | `incident-console-v2` and `eval/` writers | PostgREST (console: the adapters in `src/modules/*/infrastructure/supabase/` over `src/lib/postgrest/client.ts`, see [`.docs/mvp2/console-hexagonal-architecture.md`](../../.docs/mvp2/console-hexagonal-architecture.md); `eval/db_postgrest.py`) | same |
 | Laptop tooling, `supabase` CLI, copy and parity scripts | Direct Postgres | `INCIDENT_DB_DSN` (session pooler, 5432). Strip any `+psycopg2` suffix for the CLI. |
 
@@ -81,11 +81,11 @@ To record an out-of-band change on finals without re-executing SQL:
 supabase migration repair --workdir $W --db-url "$FINALS_DSN" --status applied <YYYYMMDDHHMMSS>
 ```
 
-**The laptop could not reach the pooler on 2026-10-31** (5432 and 6543 timed out), but `<vm-host>` could. Tunnel through the VM and point the DSN's host and port at the tunnel (the pooler routes on the `postgres.<ref>` user name, so the host change is fine), then close the tunnel by PID:
+**The laptop could not reach the pooler on 2026-10-31** (5432 and 6543 timed out), but the VM could. Tunnel through the VM and point the DSN's host and port at the tunnel (the pooler routes on the `postgres.<ref>` user name, so the host change is fine; `<supabase-pooler-host>` below is the host in your `FINALS_DSN`), then close the tunnel by PID:
 
 ```bash
-ssh -f -N -o ExitOnForwardFailure=yes -L 127.0.0.1:15432:aws-0-ap-southeast-1.pooler.supabase.com:5432 <vm-host>
-# FINALS_DSN with @aws-0-ap-southeast-1.pooler.supabase.com:5432 replaced by @127.0.0.1:15432
+ssh -f -N -o ExitOnForwardFailure=yes -L 127.0.0.1:15432:<supabase-pooler-host>:5432 "$VSS_SSH_HOST"
+# FINALS_DSN with @<supabase-pooler-host>:5432 replaced by @127.0.0.1:15432
 ```
 
 ### Read via PostgREST (works from anywhere with HTTPS)
