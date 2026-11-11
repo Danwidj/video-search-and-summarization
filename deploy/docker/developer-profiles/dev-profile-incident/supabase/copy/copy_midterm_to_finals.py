@@ -6,7 +6,7 @@
         --source-env <midterm .env file> --target-env <finals .env file> [--commit] [--replace] \
         [--not-edited <run id> ...] [--edited <run id> ...] [--accept-item-edits <run id> ...]
 
-Both env files hold INCIDENT_DB_DSN (session pooler, port 5432; run from a laptop, kwanz-ws
+Both env files hold INCIDENT_DB_DSN (session pooler, port 5432; run from a laptop, the workstation
 blocks 5432). DSNs and keys are never printed.
 
 * Midterm is only read, inside one REPEATABLE READ READ ONLY transaction (one consistent snapshot).

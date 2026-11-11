@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# media-tools.sh — ffmpeg and ffprobe for vss-agent on kwanz-ws, without a system-wide install
+# media-tools.sh — ffmpeg and ffprobe for vss-agent on the VM, without a system-wide install
 #
 # Usage:
 #   ./media-tools.sh install   # install a static build into the tools dir unless both are already on PATH

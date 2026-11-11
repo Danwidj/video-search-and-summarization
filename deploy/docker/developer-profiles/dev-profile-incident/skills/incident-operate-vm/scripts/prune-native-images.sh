@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# prune-native-images.sh — Remove Docker images on kwanz-ws for services
+# prune-native-images.sh — Remove Docker images on the VM for services
 # that now run natively (vss-agent, video-analytics-api, behavior-analytics).
 #
 # Removes:

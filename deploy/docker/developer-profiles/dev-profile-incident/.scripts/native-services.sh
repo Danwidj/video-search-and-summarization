@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# native-services.sh — Control script for managing native processes on kwanz-ws
+# native-services.sh — Control script for managing native processes on the VM
 # (vss-agent, video-analytics-api, behavior-analytics)
 #
 # Usage:
@@ -669,7 +669,7 @@ case "${ACTION}" in
     fi
 
     if [ "${PORCELAIN}" != "true" ]; then
-      echo "=== Native Services Status (kwanz-ws) ==="
+      echo "=== Native Services Status (VM) ==="
     fi
     for svc in "${TARGETS[@]}"; do
       status_service "${svc}" "${PORCELAIN}"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# tracker-models.sh — the NanoTrack v2 model files for object tracking on kwanz-ws, fetched and never committed
+# tracker-models.sh — the NanoTrack v2 model files for object tracking on the VM, fetched and never committed
 #
 # Usage:
 #   ./tracker-models.sh install   # download any missing or mismatched file, check its SHA-256, rename into place

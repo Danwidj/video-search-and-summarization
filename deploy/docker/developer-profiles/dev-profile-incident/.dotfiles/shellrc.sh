@@ -25,7 +25,7 @@ fi
 
 # fzf's own Ctrl-R (fuzzy history) / Ctrl-T (fuzzy file-find) bindings —
 # `fzf --bash` is the current fzf's own way to emit them (0.48+), but
-# kwanz-ws's apt package is jammy's fzf 0.29.0, which predates that flag and
+# the workstation's apt package is jammy's fzf 0.29.0, which predates that flag and
 # instead ships the packaged key-bindings.bash. Try the modern path first so
 # this keeps working if the box is ever upgraded past jammy.
 if command -v fzf >/dev/null 2>&1; then

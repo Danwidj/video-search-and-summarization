@@ -246,7 +246,7 @@ def test_pipeline_subjects_run_only_on_a_loopback_experiment_agent():
                             profile="production-v4")
     assert build_pipeline_adapter(subject, environ={}).base_url == "http://127.0.0.1:8765"
     with pytest.raises(AdapterConfigError, match="shared VM agent"):
-        build_pipeline_adapter(subject, environ={"EVALV2_VSS_AGENT_URL": "http://kwanz-ws:8000"})
+        build_pipeline_adapter(subject, environ={"EVALV2_VSS_AGENT_URL": "http://vm-host:8000"})
     with pytest.raises(AdapterConfigError, match="experiment agent"):
         build_pipeline_adapter(subject.model_copy(update={"endpoint": "switchyard"}), environ={})
     with pytest.raises(ValueError, match="pipeline adapter"):
