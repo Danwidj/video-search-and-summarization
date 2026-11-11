@@ -4,6 +4,7 @@ SPDX-License-Identifier: Apache-2.0
 -->
 <!--
 agents:
+  context: How to deploy and run the incident search and reporting system. The backend runs on a GPU VM (the workstation); the web console runs on the laptop and reaches the backend through an SSH tunnel. Coding agents start at AGENTS.md.
   read-when: Deploying or starting the incident profile.
   owns: the deployment steps (prerequisites, copy and fill in .env, link, database setup, start, check, stop).
   rules: Setting names only, never values. Detail beyond the steps belongs in .docs/incident-profile-operations.md, not here.
@@ -13,8 +14,6 @@ agents:
 
 <!-- TODO(video): replace this block with the demo video -->
 > **Demo video:** the demo video will be added here.
-
-How to deploy and run the incident search and reporting system. The backend runs on a GPU VM (the workstation); the web console runs on your laptop and reaches the backend through an SSH tunnel. Coding agents start at [AGENTS.md](AGENTS.md).
 
 ## 1. What you need
 
