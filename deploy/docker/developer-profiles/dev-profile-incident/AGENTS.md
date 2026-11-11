@@ -19,7 +19,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
 | `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v4`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([schema](.docs/analysis-schema.md)) |
 | `supabase/` | SQL, Python | Finals schema authority (`migrations/`: one baseline, then later finals migrations), SQL harness (`tests/`) | Active. The frozen midterm record, copy and R2 scripts are in `archived/supabase/`: never push |
-| `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
+| `start.sh`, `.scripts/` | Bash | Laptop launcher; VM lifecycle scripts | Active |
 | `archived/` | - | Retired v1 console, kept as read-only history | **Archived** (see Boundaries) |
 | `services/agent/` (outside this dir) | Python, NAT | `POST /api/v1/incidents/{id}/analyze`, `incident_report_gen` (writes `report_revisions`), `POST /api/v1/incidents/evidence-embeddings`, search over `evidence_crops`, `utils/incident_db.py` | Follow [`services/agent/AGENTS.md`](../../../../services/agent/AGENTS.md) |
 
