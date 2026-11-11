@@ -20,6 +20,8 @@ mkdir -p "$RUN_DIR"
 export VSS_RUN_DIR="$RUN_DIR"
 export ENV_FILE="$TMP/empty.env"
 touch "$ENV_FILE"
+# The env file is empty, so native-services.sh would detect the VM address with `ip`; pin it for the tests below.
+export HOST_IP=10.0.0.77
 
 PASSED=0
 FAILED=0
@@ -324,6 +326,24 @@ echo "INCIDENT_CHUNKING_ENABLED=0" >"$pass_env"
 # shellcheck disable=SC1090
 pass_off="$(unset INCIDENT_CHUNKING_ENABLED; ENV_FILE="$pass_env"; source "$SUT" status >/dev/null; echo "$INCIDENT_CHUNKING_ENABLED")"
 assert_eq "0" "$pass_off" "an env file INCIDENT_CHUNKING_ENABLED=0 wins"
+
+# A blank HOST_IP in the env file is supplied before the file's own settings are built from it; a filled-in value wins;
+# with no VM address and no value the script fails clearly.
+echo "=== HOST_IP ==="
+mkdir -p "$TMP/ipbin" "$TMP/noipbin"
+printf '#!/usr/bin/env bash\necho "1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.88 uid 0"\n' >"$TMP/ipbin/ip"
+printf '#!/usr/bin/env bash\nexit 1\n' >"$TMP/noipbin/ip"
+chmod +x "$TMP/ipbin/ip" "$TMP/noipbin/ip"
+host_env="$TMP/host.env"
+printf 'HOST_IP=\nVST_INTERNAL_URL=http://${HOST_IP}:30888\n' >"$host_env"
+host_out="$(unset HOST_IP; PATH="$TMP/ipbin:$PATH" ENV_FILE="$host_env"; source "$SUT" status >/dev/null; echo "$HOST_IP $VST_INTERNAL_URL")"
+assert_eq "10.0.0.88 http://10.0.0.88:30888" "$host_out" "a blank HOST_IP is supplied and settings built from it use it"
+printf 'HOST_IP=10.9.9.9\nVST_INTERNAL_URL=http://${HOST_IP}:30888\n' >"$host_env"
+host_out="$(unset HOST_IP; PATH="$TMP/ipbin:$PATH" ENV_FILE="$host_env"; source "$SUT" status >/dev/null; echo "$HOST_IP")"
+assert_eq "10.9.9.9" "$host_out" "a filled-in HOST_IP wins"
+printf 'HOST_IP=\n' >"$host_env"
+host_err="$(unset HOST_IP; PATH="$TMP/noipbin:$PATH" ENV_FILE="$host_env" bash "$SUT" status 2>&1 || true)"
+assert_contains "$host_err" "cannot determine this VM's address" "no address and a blank HOST_IP fails clearly"
 
 # -----------------------------------------------------------------------------
 # ffmpeg and ffprobe: reported by status, installed into the tools dir when missing

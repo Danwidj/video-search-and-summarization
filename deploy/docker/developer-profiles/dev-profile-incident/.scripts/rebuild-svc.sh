@@ -55,8 +55,8 @@ if [ "${#docker_svcs[@]}" -gt 0 ]; then
     echo "  cp ${profile_dir}/.env ${profile_dir}/.env.remote" >&2
     exit 1
   fi
-  # A blank VSS_APPS_DIR or VSS_DATA_DIR in the file gets its default (a filled-in value wins).
-  vm_env_defaults "${env_file}" "${profile_dir}"
+  # A blank VSS_APPS_DIR, VSS_DATA_DIR or HOST_IP in the file gets its default (a filled-in value wins).
+  vm_env_defaults "${env_file}" "${profile_dir}" || exit 1
 
   (cd "${compose_dir}" && docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file "${profile_dir}/compose.unused.env" --env-file "${env_file}" -p mdx up -d --yes --build --force-recreate "${docker_svcs[@]}")
 fi

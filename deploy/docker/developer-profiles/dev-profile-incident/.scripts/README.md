@@ -20,9 +20,9 @@ Shell scripts that start, check and stop the incident backend. The laptop-side s
 | `health.sh` | laptop or VM | Probes the agent on `:8000/health` |
 | `logs.sh` | VM | Tails one service's logs (default `vss-agent`) |
 | `rebuild-svc.sh` | VM | Restarts a native service, or rebuilds one Docker service with the profile overrides |
-| `env-file.sh` | VM, sourced | Picks the VM env file (`.env.remote`, else the old `generated.env.remote`) and supplies a blank `VSS_APPS_DIR` and `VSS_DATA_DIR` for the run |
+| `env-file.sh` | VM, sourced | Picks the VM env file (`.env.remote`, else the old `generated.env.remote`) and supplies a blank `HOST_IP` (the VM's address), `VSS_APPS_DIR` and `VSS_DATA_DIR` for the run, and loads the file with them set |
 | `test-env-file.sh` | any | Hermetic check of `env-file.sh` |
-| `test-env-template.sh` | laptop | Hermetic check of `.env` (sources cleanly, defined above use, no secrets) and `compose.unused.env` |
+| `test-env-template.sh` | laptop | Hermetic check of `.env` (sources cleanly, defined above use, no secrets, and defines every setting the agent config refers to) and `compose.unused.env` |
 | `setup-database.sh` | laptop | Builds the whole schema on an empty database from `supabase/migrations/` (`--env-file` names the file with `INCIDENT_DB_DSN`); refuses a target that already has the schema |
 | `test-setup-database.sh` | laptop | Builds the schema on a throwaway local Postgres, checks the refusals and that the connection string is never printed |
 | `ngc-env.sh` | VM | `source` it to export the shared NGC credentials |

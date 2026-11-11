@@ -2,6 +2,16 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-11: A template-built VM file must start the agent, and a test keeps it so
+
+**Decision:** `native-services.sh` loads the env file through `vm_env_load` (`.scripts/env-file.sh`): a blank `HOST_IP` gets the VM's address (`vm_host_ip`, the same detection as `vm-ensure-docker.sh`) before the file is read, so `VST_INTERNAL_URL` and `PHOENIX_ENDPOINT` are built from it; a typed value wins; no address stops the script. `rebuild-svc.sh` and `tracking-stack.sh` use the same default. The template gains non-secret defaults in section 2 for `EVAL_LLM_JUDGE_NAME`, `EVAL_LLM_JUDGE_BASE_URL`, `EVAL_DIR`, `DATASET_FILE_NAME` and `RTVI_VLM_BASE_URL` (the values NVIDIA's `dev-profile-base/.env` uses) and an optional blank `WEAVE_WORKFLOW_ALIAS`; they left `compose.unused.env`. `test-env-template.sh` fails when the agent config refers to a setting a template-built file leaves unset or blank.
+
+**Why:** The agent refused to start on a file copied from the template (`llms` and `workflow` invalid): nat rejects an unset or blank `${NAME}` that is a whole value, and `HOST_IP` and the eval judge name were exactly that. `HOST_IP` is a script default (it changes with DHCP), so only the script knows it; the rest are constants.
+
+**Alternatives rejected:** Defaulting the eval settings in the start script (they never vary, so the template is the one place to read them); editing NVIDIA's config to add `:-` defaults (upstream drift); sourcing the file first and setting `HOST_IP` after (settings built from it would keep a blank host).
+
+**Links:** [README §2](../README.md), `.scripts/env-file.sh`, `.scripts/test-env-template.sh`.
+
 ### 2026-11-11: Remove dead files, the VM shell dotfiles, the gateway's Compose files and the v1 console
 
 **Decision:** five removals, each with no remaining reader outside docs: (1) the dangling `scripts/backfill_official_timestamps.py` symlink, four unreferenced `.docs/screenshots/` folders and `contracts/test-schema.mjs` (a search-contract test nothing ran); (2) `.dotfiles/`, the personal VM shell setup, and the stale `dotfiles/aliases.sh` comments in `.scripts/`; (3) `vlm-gateway/compose.yml` and `vlm-gateway/Dockerfile`, because the gateway only ever runs through `uv` from `start.sh`, plus the `include:` in the profile `compose.yml`, which now holds an empty `services: {}`; (4) `archived/incident-console/`, the retired v1 console, plus the mentions of it in `.gitignore`, `AGENTS.md`, `README.md`, `archived/README.md` and two skills. `archived/supabase/` stays. (5) All of `.docs/screenshots/` and every link to it from `status.md` and `decisions.md` (the entries keep their text); screenshots are evidence for the PR description and are never committed. `.docs/figures/` stays.

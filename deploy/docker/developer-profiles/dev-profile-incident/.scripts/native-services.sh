@@ -116,13 +116,9 @@ load_env() {
     echo "  cp ${profile_dir}/.env ${profile_dir}/.env.remote" >&2
     exit 1
   fi
-  # Export vars from env file safely, ignoring comments and blanks
-  set -a
-  # shellcheck disable=SC1090
-  source "${env_file}"
-  set +a
-  # A blank VSS_APPS_DIR or VSS_DATA_DIR in the file gets its default (a filled-in value wins).
-  vm_env_defaults "${env_file}" "${profile_dir}"
+  # Export the env file's settings. A blank HOST_IP, VSS_APPS_DIR or VSS_DATA_DIR gets its default first
+  # (a filled-in value wins), so settings built from them, such as VST_INTERNAL_URL, are right.
+  vm_env_load "${env_file}" "${profile_dir}" || exit 1
 }
 
 load_env
