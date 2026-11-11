@@ -2,6 +2,16 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-11: Remove dead files, the VM shell dotfiles, the gateway's Compose files and the v1 console
+
+**Decision:** four removals, each with no remaining reader outside docs: (1) the dangling `scripts/backfill_official_timestamps.py` symlink, four unreferenced `.docs/screenshots/` folders and `contracts/test-schema.mjs` (a search-contract test nothing ran); (2) `.dotfiles/`, the personal VM shell setup, and the stale `dotfiles/aliases.sh` comments in `.scripts/`; (3) `vlm-gateway/compose.yml` and `vlm-gateway/Dockerfile`, because the gateway only ever runs through `uv` from `start.sh`, plus the `include:` in the profile `compose.yml`, which now holds an empty `services: {}`; (4) `archived/incident-console/`, the retired v1 console, plus the mentions of it in `.gitignore`, `AGENTS.md`, `README.md`, `archived/README.md` and two skills. `archived/supabase/` stays.
+
+**Why:** Each item was unused, and a file that nothing reads still has to be kept accurate or misleads the next reader. Git history keeps everything removed. The profile `compose.yml` stays, with no services, so the `developer-profiles/compose.yml` include of it still loads.
+
+**Alternatives rejected:** Deleting the profile `compose.yml` and its include in `developer-profiles/compose.yml` (a wider change than the gateway's include); keeping `.dotfiles/` as optional tooling (it is one person's shell aliases, not part of the profile); leaving the v1 console as read-only history (88 files, including `.env`-named ones, that nothing launches or tests).
+
+**Links:** [`archived/README.md`](../archived/README.md), [`vlm-gateway/README.md`](../vlm-gateway/README.md), [`contracts/README.md`](../contracts/README.md). The 2026-10-22 entry on archiving the v1 console records why it was kept until now.
+
 ### 2026-11-11: Midterm, copy and R2 history move to `archived/supabase/`; a script builds a new database from the migrations
 
 **Decision:** the `midterm/`, `copy/` and `r2/` folders of `supabase/` move, with their layout, to `archived/supabase/`; `supabase/migrations/` and `supabase/tests/` stay. `.scripts/setup-database.sh --env-file <file>` builds every table and function on an empty database from `supabase/migrations/`, and `.scripts/test-setup-database.sh` tests it on a throwaway local Postgres.
