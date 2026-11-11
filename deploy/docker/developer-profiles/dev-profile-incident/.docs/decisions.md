@@ -2,6 +2,16 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](archive/decisions-superseded.md).
 
+### 2026-11-10: One commented-down `.env` template, copied to `.env.local` and `generated.env.remote`
+
+**Decision:** `.env` is the only copy-me template: section 1 blanks to fill in, section 2 defaults, one short heading per group, each value typed once (later settings refer to earlier ones). Dead and empty optional settings are deleted, and the long behaviour comments moved to [operations §5](incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote). `native-services.sh` and `rebuild-svc.sh` no longer fall back to `.env`; they stop and name `cp .env generated.env.remote`. A committed `compose.unused.env` (names only) is passed before the real env file to every `docker compose` call of the profile, so Compose stops warning "variable is not set" about services this profile never starts. `LLM_ENDPOINT_URL` and `VLM_ENDPOINT_URL` were deleted: nothing in the started services reads them.
+
+**Why:** Three overlapping files and a silent fallback to the committed template hid a missing real file. The warnings buried real ones.
+
+**Alternatives rejected:** Editing the stock compose files to default the names (upstream drift); `--no-warn`-style filtering (hides real warnings); keeping the fallback (it can start the agent on blank keys).
+
+**Links:** [README §2](../README.md), `compose.unused.env`, `.scripts/test-env-template.sh`.
+
 ### 2026-11-09: Ask for a chart shows three example chips, each sending its own chart kind
 
 - **Decision:** the panel offers exactly three example chips, in `chart-examples.ts`: "Break down each incident type by severity throughout October" (a stacked bar by severity per incident type, the captain's chip), "Share of each incident type throughout October" (a donut) and "Severity mix of assault incidents in the last 90 days" (a donut). The captain asked for specific full-sentence prompts after the first version ("Incident distribution" and "Severity breakdown") and the first two candidates were chosen from seven tried, with screenshots in [`screenshots/2026-11-09-chart-three-prompts/`](screenshots/2026-11-09-chart-three-prompts/). Each chip submits with the kind it reads best in; a donut chip also sets the picker to Pie, so the picker shows what is drawn (the October view leaves the picker alone, since a view ignores it). The bar and line examples, and the bubble chart, are gone from the chips; the picker's options and typed requests are unchanged.

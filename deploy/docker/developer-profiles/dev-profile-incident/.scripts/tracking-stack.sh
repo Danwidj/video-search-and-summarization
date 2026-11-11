@@ -61,7 +61,8 @@ setup() {
     fi
   fi
   COMPOSE=("${DOCKER[@]}" compose -f compose.yml -f "developer-profiles/dev-profile-incident/compose.override.yml" \
-    -f "developer-profiles/dev-profile-incident/compose.tracking.yml" --env-file "$ENV_FILE" -p "$PROJECT")
+    -f "developer-profiles/dev-profile-incident/compose.tracking.yml" \
+    --env-file "${PROFILE_DIR}/compose.unused.env" --env-file "$ENV_FILE" -p "$PROJECT")
 }
 
 compose() { (cd "$DOCKER_DIR" && "${COMPOSE[@]}" "$@"); }

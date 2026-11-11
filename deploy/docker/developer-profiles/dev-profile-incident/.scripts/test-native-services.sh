@@ -425,6 +425,11 @@ assert_contains "$bad_models_out" "checksum mismatch for nanotrack_backbone_sim.
 assert_eq "no" "$([ -e "$bad_models/nanotrack_backbone_sim.onnx" ] && echo yes || echo no)" "a mismatched file is never installed"
 assert_eq "yes" "$([ -e "$bad_models/nanotrack_head_sim.onnx" ] && echo yes || echo no)" "a matching file is still installed"
 
+# A missing env file stops with the copy step, and the committed .env template is never used as a fallback.
+missing_out="$(ENV_FILE="$TMP/no-such.env" bash "$SUT" status 2>&1 || true)"
+assert_contains "$missing_out" "generated.env.remote" "a missing env file names the copy step"
+assert_contains "$missing_out" "cp " "a missing env file shows the cp command"
+
 echo ""
 echo "=== Summary ==="
 echo "Passed: $PASSED"

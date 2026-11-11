@@ -68,6 +68,9 @@ envf="$TMP/vss/deploy/docker/developer-profiles/dev-profile-incident/generated.e
 
 rm -rf "$TMP/vss"; out="$(run)"; check "no repo" "rc=10" "$out"; check "no repo msg" "no checkout at" "$out"
 new_repo; rm "$envf"; out="$(run)"; check "no env" "rc=11" "$out"; check "no env msg" "cp " "$out"
+new_repo; : >"$TMP/vss/deploy/docker/developer-profiles/dev-profile-incident/compose.unused.env"; out="$(run)"; check "unused env ok" "rc=0" "$out"
+check "unused env before real env" "compose.unused.env --env-file developer-profiles/dev-profile-incident/generated.env.remote" "$(cat "$FAKE_LOG")"
+new_repo; out="$(run)"; check "no unused env still ok" "rc=0" "$out"
 new_repo; out="$(FAKE_DOCKER_DOWN=1 run)"; check "docker down" "rc=12" "$out"
 new_repo; out="$(run)"; check "happy" "rc=0" "$out"; check "images present" "all images present" "$out"
 new_repo; out="$(FAKE_MISSING_IMAGE=1 run)"; check "pull" "pulling registry images" "$out"; check "pull rc" "rc=0" "$out"

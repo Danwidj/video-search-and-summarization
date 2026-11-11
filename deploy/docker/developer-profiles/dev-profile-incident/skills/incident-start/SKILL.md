@@ -25,7 +25,7 @@ Details of each path: [launch modes and connectivity](../../.docs/architecture.m
 ## Prerequisites
 
 1. **Tools:** `uv`, Node.js/npm, `npm install` in `incident-console-v2` fetches `ffmpeg` and `ffprobe` (the console converts every upload to an H.264 MP4 and reads video frames for evidence crops), so no separate install is needed on the laptop; a system copy on PATH is used only when the bundled one is missing. For vm mode, add Tailscale (connected) and `ssh`.
-2. **Secrets file:** `dev-profile-incident/.env.local`, which is untracked and supplied by the captain. Never commit it and never print its values. Check that it holds non-empty values for the names the services read:
+2. **Secrets file:** `dev-profile-incident/.env.local`, untracked. Create it with `cp .env .env.local` and fill in section 1 of the copy (the settings are blank in the committed template). Never commit it and never print its values. Check that it holds non-empty values for the names the services read:
 
    | Needed by | Variables |
    |---|---|

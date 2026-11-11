@@ -20,6 +20,7 @@ Shell scripts that start, check and stop the incident backend. The laptop-side s
 | `health.sh` | laptop or VM | Probes the agent on `:8000/health` |
 | `logs.sh` | VM | Tails one service's logs (default `vss-agent`) |
 | `rebuild-svc.sh` | VM | Restarts a native service, or rebuilds one Docker service with the profile overrides |
+| `test-env-template.sh` | laptop | Hermetic check of `.env` (sources cleanly, defined above use, no secrets) and `compose.unused.env` |
 | `ngc-env.sh` | VM | `source` it to export the shared NGC credentials |
 | [prune-native-images.sh](../skills/incident-operate-vm/scripts/prune-native-images.sh) | VM | Removes the Docker images of services that now run natively |
 | `test-*.sh` | any | Tests for `native-services.sh`, `vm-preflight.sh`, `vm-ensure-docker.sh` and `prune-native-images.sh` |
