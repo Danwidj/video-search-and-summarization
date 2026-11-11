@@ -480,7 +480,7 @@ def test_the_proposed_pilot_is_a_capped_dev_pilot_of_the_consoles_chart_model():
     root = Path(__file__).resolve().parents[7]
     base = (root / "deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml").read_text()
     assert "llm_name: ${LLM_MODEL_TYPE:-nim}_llm" in base
-    status = (Path(__file__).resolve().parents[3] / ".docs" / "status.md").read_text()
+    status = (Path(__file__).resolve().parents[3] / ".docs" / "archive" / "status.md").read_text()
     assert "`nvidia/nemotron-3-ultra`" in status
     assert {s.endpoint for s in config.subjects} == {"switchyard"}
     items = {"dashboard": [WorkItem("dashboard", s.id, f"r{i}", 1) for s in config.subjects for i in range(75)]}
