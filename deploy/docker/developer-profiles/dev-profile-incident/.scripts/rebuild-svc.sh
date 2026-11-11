@@ -51,13 +51,11 @@ if [ "${#docker_svcs[@]}" -gt 0 ]; then
     generated_env="${profile_dir}/generated.env.remote"
   elif [ -f "${profile_dir}/generated.env" ]; then
     generated_env="${profile_dir}/generated.env"
-  elif [ -f "${profile_dir}/.env" ]; then
-    generated_env="${profile_dir}/.env"
   else
-    echo "rebuild-svc.sh: no active profile found (no generated.env under" >&2
-    echo "  ${compose_dir}/developer-profiles/) — is a profile currently up?" >&2
+    echo "rebuild-svc.sh: no env file found. Create it on the VM from the template and fill in section 1:" >&2
+    echo "  cp ${profile_dir}/.env ${profile_dir}/generated.env.remote" >&2
     exit 1
   fi
 
-  (cd "${compose_dir}" && docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file "${generated_env}" -p mdx up -d --yes --build --force-recreate "${docker_svcs[@]}")
+  (cd "${compose_dir}" && docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file "${profile_dir}/compose.unused.env" --env-file "${generated_env}" -p mdx up -d --yes --build --force-recreate "${docker_svcs[@]}")
 fi

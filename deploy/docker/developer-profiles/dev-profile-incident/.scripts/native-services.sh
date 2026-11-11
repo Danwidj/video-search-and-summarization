@@ -108,20 +108,21 @@ load_env() {
   if [ -z "${env_file}" ]; then
     if [ -f "${REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote" ]; then
       env_file="${REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote"
-    elif [ -f "${REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/.env" ]; then
-      env_file="${REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/.env"
     else
       env_file="$(command ls "${REPO_ROOT}"/deploy/docker/developer-profiles/dev-profile-*/generated.env* 2>/dev/null | head -1 || true)"
     fi
   fi
 
-  if [ -n "${env_file}" ] && [ -f "${env_file}" ]; then
-    # Export vars from env file safely, ignoring comments and blanks
-    set -a
-    # shellcheck disable=SC1090
-    source "${env_file}"
-    set +a
+  if [ -z "${env_file}" ] || [ ! -f "${env_file}" ]; then
+    echo "native-services.sh: no env file found. Create it on the VM from the template and fill in section 1:" >&2
+    echo "  cp ${REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/.env ${REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote" >&2
+    exit 1
   fi
+  # Export vars from env file safely, ignoring comments and blanks
+  set -a
+  # shellcheck disable=SC1090
+  source "${env_file}"
+  set +a
 }
 
 load_env

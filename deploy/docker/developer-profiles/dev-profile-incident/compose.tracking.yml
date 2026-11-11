@@ -24,7 +24,7 @@ services:
   # config loops it forever; tracking needs it to stop at the end of the file.
   nvstreamer-2d-fusion:
     volumes:
-      - ${VSS_APPS_DIR}/developer-profiles/dev-profile-incident/tracking/nvstreamer-vst-config.json:/home/vst/vst_release/configs/vst_config.json
+      - ${VSS_APPS_DIR}/developer-profiles/dev-profile-incident/nvstreamer-vst-config.json:/home/vst/vst_release/configs/vst_config.json
 
   # Streams are provisioned over REST (:9000/api/v1/stream/add), so perception
   # never talks to sensor-ms. Dropping that dependency also keeps sensor-ms and
