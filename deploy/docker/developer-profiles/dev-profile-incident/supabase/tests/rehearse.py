@@ -18,6 +18,7 @@ import psycopg
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
+ARCHIVE = ROOT.parent / "archived" / "supabase"
 midterm_env = sys.argv[1]
 decisions = sys.argv[2:]  # passed to every copy run: the stamp decisions (--not-edited / --edited)
 
@@ -31,7 +32,7 @@ with tempfile.TemporaryDirectory() as tmp:
         print("finals migrations applied")
     env = Path(tmp) / "finals.env"
     env.write_text(f"INCIDENT_DB_DSN={server.get_uri()}\n")
-    copy = [sys.executable, "-I", str(ROOT / "copy" / "copy_midterm_to_finals.py"), "--source-env", midterm_env, "--target-env", str(env), *decisions]
+    copy = [sys.executable, "-I", str(ARCHIVE / "copy" / "copy_midterm_to_finals.py"), "--source-env", midterm_env, "--target-env", str(env), *decisions]
     subprocess.run([*copy, "--commit"], check=True)
     with psycopg.connect(server.get_uri()) as conn:
         problems = conn.execute((HERE / "security_check.sql").read_text()).fetchall()

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Copy the incident data from the midterm Supabase database into the finals one.
 
-    cd supabase/copy && uv run --no-project --with 'psycopg[binary]' python copy_midterm_to_finals.py \
+    cd archived/supabase/copy && uv run --no-project --with 'psycopg[binary]' python copy_midterm_to_finals.py \
         --source-env <midterm .env file> --target-env <finals .env file> [--commit] [--replace] \
         [--not-edited <run id> ...] [--edited <run id> ...] [--accept-item-edits <run id> ...]
 
@@ -136,7 +136,7 @@ def main() -> int:
             check(columns(scur, table) == columns(dcur, table), f"{table}: same columns and types on both sides")
         scur.execute("SELECT has_table_privilege('service_role', 'public.incidents', 'INSERT')")
         if scur.fetchone()[0]:
-            print("  warn  midterm still accepts service_role writes: freeze it first (supabase/midterm/freeze_midterm.sql)")
+            print("  warn  midterm still accepts service_role writes: freeze it first (archived/supabase/midterm/freeze_midterm.sql)")
         dcur.execute(" UNION ALL ".join(f"SELECT '{t}', count(*) FROM public.{t}" for t in [*TABLES, *FINALS_ONLY]))
         occupied = [f"{t} ({n})" for t, n in dcur.fetchall() if n]
         if occupied and not args.replace:
