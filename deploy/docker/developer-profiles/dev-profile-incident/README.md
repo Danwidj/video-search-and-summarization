@@ -6,13 +6,13 @@ SPDX-License-Identifier: Apache-2.0
 agents:
   context: How to deploy and run the incident search and reporting system. The backend runs on a GPU VM (the workstation); the web console runs on the laptop and reaches the backend through an SSH tunnel. Coding agents start at AGENTS.md.
   read-when: Deploying or starting the incident profile.
-  owns: the deployment steps (prerequisites, copy and fill in .env, link, database setup, start, check, stop).
+  owns: the deployment steps (prerequisites, copy and fill in .env, link, database setup, start, check, stop) and the demo clips (overview at the top, Features at the bottom).
   rules: Setting names only, never values. Detail beyond the steps belongs in .docs/incident-profile-operations.md, not here.
 -->
 
 # Incident profile: deployment
 
-<img src=".docs/figures/demo.gif" width="800" alt="Walkthrough of the incident console: the incident library, one incident's report with its video and tracked boxes, its evidence images, the model's first version of the report, and back to the library" />
+<img src=".docs/figures/demo-overview.gif" width="800" alt="Overview of the incident console: the incident library, one incident's report with its video, tracked boxes and evidence images, and back to the library" />
 
 ## 1. What you need
 
@@ -77,6 +77,24 @@ If `start.sh` stops early, it prints the cause and the fix. More help: [incident
   ```
 
 Never use NVIDIA's `dev-profile.sh` for this profile: its `down` deletes the VM's data and model cache.
+
+## Features
+
+**Report workspace:** the video with boxes that follow each item, the timeline, the report fields, the evidence items and the report's versions.
+
+<img src=".docs/figures/demo-1-report-workspace.gif" width="800" alt="Report workspace: a click on the timeline plays the video with boxes that follow a leopard and a dog, then the evidence items, then the model's version of the report and back to the reviewer's version" />
+
+**Dashboard:** counts by hour, severity, type, assets, instruments and evidence; every panel follows the filters.
+
+<img src=".docs/figures/demo-2-dashboard.gif" width="800" alt="Dashboard: one hour is selected on the activity heatmap, then the burglary type and medium severity, and every panel changes with each filter" />
+
+**Evidence search:** describe a person or an object in plain English and open a match at the second it appears.
+
+<img src=".docs/figures/demo-3-evidence-search.gif" width="800" alt="Evidence search: the query a silver car returns 14 matching evidence items with their match scores, narrowed to road accidents, and one match opens its report at that second" />
+
+**Ask about this incident:** a question about one report, answered from the report, with the tools the agent used.
+
+<img src=".docs/figures/demo-4-ask-incident.gif" width="800" alt="Ask about this incident: a question about what the bear takes and when, the answer, and the What I did list showing the incident_read_report tool call" />
 
 ## Read more
 
