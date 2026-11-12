@@ -9,6 +9,12 @@
 # verified on git 2.54.0 - which is harmless here: with nothing to do the
 # script is a silent no-op apart from the venv up-to-date notice.)
 #
+# VM checkout: a dev-profile-incident that has a .env.remote and no .env.local is
+# the VM's checkout (the VM runs on .env.remote and is not expected to have a
+# .env.local). There Part 0 and Part B do nothing, so a pull never recreates a
+# blank .env.local or the per-service .env.local links. A laptop checkout (it has
+# .env.local, or neither file) is set up as described below.
+#
 # Part 0 (dev-profile-incident root .env.local): a new worktree must get the
 # main worktree's real deploy/docker/developer-profiles/dev-profile-incident/.env.local
 # (the developer's secrets). Outside the main worktree, when the main worktree
@@ -50,8 +56,14 @@ current_dir=$(git rev-parse --show-toplevel)
 INCIDENT_ROOT="deploy/docker/developer-profiles/dev-profile-incident"
 incident_root_dir="$current_dir/$INCIDENT_ROOT"
 
-# --- Part 0: dev-profile-incident root .env.local (runs in ALL worktrees).
-if [ -d "$incident_root_dir" ]; then
+# A VM checkout has .env.remote and no .env.local; the laptop setup is skipped there.
+vm_checkout=0
+if [ -f "$incident_root_dir/.env.remote" ] && [ ! -e "$incident_root_dir/.env.local" ] && [ ! -L "$incident_root_dir/.env.local" ]; then
+    vm_checkout=1
+fi
+
+# --- Part 0: dev-profile-incident root .env.local (runs in ALL worktrees, except a VM checkout).
+if [ -d "$incident_root_dir" ] && [ "$vm_checkout" -eq 0 ]; then
     target_env_local="$incident_root_dir/.env.local"
     template_env="$incident_root_dir/.env"
     main_env_local="$main_worktree/$INCIDENT_ROOT/.env.local"
@@ -91,8 +103,8 @@ if [ "$current_dir" != "$main_worktree" ]; then
     done
 fi
 
-# --- Part B: dev-profile-incident symlink self-heal (runs in ALL worktrees).
-if [ -d "$incident_root_dir" ]; then
+# --- Part B: dev-profile-incident symlink self-heal (runs in ALL worktrees, except a VM checkout).
+if [ -d "$incident_root_dir" ] && [ "$vm_checkout" -eq 0 ]; then
     for sub in incident-console-v2 vlm-gateway mock-backend; do
         target="$incident_root_dir/$sub/.env.local"
         # Check if target exists and is a symlink pointing to ../.env.local

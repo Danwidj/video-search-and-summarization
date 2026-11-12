@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Person tracking (ENABLE_TRACKING): overrides on top of compose.override.yml,
-# used only by .scripts/tracking-stack.sh. See .docs/decisions.md (2026-10-31).
+# used only by .scripts/tracking-stack.sh.
 #
 # The GPU 0 pins for nvstreamer-2d-fusion and perception-2d-fusion stay in
 # compose.override.yml; this file adds only what tracking needs.

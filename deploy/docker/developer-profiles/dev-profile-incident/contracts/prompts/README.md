@@ -36,7 +36,7 @@ Every model prompt the profile sends besides the contract's P1 and RP1 prompts (
 1. Edit the file. For a chart prompt, edit the TypeScript and run `npm run export:prompts` in `incident-console-v2/`.
 2. Update the entry's `sha256`, then run `python ../sync.py` for an agent prompt.
 3. Update the request goldens it changes ([golden](../golden/README.md)) in the same PR.
-4. Say why in the [Decision log](../../.docs/decisions.md). Evaluation records each prompt's sha256, so the old and new versions stay distinguishable.
+4. Say why in the [Decision log](../../.docs/archive/decisions.md). Evaluation records each prompt's sha256, so the old and new versions stay distinguishable.
 
 ## Rules
 

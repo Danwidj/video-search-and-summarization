@@ -44,7 +44,7 @@ Details of each path: [launch modes and connectivity](../../.docs/architecture.m
    ```bash
    for d in incident-console-v2 vlm-gateway mock-backend; do ln -sfn ../.env.local "$d/.env.local"; done
    ```
-   If you ran `.githooks/activate.sh` once for the clone, it keeps these links in sync across worktrees and refreshes a worktree's `.env.local` that differs from the main worktree's copy ([`.githooks/README.md`](../../../../../../.githooks/README.md)).
+   If you ran `.githooks/activate.sh` once for the clone, it keeps these links in sync across worktrees and refreshes a worktree's `.env.local` that differs from the main worktree's copy ([`.githooks/README.md`](../../../../../../.githooks/README.md)). It does nothing in a VM checkout (a `.env.remote` and no `.env.local`).
 
    The Supabase values must name the finals project. Midterm (`rfevukimyftzbxlehwel`) is a frozen read-only record ([`.docs/architecture.md`](../../.docs/architecture.md#two-supabase-projects-one-per-phase)). Mock mode passes these credentials to the mock backend too, and its analyse route writes `mock-run-*` rows into that database.
 4. **vm mode only: SSH identity.** Set `VSS_SSH_HOST` in `.env.local` (or the environment) to your own host or SSH config alias, with `HostName` and your own `User` in `~/.ssh/config` if it is an alias, or export `VSS_SSH_USER` or `VSS_SSH_TARGET`. Resolution is non-interactive. See [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).
@@ -85,7 +85,7 @@ Then run one upload to report with [`incident-analyze-video`](../incident-analyz
 
 | Symptom | Fix |
 |---|---|
-| `start.sh` aborts at the SSH preflight | Read the `Cause:` / `Fix:` lines it prints (Tailscale logged out or stopped, VM offline in the tailnet, DNS, SSH timeout or refused, login rejected, host key changed). Table: [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting). |
+| `start.sh` aborts at the SSH preflight | Read the `Cause:` / `Fix:` lines it prints (Tailscale logged out or stopped, VM offline in the tailnet, DNS, SSH timeout or refused, login rejected, host key changed). More: [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting). |
 | `start.sh` stops with `[vm] ERROR` or "timed out" | The Docker step on the VM failed: exit 10 repo, 11 `.env.remote` missing, 12 docker unusable, 13 image pull (NGC login), 14/124 `compose up` failed or stuck (its output shows container states and logs). Tunables: `VSS_PULL_TIMEOUT`, `VSS_COMPOSE_UP_TIMEOUT`, `VSS_NATIVE_START_TIMEOUT`. |
 | Tunnel step fails | `start.sh` says whether a laptop port is taken, the SSH forward is blocked (or `VSS_AGENT_HOST` on the VM is bound to a LAN address instead of `127.0.0.1`), the VM address is wrong (set `VSS_VM_IP`), or the agent is down on the VM. |
 | Logged in as the wrong VM user | Set `User` under your `Host` entry for `VSS_SSH_HOST`, or `export VSS_SSH_USER=<name>`. |

@@ -53,5 +53,5 @@ reason finals starts from a clean baseline.
 
 Security on midterm before the freeze: RLS on only `evidence_crops` and `query_results`;
 `anon`/`authenticated` held every privilege on the other 20 tables; `insert_incident` was
-executable by `PUBLIC`. Background: [`../../../.docs/decisions.md`](../../../.docs/decisions.md)
+executable by `PUBLIC`. Background: [`../../../.docs/archive/decisions.md`](../../../.docs/archive/decisions.md)
 ("One Supabase project per phase").
