@@ -2,7 +2,7 @@
 
 **Profile:** `dev-profile-incident`
 **Target:** Zero-GPU local workstation and the VM (2x NVIDIA RTX A6000 48 GB, of which VSS uses GPU 0 only: [Operations runbook: GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote))
-**Status:** search, chat and crops delivered; the retrieval eval is in progress ([Status: MVP2 search](../status.md#2-mvp2-natural-language-evidence-search))
+**Status:** search, chat and crops delivered; the retrieval eval is in progress ([Status: MVP2 search](../archive/status.md#2-mvp2-natural-language-evidence-search))
 
 ---
 
@@ -77,7 +77,7 @@ Search & Retrieval
 
 1. **VLM P1 Extraction** (incident-contract-v4): The VLM returns `timestamp_seconds` and a short searchable **label** for each entity/instrument/asset. **Bounding boxes are NOT requested** from the VLM (0% well-framed in pilot). Each entity also carries `first_seen_seconds` and `last_seen_seconds` (INT, `incident-contract-v4`) for the presence bar and the Edit-mode scrubber. The incident report schema uses `timestamp_seconds` (INT) and descriptive text per item, whilst `start_timestamp` and `end_timestamp` define incident-level temporal boundaries.
 
-2. **Crop Pipeline**: When an incident report is generated, a lightweight CPU utility extracts the video frame at `timestamp_seconds`, then the detector port runs on the single frame with the item name as prompt and returns a bounding box (with 5% padding). Today the port is backed by the remote VLM (`DefaultDetector`; an item it cannot find at its second or at ±1, ±2 s is stored with `located: false` and no box); local open-vocabulary detectors (Grounding DINO, OWLv2) are evaluated offline in [`eval.md`](eval.md) §6 ([Decision log](../decisions.md), 2026-10-18). The cropped JPEG is uploaded to Cloudflare R2 and the metadata (`timestamp_seconds`, `bounding_box`, `image` R2 key, `item_name`, `item_description`) is stored in the `evidence_crops` table. A text embedding model generates the pgvector embedding from the item description/text.
+2. **Crop Pipeline**: When an incident report is generated, a lightweight CPU utility extracts the video frame at `timestamp_seconds`, then the detector port runs on the single frame with the item name as prompt and returns a bounding box (with 5% padding). Today the port is backed by the remote VLM (`DefaultDetector`; an item it cannot find at its second or at ±1, ±2 s is stored with `located: false` and no box); local open-vocabulary detectors (Grounding DINO, OWLv2) are evaluated offline in [`eval.md`](eval.md) §6 ([Decision log](../archive/decisions.md), 2026-10-18). The cropped JPEG is uploaded to Cloudflare R2 and the metadata (`timestamp_seconds`, `bounding_box`, `image` R2 key, `item_name`, `item_description`) is stored in the `evidence_crops` table. A text embedding model generates the pgvector embedding from the item description/text.
 
 3. **evidence_crops table:** one table for entities, instruments and assets, keyed by `revision_id` and holding each video's searchable revision only (its official revision, else its newest). Columns, index, writers and RLS: [Data layer: evidence_crops](../data.md#evidence_crops).
 
@@ -114,7 +114,7 @@ Search & Retrieval
 
 ## 4. Delivered, dropped and open
 
-**Delivered** (state: [Status: MVP2 search](../status.md#2-mvp2-natural-language-evidence-search)):
+**Delivered** (state: [Status: MVP2 search](../archive/status.md#2-mvp2-natural-language-evidence-search)):
 
 - `incident-contract-v4` extraction and the native `vss-agent` P1 route.
 - Crop service (detector port, JPEG quality 85, readable R2 keys, `EvidenceStore` port) and `evidence_crops` / `query_results` with the `search_evidence_items` RPC.
@@ -122,14 +122,14 @@ Search & Retrieval
 - Both mocks (ports 7777 and 7778), `start.sh` bringing search up unconditionally, and the console's hexagonal middle layer ([layout](console-hexagonal-architecture.md)).
 - `/library` Find incidents and Find evidence, and the report chat.
 
-**Dropped:** multi-subagent routing and full RT-CV / RT-Embed indexing ([Decision log: drop multi-subagent routing](../decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2)); the timestamp backfill script and production evidence loader (the analyze route now writes crops and the console writes `evidence_crops`).
+**Dropped:** multi-subagent routing and full RT-CV / RT-Embed indexing ([Decision log: drop multi-subagent routing](../archive/decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2)); the timestamp backfill script and production evidence loader (the analyze route now writes crops and the console writes `evidence_crops`).
 
 **Open** (all owned by the evaluation work in [`eval.md`](eval.md)):
 
 - Detector framing: the remote-VLM `DefaultDetector` against offline candidates (§6.2). Stand-in: `[ymin, xmin, ymax, xmax]` normalised 0-1000.
 - Critic model and prompt (§3.6). Stand-in: `{verdict: confirmed|rejected|unverified, confidence, rationale}`.
 - Embedding model comparison (§6.3). Stand-in: `vector(1024)` on `evidence_crops.embedding`; the agent embeds, the console never does.
-- Search RPC thresholds: the agent route defaults to `top_k` 10 and `min_similarity` 0.0, so the RPC's own 0.2 default is unused; the console asks for 20 hits across the library and 50 for one video, and sends `min_similarity` 0.35 for a text query ([decision](../decisions.md#2026-11-05-evidence-search-keeps-the-exact-second-adds-a-0-35-score-floor-and-plays-a-slice)).
+- Search RPC thresholds: the agent route defaults to `top_k` 10 and `min_similarity` 0.0, so the RPC's own 0.2 default is unused; the console asks for 20 hits across the library and 50 for one video, and sends `min_similarity` 0.35 for a text query ([decision](../archive/decisions.md#2026-11-05-evidence-search-keeps-the-exact-second-adds-a-035-score-floor-and-plays-a-slice)).
 
 ## 5. Shared Conventions, Environments & Definitions
 

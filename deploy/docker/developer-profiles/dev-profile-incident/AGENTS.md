@@ -5,7 +5,7 @@
 Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVAITC). A reviewer uploads a clip, a VLM extracts a structured incident report, and the report is stored as an append-only Supabase revision (JSONB) with the video in Cloudflare R2. Reviewers edit it into new human revisions, one revision per incident is marked official, and eval scores model output separately. MVP2 adds natural-language search ([`.docs/mvp2/README.md`](.docs/mvp2/README.md)).
 
 - **Operate the profile** (launch, VM ops, analyse, migrate, evaluate): use the skills in [`skills/README.md`](skills/README.md); UI work in `incident-console-v2` should read the `shadcn` skill first.
-- **Understand it:** [`.docs/`](#docs-map). Start with [`.docs/status.md`](.docs/status.md) for what is true today.
+- **Understand it:** [`.docs/`](#docs-map).
 - **Change code:** this file.
 
 ## Components
@@ -87,23 +87,18 @@ Stale docs are a defect. Update in the same PR:
 | A command, port, script or API contract | The matching `skills/incident-*/SKILL.md` and [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) |
 | Schema, R2 layout or report fields | A new `supabase/migrations/` file after the baseline, `supabase/tests/test_baseline.py`, [`.docs/data.md`](.docs/data.md), [`.docs/analysis-schema.md`](.docs/analysis-schema.md) |
 | Topology, components, sequences | [`.docs/architecture.md`](.docs/architecture.md); what a console page or route does: [`.docs/console-reference.md`](.docs/console-reference.md) |
-| Implementation state, known issues, live VM config | [`.docs/status.md`](.docs/status.md) (rewrite, don't append) |
-| An architectural or tooling decision | New entry at the top of [`.docs/decisions.md`](.docs/decisions.md): Decision / Why / Alternatives rejected / Links, and remove or amend any entry it supersedes |
-| A doc or skill added, moved or renamed | [`README.md`](README.md) doc index and [`skills/README.md`](skills/README.md) |
+| A doc or skill added, moved or renamed | [`skills/README.md`](skills/README.md) |
 
 ## Docs map
 
 | File | Read when |
 |---|---|
-| [`.docs/status.md`](.docs/status.md) | Starting any task: what is done, known issues, live VM config |
-| [`.docs/action-plan.md`](.docs/action-plan.md) | Checking scope or goals |
 | [`.docs/architecture.md`](.docs/architecture.md) | Touching more than one component, or tracing a request |
 | [`.docs/console-reference.md`](.docs/console-reference.md) | Changing what a console page shows or does, a console route, or the console's configuration |
 | [`.docs/data.md`](.docs/data.md) | Touching tables, the RPCs, cascades, security or R2 keys |
 | [`.docs/analysis-schema.md`](.docs/analysis-schema.md) | Touching report fields, prompts, VLM calls or output parsing |
 | [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) | Anything on the VM |
 | [`.docs/vm-api-contracts.md`](.docs/vm-api-contracts.md) | Calling or changing a `vss-agent` HTTP endpoint or the tunnel ports |
-| [`.docs/decisions.md`](.docs/decisions.md) | Before reversing an existing choice |
 | [`.docs/mvp2/README.md`](.docs/mvp2/README.md) | Natural-language search work |
 | [`.docs/mvp2/chat-routing.md`](.docs/mvp2/chat-routing.md) | Changing how the report chat routes a question, its model prompt or video checks |
 | [`.docs/mvp2/eval.md`](.docs/mvp2/eval.md) | Planning or changing retrieval, critic, detector or embedding evaluation |

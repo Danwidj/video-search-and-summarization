@@ -12,7 +12,7 @@
 #
 # Only :8000 is forwarded. The console uploads straight to R2, and the VM no
 # longer runs VIOS/VST or the HAProxy ingress (:7777), so there is nothing else
-# to reach (see .docs/decisions.md).
+# to reach.
 #
 # Run this in the foreground (Ctrl-C closes it), then start the console
 # locally against the tunneled agent. `start.sh` backgrounds the same tunnel

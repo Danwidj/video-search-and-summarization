@@ -3,7 +3,7 @@
 // A repeat upload: the same file content as a video already in the library, or
 // as a job still queued or running. Browser-safe (the upload page imports it).
 // The content is identified by the SHA-256 of the file as the reviewer uploaded
-// it, before any conversion (see .docs/decisions.md, 2026-11-06 repeat uploads).
+// it, before any conversion (see .docs/archive/decisions.md, 2026-11-06 repeat uploads).
 
 export const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 

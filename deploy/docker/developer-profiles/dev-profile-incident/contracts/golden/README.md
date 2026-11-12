@@ -39,7 +39,7 @@ The P1 prompt is stored as `{"$contract_text": "incident_extraction_prompt.txt",
 1. Change the producer's code. If the change is to P1 or RP1, edit the contract files here too and bump [VERSION](../VERSION).
 2. The producer's golden test fails with a diff. Update the case's `body`, or the `sha256` of a referenced contract file, in the same PR.
 3. Every other producer of the case must then match as well: that is the parity check.
-4. A change that is not a contract bump also gets a line in the [Decision log](../../.docs/decisions.md) saying why.
+4. A change that is not a contract bump also gets a line in the [Decision log](../../.docs/archive/decisions.md) saying why.
 
 Not covered here: the template chat, which makes no model call, the routed chat and video-check prompts, which are off and have one producer, and the experiment prompts in [experiments](../experiments/README.md), which have their own registry hashes.
 

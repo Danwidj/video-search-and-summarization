@@ -71,6 +71,4 @@ The file must apply cleanly to a fresh database and to the live one: use `IF NOT
 ## Read more
 
 - [Data layer: Supabase schema](../.docs/data.md#1-supabase-postgresql-schema): tables, functions, security and R2 keys
-- [Status: Database status](../.docs/status.md#3-database-status): which migrations are applied to finals
 - [Architecture: Two Supabase projects](../.docs/architecture.md#two-supabase-projects-one-per-phase): which service points at which project
-- [Decision log: One Supabase project per phase](../.docs/decisions.md#2026-10-20-one-supabase-project-per-phase-finals-built-from-one-baseline-midterm-frozen): why there are two projects

@@ -50,5 +50,4 @@ Claude Code needs no install step: [.claude/skills/](../../../../../.claude/skil
 - [Operations runbook](../.docs/incident-profile-operations.md): what runs on the VM
 - [Architecture: Launch modes and connectivity](../.docs/architecture.md#launch-modes-and-connectivity): mock against vm
 - [Search spec](../.docs/mvp2/README.md): the contracts behind `incident-search`
-- [Status](../.docs/status.md): what works today
 - NVIDIA's [vss-search-archive](../../../../../skills/vss-search-archive/SKILL.md) skill: the upstream search reference

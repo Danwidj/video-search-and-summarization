@@ -24,7 +24,7 @@ uv run python -c "import prompt_registry as r; r.add('p1-v4-e01-severity', paren
 - **Append-only:** compared with `origin/main`, entries are only added, never edited, reordered or removed. A changed prompt gets a new id with the old one as `parent`.
 - **Baseline:** `p1-v4-base` is byte-identical to `../incident_extraction_prompt.txt` at `incident-contract-v4`.
 - **Ids:** `p1-v<contract>-e<NN>-<topic>`. Each experiment prompt has a written hypothesis and an existing earlier parent.
-- **Selection** is recorded in the [Decision log](../../.docs/decisions.md), never as an edit to an entry.
+- **Selection** is recorded in the [Decision log](../../.docs/archive/decisions.md), never as an edit to an entry.
 
 ## Read more
 

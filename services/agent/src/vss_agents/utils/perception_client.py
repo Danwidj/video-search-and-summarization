@@ -17,7 +17,7 @@
 
 The chain is NvStreamer (file upload and RTSP replay) -> DeepStream (REST provisioning, detector plus tracker) ->
 Kafka -> Logstash -> Elasticsearch -> video-analytics-api ``/frames``. The calls, payloads and failure modes are those
-measured by the Phase 0 scout (see ``.docs/decisions.md`` in the incident profile):
+measured by the Phase 0 scout (see ``.docs/archive/decisions.md`` in the incident profile):
 
 * the NvStreamer ``streamId`` is taken from the upload response (a re-upload of a file name gets ``_1``, ``_2``);
 * DeepStream ``stream/remove`` needs the same ``camera_url`` as ``stream/add``;

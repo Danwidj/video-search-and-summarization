@@ -22,6 +22,7 @@ Shell scripts that start, check and stop the incident backend. The laptop-side s
 | `rebuild-svc.sh` | VM | Restarts a native service, or rebuilds one Docker service with the profile overrides |
 | `env-file.sh` | VM, sourced | Picks the VM env file (`.env.remote`, else the old `generated.env.remote`) and supplies a blank `HOST_IP` (the VM's address), `VSS_APPS_DIR` and `VSS_DATA_DIR` for the run, and loads the file with them set |
 | `test-env-file.sh` | any | Hermetic check of `env-file.sh` |
+| `test-setup-worktree.sh` | any | Hermetic check of `.githooks/setup-worktree.sh`: a VM-shaped checkout gets no `.env.local` and no links, a laptop-shaped one is set up as before |
 | `test-env-template.sh` | laptop | Hermetic check of `.env` (sources cleanly, defined above use, no secrets, and defines every setting the agent config refers to) and `compose.unused.env` |
 | `setup-database.sh` | laptop | Builds the whole schema on an empty database from `supabase/migrations/` (`--env-file` names the file with `INCIDENT_DB_DSN`); refuses a target that already has the schema |
 | `test-setup-database.sh` | laptop | Builds the schema on a throwaway local Postgres, checks the refusals and that the connection string is never printed |

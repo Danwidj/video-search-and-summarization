@@ -8,14 +8,14 @@ Specification for the PR 119 eval workstream ([MVP2 overview](README.md#4-delive
 
 > **Handoff**
 > - **Owner:** the captain's teammate owns the retrieval eval, not the captain.
-> - **Start:** at [§10](#10-work-order-and-definition-of-done). Agree the [§8](#8-proposals-awaiting-approval) proposals first and record each in [`decisions.md`](../decisions.md).
+> - **Start:** at [§10](#10-work-order-and-definition-of-done). Agree the [§8](#8-proposals-awaiting-approval) proposals first and record each in [`decisions.md`](../archive/decisions.md).
 > - **Before a live run:** decide where retrieval labels and manifests are stored (open item 1 below), and upload and analyse a few real videos, because the finals search corpus may be empty (§1.2).
 > - **Out of scope:** the multi-subagent routing config and full RT-CV / RT-Embed indexing were dropped, so Track F stays deferred (§5).
 > - **Compute:** the VM uses GPU 0 only ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote)); offline detector and embedding experiments run off the VM (§6.1).
 > - **Access:** each developer uses their own credentials in their own local `.env.local`, never committed or shared in chat. The variable names are in [§1.1](#11-eval-p1rp1-extraction-benchmark) (Configuration).
 >
 > **Open items for the eval owner**
-> 1. **Eval storage.** P1 scoring no longer needs a database: since 2026-10-27 `eval_run.py` scores from an in-memory store loaded from the workbook (`eval/offline_store.py`) and opens no database unless `--db` is passed, and `db.get_db()` creates tables only with `init_schema=True` ([decision](../decisions.md#2026-10-27-eval-scores-offline-by-default-the-database-path-and-schema-creation-are-explicit)). Still open: where the retrieval query set, labels and corpus manifest are stored (§3.8 expects committed files). `eval/db.py` still maps the tables finals dropped, for the explicit `--db` path only.
+> 1. **Eval storage.** P1 scoring no longer needs a database: since 2026-10-27 `eval_run.py` scores from an in-memory store loaded from the workbook (`eval/offline_store.py`) and opens no database unless `--db` is passed, and `db.get_db()` creates tables only with `init_schema=True` ([decision](../archive/decisions.md#2026-10-27-eval-scores-offline-by-default-the-database-path-and-schema-creation-are-explicit)). Still open: where the retrieval query set, labels and corpus manifest are stored (§3.8 expects committed files). `eval/db.py` still maps the tables finals dropped, for the explicit `--db` path only.
 > 2. **Retrieval benchmark (Track R):** the specification is this document, with the §8 proposals awaiting approval. Work-order step 1, the offline metrics module `eval/retrieval_metrics.py`, landed on 2026-10-25 ([§10.1](#101-step-1-retrieval-metrics-module-landed)); the query set, labels, corpus manifest, harness and runs are not started.
 > 3. **P1 benchmark under `core-scored-v1`:** run it offline (malformed-ID frequency, per-model core and enrichment failure rates) under the ground-truth plan's approval gates (see the local planning document `.docs/mvp2/ground-truth-and-prompt-experiments-plan.md`, not tracked in Git).
 > 4. **Contract ID patterns:** consider a contract version with ID patterns only if the malformed-ID evidence justifies it; it changes eval.
@@ -55,12 +55,12 @@ Paths are relative to the profile directory, except paths starting with `service
 
   - MiniLM is served locally by `eval/scripts/eval_embedding_server.py` (:8811).
   - Since 2026-10-27 every pin is fixed by [`evaluation-methodology-v1.0`](../../eval/methodology/evaluation-methodology-v1.0.md) (`eval/methodology.py`) and recorded in each result. A judge or embedder failure leaves the field unscored and stops the run, never a zero. The aggregate adds per-video 95% intervals, severity within ±1, bias and confusion, and holder accuracy, and refuses to pool methodology versions. Confirmed out-of-taxonomy clips (from the ground truth) leave type accuracy only and form their own breakdown row (§6 there). Conditional and end-to-end accuracy are reported apart, with reliability rates.
-- **Run records** (since the 2026-10-02 benchmark work, on main from 2026-10-27): each P1 call's round-trip time (`timing.p1_elapsed_s`), the video's size and length, an `outcome` class that keeps request failures (`timeout`, `rate_limited`, `http_error`) out of the accuracy metrics, and a fixed rate-limit policy (20 s pacing; HTTP 429 only retried, at most twice). An empty predicted description scores 0.0 without a judge call ([decision](../decisions.md#2026-10-02-vlm-benchmark-incident-fields-only-timed-p1-round-trip-interleaved-models-no-blended-score)).
+- **Run records** (since the 2026-10-02 benchmark work, on main from 2026-10-27): each P1 call's round-trip time (`timing.p1_elapsed_s`), the video's size and length, an `outcome` class that keeps request failures (`timeout`, `rate_limited`, `http_error`) out of the accuracy metrics, and a fixed rate-limit policy (20 s pacing; HTTP 429 only retried, at most twice). An empty predicted description scores 0.0 without a judge call ([decision](../archive/decisions.md#2026-10-02-vlm-benchmark-incident-fields-only-timed-p1-round-trip-interleaved-models-no-blended-score)).
 - **What is not captured:**
   - Token `usage` is kept only for the P1 call. No cost is recorded.
   - The judge model and prompt are not versioned or recorded with results.
   - The fixed run ids (`P1-cosmos3nano`, …) overwrite each other's rows when `--db` is used; the offline default keeps one store per run.
-- **Box-accuracy pilot:** VLM bounding boxes were 0% well-framed, while over 95% of timestamps landed on the correct frame ([decisions](../decisions.md), 2026-10-16). The pilot report is kept outside the repository.
+- **Box-accuracy pilot:** VLM bounding boxes were 0% well-framed, while over 95% of timestamps landed on the correct frame ([decisions](../archive/decisions.md), 2026-10-16). The pilot report is kept outside the repository.
 - `eval/docs/vlm_benchmark_results.md` is the incident-contract-v2 run of 2026-10-02 (incident fields, 55 videos × 3 models), not comparable with later contract versions.
 
 ### 1.2 What MVP2 already ships
@@ -69,12 +69,12 @@ Paths are relative to the profile directory, except paths starting with `service
 |---|---|---|
 | Search route | `POST /api/v1/incidents/search` in `vss-agent` (`search-contract-v1`), live on the VM | `services/agent/src/vss_agents/api/incident_search.py` |
 | Corpus | `evidence_crops`: one row per evidence item of each video's searchable revision (its official revision, else its newest), keyed `(revision_id, item_type, item_id)`, `embedding vector(1024)`, HNSW cosine. `search_evidence_items` returns only those rows. | [`data.md`](../data.md#evidence_crops); `supabase/migrations/20261023000000_report_revisions_schema.sql`, `20261023000200_searchable_latest_revision.sql` |
-| Corpus size | Current counts: [status](../status.md#3-database-status) | |
+| Corpus size | Current counts: [status](../archive/status.md#3-database-status) | |
 | Embeddings | `nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions. The **text** `"{name}: {description}"` is embedded (`passage`), and so is the query (`query`). Crops are not embedded. | `services/agent/src/vss_agents/utils/embeddings.py` |
-| Ranking | Cosine similarity order, no cutoff (`min_similarity` default 0.0). The candidate pool equals `top_k`. | [decisions](../decisions.md) 2026-10-18 |
-| Critic | Off by default; `INCIDENT_SEARCH_CRITIC` turns it on. With it on, each hit gets one VLM call (`VLM_NAME`, currently `nvidia/cosmos-3-super-reasoner`), 30 s timeout, no retry. Call starts are spaced `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` apart (default 1.0). A failure gives `unverified`. The critic **does not reorder**: `rank` is fixed before it runs. It sees the crop image (when its URL is http(s)) and a prompt that includes the embedded description. | `incident_search.py`; [decisions](../decisions.md) 2026-10-16 |
+| Ranking | Cosine similarity order, no cutoff (`min_similarity` default 0.0). The candidate pool equals `top_k`. | [decisions](../archive/decisions.md) 2026-10-18 |
+| Critic | Off by default; `INCIDENT_SEARCH_CRITIC` turns it on. With it on, each hit gets one VLM call (`VLM_NAME`, currently `nvidia/cosmos-3-super-reasoner`), 30 s timeout, no retry. Call starts are spaced `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` apart (default 1.0). A failure gives `unverified`. The critic **does not reorder**: `rank` is fixed before it runs. It sees the crop image (when its URL is http(s)) and a prompt that includes the embedded description. | `incident_search.py`; [decisions](../archive/decisions.md) 2026-10-16 |
 | Rejected hits | Dropped from the response when `hide_rejected` is true (the default), but always written to `query_results` | `incident_search.py` |
-| Detector | `DefaultDetector` asks the remote VLM for one `bbox_2d` on the keyframe at the item's `timestamp_seconds`. With no box the item is kept as `located: false` (whole frame, no crop). It sits behind the `OpenVocabularyDetector` port. | `services/agent/src/vss_agents/utils/crop_evidence.py`; [decisions](../decisions.md) 2026-10-18 |
+| Detector | `DefaultDetector` asks the remote VLM for one `bbox_2d` on the keyframe at the item's `timestamp_seconds`. With no box the item is kept as `located: false` (whole frame, no crop). It sits behind the `OpenVocabularyDetector` port. | `services/agent/src/vss_agents/utils/crop_evidence.py`; [decisions](../archive/decisions.md) 2026-10-18 |
 | Latency and cost signals | Only the end-to-end `execution_time_ms`. Critic token usage and per-call latency are not recorded. | `incident_search.py` |
 | `/analyze` | Runs the **same one-shot P1 call** as gateway mode and `eval/`, using the vendored copy of the same contract. It skips RP1 when `skip_rp1` is set. The model defaults to the VM's `VLM_NAME`; a request may name any allowlisted `model`. When the detector is available (`DefaultDetector` needs `VLM_GATEWAY_API_KEY` or `OPENAI_API_KEY`), best-effort cropping runs after P1 inside the same request: one remote VLM box call per entity, instrument and asset (up to 4 attempts each on 429/5xx), uploaded to R2 when R2 is configured and listed in the AI revision's `evidence`. It does not change the report, but it adds paid calls and wall-clock time to every `/analyze` response. There is no perception, tool calling or subagents. | `services/agent/src/vss_agents/tools/incident_report_gen.py`; `services/agent/src/vss_agents/api/incident_analyze.py` |
 | Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000` (its models and embeddings are remote; on the VM VSS uses GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote)). Both mocks (:7777, launched by `start.sh --mode mock`, and standalone :7778) answer from one finals snapshot captured 2026-10-24, scoring hits by the share of query words they contain, with placeholder critic verdicts and crop URLs; the snapshot was regenerated on 2026-10-25 and holds the six finals AI revisions, without the three test videos the cleanup removed. Both mocks implement `hide_rejected` and the 0.0 `min_similarity` default. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
@@ -300,14 +300,14 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 
 - The original question stands: does a compound VSS pipeline (perception, tool calling, subagents) beat one-shot P1 on the same videos and ground truth?
 - **Entry criteria:** such a pipeline exists and emits `incident-contract-v4`. It then joins Track X as a third arm with the same scorer.
-- **Status:** no compound pipeline is planned: the multi-subagent routing config and full RT-CV / RT-Embed indexing were dropped from MVP2 on 2026-10-24 ([decision](../decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2)).
+- **Status:** no compound pipeline is planned: the multi-subagent routing config and full RT-CV / RT-Embed indexing were dropped from MVP2 on 2026-10-24 ([decision](../archive/decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2)).
 - **Still open:** how to normalise token budgets and timeouts between a single call and a multi-call pipeline (Q2 in §9).
 
 ## 6. Offline tracks: detector (D) and embeddings (E)
 
 ### 6.1 Experimental evaluation vs production adoption
 
-- **Experiments are allowed:** offline benchmarking of alternatives is in scope even where a [decision](../decisions.md) rejected them for production. That includes:
+- **Experiments are allowed:** offline benchmarking of alternatives is in scope even where a [decision](../archive/decisions.md) rejected them for production. That includes:
   - local Grounding DINO / OWLv2 / Florence-2
   - MiniLM and OpenAI embeddings
   - image or hybrid embeddings
@@ -338,7 +338,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 ### 6.3 Track E: embeddings
 
 - **Control:** production `nvidia/llama-nemotron-embed-vl-1b-v2` (1024-d).
-- **Candidates must be callable today.** `llama-3.2-nv-embedqa-1b-v2` and `nv-embedqa-e5-v5` return HTTP 410 ([decisions](../decisions.md) 2026-10-18). Candidates:
+- **Candidates must be callable today.** `llama-3.2-nv-embedqa-1b-v2` and `nv-embedqa-e5-v5` return HTTP 410 ([decisions](../archive/decisions.md) 2026-10-18). Candidates:
   - the control at other dimensions
   - MiniLM through the existing eval server
   - OpenAI `text-embedding-3-small`, if a key is approved
@@ -376,7 +376,7 @@ These belong to their owning workstreams. Where this work needs something from t
 
 ## 8. Proposals awaiting approval
 
-These are proposed evaluation policies, not agreed decisions. Once one is approved, add it to [`decisions.md`](../decisions.md) and remove the "proposal" marker here.
+These are proposed evaluation policies, not agreed decisions. Once one is approved, add it to [`decisions.md`](../archive/decisions.md) and remove the "proposal" marker here.
 
 | ID | Proposal | Section |
 |---|---|---|
@@ -412,7 +412,7 @@ Each item is its own PR from `main`, rebased onto `main` before merge. This hand
 - **Input:** one `QueryInstance` per (seed, variant, repeat): `seed_id`, `variant_id`, `repeat`, `query_class`, the candidate `pool` in returned order (`Candidate(key, similarity, verdict)`) and the variant's `relevant` keys. An empty `relevant` set makes a zero-relevant (negative) variant. `validate_instances` refuses a repeated instance, a seed with two classes and a variant whose labels change between repeats.
 - **Lists and metrics:** `cut_list` gives `B`, `S` and `F` exactly as §3.4 defines them (`drop_unverified=True` for the sensitivity variant; `B` never changes); `list_metrics` gives every §3.5 metric, `None` where undefined; `boundary_tie` reports a K / K+1 similarity tie.
 - **Aggregation and intervals:** `seed_values` (repeats, then eligible variants), `estimate` (macro mean over seeds with a cluster-bootstrap interval), `paired_difference` (per-seed differences, then bootstrapped; returned precision on the instances where both lists are non-empty, with `returned_precision_drops`), and `summarize`, which returns all of it per K, list, comparison and class as JSON data.
-- **Choices the spec left open** ([decision](../decisions.md#2026-10-25-retrieval-metrics-semantics-for-the-cases-the-eval-spec-leaves-open)):
+- **Choices the spec left open** ([decision](../archive/decisions.md#2026-10-25-retrieval-metrics-semantics-for-the-cases-the-eval-spec-leaves-open)):
   - A duplicate key in a pool keeps its slot but is never a second hit: it counts in `|L|`, coverage, MRR positions and false positives, and is counted in `duplicates`.
   - Intervals are 95% percentile intervals (linear interpolation) over 10,000 resamples by default; `seed` has no default, so every result names its bootstrap seed. Draws come from `random.Random(seed).random()`, so a result is reproducible from its seed and does not depend on input order.
   - Coverage and the empty share use every instance; zero-relevant metrics use only zero-relevant variants, aggregated the same way (repeats, variants, seeds).
@@ -423,7 +423,7 @@ Each item is its own PR from `main`, rebased onto `main` before merge. This hand
 | Step | Needs before it can start | Open decision or dependency |
 |---|---|---|
 | 2. Query set, labels, corpus manifest | Approval of P-2 (protocol) and P-3 (manifest pinning); a non-empty corpus | Query sourcing (Q1); where labels and the manifest are stored (open item 1: storage for labels and manifests is undecided) |
-| 3. Retrieval harness `eval/scripts/eval_retrieval.py` | Step 2; the live agent (running on the VM's port 8000, [status](../status.md#7-archive) known issue 5); SSH tunnel and the credentials in §3.7 | P-4 (validity flags), P-7 (repeats); mapping each search hit to a `Candidate` with key `(revision_id, item_type, item_id)`, `similarity_score` and `critic.verdict`, in `rank` order; the run directory layout (P-6 for reports) |
+| 3. Retrieval harness `eval/scripts/eval_retrieval.py` | Step 2; the live agent (running on the VM's port 8000, [status](../archive/status.md#7-archive) known issue 5); SSH tunnel and the credentials in §3.7 | P-4 (validity flags), P-7 (repeats); mapping each search hit to a `Candidate` with key `(revision_id, item_type, item_id)`, `similarity_score` and `critic.verdict`, in `rank` order; the run directory layout (P-6 for reports) |
 | 4. Critic ablation report | Step 3 output; `summarize` gives the list metrics and differences | Critic-call cost per list and latency tables are still to write (§3.6); token figures wait on the search route (§7) |
 | 5. Tracks E, D and X | Their inputs (a corpus snapshot, framing labels, the 55-video split) | P-1 (track structure), P-5 (Track X run ids); Track E can reuse `retrieval_metrics` on in-memory rankings; Track X scores offline (`eval/offline_store.py`) |
 
@@ -440,7 +440,7 @@ The finals corpus now holds 17 revisions and 65 evidence crops with embeddings (
 
 These are current decisions that evaluation results could support or challenge. They are listed for visibility, and none is reopened by this document.
 
-| Current decision ([decisions](../decisions.md)) | What could inform it |
+| Current decision ([decisions](../archive/decisions.md)) | What could inform it |
 |---|---|
 | `DefaultDetector` uses VLM boxes, and local detectors are rejected for the VM (2026-10-18). This conflicts with "VLM bounding boxes" being rejected in 2026-10-16. | Track D framing results for the baseline and the candidates |
 | Text-only embeddings of descriptions (2026-10-18) | Track E image and hybrid embedding results |
