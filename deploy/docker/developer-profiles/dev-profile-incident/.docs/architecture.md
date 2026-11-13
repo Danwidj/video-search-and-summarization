@@ -2,18 +2,19 @@
 
 The architecture of `dev-profile-incident`, the incident search and reporting profile built on NVIDIA's Video Search and Summarization (VSS) blueprint. The page follows the arc42 section order and the C4 model's levels (context, containers, components, deployment). It describes roles and interactions, not deployment values: ports, hosts, paths and settings live in the runbook, the skills and the agent contract page.
 
-| If you need | Read |
-|---|---|
-| What a console page shows or does, a console route, the console's configuration | [`console-reference.md`](console-reference.md) |
-| An agent HTTP contract | [`vm-api-contracts.md`](vm-api-contracts.md) |
-| Tables, database functions, object keys | [`data.md`](data.md) |
-| The report contract, validation and storage of model output | [`analysis-schema.md`](analysis-schema.md) |
-| Natural-language search in depth | [`mvp2/README.md`](mvp2/README.md) |
-| How to launch, operate, analyse or migrate | [`skills/README.md`](../skills/README.md), [`incident-profile-operations.md`](incident-profile-operations.md) |
+## Requirements
 
-## Introduction and Goals
+A reviewer uploads a surveillance or anomaly clip, and the system lets the reviewer:
 
-A reviewer uploads a surveillance or anomaly clip. A vision-language model (VLM) extracts a structured incident report: type, severity, confidence, a summary, and the entities, instruments and assets involved, each with the second it is seen. The report is stored as an append-only revision with the clip in object storage. The reviewer edits it into new revisions, marks one revision per video official, searches the whole archive in natural language over evidence items, asks questions about a report, and reads a dashboard that counts each video once.
+- read a structured, timestamped incident report from a vision-language model (VLM): type, severity, confidence, a summary, and the entities, instruments and assets involved, each with the second it is seen;
+- edit the report into new versions and mark one version per video official;
+- search the whole archive in natural language over evidence items;
+- ask questions about a report;
+- read a dashboard that counts each video once.
+
+The clip is kept in object storage and the report as an append-only revision. A standalone benchmark in `eval/` scores extraction against human ground truth; the console has no ground-truth screen.
+
+Out of scope: user accounts, live streams, and more than one incident per video.
 
 ## Context and Scope
 
@@ -29,12 +30,15 @@ Constraints first: the profile is allotted one GPU on a shared host, model infer
 2. **Infer remotely.** The one local GPU is left to the perception stack.
 3. **One incident contract, two consumers.** The extraction prompt, JSON Schema, request settings, prompt registry and request goldens in `contracts/` are used by the console and vendored into the agent, with a strict validation policy and ID-only repair ([`analysis-schema.md`](analysis-schema.md)). A contract change bumps the version and updates both together.
 4. **Reports are append-only revisions with an explicit official pointer.** An analysis appends an AI revision, an edit appends a human revision, a re-run starts a new AI branch, and failed attempts are run records only. "Latest run wins" is never inferred ([`data.md`](data.md#the-report-model)).
-5. **Two analysis modes behind one console code path.** In agent mode the console calls the native agent, which extracts, locates, tracks and persists; in the Midterm flow the console calls the credential-holding gateway and persists itself.
+5. **Two analysis modes behind one console code path.** In agent mode the console calls the native agent, which extracts, locates, tracks and persists; in gateway mode the console calls the credential-holding gateway and persists itself.
 6. **Object storage for media, the database for rows, local disks as caches.** Uploads go straight to object storage under readable keys that are never overwritten ([`data.md`](data.md#2-cloudflare-r2-storage-architecture)).
 7. **Search is embed-then-retrieve over per-item evidence crops**, with pgvector in the database and a critic that is dormant by default.
 8. **Tracking reuses the stock perception stack per clip** for people, and a seeded tracker corrected by the detector for instruments and assets; both are soft stages.
 9. **The console is hexagonal.** Only adapters know tables, columns and function arguments; a test enforces the import boundaries.
 10. **Long-running work is a database queue** with one in-process worker per console, so an analysis survives a closed tab.
+11. **The stock search compose tag is reused** (`BP_PROFILE=bp_developer_search`), so the stack is a superset of the base and search pipelines.
+12. **One video is one incident.** `videos.id` is the incident id, and every `report_revisions` row names its `video_id` ([`data.md`](data.md#the-report-model)).
+13. **Reviewers are plain text.** `report_revisions.created_by` holds a name; there is no account table.
 
 ## Building Block View
 
@@ -50,7 +54,7 @@ Constraints first: the profile is allotted one GPU on a shared host, model infer
 | VSS Agent | NeMo Agent Toolkit (NAT) `nat serve` with the stock custom FastAPI worker | The stock agent plus the incident extension: analyse, evidence search, incident search, chat, evidence embeddings, charts and the reviewer box tools. Runs natively | Stock VSS, extended |
 | Perception stack | Docker: NvStreamer, DeepStream perception (an RT-DETR detector with the NvDCF tracker), Kafka, Logstash, Elasticsearch, the video-analytics API | Turns an uploaded clip into per-frame person boxes with track ids. Used per clip by the agent's tracking stage | Stock VSS (search profile) |
 | Phoenix | Docker | Trace viewer for NAT tool and workflow spans | Stock VSS infrastructure |
-| `vlm-gateway` | FastAPI | Holds the remote inference credential server-side and forwards chat-completion requests unchanged. Used in the Midterm flow only | Team-built |
+| `vlm-gateway` | FastAPI | Holds the remote inference credential server-side and forwards chat-completion requests unchanged. Used in gateway mode only | Team-built |
 | `mock-backend` | FastAPI | A backup that mimics the backend: it stands in for the agent with deterministic embeddings and answers from a snapshot | Team-built |
 | `contracts/` | JSON Schema, prompt files, JSON settings, fixtures, goldens | The incident contract, vendored into the agent by a sync script | Team-built |
 | `supabase/` | SQL migrations, a SQL harness | The schema authority for the database, tested on a throwaway local Postgres | Team-built |
@@ -63,7 +67,7 @@ Not started by the profile: Video IO & Storage (VIOS, also called VST), the HAPr
 
 ### Level 2: The Console
 
-`incident-console-v2` is one Next.js process: pages and API routes on top of feature modules, each split into domain (types and port interfaces), application (use cases) and infrastructure (adapters). A background job loop, started with the process, is a second driver of the analysis use case. Layout and import rules: [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md). What each page does: [`console-reference.md`](console-reference.md).
+`incident-console-v2` is one Next.js process: pages and API routes on top of feature modules, each split into domain (types and port interfaces), application (use cases) and infrastructure (adapters). A background job loop, started with the process, is a second driver of the analysis use case. `src/lib/container.ts` is the only file that picks adapters, and only `src/modules/*/infrastructure/supabase/` and `src/lib/postgrest/` name tables, columns and `p_*` arguments. Domain and application code import no infrastructure and no UI; sections import no infrastructure; `tests/import-boundaries.test.mjs` enforces both in `npm test`, and each exception is listed there with its reason. What each page does: [`console-reference.md`](console-reference.md).
 
 **Figure 3. Component diagram for `incident-console-v2` (C4 level 3), by layer.** The client UI calls the pages and API routes, which call the use cases; the background job loop calls the same use cases. Use cases drive ports, the composition root picks the adapter behind each port, and the adapters reach Supabase, R2, the agent, the gateway and the contract files on disk. A few routes call adapters directly.
 
@@ -133,11 +137,11 @@ Contracts for the agent calls: [`vm-api-contracts.md`](vm-api-contracts.md); who
 6. **Persist** (agent): the AI revision with its evidence and summary embedding.
 7. **Record** (console): the console validates the raw output again, writes the immutable attempt record on its run row, verifies the agent's revision, stores the searchable crops when the video has no official revision yet, then finishes the job. A failed attempt leaves a run record, never a report.
 
-### Analysis Run in the Midterm Flow
+### Analysis Run in Gateway Mode
 
-The Midterm flow (`ANALYSIS_MODE=gateway`) keeps the same console code path and swaps the model port: the console builds the identical P1 request, the gateway forwards it with the server-side credential, and the console persists the result itself. It is a backup that runs without the GPU host. No detector runs, so the evidence entries have no images and no searchable crops are stored.
+Gateway mode (`ANALYSIS_MODE=gateway`) keeps the same console code path and swaps the model port: the console builds the identical P1 request, the gateway forwards it with the server-side credential, and the console persists the result itself. It is a backup that runs without the GPU host. No detector runs, so the evidence entries have no images and no searchable crops are stored.
 
-**Figure 5. Analysis in the Midterm flow.** The sequence runs from the upload to the finished report: the same upload and queue steps as Figure 4, then the console verifies the object, reads the video length, creates the video row, sends the P1 request through `vlm-gateway`, validates the answer and saves the attempt record and the AI revision.
+**Figure 5. Analysis in gateway mode (the Midterm flow).** The sequence runs from the upload to the finished report: the same upload and queue steps as Figure 4, then the console verifies the object, reads the video length, creates the video row, sends the P1 request through `vlm-gateway`, validates the answer and saves the attempt record and the AI revision.
 
 ![Sequence diagram of an analysis in the Midterm flow: upload and queue in the console, then the console sends the report request through vlm-gateway to the hosted models, validates the answer and saves the attempt record and AI revision in Supabase, with no evidence images](figures/figure-5-analysis-midterm-flow.drawio.svg)
 
@@ -155,8 +159,6 @@ A queued upload is a row in `analysis_jobs` ([Data layer](data.md#analysis_jobs)
 2. **Evidence search** (agent): one embed-then-retrieve function serves both the library-wide search and a search scoped to one incident. The critic is dormant by default, so a search costs one embedding call and one vector query.
 3. **Incident search** (agent, console): the Find incidents text search retrieves the nearest revisions by their summary embedding, and falls back to a plain text match on the library when the agent fails or finds nothing.
 
-Specification in depth: [`mvp2/README.md`](mvp2/README.md).
-
 ### Reviewer Edit, the Official Version and Charts
 
 1. **Save as new version** (console, database): the edit route validates the edit against the contract's sub-schemas and cross-field rules, cuts a reviewer-drawn item's crop, frame and track on the server, and calls one database function that appends a human revision and stores its crops in the same call. Earlier revisions are never changed.
@@ -165,17 +167,17 @@ Specification in depth: [`mvp2/README.md`](mvp2/README.md).
 4. **Dashboard charts** (console, agent): for a chart request the agent's own LLM picks a chart specification; the console validates it against its allowlist, computes the figures from the database itself, and asks the agent to draw them. The model never sees a figure.
 5. **Chat gap retry** (console, agent): the chat can ask the agent to look again for items of the saved report with no box; each found box becomes a proposal to confirm or adjust before Save.
 
-**Figure 8. Retry missing boxes through chat.** The console starts a gap-retry job on the agent, which reads the saved report, reads the video and asks the hosted models to detect and check each item; the console polls the job and shows the boxes as proposals.
+**Figure 7. Retry missing boxes through chat.** The console starts a gap-retry job on the agent, which reads the saved report, reads the video and asks the hosted models to detect and check each item; the console polls the job and shows the boxes as proposals.
 
-![Sequence diagram of a gap retry through chat: the Reviewer asks, the console starts a job on the agent, the agent reads the saved report from Supabase and the video from R2, detects and checks each item with the hosted models, the console polls and proposes boxes beside the items](figures/figure-8-gap-retry.drawio.svg)
+![Sequence diagram of a gap retry through chat: the Reviewer asks, the console starts a job on the agent, the agent reads the saved report from Supabase and the video from R2, detects and checks each item with the hosted models, the console polls and proposes boxes beside the items](figures/figure-7-gap-retry.drawio.svg)
 
 ## Deployment View
 
 ### Deployment Nodes
 
-**Figure 7. Deployment diagram for the vm mode of the profile.** The laptop runs the console, and in mock mode the gateway and `mock-backend`; the GPU workstation runs the VSS Agent natively and the perception stack and Phoenix in Docker; the cloud services are reached over HTTPS. Mock mode runs the console, the gateway and the mock backend on the laptop alone, with the same cloud services.
+**Figure 8. Deployment diagram for the vm mode of the profile.** The laptop runs the console, and in mock mode the gateway and `mock-backend`; the GPU workstation runs the VSS Agent natively and the perception stack and Phoenix in Docker; the cloud services are reached over HTTPS. Mock mode runs the console, the gateway and the mock backend on the laptop alone, with the same cloud services.
 
-![Deployment diagram: the laptop runs incident-console-v2, vlm-gateway and mock-backend; the GPU workstation runs the VSS Agent and, in Docker, the perception stack and Phoenix; Cloudflare R2, Supabase and the hosted model endpoints are cloud services; an SSH tunnel joins the console to the agent](figures/figure-7-deployment.drawio.svg)
+![Deployment diagram: the laptop runs incident-console-v2, vlm-gateway and mock-backend; the GPU workstation runs the VSS Agent and, in Docker, the perception stack and Phoenix; Cloudflare R2, Supabase and the hosted model endpoints are cloud services; an SSH tunnel joins the console to the agent](figures/figure-8-deployment.drawio.svg)
 
 ### Native Processes and Containers
 
@@ -189,8 +191,8 @@ The policy is to run a service natively whenever that is feasible, and in a cont
 
 The launcher is the one daily entry point ([`incident-start`](../skills/incident-start/SKILL.md)); the procedures and troubleshooting are in the [runbook](incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).
 
-- **vm mode** (the Final flow; the default): the launcher probes SSH to the host, starts only what is missing, starts the perception stack unless tracking is disabled, opens a backgrounded SSH tunnel that forwards only the agent's loopback endpoint, and starts the console in agent mode. Leaving the launcher stops only the laptop-side processes and the tunnel; the host keeps running.
-- **mock mode** (the Midterm flow; a backup that mimics the backend, never a fallback when the host is unreachable): the launcher starts the mock backend and the gateway on the laptop; no SSH is used.
+- **vm mode** (the default; agent mode): the launcher probes SSH to the host, starts only what is missing, starts the perception stack unless tracking is disabled, opens a backgrounded SSH tunnel that forwards only the agent's loopback endpoint, and starts the console in agent mode. Leaving the launcher stops only the laptop-side processes and the tunnel; the host keeps running.
+- **mock mode** (a backup that mimics the backend, never a fallback when the host is unreachable): the launcher starts the mock backend and the gateway on the laptop; no SSH is used.
 - **Connectivity:** the console talks to the agent through the tunnel, and to object storage and the database directly; the agent talks to the perception stack on its own host, and to object storage, the database and the model endpoints directly.
 
 ### Two Supabase Projects (One per Phase)
@@ -205,7 +207,7 @@ All model calls are remote and OpenAI-compatible. The rules, and why they hold:
 
 1. **Client type.** The agent's LLM and VLM clients are configured as OpenAI-type clients, never as NIM-type clients: the NIM LangChain client leaks client-only parameters (such as the SSL-verification flag) into the HTTP request body, which standard OpenAI-compatible endpoints reject with a bad-request error.
 2. **Base URLs carry no version path.** The agent and the LangChain clients append the API version segment themselves, so a configured base URL that already ends with it produces a wrong path.
-3. **One credential, many roles.** One server-side key serves the agent's LLM and VLM; the gateway holds its own copy of the hosted key for the console's Midterm flow, so the browser never sees it.
+3. **One credential, many roles.** One server-side key serves the agent's LLM and VLM; the gateway holds its own copy of the hosted key for the console's gateway mode, so the browser never sees it.
 4. **Capabilities the models must have.** The LLM must support tool calling and schema-constrained output; the VLM must accept a video by URL with schema-constrained output, and images for the grounding, zoom and box-description calls. The allowlisted VLMs, their request settings and per-model timeouts are in the contract settings.
 5. **Sparse frames.** Hosted video models sample a bounded number of frames per request, so a long clip is seen sparsely; the caption pass exists to recover short actions.
 6. **Embeddings** come from one text-embedding model, used for evidence passages, revision summaries and queries alike, so cosine distance is meaningful.
@@ -229,7 +231,8 @@ Nothing optional fails an analysis: a caption, locate, zoom, tracking or embeddi
 
 | Term | Meaning here |
 |---|---|
-| Analysis mode | How the console gets a report: **agent** mode calls the VSS Agent, which also locates, tracks and persists; **gateway** mode (the Midterm flow) calls `vlm-gateway` and the console persists |
+| Analysis mode | How the console gets a report: **agent** mode calls the VSS Agent, which also locates, tracks and persists; **gateway** mode calls `vlm-gateway` and the console persists |
+| Final flow, Midterm flow | Labels on Figures 2 and 5 for the two analysis paths: the Final flow is agent mode (launched as vm mode), the Midterm flow is gateway mode (launched as mock mode). Prose uses the setting names |
 | Evidence item, evidence entry | An entity, instrument or asset of a report; its entry holds the crop, the frame, the box, the track and any gap reasons |
 | Locate step, grounding | The detector call that finds an item's bounding box in the frame at its second |
 | NAT, NIM | NVIDIA's NeMo Agent Toolkit, the framework the VSS Agent runs on; NVIDIA Inference Microservice, a model-serving container (none runs in this profile) |

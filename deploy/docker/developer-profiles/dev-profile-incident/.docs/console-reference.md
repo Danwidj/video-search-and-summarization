@@ -1,6 +1,6 @@
 # incident-console-v2 Reference
 
-Pages, routes, behaviour and configuration of `incident-console-v2`, the reviewer console of `dev-profile-incident`. Companions: [`architecture.md`](architecture.md) (containers, runtime and deployment views), [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) (code layout and import rules), [`vm-api-contracts.md`](vm-api-contracts.md) (the agent's HTTP contracts) and [`data.md`](data.md) (the tables and object keys the routes write).
+Pages, routes, behaviour and configuration of `incident-console-v2`, the reviewer console of `dev-profile-incident`. Companions: [`architecture.md`](architecture.md) (containers, runtime and deployment views), [`architecture.md`](architecture.md#level-2-the-console) (code layout and import rules), [`vm-api-contracts.md`](vm-api-contracts.md) (the agent's HTTP contracts) and [`data.md`](data.md) (the tables and object keys the routes write).
 
 ## Console configuration
 
@@ -39,7 +39,7 @@ Server-only variables, read from `incident-console-v2/.env.local` (a symlink to 
 | `GET /api/reports/[videoId]/track?revision=&type=&item=` | An item's track samples, read from R2 on the server: `{samples: [{t, box}]}`, 404 without a track |
 | `GET /api/reports/[videoId]/frame?t=` | One video frame as a JPEG |
 | `POST /api/reports/[videoId]/evidence-crop` | Cuts a rectangle from a frame and returns it as a JPEG, writing nothing |
-| `POST /api/reports/[videoId]/evidence-image` | Stores a reviewer image under a new R2 key; the console itself no longer calls it |
+| `POST /api/reports/[videoId]/evidence-image` | Stores a reviewer image under a new R2 key; for scripts |
 | `POST /api/reports/[videoId]/evidence-sweep` | Removes images a failed save left behind ([`data.md`](data.md#2-cloudflare-r2-storage-architecture)) |
 | `POST /api/reports/[videoId]/box/describe`, `.../box/track` | Proxies of the agent's [box tool routes](vm-api-contracts.md#reviewer-box-tool-console-proxy) |
 | `POST /api/search` | Find evidence, through the agent's [incident search](vm-api-contracts.md#post-apiv1incidentssearch) |

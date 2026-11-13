@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Compare what readers see on midterm and on finals after the copy (read-only on both).
 
-    cd supabase/tests && uv run --no-project --with 'psycopg[binary]' python parity_check.py --source-env <midterm env> --target-env <finals env>
+    cd archived/supabase/tests && uv run --no-project --with 'psycopg[binary]' python parity_check.py --source-env <midterm env> --target-env <finals env>
 
 Calls the dashboard, report-library and search RPCs with the same arguments on both databases and
 prints every difference. Expected differences (and nothing else):

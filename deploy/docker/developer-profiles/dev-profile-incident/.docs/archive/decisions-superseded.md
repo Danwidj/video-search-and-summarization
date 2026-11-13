@@ -1,5 +1,7 @@
 # Superseded decisions
 
+> **Archived, frozen on 2026-11-13.** History only; not a source for current behaviour. Do not update. Index: [`README.md`](README.md).
+
 Decisions that a later entry in [`decisions.md`](decisions.md) replaced, kept here with the original wording. Newest first.
 
 ### 2026-11-07: New-evidence questions are proposal checks with a client-sent question count, behind their own flag

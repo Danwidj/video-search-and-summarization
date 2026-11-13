@@ -1,4 +1,4 @@
-# Incident Search & Reporting Capstone — Data Layer & Schema
+# Data layer
 
 The database schema (Supabase PostgreSQL) and the object storage layout (Cloudflare R2) of `dev-profile-incident`.
 
@@ -173,15 +173,6 @@ Stores `p_crops` for the video's searchable revision without touching the offici
 
 #### `search_evidence_items`
 
-```
-search_evidence_items(
-  p_query_embedding extensions.vector(1024), p_top_k INTEGER DEFAULT 10,
-  p_min_similarity DOUBLE PRECISION DEFAULT 0.2,
-  p_item_types TEXT[] DEFAULT ARRAY['entity','instrument','asset'],
-  p_incident_types TEXT[] DEFAULT NULL, p_min_severity INTEGER DEFAULT NULL,
-  p_max_severity INTEGER DEFAULT NULL, p_video_id VARCHAR DEFAULT NULL
-)
-```
 
 pgvector HNSW cosine search over `evidence_crops.embedding`, scoped to each video's searchable revision. `p_video_id` limits the scan to one video before ranking. `p_query_embedding` may be NULL only with `p_video_id`: the video's crops are then listed in video time order with `similarity_score` 0. Returns the video id, the revision id and its facets, the crop (with its `timestamp_seconds`, slice and `frame`) and `similarity_score`. The console route passes `p_min_similarity` 0.35 for a text query.
 
@@ -219,6 +210,21 @@ They run on the database clock, so the stale rule does not depend on the console
 - **Agent:** `services/agent/src/vss_agents/utils/incident_db.py` is an async Supabase PostgREST helper, configured by `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`. It reads `videos` and writes `model_runs` and `report_revisions`; the search store reads `evidence_crops` and writes `queries` and `query_results`.
 - **Laptop tooling** (the `supabase` CLI) uses direct Postgres (`INCIDENT_DB_DSN`). Direct Postgres from the VM has been blocked on and off, so the agent and console stay on HTTPS.
 - **No client transactions:** PostgREST has none, so the agent's report write is one `INSERT` with `revision_no = max + 1`, retried when the unique key rejects a concurrent writer (SQLSTATE 23505), five attempts at most. In agent mode the agent inserts a placeholder `model_runs` row (`insert_model_run_if_absent`) and the console's later upsert fills in `notes`.
+
+#### Finals keys (`sb_secret_`)
+
+Finals has no legacy JWT keys: the server key is `sb_secret_...` and the public key `sb_publishable_...`. They are not JWTs, so the Supabase gateway rejects one sent as `Authorization: Bearer` ("invalid JWT"); send it in the `apikey` header only. Who sends the key, and whether it copes:
+
+| Sender | How | Handles `sb_secret_`? |
+|---|---|---|
+| `vss-agent` (`utils/incident_db.py`, and through it `SupabaseSearchStore`) | `supabase-py` `acreate_client` | Depends on the installed `supabase` version: `pyproject.toml` only requires `supabase~=2.0`, `uv.lock` locks 2.33.0, and the VM venv was built by hand. Older 2.x releases validate the key as a JWT and raise `Invalid API key` (2.15.x still does; 2.18.0 and later do not). Prove it with the VM key check (see [`incident-operate-vm`](../skills/incident-operate-vm/SKILL.md)) |
+| `mock-backend/base_profile_mock` (mock mode) | Same `incident_db`, its own venv | Yes: its `uv.lock` pins `supabase` 2.31.0 |
+| `incident-console-v2` `src/lib/postgrest/client.ts` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
+| `eval/db_postgrest.py` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
+| `supabase/tests/probe_api.sh` | `apikey`; Bearer only for `eyJ...` keys | Yes |
+| `archived/supabase/copy/`, `supabase` CLI | Direct DSN, no key | Not affected |
+
+Pin a minimum `supabase` version in `services/agent/pyproject.toml` and lock it in `uv.lock` if the VM venv is rebuilt.
 
 ### Row-Level Security (RLS) & Access Control
 

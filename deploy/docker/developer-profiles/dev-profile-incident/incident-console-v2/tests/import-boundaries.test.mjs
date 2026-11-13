@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Hexagonal import boundaries, enforced by `npm test`. Rules and the layout they assume:
-// .docs/mvp2/console-hexagonal-architecture.md. Paths are relative to src/ and have no extension.
+// .docs/architecture.md#level-2-the-console. Paths are relative to src/ and have no extension.
 // - Domain and application code must not import infrastructure, UI (app, sections), next, react or node:*.
 // - Sections (client UI) must not import infrastructure or node:*.
 // Each exception is named in ALLOWED with its reason. An entry that matches no import fails the test.

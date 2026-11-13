@@ -12,6 +12,8 @@ agents:
 
 # Incident profile: deployment
 
+A reviewer uploads a video clip, a vision-language model writes a structured incident report, and the reviewer edits, searches and asks questions about it. This page deploys and runs the profile; the [repository README](../../../../README.md) introduces the project.
+
 <img src=".docs/figures/demo-overview.gif" width="800" alt="Overview of the incident console: the incident library, one incident's report with its video, tracked boxes and evidence images, and back to the library" />
 
 ## 1. What you need
@@ -102,3 +104,7 @@ Never use NVIDIA's `dev-profile.sh` for this profile: its `down` deletes the VM'
 - [Operations runbook](.docs/incident-profile-operations.md): running the VM
 - [Console reference](.docs/console-reference.md): pages, routes and configuration
 - [Data layer](.docs/data.md): tables, functions, security, R2 keys
+- [Report schema](.docs/analysis-schema.md): the report contract, validation and storage of model output
+- [Agent API contracts](.docs/vm-api-contracts.md): the `vss-agent` HTTP endpoints
+- [Skills](skills/README.md): launching, operating, analysing and migrating, step by step
+- Changing code: [AGENTS.md](AGENTS.md)

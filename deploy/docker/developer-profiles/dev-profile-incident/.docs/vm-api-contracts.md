@@ -54,7 +54,7 @@ Request:
 | `reviewer_prompt` | string | none | max 1000 chars. Added to the report prompt for this run only |
 | `skip_rp1` | bool | false | P1 only; `report_text` stays null |
 | `video_duration_seconds` | number | none | a finite number above 0, else `422`. Without it the agent reads the MP4 header from `video_url` |
-| `experiment_prompt_id`, `skip_crops`, `max_crop_calls` | | none | **Experimental** ([below](#experimental-settings-prompt-experiments-pr-6b)) |
+| `experiment_prompt_id`, `skip_crops`, `max_crop_calls` | | none | **Experimental** ([below](#experimental-settings-prompt-experiments)) |
 
 Response `200` (an `IncidentReportGenOutput`, not the bare report). It takes tens of seconds to minutes; use a long timeout.
 
@@ -109,7 +109,7 @@ Off by default in code; `native-services.sh` starts the VM agent with it on (`1`
 
 Clips of `INCIDENT_CHUNK_MIN_CLIP_SECONDS` (30) or less are not chunked. The captions are context for P1 only: the response does not return them and nothing stores them. A skipped pass never fails the analysis: P1 runs without context, and the agent log says why (`caption pass skipped for <id>: <reason>`). It needs `ffmpeg` on the agent's `PATH` ([operations](incident-profile-operations.md#default-analysis-stack-in-vm-mode)).
 
-### Experimental settings (prompt experiments, PR 6B)
+### Experimental settings (prompt experiments)
 
 `experiment_prompt_id`, `skip_crops`, `max_crop_calls`, `max_zoom_calls`, `experiment_object_tracking`, `experiment_captions` and `max_caption_calls` exist for the eval prompt experiments ([`eval/experiments/README.md`](../eval/experiments/README.md)). **A request without any of them is a production request.**
 
@@ -187,12 +187,12 @@ Response `200`: `{"session_id", "message": {"role": "assistant", "content", "cit
 | Mode | How | Response |
 |---|---|---|
 | `template` (default) | No model. The answer is composed from the version's report (`utils/report_answers.py`) by the kind of question: what happened, who, objects, what was taken, weapons, when, severity and type, where. A question the report cannot answer gets "This report doesn't mention ..." and no citations | `chat-contract-v1` |
-| `routed` | Code answers a report-field question with no model call; the chat model reads the version for the rest. Routes and rules: [`mvp2/chat-routing.md`](mvp2/chat-routing.md) | [`chat-contract-v3`](../contracts/chat-contract-v3/README.md): adds `message.source` and `grounding.route` (`deterministic`, `report_llm` or `insufficient`) |
+| `routed` | Code answers a report-field question with no model call; the chat model reads the version for the rest. `grounding.route` is `deterministic` for a question that asks only for report fields (also greetings and unrelated questions), `report_llm` for anything that names, reasons or leans on the conversation, and `insufficient` when the report cannot answer. An optional video check runs only on the reviewer's click after an offer, and is off | [`chat-contract-v3`](../contracts/chat-contract-v3/README.md): adds `message.source` and `grounding.route` (`deterministic`, `report_llm` or `insufficient`) |
 | `grounded` | A chat model (`INCIDENT_CHAT_MODEL`, default `nvidia/nemotron-3-ultra`) answers from one report version: `version_id`, else the incident's official version (`409` when it has none), or the reviewer's `draft_report`. Citations are checked against the version's item ids. A library question (no incident and no version) is planned by the model, filtered and counted exactly by code | [`chat-contract-v2`](../contracts/chat-contract-v2/README.md): adds `message.insufficient_evidence` and `grounding` |
 
 - **Prose and citations:** items are named by their labels or descriptions; the prose holds no item or incident id unless the question asks for ids. The citations are the items the answer relies on, each with its evidence entry's crop and the second that crop was found at.
 - **A library question in template mode** gets "This chat mode doesn't answer questions across the whole library yet".
-- **Model failures:** in grounded mode a model failure or a malformed answer is a `502` with a plain `detail`; routed mode instead answers `200` ([failures](mvp2/chat-routing.md#when-something-fails)).
+- **Model failures:** in grounded mode a model failure or a malformed answer is a `502` with a plain `detail`; routed mode instead answers `200` with what the report settles and a note that the reader is unavailable, or a request to try again.
 
 ## `POST /api/v1/incidents/{video_id}/video-check`
 

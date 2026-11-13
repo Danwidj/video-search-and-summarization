@@ -48,7 +48,7 @@ Search, revision search and chat answer from `src/base_profile_mock/finals_snaps
 - `incident`: `incident_type`, `severity_level`, `title`, `description`, `start_seconds`, `end_seconds` from `payload.incident` (`type`, `severity_level`, `title`, `description`, `start_timestamp`, `end_timestamp`).
 - `items`: the payload's entities, then instruments, then assets, each `{item_type, item_id, name, label, description, timestamp_seconds, threat_level, holder_entity_id}`. An entity's `name` is its `label`; an instrument's `holder_entity_id` is its `entity_id`; fields an item type lacks are `null`.
 
-Update `source` with the capture date. A refresh changes no other field of the surviving rows, so the diff shows only added and removed revisions. [search_profile_mock](../search_profile_mock/README.md) reads the same file; both mocks' `tests/test_incident_search.py` check that no video deleted from finals is served.
+Update `source` with the capture date. A refresh changes no other field of the surviving rows, so the diff shows only added and removed revisions. `tests/test_incident_search.py` checks that no video deleted from finals is served.
 
 ## Read more
 

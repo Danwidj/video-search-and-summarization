@@ -67,13 +67,7 @@ Before it starts the agent, `native-services.sh` also installs what the agent ne
 
 The native agent runs out of `/srv/rise-up/vss/services/agent/.venv` with `nat serve`, installed in editable mode so changes in `services/agent/src` take effect on restart. The VM venv was built by hand and a full `uv sync` would replace it, so relink it with:
 
-```bash
-cd /srv/rise-up/vss/services/agent
-uv pip install --python .venv/bin/python --no-deps --index-url https://pypi.org/simple -e .
-uv pip install --python .venv/bin/python supabase opencv-python-headless setuptools
-cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts
-./native-services.sh restart vss-agent
-```
+The commands are in the [incident-operate-vm skill](../skills/incident-operate-vm/SKILL.md).
 
 Then `direct_url.json` in the package's `dist-info` contains `"editable": true`. The contract files and prompts the agent uses are vendored from `contracts/`; `contracts/sync.py --check` verifies parity.
 
@@ -129,7 +123,7 @@ The untracked `.env.remote` on the VM configures volume mounts, networking and r
 11. **Time budget:** `INCIDENT_ANALYSIS_BUDGET_SECONDS=540`, under the console's 600 s limit, so a slow run saves its report with `image_gap` / `zoom_gap` gaps instead of timing out.
 12. **Template defaults and optional blanks:** the agent config refuses to start when a setting it reads is unset, so the template gives working defaults to the eval settings; `test-env-template.sh` fails when the config gains a setting a template-built file leaves unset. `VLM_MODEL`, `VLM_GATEWAY_BASE_URL` and `VLM_GATEWAY_API_KEY` are optional blanks.
 
-## 7. End-to-End Verification Checklist
+## 6. End-to-End Verification Checklist
 
 - [ ] **Health:** `curl -s http://localhost:3200/api/health` answers 200 with `status: "ready"`; `degraded` (503) needs investigating.
 - [ ] **Video ingestion:** upload an `.mp4` clip and a phone `.MOV`. Each is stored in R2 as `uploads/<original name>.mp4` (the `.MOV` converted to H.264 MP4) and plays back.
@@ -140,7 +134,7 @@ The untracked `.env.remote` on the VM configures volume mounts, networking and r
 - [ ] **Human revisions:** edit a report and Save as new version, then make one revision official. Each save creates a new revision with the reviewer's name and time, and only one is official.
 - [ ] **Search and filtering:** a search returns the expected incidents (it needs `evidence_crops` rows for each video's searchable revision, [what writes them](data.md#evidence_crops)), and library filters by type, severity and date range match the database.
 
-## 8. Troubleshooting Order & Diagnostics
+## 7. Troubleshooting Order & Diagnostics
 
 1. **Process status:** `./.scripts/status.sh` and `./.scripts/native-services.sh status`.
 2. **Agent health:** `./.scripts/health.sh`, or `curl -s http://localhost:8000/health`.

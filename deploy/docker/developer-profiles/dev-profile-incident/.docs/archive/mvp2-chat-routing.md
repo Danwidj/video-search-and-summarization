@@ -1,5 +1,7 @@
 # Report-first chat routing
 
+> **Archived, frozen on 2026-11-13.** History only; not a source for current behaviour. Do not update. Index: [`README.md`](README.md).
+
 How `INCIDENT_CHAT_MODE=routed` answers a question about one report version, what it was measured against, and what remains before it is switched on. **Routed mode and video checks are both off.** The default is still template mode.
 
 ## Routes

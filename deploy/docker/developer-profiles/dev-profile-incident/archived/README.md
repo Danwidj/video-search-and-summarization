@@ -15,4 +15,4 @@ Nothing here is launched by [`start.sh`](../start.sh), set up by `.githooks` (no
 | [`supabase/copy/`](supabase/copy/) | One-way midterm to finals data copy | 2026-11-11 | None (done once) |
 | [`supabase/r2/`](supabase/r2/) | One-off R2 rename and content-hash backfill scripts | 2026-11-11 | None (done once) |
 
-Exception: the schema harness [`supabase/tests/test_freeze.py`](../supabase/tests/test_freeze.py) and `rehearse.py` still read the archived midterm and copy files.
+The midterm harness (`test_freeze.py`, `rehearse.py`, `parity_check.py`) lives in [`supabase/tests/`](supabase/tests/) and reads these archived files.

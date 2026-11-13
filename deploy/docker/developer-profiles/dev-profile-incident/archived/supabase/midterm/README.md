@@ -22,11 +22,11 @@ project is built from scratch by [`supabase/migrations/`](../../../supabase/migr
 
 `midterm_base_tables.sql` plus the applied migrations below rebuilds midterm exactly (all 22
 tables and all 14 live function bodies, compared with the live catalog on 2026-10-20).
-[`supabase/tests/test_freeze.py`](../../../supabase/tests/test_freeze.py) builds that replica locally and proves the
+[`supabase/tests/test_freeze.py`](../tests/test_freeze.py) builds that replica locally and proves the
 freeze and unfreeze files:
 
 ```bash
-cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
+cd archived/supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
 ```
 
 ## The 14 migrations and what midterm actually ran
