@@ -1,7 +1,8 @@
 # Incident Search and Reporting
 
-<!-- TODO(video): replace this block with the pitch video -->
-> **Pitch video:** the pitch video will be added here.
+[![Watch the pitch video](https://img.youtube.com/vi/_THMlaojpK8/hqdefault.jpg)](https://youtu.be/_THMlaojpK8)
+
+> **Pitch video:** [watch on YouTube](https://youtu.be/_THMlaojpK8)
 
 A video-driven incident search and reporting system: upload a clip, get a structured incident report, review it, and search the evidence in plain language.
 
