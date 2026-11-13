@@ -21,7 +21,7 @@ Canonical facts: [`.docs/data.md`](../../.docs/data.md) (table specs, report rev
 | Caller / network | Client | Credentials |
 |---|---|---|
 | Agent on the VM (port 5432 DPI-blocked) | PostgREST over HTTPS (`supabase-py`) | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` |
-| `incident-console-v2` and `eval/` writers | PostgREST (console: the adapters in `src/modules/*/infrastructure/supabase/` over `src/lib/postgrest/client.ts`, see [`.docs/mvp2/console-hexagonal-architecture.md`](../../.docs/mvp2/console-hexagonal-architecture.md); `eval/db_postgrest.py`) | same |
+| `incident-console-v2` and `eval/` writers | PostgREST (console: the adapters in `src/modules/*/infrastructure/supabase/` over `src/lib/postgrest/client.ts`, see [`.docs/architecture.md`](../../.docs/architecture.md#level-2-the-console); `eval/db_postgrest.py`) | same |
 | Laptop tooling, `supabase` CLI, copy and parity scripts | Direct Postgres | `INCIDENT_DB_DSN` (session pooler, 5432). Strip any `+psycopg2` suffix for the CLI. |
 
 Only `service_role` and `postgres` reach anything: the public (`anon`) key is refused everywhere on finals, and on midterm after the freeze.
@@ -32,7 +32,7 @@ The report library reads filtered, paginated metadata through the service-role-o
 The operations dashboard reads bounded aggregates through the service-role-only `/rpc/get_incident_dashboard`, counting each video once through its official revision, else its newest, reporting the official and not-yet-official split, and accepting `p_scope` (`all`/`official`/`not_official`) and `p_timezone` (default `'UTC'`) for local-time trend and heatmap bucketing; it never downloads full report notes or evidence rows.
 Background analysis runs through the `analysis_jobs` table and its service-role functions; it is described in [`.docs/data.md`](../../.docs/data.md).
 Natural-language search queries evidence items through the service-role-only `/rpc/search_evidence_items`, which performs a pgvector cosine distance search over `evidence_crops.embedding` scoped to each video's searchable revision (`searchable_revision_id(video_id) = evidence_crops.revision_id`: official, else newest) and shows the revision's text; hits return `video_id`/`incident_id` and `revision_id`, and the query and hits (with critic verdicts, `unverified` while the critic is off) are logged into `query_results` against that revision. The optional last argument `p_video_id` scopes the scan to one video; a NULL embedding with it lists that video's crops in time order (migration `20261028090000_search_evidence_items_video_id.sql`).
-`report_revisions.embedding` (1024) holds each AI revision's summary vector, written in the insert; `search_report_revisions` searches it, and human revisions have NULL. `evidence_crops` holds the searchable revision of each video (official, else newest) and is written by `set_official_revision` or `set_revision_crops` from the crop list the console sends (the agent returns the embeddings via `POST /api/v1/incidents/evidence-embeddings`; it does not write the rows). The search route embeds queries with the same model, so a model change means re-embedding every row.
+`report_revisions.embedding` (1024) holds each AI revision's summary vector, written in the insert (a human revision's Save passes `p_embedding` the same way); `search_report_revisions` searches it, and a revision saved while the embedding endpoint was down has NULL. `evidence_crops` holds the searchable revision of each video (official, else newest) and is written by `set_official_revision` or `set_revision_crops` from the crop list the console sends (the agent returns the embeddings via `POST /api/v1/incidents/evidence-embeddings`; it does not write the rows). The search route embeds queries with the same model, so a model change means re-embedding every row.
 `model_runs` rows without a revision are normal: failed analysis attempts (`contract_failed` / `request_failed`) and runs whose revision was removed by a video delete. Never count `model_runs` rows as analyses without filtering by `run_outcome(notes)`.
 
 ## Rules
@@ -40,7 +40,7 @@ Natural-language search queries evidence items through the service-role-only `/r
 - **Migrations are the schema authority.** Finals is built by `supabase/migrations/20261020000000_finals_baseline.sql`; every change is a new timestamped file `supabase/migrations/YYYYMMDDHHMMSS_<what>.sql` after it. Never edit the baseline once finals has it, never add to `archived/supabase/midterm/`, and never hand-edit the live DB without a matching migration file.
 - **Test before applying:** extend and run the SQL harness (below) in the same PR. It applies every file in `supabase/migrations/` in order.
 - **Dry-run first, then ask** before applying for real. Applying is live and shared.
-- **Videos carry `content_sha256`** (unique where set); `archived/supabase/r2/backfill_content_hash.py` (dry run unless `--apply`, stops on two videos with the same content, deletes nothing) fills it from R2 for rows without one.
+- **Videos carry `content_sha256`** (unique where set); `scripts/backfill_content_hash.py` (dry run unless `--apply`, stops on two videos with the same content, deletes nothing) fills it from R2 for rows without one.
 - **After applying, run `supabase/tests/security_check.sql`** against finals: 0 rows expected.
 - **Security on every new object:** RLS on every new table; `SET search_path = ''` and no `SECURITY DEFINER` on every function; nothing for `PUBLIC`/`anon`/`authenticated`. The harness and the security check fail otherwise. Default privileges only cover objects created by `postgres`.
 - **Cascades are real.** Deleting a `videos` row cascades through its revisions, their `evidence_crops` and the `query_results` that name those revisions. `model_runs` and `report_revisions` are linked by a required foreign key, so a revision needs its run row first. The append-only trigger permits only the video cascade, so delete a video rather than a revision.
@@ -54,7 +54,6 @@ Natural-language search queries evidence items through the service-role-only `/r
 ```bash
 cd deploy/docker/developer-profiles/dev-profile-incident/supabase/tests
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py   # finals schema
-uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py     # midterm freeze files
 ```
 
 ### Build a new database from empty
@@ -63,7 +62,7 @@ uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' pytho
 
 ### Apply a migration to finals
 
-From the repo root, with `FINALS_DSN` the finals session-pooler URL (after the cutover this is `INCIDENT_DB_DSN` in `.env.local`). Finals' history is not in step with `supabase/migrations/` (the two `20261028090000` files were applied by hand without history rows), so a plain `db push` would re-run them. Until the history is repaired, apply one file at a time:
+From the repo root, with `FINALS_DSN` the finals session-pooler URL (after the cutover this is `INCIDENT_DB_DSN` in `.env.local`). Finals' history is not in step with `supabase/migrations/`, so apply one file at a time, never `supabase db push` ([why, and the target state](../../supabase/README.md#add-a-finals-migration)):
 
 ```bash
 W=deploy/docker/developer-profiles/dev-profile-incident
@@ -75,17 +74,7 @@ psql "$FINALS_DSN" -f $W/supabase/tests/security_check.sql                      
 
 In an agent run the CLI refuses `migration repair` without `--yes`; add it only when the repair for this one version is authorised. `psql` is not installed on the laptop or the VM: apply the file with `uvx --with "psycopg[binary]" python -I` (read the DSN into the environment, never print it).
 
-Target state, once the history is repaired: `supabase db push --workdir $W --db-url "$FINALS_DSN" --dry-run`, then without `--dry-run`.
-
-`db push` at midterm fails ("remote migration versions not found"), because midterm's history names versions that are no longer in `supabase/migrations/`. Do not "fix" that with `migration repair` against midterm.
-
-To record an out-of-band change on finals without re-executing SQL:
-
-```bash
-supabase migration repair --workdir $W --db-url "$FINALS_DSN" --status applied <YYYYMMDDHHMMSS>
-```
-
-**The laptop could not reach the pooler on 2026-10-31** (5432 and 6543 timed out), but the VM could. Tunnel through the VM and point the DSN's host and port at the tunnel (the pooler routes on the `postgres.<ref>` user name, so the host change is fine; `<supabase-pooler-host>` below is the host in your `FINALS_DSN`), then close the tunnel by PID:
+**If the laptop cannot reach the pooler** (5432 and 6543 time out) but the VM can, tunnel through the VM and point the DSN's host and port at the tunnel (the pooler routes on the `postgres.<ref>` user name, so the host change is fine; `<supabase-pooler-host>` below is the host in your `FINALS_DSN`), then close the tunnel by PID:
 
 ```bash
 ssh -f -N -o ExitOnForwardFailure=yes -L 127.0.0.1:15432:<supabase-pooler-host>:5432 "$VSS_SSH_HOST"
@@ -104,18 +93,7 @@ With an `sb_secret_...` key (finals) send `apikey` only: drop the `Authorization
 
 ### Finals keys (`sb_secret_`)
 
-Finals has no legacy JWT keys: the server key is `sb_secret_...` and the public key `sb_publishable_...`. They are not JWTs, so the Supabase gateway rejects one sent as `Authorization: Bearer` ("invalid JWT"); send it in the `apikey` header only. Who sends the key, and whether it copes:
-
-| Sender | How | Handles `sb_secret_`? |
-|---|---|---|
-| `vss-agent` (`utils/incident_db.py`, and through it `SupabaseSearchStore`) | `supabase-py` `acreate_client` | Depends on the installed `supabase` version: `pyproject.toml` only requires `supabase~=2.0`, `uv.lock` locks 2.33.0, and the VM venv was built by hand. Older 2.x releases validate the key as a JWT and raise `Invalid API key` (2.15.x still does; 2.18.0 and later do not). Prove it with the VM key check (step 4) |
-| `mock-backend/base_profile_mock` (mock mode) | Same `incident_db`, its own venv | Yes: its `uv.lock` pins `supabase` 2.31.0 |
-| `incident-console-v2` `src/lib/postgrest/client.ts` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
-| `eval/db_postgrest.py` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
-| `supabase/tests/probe_api.sh` | `apikey`; Bearer only for `eyJ...` keys | Yes |
-| `archived/supabase/copy/`, `parity_check.py`, `supabase` CLI | Direct DSN, no key | Not affected |
-
-Follow-ups (not in this change): pin a minimum `supabase` version in `services/agent/pyproject.toml` and lock it in `uv.lock`.
+Finals keys are not JWTs: send them in the `apikey` header only. Which sender copes with them: [`.docs/data.md`](../../.docs/data.md#finals-keys-sb_secret_). Prove the agent's `supabase` version with the VM key check in [`incident-operate-vm`](../incident-operate-vm/SKILL.md).
 
 ### R2 objects
 
@@ -125,13 +103,8 @@ Follow-ups (not in this change): pin a minimum `supabase` version in `services/a
 - **Durability check:** `verifyR2Video` uses `HeadObject`; direct uploads require an exact nonzero byte-length match, and analysis requires a nonempty object before inference.
 - **Playback** is by 1-hour presigned GET only. The bucket is private.
 - **Report-card thumbnails:** new uploads use `thumbnails/<video-key>.webp`, derived by `thumbnailKeyForVideo`; legacy videos may have no thumbnail and use the UI skeleton. Deleting a video deletes this derived object too.
-- **Repair missing search rows (automatic):** the console's job loop already repairs these at start, every 2 minutes and after each job while it is up (`ANALYSIS_JOB_LOOP` not `off`); `list_revisions_missing_embeddings()` lists searchable versions with no summary vector. After the summary text recipe changes, `scripts/refresh_revision_embeddings.py` (dry run unless `--apply`, backup file required) re-embeds every searchable version through `refresh_revision_embedding`. By hand: a video whose searchable revision has an evidence list but no `evidence_crops` rows is absent from search. `select * from list_revisions_missing_crops()` lists them; `POST /api/videos/repair-crops {"dryRun": false}` on a running console (dry run by default, optional `videoId`) embeds and stores them. `python scripts/backfill_evidence_frames.py --console <url> --apply` stores the whole frame for crop rows with no `frame`.
-- **Rewrite object slices:** `scripts/backfill_object_slices.py --export <file> [--apply]` recomputes `slice_start_seconds` and `slice_end_seconds` of instrument and asset `evidence_crops` rows from their R2 tracks (first to last sample with `score` above 0, at least 2 s and containing the box second, else box second plus or minus 3 s). Dry run by default; `--apply` exports the rows first. R2 is only read.
+- **Repair missing search rows (automatic):** the console's job loop already repairs these at start, every 2 minutes and after each job while it is up (`ANALYSIS_JOB_LOOP` not `off`); `list_revisions_missing_embeddings()` lists searchable versions with no summary vector. After the summary text recipe changes, `scripts/refresh_revision_embeddings.py` (dry run unless `--apply`, backup file required) re-embeds every searchable version through `refresh_revision_embedding`. By hand: a video whose searchable revision has an evidence list but no `evidence_crops` rows is absent from search. `select * from list_revisions_missing_crops()` lists them; `POST /api/videos/repair-crops {"dryRun": false}` on a running console (dry run by default, optional `videoId`) embeds and stores them.
 - **Evidence images** live under `evidence/<video key>/run-<N>/` (AI crops, and `<itemId>-frame.jpg` beside each: the whole frame) and `evidence/<video key>/edit-<N>/` (reviewer images), plus `<itemId>-track.json` (tracks) and any `<itemId>-clip.mp4` left by the removed Play clip feature (nothing writes or reads them, and no revision names them, so the sweep removes them); `<video key>` is `videos.filepath`. A revision's `evidence` (and `evidence_crops.image`) names the keys it shows, and older revisions keep naming images a reviewer later replaced, so an image is only an orphan when no revision of that video names it. `POST /api/reports/<videoId>/evidence-sweep` (dry run by default) lists such orphans older than `minAgeHours` (default 24); `{"dryRun": false}` removes them. Deleting a video (`DELETE /api/reports/<videoId>/delete`) removes its video, thumbnail and every `evidence/<video key>/` object before the rows, and keeps the rows if any removal fails. Images of videos deleted before 2026-10-25 are still in R2, and the sweep cannot reach them (it needs the video row).
-
-### Old R2 names
-
-Objects written before 2026-10-28 were renamed once by `archived/supabase/r2/migrate_r2_names.py`; see the script's module docstring and [`supabase/README.md`](../../supabase/README.md#layout).
 
 ## After changing anything
 

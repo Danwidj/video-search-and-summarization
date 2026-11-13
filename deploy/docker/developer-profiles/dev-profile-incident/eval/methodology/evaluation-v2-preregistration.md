@@ -35,7 +35,7 @@
 
   | Item | Pin |
   |---|---|
-  | Checkout | `/home/hengz/vss-wt-pilot`, clean, at `acbf892ba` |
+  | Checkout | `<pilot-checkout>`, clean, at `acbf892ba` |
   | `services/agent/src` tree | `f0a4ca54…` |
   | Vendored contract tree | `af4337b3…` |
   | `start-experiment-agent.sh` | `2e793e7a…` |

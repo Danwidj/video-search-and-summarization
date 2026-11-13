@@ -2,7 +2,7 @@
 agents:
   read-when: Choosing an incident skill, or adding, moving or renaming one.
   owns: the skill catalogue and the rules for writing a skill.
-  rules: A skill owns procedure only; put facts in .docs/ and link to them. Add the repo-root .claude/skills symlink and update the root README index in the same change.
+  rules: A skill owns procedure only; put facts in .docs/ and link to them. Add the repo-root .claude/skills symlink in the same change.
 -->
 
 # Incident skills
@@ -37,7 +37,7 @@ Claude Code needs no install step: [.claude/skills/](../../../../../.claude/skil
 1. Create `skills/<name>/SKILL.md` here. This folder is the source of truth.
 2. Link it: `ln -s ../../deploy/docker/developer-profiles/dev-profile-incident/skills/<name> .claude/skills/<name>` from the repo root.
 3. Make `name` in the frontmatter match the folder, say when to use the skill and when not to, and keep `license` and `metadata`.
-4. Add it to the table above and to the root [README](../README.md) index.
+4. Add it to the table above.
 
 ## Rules
 
@@ -49,5 +49,5 @@ Claude Code needs no install step: [.claude/skills/](../../../../../.claude/skil
 
 - [Operations runbook](../.docs/incident-profile-operations.md): what runs on the VM
 - [Architecture: Launch modes and connectivity](../.docs/architecture.md#launch-modes-and-connectivity): mock against vm
-- [Search spec](../.docs/mvp2/README.md): the contracts behind `incident-search`
+- [Search spec](../.docs/vm-api-contracts.md#post-apiv1incidentssearch): the contracts behind `incident-search`
 - NVIDIA's [vss-search-archive](../../../../../skills/vss-search-archive/SKILL.md) skill: the upstream search reference

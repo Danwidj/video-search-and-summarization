@@ -21,7 +21,7 @@ Readiness, the budget statement and the approval gates: [`docs/experiments/readi
 
 - **Same request:** both arms send the same P1 request, with the same prompt text, `inference.json` settings and signed URL.
 - **Same policy and scoring:** both run under the same rate-limit policy. Both are re-validated by `contract.evaluate_policy` and scored by the same scorer against the same frozen ground truth.
-- **The VSS arm** calls the agent's `/analyze` (experimental settings documented in [`vm-api-contracts.md`](../../.docs/vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b); the agent must run with `INCIDENT_EXPERIMENTS_ENABLED=1` and without Supabase or R2 settings) with `skip_rp1: true`, `skip_crops: true` and, for a non-baseline prompt, `experiment_prompt_id`.
+- **The VSS arm** calls the agent's `/analyze` (experimental settings documented in [`vm-api-contracts.md`](../../.docs/vm-api-contracts.md#experimental-settings-prompt-experiments); the agent must run with `INCIDENT_EXPERIMENTS_ENABLED=1` and without Supabase or R2 settings) with `skip_rp1: true`, `skip_crops: true` and, for a non-baseline prompt, `experiment_prompt_id`.
   - A 200 response, or a 422 with a `raw_output`, is a model output. Anything else is a request failure (eval.md §4).
   - A non-baseline prompt counts only when the agent echoes the prompt id and SHA-256 it used. Otherwise the attempt fails, so a VSS run can never silently use the production prompt.
 
@@ -31,7 +31,7 @@ Every guard runs before any call:
 
 | Guard | Rule |
 |---|---|
-| Test split | Only for `final: true` with a `selection_record` that is an existing `### ` heading in `.docs/decisions.md` |
+| Test split | Only for `final: true` with a `selection_record` that is an existing `### ` heading in `.docs/archive/decisions.md` |
 | Frozen baseline | A `frozen_baseline` config with a completed run is never rerun. Re-score its saved outputs instead |
 | Budget | Videos × repeats must not exceed `budget.max_p1_calls` |
 | Paid calls | `run` and `rescore` send nothing without `--confirm-paid` |
@@ -81,4 +81,4 @@ Results are written to `eval_data/results/experiments/<id>/<UTC time>/` as `resu
 - **`render`:** a report over any result on candidate ground truth carries a NOT REPORTABLE banner. Inference latency and end-to-end latency are separate tables.
 - **Paired comparisons:** the C3−C1 comparison is shown as the sum (C3−C4) + (C4−C1), with the plan's interpretation limits and held-out exposure disclosure.
 - **`select`:** applies a selection rule only to dev, reportable records, and only when the rule is an existing decisions.md heading. Test results can never feed selection.
-- **D9 v2** (`experiment_selection.py`, proposed, see the [decision record](../../.docs/mvp2/experiment-decision-record.md)): the primary metric is the equal-weight mean of incident fields, entity F1 and object F1; the secondary is the eight-score average. It applies the +0.02 minimum, the bootstrap CIs, guardrails G1–G3 and the documented tie-breakers. `select_d9` refuses test, pilot, incomplete or unfrozen records and a rule that is not pre-registered.
+- **D9 v2** (`experiment_selection.py`, proposed, see the [decision record](../../.docs/archive/mvp2-experiment-decision-record.md)): the primary metric is the equal-weight mean of incident fields, entity F1 and object F1; the secondary is the eight-score average. It applies the +0.02 minimum, the bootstrap CIs, guardrails G1–G3 and the documented tie-breakers. `select_d9` refuses test, pilot, incomplete or unfrozen records and a rule that is not pre-registered.

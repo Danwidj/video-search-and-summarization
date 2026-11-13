@@ -9,11 +9,11 @@ metadata:
 ---
 # Incident Search
 
-Use this skill for MVP2 natural-language search across the incident archive, grounded chat about search results, and checking how evidence crops reach search. Search and chat are always-on in the profile; there is no `--search` startup flag.
+Use this skill for natural-language search across the incident archive, grounded chat about search results, and checking how evidence crops reach search. Search and chat are always-on in the profile; there is no `--search` startup flag.
 
 Canonical facts:
 
-- Architecture, storage and contracts: [`.docs/mvp2/README.md`](../../.docs/mvp2/README.md)
+- Architecture, storage and contracts: [`.docs/architecture.md`](../../.docs/architecture.md#evidence-search-and-incident-search)
 - Search request/response: [`search-contract-v1`](../../contracts/search-contract-v1/README.md)
 - Chat request/response: [`chat-contract-v1`](../../contracts/chat-contract-v1/README.md); grounded mode (`INCIDENT_CHAT_MODE=grounded`, off by default) answers with [`chat-contract-v2`](../../contracts/chat-contract-v2/README.md)
 - Crop implementation and R2 layout: [`.docs/data.md`](../../.docs/data.md) and [`.docs/incident-profile-operations.md`](../../.docs/incident-profile-operations.md)
@@ -28,7 +28,7 @@ Canonical facts:
 
 ## Search saved report revisions
 
-Finds whole incident reports by meaning, using one summary embedding per saved revision (the type, title and description). Revisions saved without a vector, including human revisions, do not appear. Run it against the VM agent (`localhost:8000`); the mocks answer it from their finals snapshot, so their results say nothing about relevance.
+Finds whole incident reports by meaning, using one summary embedding per saved revision (the type, title and description). A revision saved without a vector (the embedding endpoint was down) does not appear; human revisions get one when saved. Run it against the VM agent (`localhost:8000`); the mocks answer it from their finals snapshot, so their results say nothing about relevance.
 
 ```bash
 curl -sS -X POST http://localhost:8000/api/v1/incidents/revisions/search \
@@ -68,8 +68,8 @@ Use chat for a follow-up question rather than treating a free-form answer as an 
 
 The console's report page does this through its `/api/chat` route, with `context.scope: "incident"` and the report's video ID as `incident_id`. Its "Ask about this incident" panel also sends `version_id` (the version on screen, or the version being edited) and, while editing, the unsaved draft as `draft_report` (requires `version_id`); citations then come from that version or draft.
 - In template mode (no model) the answer is composed from that version's report: the timeline in order for "what happened", the people, objects, what was taken, what could cause harm, times, severity or type. Items are named by their descriptions, and the ids appear only in `citations`.
-- Template mode (the default) has no model. It reads who, where, a time in the video, roles, injuries and causes from the report, and follows up from the conversation ([how](../../.docs/mvp2/chat-routing.md#how-code-reads-a-question)). A wrong answer there is a rule to fix, not a model to tune.
-- `INCIDENT_CHAT_MODE=routed` (off) answers report-field questions by code and the rest with the chat model, and can offer a confirmed video check (`INCIDENT_VIDEO_CHECK_ENABLED`, off). Check `message.source` and `grounding.route` ([routes](../../.docs/mvp2/chat-routing.md)).
+- Template mode (the default) has no model. It reads who, where, a time in the video, roles, injuries and causes from the report, and follows up from the conversation ([how](../../.docs/vm-api-contracts.md#post-apiv1incidentschat)). A wrong answer there is a rule to fix, not a model to tune.
+- `INCIDENT_CHAT_MODE=routed` (off) answers report-field questions by code and the rest with the chat model, and can offer a confirmed video check (`INCIDENT_VIDEO_CHECK_ENABLED`, off). Check `message.source` and `grounding.route` ([routes](../../.docs/vm-api-contracts.md#post-apiv1incidentschat)).
 - Any version, official or not, is answered from its own report. A library question is not searched in template mode, and the answer says so; the canned demo hits are no longer returned.
 - In grounded mode (`INCIDENT_CHAT_MODE=grounded`, off until Gate M2) a question with no incident is a library question: code counts and composes every count and breakdown ("how many assaults involved a knife?", "what happened most often?") and refuses one the filters cannot capture; the model answers other questions from the best matching reports. Check `grounding.answered_by`, `count_exact` and `versions` ([contract](../../.docs/vm-api-contracts.md#post-apiv1incidentschat)).
 

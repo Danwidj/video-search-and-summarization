@@ -8,7 +8,7 @@
 > - **End-to-end profile (plan §F.2):** ran 2026-10-30 under the owner-approved budget ([results](e2e-profile-results.md), §7). The optional other-model transfer check and the Stage 1 recovery were not run.
 > - **Plan audit:** every plan requirement, deviation and omission is in the [plan audit and deviation record](plan-audit.md). Two offline checks were added on 2026-10-30 with no model, embedding, judge or cropping call: a perceptual-hash near-duplicate check (none found, §11) and secondary metrics from the saved Stage 3 results (§6.6). Neither changes D9 v2, a primary metric or a conclusion.
 >
-> Stage reports: [Stage 0 pilot](stage0-pilot.md) · [Stage 1 baselines](stage1-baselines.md) · [Stage 2 plan](stage2-plan.md) · [Stage 2 prompts](stage2-prompts.md) · [Stage 2a](stage2a-results.md) · [Stage 2b and selection](stage2b-results.md) · [Severity (v1.3)](severity-v1.3.md) · [Failures and recovery](infrastructure-and-recovery.md) · [Stage 3 plan](stage3-plan.md) · [Stage 3 results](stage3-results.md) · [decision record D9-D15](../../../.docs/mvp2/experiment-decision-record.md)
+> Stage reports: [Stage 0 pilot](stage0-pilot.md) · [Stage 1 baselines](stage1-baselines.md) · [Stage 2 plan](stage2-plan.md) · [Stage 2 prompts](stage2-prompts.md) · [Stage 2a](stage2a-results.md) · [Stage 2b and selection](stage2b-results.md) · [Severity (v1.3)](severity-v1.3.md) · [Failures and recovery](infrastructure-and-recovery.md) · [Stage 3 plan](stage3-plan.md) · [Stage 3 results](stage3-results.md) · [decision record D9-D15](../../../.docs/archive/mvp2-experiment-decision-record.md)
 
 ## 1. Research questions and answers
 

@@ -1,8 +1,10 @@
 # MVP2: Natural-Language Evidence Search with Object Crops
 
+> **Archived, frozen on 2026-11-13.** History only; not a source for current behaviour. Do not update. Index: [`README.md`](README.md).
+
 **Profile:** `dev-profile-incident`
 **Target:** Zero-GPU local workstation and the VM (2x NVIDIA RTX A6000 48 GB, of which VSS uses GPU 0 only: [Operations runbook: GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote))
-**Status:** search, chat and crops delivered; the retrieval eval is in progress ([Status: MVP2 search](../archive/status.md#2-mvp2-natural-language-evidence-search))
+**Status:** search, chat and crops delivered; the retrieval eval is in progress ([Status: MVP2 search](status.md#2-mvp2-natural-language-evidence-search))
 
 ---
 
@@ -77,7 +79,7 @@ Search & Retrieval
 
 1. **VLM P1 Extraction** (incident-contract-v4): The VLM returns `timestamp_seconds` and a short searchable **label** for each entity/instrument/asset. **Bounding boxes are NOT requested** from the VLM (0% well-framed in pilot). Each entity also carries `first_seen_seconds` and `last_seen_seconds` (INT, `incident-contract-v4`) for the presence bar and the Edit-mode scrubber. The incident report schema uses `timestamp_seconds` (INT) and descriptive text per item, whilst `start_timestamp` and `end_timestamp` define incident-level temporal boundaries.
 
-2. **Crop Pipeline**: When an incident report is generated, a lightweight CPU utility extracts the video frame at `timestamp_seconds`, then the detector port runs on the single frame with the item name as prompt and returns a bounding box (with 5% padding). Today the port is backed by the remote VLM (`DefaultDetector`; an item it cannot find at its second or at ±1, ±2 s is stored with `located: false` and no box); local open-vocabulary detectors (Grounding DINO, OWLv2) are evaluated offline in [`eval.md`](eval.md) §6 ([Decision log](../archive/decisions.md), 2026-10-18). The cropped JPEG is uploaded to Cloudflare R2 and the metadata (`timestamp_seconds`, `bounding_box`, `image` R2 key, `item_name`, `item_description`) is stored in the `evidence_crops` table. A text embedding model generates the pgvector embedding from the item description/text.
+2. **Crop Pipeline**: When an incident report is generated, a lightweight CPU utility extracts the video frame at `timestamp_seconds`, then the detector port runs on the single frame with the item name as prompt and returns a bounding box (with 5% padding). Today the port is backed by the remote VLM (`DefaultDetector`; an item it cannot find at its second or at ±1, ±2 s is stored with `located: false` and no box); local open-vocabulary detectors (Grounding DINO, OWLv2) are evaluated offline in [`eval.md`](mvp2-eval.md) §6 ([Decision log](decisions.md), 2026-10-18). The cropped JPEG is uploaded to Cloudflare R2 and the metadata (`timestamp_seconds`, `bounding_box`, `image` R2 key, `item_name`, `item_description`) is stored in the `evidence_crops` table. A text embedding model generates the pgvector embedding from the item description/text.
 
 3. **evidence_crops table:** one table for entities, instruments and assets, keyed by `revision_id` and holding each video's searchable revision only (its official revision, else its newest). Columns, index, writers and RLS: [Data layer: evidence_crops](../data.md#evidence_crops).
 
@@ -88,7 +90,7 @@ Search & Retrieval
    - Queries pgvector HNSW over `evidence_crops.embedding <=> p_query_embedding`.
    - Returns only crops of each video's searchable revision, with the revision's facets as candidate metadata.
    - **Critic off by default** (changed 2026-10-28): the VLM critic runs only when the agent has `INCIDENT_SEARCH_CRITIC` set truthy; otherwise every hit is `unverified` (rationale `Critic not run`) and no VLM call or delay occurs. With the critic on, it evaluates each candidate hit against the original user query using the crop image (attached when its URL is http(s)) and a prompt that includes the item description (the same text that was embedded); it does not reorder hits. Both ranking and critic verdicts are persisted into `query_results` before returning results.
-   - In `incident-console-v2`, search goes through the `EvidenceSearchRepository` port, whose agent adapter (`src/lib/adapters/agent/search.ts`) calls this route ([console layout](console-hexagonal-architecture.md#2-ports-and-adapters)).
+   - In `incident-console-v2`, search goes through the `EvidenceSearchRepository` port, whose agent adapter (`src/lib/adapters/agent/search.ts`) calls this route ([console layout](mvp2-console-hexagonal-architecture.md#2-ports-and-adapters)).
 
 5. **Query Results** (new table):
    - Records: `query_id`, `rank`, `similarity_score`, `critic_verdict` (confirmed/rejected/unverified), `critic_rationale`
@@ -104,9 +106,9 @@ Search & Retrieval
 |---|---|---|
 | **incident-contract-v4** (`contracts/incident_report.schema.json`) | Report schema: `incident{type, title, start_timestamp, end_timestamp, description, severity_level, severity_reason, confidence_score, location}`, `entities[]`, `instruments[]`, `assets[]`, `timeline[]`, `uncertainties[]`. Key fields: `timestamp_seconds` (INT, per item: entities, instruments, assets; entities also `first_seen_seconds` and `last_seen_seconds`, INT; `start_timestamp` and `end_timestamp` per incident), `entity type {human, animal, unknown}`, `instrument threat_level 1-5`, `asset name/description`. **Does NOT include bounding boxes.** | VM backend (vss-agent P1 extraction), eval PR 119, console gateway mode |
 | **evidence_crops** (new Supabase table) | Unified table: `(revision_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box INTEGER[4], image R2 key, embedding vector(1024))`. HNSW index on embedding. RLS service_role-only. | search route; rows written by the console from `POST /api/v1/incidents/evidence-embeddings` for each video's searchable revision |
-| **query_results** (new Supabase table) | Records: `id, query_id, revision_id, item_type, item_id, rank, similarity_score, critic_verdict, critic_rationale, retrieved_at`. | Retrieval evaluation ([eval.md](eval.md)), search route, critic audit |
-| **search-contract-v1** (REST endpoint) | `POST /api/v1/incidents/search`. Parameters: `query` (natural-language string), `top_k`, `min_similarity` (default 0.0), `hide_rejected` (default true; meaningful only with the critic on), and `filters.item_types[]`, `filters.incident_types[]`, `filters.min_severity`, `filters.max_severity`, `filters.video_id`. Returns ranked results with incident metadata, item fields, similarity score, image URL, timestamp, and critic verdict. | frontend search, retrieval evaluation ([eval.md](eval.md)) |
-| **search_evidence_items** (Database RPC) | Supabase Postgres function. Parameters: `p_query_embedding vector(1024)`, `p_top_k`, `p_min_similarity`, `p_item_types[]`, `p_incident_types[]`, `p_min_severity`, `p_max_severity`, `p_video_id` (optional; NULL embedding allowed only with it). Returns matching candidate table. RLS/Permissions: `service_role` only. | VM backend search route, retrieval benchmarks ([eval.md](eval.md)) |
+| **query_results** (new Supabase table) | Records: `id, query_id, revision_id, item_type, item_id, rank, similarity_score, critic_verdict, critic_rationale, retrieved_at`. | Retrieval evaluation ([eval.md](mvp2-eval.md)), search route, critic audit |
+| **search-contract-v1** (REST endpoint) | `POST /api/v1/incidents/search`. Parameters: `query` (natural-language string), `top_k`, `min_similarity` (default 0.0), `hide_rejected` (default true; meaningful only with the critic on), and `filters.item_types[]`, `filters.incident_types[]`, `filters.min_severity`, `filters.max_severity`, `filters.video_id`. Returns ranked results with incident metadata, item fields, similarity score, image URL, timestamp, and critic verdict. | frontend search, retrieval evaluation ([eval.md](mvp2-eval.md)) |
+| **search_evidence_items** (Database RPC) | Supabase Postgres function. Parameters: `p_query_embedding vector(1024)`, `p_top_k`, `p_min_similarity`, `p_item_types[]`, `p_incident_types[]`, `p_min_severity`, `p_max_severity`, `p_video_id` (optional; NULL embedding allowed only with it). Returns matching candidate table. RLS/Permissions: `service_role` only. | VM backend search route, retrieval benchmarks ([eval.md](mvp2-eval.md)) |
 | **chat-contract-v1** (REST endpoint) | `POST /api/v1/incidents/chat`. Parameters: `session_id` (optional), `messages[]` (`{role: "user" | "assistant" | "system", content}`), `context` (`{scope: "global" | "incident", incident_id, evidence_crop_ids}`). Returns assistant response with grounded evidence citations (`incident_id`, `item_id`, `item_type`, `timestamp_seconds`, `crop_image_url`). | Frontend chat |
 | **incident-contract-v4 taxonomy** | Retained from contract-v2: `road accident`, `burglary`, `explosion`, `assault`, `animal attack`. `entity type {human, animal, unknown}`. `instrument threat_level 1-5`. Item IDs: sequential `E1..`, `I1..`, `A1..`. | All workstreams |
 
@@ -114,22 +116,22 @@ Search & Retrieval
 
 ## 4. Delivered, dropped and open
 
-**Delivered** (state: [Status: MVP2 search](../archive/status.md#2-mvp2-natural-language-evidence-search)):
+**Delivered** (state: [Status: MVP2 search](status.md#2-mvp2-natural-language-evidence-search)):
 
 - `incident-contract-v4` extraction and the native `vss-agent` P1 route.
 - Crop service (detector port, JPEG quality 85, readable R2 keys, `EvidenceStore` port) and `evidence_crops` / `query_results` with the `search_evidence_items` RPC.
 - `POST /api/v1/incidents/search` (critic dormant by default; `INCIDENT_SEARCH_CRITIC` turns it on) and `POST /api/v1/incidents/chat` (`chat-contract-v1`).
-- Both mocks (ports 7777 and 7778), `start.sh` bringing search up unconditionally, and the console's hexagonal middle layer ([layout](console-hexagonal-architecture.md)).
+- Both mocks (ports 7777 and 7778), `start.sh` bringing search up unconditionally, and the console's hexagonal middle layer ([layout](mvp2-console-hexagonal-architecture.md)).
 - `/library` Find incidents and Find evidence, and the report chat.
 
-**Dropped:** multi-subagent routing and full RT-CV / RT-Embed indexing ([Decision log: drop multi-subagent routing](../archive/decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2)); the timestamp backfill script and production evidence loader (the analyze route now writes crops and the console writes `evidence_crops`).
+**Dropped:** multi-subagent routing and full RT-CV / RT-Embed indexing ([Decision log: drop multi-subagent routing](decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2)); the timestamp backfill script and production evidence loader (the analyze route now writes crops and the console writes `evidence_crops`).
 
-**Open** (all owned by the evaluation work in [`eval.md`](eval.md)):
+**Open** (all owned by the evaluation work in [`eval.md`](mvp2-eval.md)):
 
 - Detector framing: the remote-VLM `DefaultDetector` against offline candidates (§6.2). Stand-in: `[ymin, xmin, ymax, xmax]` normalised 0-1000.
 - Critic model and prompt (§3.6). Stand-in: `{verdict: confirmed|rejected|unverified, confidence, rationale}`.
 - Embedding model comparison (§6.3). Stand-in: `vector(1024)` on `evidence_crops.embedding`; the agent embeds, the console never does.
-- Search RPC thresholds: the agent route defaults to `top_k` 10 and `min_similarity` 0.0, so the RPC's own 0.2 default is unused; the console asks for 20 hits across the library and 50 for one video, and sends `min_similarity` 0.35 for a text query ([decision](../archive/decisions.md#2026-11-05-evidence-search-keeps-the-exact-second-adds-a-035-score-floor-and-plays-a-slice)).
+- Search RPC thresholds: the agent route defaults to `top_k` 10 and `min_similarity` 0.0, so the RPC's own 0.2 default is unused; the console asks for 20 hits across the library and 50 for one video, and sends `min_similarity` 0.35 for a text query ([decision](decisions.md#2026-11-05-evidence-search-keeps-the-exact-second-adds-a-035-score-floor-and-plays-a-slice)).
 
 ## 5. Shared Conventions, Environments & Definitions
 
@@ -156,7 +158,7 @@ The PR task docs assume the following conventions and environment setup. This se
 - **Evidence crop:** A targeted object image (JPEG) extracted from a video frame at `timestamp_seconds`, cropped by an open-vocabulary detector's bounding box, stored in R2 with metadata in `evidence_crops`.
 - **Critic verdict:** `confirmed` (VLM confirms the crop matches the user query), `rejected` (VLM says it does not), or `unverified` (critic evaluation failure or fallback), with an objective rationale string.
 - **Query result:** A ranked search hit from `search_evidence_items`, including similarity_score, critic_verdict, and image URL.
-- **One-shot baseline:** A retrieval run that scores results using only the initial query embedding, without critic re-evaluation. System baseline uses the full pipeline (critic on; it is off by default in production since 2026-10-28). [`eval.md`](eval.md) §2 proposes (P-1, pending approval) treating extraction parity (gateway vs agent P1) and full-system extraction as separate tracks.
+- **One-shot baseline:** A retrieval run that scores results using only the initial query embedding, without critic re-evaluation. System baseline uses the full pipeline (critic on; it is off by default in production since 2026-10-28). [`eval.md`](mvp2-eval.md) §2 proposes (P-1, pending approval) treating extraction parity (gateway vs agent P1) and full-system extraction as separate tracks.
 - **Natural-language evidence search:** The user types a query (e.g. "crowbar"), the system retrieves matching evidence items across all stored incidents, each with timestamp and cropped object image.
 
 ---

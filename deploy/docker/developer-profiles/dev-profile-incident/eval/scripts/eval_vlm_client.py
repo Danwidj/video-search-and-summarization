@@ -52,7 +52,6 @@ import contract  # noqa: E402
 # Anchoring on parents[1], this project's own root, is deliberate and stays
 # correct regardless of how deeply this file is nested.)
 ENV_LOCAL = Path(__file__).resolve().parents[1] / ".env.local"
-DEFAULT_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com/v1"
 
 # Base configuration merged into every call (P1, RP1 and anything else that
 # goes through chat_completion). temperature=0.0 for reproducibility.
@@ -69,7 +68,7 @@ FIXED_INFERENCE_CONFIG = {"temperature": 0.0, "max_tokens": 4096}
 P1_INFERENCE_CONFIG = {"max_tokens": 16384, "media_io_kwargs": {"video": {"num_frames": 64}}}
 
 # Fixed rate-limit policy for P1, identical for every model and decided before any
-# benchmark result (.docs/decisions.md 2026-10-02). Never tuned per model or run.
+# benchmark result (.docs/archive/decisions.md 2026-10-02). Never tuned per model or run.
 # Switchyard's shared limits seen in the smoke test: cosmos-3-super-reasoner 240
 # requests/min, nemotron-3-nano-omni 30,000 tokens/min (one P1 call is about 6k
 # prompt tokens plus up to 16,384 completion tokens).
@@ -132,7 +131,7 @@ def gateway_credentials() -> tuple[str, str]:
     """``(base_url, api_key)`` from ``.env.local``, falling back to the process env."""
     api_key = _get_env("VLM_GATEWAY_API_KEY") or os.getenv("VLM_GATEWAY_API_KEY", "")
     base_url = _get_env("VLM_GATEWAY_BASE_URL") or os.getenv("VLM_GATEWAY_BASE_URL", "")
-    return (base_url or DEFAULT_BASE_URL), api_key
+    return base_url, api_key
 
 
 @dataclass
@@ -173,6 +172,8 @@ def chat_completion(
     base_url, api_key = gateway_credentials()
     if not api_key:
         return ChatResult(ok=False, error="VLM_GATEWAY_API_KEY is not configured", failure_kind="not_sent")
+    if not base_url:
+        return ChatResult(ok=False, error="VLM_GATEWAY_BASE_URL is not configured", failure_kind="not_sent")
     config = {**FIXED_INFERENCE_CONFIG, **(inference_config or {})}
     payload = {"model": model, "messages": messages, **config}
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}

@@ -1,8 +1,10 @@
-# Local development secrets for the incident profile services.
+# Local development secrets for the incident profile services: every real env
+# file and its backups (.env.local, .env.remote, .env.remote.bak-<time>). The
+# tracked templates are .env and compose.unused.env, which `.env.*` does not match.
 # Shared across incident-console-v2, vlm-gateway, mock-backend and eval.
-.env.local
-**/.env.local
-**/.env.remote
+.env.*
+**/.env.*
+*.bak
 *.bkp
 
 # The complete human-labelled ground-truth workbook (real annotations of real

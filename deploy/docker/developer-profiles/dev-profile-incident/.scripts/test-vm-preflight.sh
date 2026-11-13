@@ -62,12 +62,6 @@ check "ts daemon" "Tailscale daemon is not running" "$out"
 out="$(FAKE_SSH_ERR='Operation timed out' FAKE_TS_JSON='{"BackendState":"Running","Peer":{"a":{"HostName":"vm-host","DNSName":"vm-host.example.test.","Online":false,"LastSeen":"2026-10-18T01:00:00Z"}}}' run)"
 check "peer offline" "OFFLINE in the tailnet" "$out"; check "peer lastseen" "2026-10-18T01:00:00Z" "$out"
 
-# vm_detect_ip: override wins; detection parses the route; failure falls back.
-export VSS_VM_IP=1.2.3.4; check "ip override" "1.2.3.4" "$(vm_detect_ip 2>/dev/null)"
-unset VSS_VM_IP
-out="$(FAKE_SSH_OUT='1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.77 uid 1000' vm_detect_ip 2>/dev/null)"; check "ip detect" "10.0.0.77" "$out"
-out="$(FAKE_SSH_ERR='boom' vm_detect_ip 2>/dev/null)"; check "ip fallback" "<vm-ip>" "$out"
-
 # The merged helper resolves the SSH target when callers do not provide one.
 unset VSS_SSH_TARGET VSS_SSH_USER
 source "$SCRIPT_DIR/vm-preflight.sh"

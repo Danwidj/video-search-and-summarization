@@ -1,6 +1,8 @@
 # Incident Profile Decision Log
 
-Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](decisions-superseded.md).
+> **Archived, frozen on 2026-11-13.** History only; not a source for current behaviour. Do not update. Index: [`README.md`](README.md).
+
+Decisions that shaped `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded decisions move to [`archive/decisions-superseded.md`](decisions-superseded.md).
 
 ### 2026-11-11: The git hook leaves a VM checkout without `.env.local` alone
 
@@ -272,7 +274,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Alternatives rejected:** *making routed the default* (the next restart would turn on model calls for everyone before the frozen re-run; the owner chose to keep the setting); *counting people found in text* ("a man ... the man" cannot be counted); *a code check of location against description* (it flagged 40 of 256 stored revisions, and the flags read were all false); *general typo correction* (14 false fixes on frozen questions); *the composed answer on every model failure* (it can state something false).
 - **Limits:** until routed mode is enabled, live answers come from rules, so unexpected wording may still miss. The 6 Nov pilot's figures describe the earlier prompt.
 - **Needs:** a restart of the shared agent and the console. Existing reports do not change.
-- **Links:** [routes, failures and results](../mvp2/chat-routing.md), [`chat_questions.py`](../../../../../../services/agent/src/vss_agents/utils/chat_questions.py), [`chat_followups.py`](../../../../../../services/agent/src/vss_agents/utils/chat_followups.py)
+- **Links:** [routes, failures and results](mvp2-chat-routing.md), [`chat_questions.py`](../../../../../../services/agent/src/vss_agents/utils/chat_questions.py), [`chat_followups.py`](../../../../../../services/agent/src/vss_agents/utils/chat_followups.py)
 
 ### 2026-11-07: A calendar range that ends after today is charted up to today, and titled "(to date)"
 - **Decision:** a chart's calendar period (`{"month"}`, or `{"from", "to"}`) that starts on or before today in the viewer's time zone but ends after it is accepted and clamped to end today. Its title and scope say so: both name the days charted, "Reports per day, 1 to 7 November 2026 (to date)" for a running month and "Reports per day, 1 October to 7 November 2026 (to date)" for a range, so the last day charted is always visible; a completed month keeps its name ("October 2026"). A period that starts after today (for example "next month") is still refused, and so is a `{"day"}` after today. The real-date, `from <= to` and 366-day rules are unchanged, and the 366-day limit is measured on the days charted (up to today). The prompt tells the model to write the end the request names, and that in a range given without years the start is the most recent such date not after today and the end is in the start's year, or in the following year when the end's month comes before the start's month, so "December to February" on 7 November 2026 is 2025-12-01 to 2026-02-28, "October to December" on 6 November 2026 is 2026-10-01 to 2026-12-31 and a reversed range such as "20 to 10 October" stays reversed and is refused (a rule that put the end on the first such date on or after the start would turn it into 2026-10-20 to 2027-10-10 and chart it). The development requests gain "October to December" and "next month" and move to `dashboard-calendar-development-v1` (eleven requests). Figures still come only from `getDashboard`, and the spec keeps no new field.
@@ -369,7 +371,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:** on 6 Nov `Assault018_x264_demo.mp4` was uploaded twice about 1 s apart and two jobs were queued 60 ms apart, so the library held 19 video rows for 15 clips and the reviewer saw one clip under different reports. Two uploads of one file in the same second must end with one video and one job, which only a database rule guarantees.
 - **Limits:** a re-encoded copy of the same clip has different bytes and is not caught. A converted upload keeps the hash of the original, but a converted video backfilled from R2 was hashed from its stored (converted) bytes, so a re-upload of the original file is not caught for it. A video whose analysis failed keeps its hash, so a re-upload opens a video that may have no report; retrying a failed job while another active job holds its hash hits the job index. A race loser's `-2` R2 object and thumbnail are left in place, unreferenced: nothing is deleted.
 - **Alternatives rejected:** an override ("upload anyway") on the page (the captain wants repeats blocked); comparing file name and size (a renamed copy slips through, a different clip with a colliding name is refused); a perceptual hash (catches re-encodes but is fuzzy, slow and not enforceable by a unique index); a check in the console only (two simultaneous requests both pass it); hashing in the browser (extra work on every file and a client the server must not trust); deleting a race loser's R2 object (a rule that deletes data on a lost race is riskier than an orphan).
-- **Links:** [migration](../../supabase/migrations/20261106160000_video_content_hash.sql), [backfill](../../archived/supabase/r2/backfill_content_hash.py), [`duplicate.ts`](../../incident-console-v2/src/modules/uploads/domain/duplicate.ts), [`route.ts`](../../incident-console-v2/src/app/api/uploads/r2/route.ts), [data](../data.md#videos), [console reference](../console-reference.md#background-analysis-jobs)
+- **Links:** [migration](../../supabase/migrations/20261106160000_video_content_hash.sql), [backfill](../../scripts/backfill_content_hash.py), [`duplicate.ts`](../../incident-console-v2/src/modules/uploads/domain/duplicate.ts), [`route.ts`](../../incident-console-v2/src/app/api/uploads/r2/route.ts), [data](../data.md#videos), [console reference](../console-reference.md#background-analysis-jobs)
 
 ### 2026-11-06: Clicking an Edit card's image sets that item's evidence image from a picked frame and a mouse crop
 - **Decision:** in Edit mode the image area of every evidence card (entity, instrument, asset, with or without an image or box today) is a button, and only the image: a click elsewhere on the card does nothing. It opens `EvidenceImagePicker`: pick a frame of the report's video with the slider or the step buttons (the exact second, to 0.1 s), drag a rectangle on it, check the crop it cuts, **Use this image**. The result is `image_pick: {seconds, box}` on the draft item (`ImagePick`); the card shows the picked frame and box with an "Image set by you" badge and **Revert to A** undoes it. Hover and keyboard focus show "Click to set the image". Nothing else on the item changes: the text, the track and `timestampSeconds` ("most visible at") stay.
@@ -420,15 +422,15 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:** the check only asked whether a second was in the report, so "exploding at 1:31", the end of an event starting at 1:12, became a link to the wrong moment. Omitting a jump is safer than a wrong one.
 - **Rejected:** rewriting the model's times (changes its wording, and "by 0:03" has no safe rewrite); event markers in the model's output (needs a new prompt and paid checks, and still needs this check for a model that ignores them).
 - **Limit:** matching is on words, so paraphrase loses a link, and one time string is unlinked everywhere in an answer if any use of it fails.
-- **Links:** [`chat_attribution.py`](../../../../../../services/agent/src/vss_agents/utils/chat_attribution.py), [routes](../mvp2/chat-routing.md)
+- **Links:** [`chat_attribution.py`](../../../../../../services/agent/src/vss_agents/utils/chat_attribution.py), [routes](mvp2-chat-routing.md)
 
 ### 2026-11-06: Chat routes by question behind `INCIDENT_CHAT_MODE=routed`, and a video check needs a click
-- **Status:** built and off. The default stays template. The text-model pilot ran on 6 Nov ([results](../mvp2/chat-routing.md#text-model-pilot-2026-11-06-paid-owner-approved)); turning either setting on still needs approval ([plan](../mvp2/chat-routing.md#before-switching-on)).
+- **Status:** built and off. The default stays template. The text-model pilot ran on 6 Nov ([results](mvp2-chat-routing.md#text-model-pilot-2026-11-06-paid-owner-approved)); turning either setting on still needs approval ([plan](mvp2-chat-routing.md#before-switching-on)).
 - **Decision:**
-  - A third mode, `routed`, answers report-field questions by code with no model call and sends the rest to the chat model, which reads the report only ([routes](../mvp2/chat-routing.md#routes)).
+  - A third mode, `routed`, answers report-field questions by code with no model call and sends the rest to the chat model, which reads the report only ([routes](mvp2-chat-routing.md#routes)).
   - It has its own prompt (`chat/incident-routed`) and contract (`chat-contract-v3`), so template stays v1 and grounded stays exactly as evaluated.
   - A video check is offered, never automatic, and sits behind `INCIDENT_VIDEO_CHECK_ENABLED`. The look is blind to the report, a text call compares the two, and nothing is stored.
-- **Why:** template mode answers reasoning and follow-up questions badly ("Why was this classified as high severity?" gave "It is an assault."), while grounded mode spends a model call on what code answers as well. On the frozen C3 questions code matched the model on the questions routed to it, the model won every unanswerable and false-premise question, and routing keeps that for about a quarter of the tokens ([results](../mvp2/chat-routing.md#evaluation-2026-11-06-no-model-calls)).
+- **Why:** template mode answers reasoning and follow-up questions badly ("Why was this classified as high severity?" gave "It is an assault."), while grounded mode spends a model call on what code answers as well. On the frozen C3 questions code matched the model on the questions routed to it, the model won every unanswerable and false-premise question, and routing keeps that for about a quarter of the tokens ([results](mvp2-chat-routing.md#evaluation-2026-11-06-no-model-calls)).
 - **Rejected:** editing `chat/incident-answer` (it would separate grounded mode from its results); showing the VLM the report's claim (the 2026-11-01 finding: the model agrees with a name it is shown); running a check automatically on a missing detail (slow, paid and unasked); saving a look's result (a schema decision, and not needed to review a conflict).
 - **Links:** [`chat_routing.py`](../../../../../../services/agent/src/vss_agents/utils/chat_routing.py), [`video_check.py`](../../../../../../services/agent/src/vss_agents/utils/video_check.py), [`chat-contract-v3`](../../contracts/chat-contract-v3/README.md)
 
@@ -914,7 +916,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - refusing a window over the inline limit with a 400: its size is known only after the cut, and the eval adapter stops a whole run on a refusal;
   - an uncapped experimental pass: the eval needs a worst case for every stage;
   - letting experimental crops run on an agent with R2 settings: the scratch prefix stays the single exception.
-- **Links:** [`chunk_captions.py`](../../../../../../services/agent/src/vss_agents/utils/chunk_captions.py), [caption pass](../vm-api-contracts.md#caption-pass-chunked-captioning-incident_chunking_enabled), [experimental captions](../vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b)
+- **Links:** [`chunk_captions.py`](../../../../../../services/agent/src/vss_agents/utils/chunk_captions.py), [caption pass](../vm-api-contracts.md#caption-pass-chunked-captioning-incident_chunking_enabled), [experimental captions](../vm-api-contracts.md#experimental-settings-prompt-experiments)
 
 ### 2026-11-01: Experimental requests can cap the zoom look, track objects and return the pre-zoom P1 report; captions wait for a scratch store
 - **Decision:** an experimental crops-on request may set:
@@ -927,7 +929,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - The zoom effect must be measurable without extra calls: compare `p1_report` with the final report.
   - Crop scoring needs the unpadded box. The stored box is padded by 5%, so scorers had to estimate.
 - **Rejected:** counting zoom calls in `max_crop_calls`, which would change the meaning of an existing cap that V1's end-to-end profile used; requiring a zoom cap on every experiment, which would break V1's configs; running the caption pass in experiments now. That pass sends window clips to the model by signed URL, an experiment agent holds no R2 settings by design, and a dedicated scratch prefix is a shared-storage change that needs the owner's approval (X16). Captions in experiments are now wired behind `experiment_captions` (the X16 entry above).
-- **Links:** [contract](../vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b), [data](../data.md), [`crop_evidence.py`](../../../../../../services/agent/src/vss_agents/utils/crop_evidence.py)
+- **Links:** [contract](../vm-api-contracts.md#experimental-settings-prompt-experiments), [data](../data.md), [`crop_evidence.py`](../../../../../../services/agent/src/vss_agents/utils/crop_evidence.py)
 
 ### 2026-11-01: Every analysis returns its run provenance, and the console keeps it in the run's notes
 - **Decision:** `/analyze` returns `provenance` (`incident-run-provenance-v1`) on every response and in the `422` detail. It holds:
@@ -1272,7 +1274,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Status:** configs, manifest, preflight (passing) and report tooling are ready. **No profile request has been sent; execution needs the owner's budget approval** ([plan](../../eval/docs/experiments/e2e-profile-plan.md)).
 - **Why:** the box-call count is only known after P1, so the spend needs a bound the runner can enforce before each call (the reason the Stage 0 crop pilot was dropped). A cap of 40 covers the p95 of predicted items in Stage 3 (28); the one outlier (101 items) is truncated and counted.
 - **Alternatives rejected:** counting predicted items × 4 attempts as the bound (no hard stop inside a request); scoring the profile (its outputs are not accuracy results, and the judge adds cost); running it on the shared VM agent (ask-first, and it writes to shared storage).
-- **Links:** [profile plan](../../eval/docs/experiments/e2e-profile-plan.md), [vm-api-contracts](../vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b), [final report](../../eval/docs/experiments/final-report.md).
+- **Links:** [profile plan](../../eval/docs/experiments/e2e-profile-plan.md), [vm-api-contracts](../vm-api-contracts.md#experimental-settings-prompt-experiments), [final report](../../eval/docs/experiments/final-report.md).
 
 ### 2026-10-30: Stage 3 executed once under the frozen design, by an automated supervisor
 - **Decision:** the owner approved Stage 3 execution on 2026-10-29 under the frozen plan and caps, with end-to-end automation. `eval_stage3.py supervise` (`eval/stage3_automation.py`) ran it: preflight before every session, checkpointed 4-hour sessions, a progress log, then recovery-v1, both report views and an integrity audit. The 220 video-runs ran once (stage `20261029T124321Z-0953f2d3`); the audit passed.
@@ -1329,7 +1331,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - Reusing Stage 1 or 2 runs, which are dev clips under other protocols.
   - Two repeats, which the owner chose against.
   - Selecting or tuning anything on test results.
-- **Links:** [stage3-plan.md](../../eval/docs/experiments/stage3-plan.md); [D15 exposure](../mvp2/experiment-decision-record.md#d15-held-out-exposure-approved).
+- **Links:** [stage3-plan.md](../../eval/docs/experiments/stage3-plan.md); [D15 exposure](mvp2-experiment-decision-record.md#d15-held-out-exposure-approved).
 
 ### 2026-10-29: Stage 2 selection (D9 v2): p1-v4-e01-severity
 - **Decision:** the pre-registered D9 v2 rule (`select_d9` over every version that ran, each against its own interleaved baseline, merged `original+recovery-v1` records) selects **V1 `p1-v4-e01-severity`** (SHA-256 `004746ea7d19…`) as the Stage 3 prompt.
@@ -1375,7 +1377,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 ### 2026-10-28: Incident search and evidence search share one search function; evidence search can be scoped to one video; the critic is off by default
 - **Decision:** `semantic_search` in `services/agent/src/vss_agents/api/incident_search.py` embeds the query and hands the vector to a `retrieve` callback; `POST /api/v1/incidents/search` (evidence crops) and `POST /api/v1/incidents/revisions/search` (revision summaries) both call it and differ only in what they retrieve. `filters.video_id` (agent) and `p_video_id` (`search_evidence_items`) restrict the search to one video inside the database. An empty query is allowed only with a video id: nothing is embedded and the video's crops come back in video time order. The VLM critic runs only when `INCIDENT_SEARCH_CRITIC` is truthy; otherwise every hit is `unverified` (rationale `Critic not run`), with no VLM call and no delay. The console dropped the verdict badge and the "Show N rejected" switch.
 - **Why:** "See evidence" on a library card showed nothing: the console filtered the global top 20 down to one video, so an incident outside that list gave zero hits. The critic called a rate-limited VLM (HTTP 429), which made searches take 10 to 30 seconds and added no usable signal.
-- **Alternatives rejected:** keep filtering in the browser (still empties the page); a separate scoped route (a second search path to keep in step); delete the critic code (it is kept dormant for the retrieval eval, [`mvp2/eval.md`](../mvp2/eval.md)).
+- **Alternatives rejected:** keep filtering in the browser (still empties the page); a separate scoped route (a second search path to keep in step); delete the critic code (it is kept dormant for the retrieval eval, [`mvp2/eval.md`](mvp2-eval.md)).
 - **Links:** PR #244, [`vm-api-contracts.md`](../vm-api-contracts.md#post-apiv1incidentssearch), [`data.md`](../data.md#search_evidence_items), [`20261028090000_search_evidence_items_video_id.sql`](../../supabase/migrations/20261028090000_search_evidence_items_video_id.sql).
 
 ### 2026-10-28: Entity ids and their order are canonical across report view, edit and compare
@@ -1535,7 +1537,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - raise the Stage 1 judge-request caps to about 1,710 per config;
   - freeze the ground truth;
   - approve the Stage 1 budget.
-- **Links:** [`mvp2/experiment-decision-record.md`](../mvp2/experiment-decision-record.md).
+- **Links:** [`mvp2/experiment-decision-record.md`](mvp2-experiment-decision-record.md).
 
 ### 2026-10-27: Evaluation methodology v1.1 limits the judge's output to 1,500 tokens; truncated or invalid replies are failures
 - **Decision (user-requested):** `evaluation-methodology-v1.1` adds `max_tokens 1500` to the pinned judge request (`methodology.JUDGE_MAX_OUTPUT_TOKENS`). It applies to the Stage 0 pilot and every later experiment. Three kinds of reply are now **scoring failures**, which leave the field unscored and stop the run; they are never read as scores:
@@ -1552,7 +1554,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:** crop cost and end-to-end latency can be measured without any shared-storage write.
 - **Rejected:** (b) deferring the measurement to the end-to-end profile; (c) R2 writes to a scratch prefix (needs separate approval).
 - **Open:** a crop pilot needs its own authorisation and a box-call bound; the runner cannot count the agent's box calls in advance.
-- **Links:** [`vm-api-contracts.md`](../vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b).
+- **Links:** [`vm-api-contracts.md`](../vm-api-contracts.md#experimental-settings-prompt-experiments).
 
 ### 2026-10-27: Stage 2 prompt selection rule (D9 v2) pre-registered
 - **Decision (approved by the user 2026-10-27, before any Stage 2 run):** the Stage 2 prompt is selected by D9 v2, implemented in `eval/experiment_selection.py` (`select_d9`). This heading is the pre-registration record that `select_d9` requires.
@@ -1592,7 +1594,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - **Version cap:** at most 8 versions, all reported.
 - **Why:** fixed before any Stage 2 result exists, so the choice cannot be tuned to the data. Equal weights stop the five incident fields from dominating the item scores.
 - **Rejected:** the plain eight-score average as primary (kept as secondary); selection on test or pilot results.
-- **Links:** [`mvp2/experiment-decision-record.md`](../mvp2/experiment-decision-record.md#d9-v2-prompt-selection-rule-pre-registered); [`../eval/experiment_selection.py`](../../eval/experiment_selection.py).
+- **Links:** [`mvp2/experiment-decision-record.md`](mvp2-experiment-decision-record.md#d9-v2-prompt-selection-rule-pre-registered); [`../eval/experiment_selection.py`](../../eval/experiment_selection.py).
 
 ### 2026-10-27: Experiment controls approved: D10 order and repeats, D15 disclosure, D11 hard caps (dollar limits provisional), Stage 0 as a pilot only
 - **Decision:**
@@ -1607,7 +1609,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
     - The crop pilot is removed: without an R2 store the agent makes no box calls, so it cannot measure crop cost (a decision is open).
 - **Why:** cost and order must be controlled by code, not by care. The pilot must not leak into selection or reported accuracy.
 - **Not decided here:** the Switchyard price. D9 v2 was pre-registered in its own entry (above), and the crop-pilot option is (a), a temporary isolated evidence store (follow-up).
-- **Links:** [`mvp2/experiment-decision-record.md`](../mvp2/experiment-decision-record.md); [`../eval/experiments/README.md`](../../eval/experiments/README.md).
+- **Links:** [`mvp2/experiment-decision-record.md`](mvp2-experiment-decision-record.md); [`../eval/experiments/README.md`](../../eval/experiments/README.md).
 
 ### 2026-10-27: Pronoun policy P1 for ground-truth descriptions
 - **Decision:** a gendered pronoun may follow a visually supported, qualified gender identification ("appears to be a man"). Where gender cannot be determined and the description is gender-neutral, later pronouns must be neutral too. It is added to the annotation guidelines §7 as a clarification of A7 (v1.0 unchanged).
@@ -1643,7 +1645,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - ignoring the fields silently when disabled (a caller could believe an experiment ran);
   - vendoring experiment prompts through `sync.py`;
   - persisting experimental revisions.
-- **Links:** [`vm-api-contracts.md`](../vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b); [`../eval/experiments/README.md`](../../eval/experiments/README.md).
+- **Links:** [`vm-api-contracts.md`](../vm-api-contracts.md#experimental-settings-prompt-experiments); [`../eval/experiments/README.md`](../../eval/experiments/README.md).
 
 ### 2026-10-27: Experiment prompts live in an append-only registry; one runner drives both arms under the same guards
 - **Decision:**
@@ -1769,10 +1771,10 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [`status.md`](status.md#7-archive); [`../incident-console-v2/src/sections/library/components/ReportThumbnail/ReportThumbnail.tsx`](../../incident-console-v2/src/sections/library/components/ReportThumbnail/ReportThumbnail.tsx); [2026-09-27 decision](#2026-09-27-report-library-and-thumbnails).
 
 ### 2026-10-25: Retrieval metrics semantics for the cases the eval spec leaves open
-- **Decision:** `eval/retrieval_metrics.py` implements [`mvp2/eval.md`](../mvp2/eval.md) §3.4-3.5 as pure functions over `QueryInstance` records, with these choices where the spec is silent: a duplicate item key in a pool keeps its slot (it counts in `|L|`, coverage, MRR positions and false positives) but is never a second hit; coverage and the empty share use every instance, and zero-relevant metrics are aggregated like the others (repeats, then variants, then seeds); intervals are 95% percentile intervals with linear interpolation over 10,000 resamples by default, and the bootstrap seed is a required argument. Resample indices come from `random.Random(seed).random()`, and inputs are sorted before aggregation, so a result depends only on its data and seed.
+- **Decision:** `eval/retrieval_metrics.py` implements [`mvp2/eval.md`](mvp2-eval.md) §3.4-3.5 as pure functions over `QueryInstance` records, with these choices where the spec is silent: a duplicate item key in a pool keeps its slot (it counts in `|L|`, coverage, MRR positions and false positives) but is never a second hit; coverage and the empty share use every instance, and zero-relevant metrics are aggregated like the others (repeats, then variants, then seeds); intervals are 95% percentile intervals with linear interpolation over 10,000 resamples by default, and the bootstrap seed is a required argument. Resample indices come from `random.Random(seed).random()`, and inputs are sorted before aggregation, so a result depends only on its data and seed.
 - **Why:** The route returns each `(revision_id, item_type, item_id)` once, so a duplicate is a defect that must show in the numbers rather than be removed silently. Python guarantees the `random()` sequence for a seed, which numpy's generators do not promise across versions. A required seed makes every reported interval reproducible.
 - **Rejected:** removing duplicates before cutting `C[:K]` (it changes what `C[:K]` stands for); a numpy random generator for the draws (numpy still averages them, which keeps 10,000 resamples fast); implementing any §8 proposal (P-1 to P-7) or eval storage in step 1.
-- **Links:** [`mvp2/eval.md` §10.1](../mvp2/eval.md#101-step-1-retrieval-metrics-module-landed); `eval/tests/test_retrieval_metrics.py`.
+- **Links:** [`mvp2/eval.md` §10.1](mvp2-eval.md#101-step-1-retrieval-metrics-module-landed); `eval/tests/test_retrieval_metrics.py`.
 
 ### 2026-10-25: The agent applies the video-bounds rules, and an unknown length is a recorded outcome
 - **Decision:** `/analyze` validates P1 with the video length, so `WINDOW_BEYOND_VIDEO` (core, a 422) and `TIMELINE_BEYOND_VIDEO` (enrichment, recorded) apply in the agent as in the console. The length is the request's optional `video_duration_seconds` (the console sends the one it read from the MP4 header) or, without one, the agent reads the MP4 `mvhd` through the signed `video_url` with ranged GETs on a client that carries no model key. A `video_duration_seconds` that is not a finite number above 0 is a 422. When no length can be read (non-MP4, a server that ignores `Range`, HTTP errors), the rules do not apply, the agent logs a warning and the 200 response says so (`video_bounds_checked: false` with `video_bounds_unchecked_reason`). The console keeps its own enforcement on the agent's raw output.
@@ -1803,8 +1805,8 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:**
   - Routing is a leftover from the v1 MVP2 plan, which assumed a `search_agent` over Elasticsearch. The v2 plan dropped that design. The five incident routes are plain FastAPI routes that bypass subagent selection, and the VM agent runs the stock base config with one subagent (`report_agent`). Nothing consumes a routing config except the deferred Track F.
   - RT-Embed indexing is a different product from MVP2 search. It indexes 5-second video chunks (Cosmos-Embed1, 768-d in Elasticsearch) and RT-CV object embeddings (1152-d), while MVP2 searches VLM-extracted evidence items as 1024-d text embeddings in Supabase pgvector. The embedding spaces are incompatible, so it would be a second parallel index, not an upgrade. Nothing feeds it: uploads go straight to R2 and never reach VST. It also needs the full search stack (RT-CV, RT-Embed, Kafka, Elasticsearch, Logstash, analytics) on a shared VM where only GPU 0 is available.
-- **Rejected:** a minimal routing config exposing only `incident_search` and `incident_chat` as tools (no consumer and no routing-accuracy evidence); an offline RT-Embed spike against Track R (worth doing only if temporal video-chunk search becomes a product goal; [`mvp2/eval.md`](../mvp2/eval.md) §6 still allows offline experiments).
-- **Links:** routing and indexing investigation (firstmate scout report, 2026-10-24); [`mvp2/README.md`](../mvp2/README.md#4-delivered-dropped-and-open); [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote).
+- **Rejected:** a minimal routing config exposing only `incident_search` and `incident_chat` as tools (no consumer and no routing-accuracy evidence); an offline RT-Embed spike against Track R (worth doing only if temporal video-chunk search becomes a product goal; [`mvp2/eval.md`](mvp2-eval.md) §6 still allows offline experiments).
+- **Links:** routing and indexing investigation (firstmate scout report, 2026-10-24); [`mvp2/README.md`](mvp2-search-spec.md#4-delivered-dropped-and-open); [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-envremote).
 
 ### 2026-10-24: Finals test data is removed by direct delete, and unproven items are kept
 - **Decision:** The rows and R2 objects of the three end-to-end test videos, their 10 test `queries` rows and the 2 scout uploads that have no `videos` row were removed with direct statements (one transaction for `videos`, `model_runs` and `queries`, then the R2 keys), after a JSON rollback snapshot. Items that could not be proved to be test data stay: one upload of unknown origin, video `veb492932dac2d1d52e0`, and five "car" queries.
@@ -1834,7 +1836,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Decision:** `tests/import-boundaries.test.mjs` fails when domain or application code imports infrastructure, `app`, `sections`, `next`, `react` or `node:*`, or when a section imports infrastructure or `node:*`. Each existing exception is listed in `ALLOWED` with its reason, and an entry that matches no import also fails. Two console files are allowlisted exceptions: `src/modules/analysis/application/build-request.ts` and `run-contract-analysis.ts` import the contract loader, and `run-contract-analysis.ts` also imports `node:crypto`; removing them is the `ContractCatalog` follow-up in [`status.md`](status.md#5-action-items).
 - **Why:** The rules were conventions upheld in review, and the move into feature modules made them easy to break unnoticed. This reverses the 2026-10-19 rejection of an import-matching test, as the captain approved for Step 8 of the console plan.
 - **Rejected:** ESLint `no-restricted-imports` or dependency-cruiser (a new dependency for one check).
-- **Links:** [pull/208](https://github.com/Danwidj/video-search-and-summarization/pull/208); [`mvp2/console-hexagonal-architecture.md`](../mvp2/console-hexagonal-architecture.md#3-dependency-rules).
+- **Links:** [pull/208](https://github.com/Danwidj/video-search-and-summarization/pull/208); [`mvp2/console-hexagonal-architecture.md`](mvp2-console-hexagonal-architecture.md#3-dependency-rules).
 
 ### 2026-10-24: A human save writes its revision and its searchable crops in one call, or nothing
 - **Decision:** On a video with no official revision, Save asks the agent to embed the new revision's evidence entries (`POST /api/v1/incidents/evidence-embeddings` with `evidence` in the body), then calls `save_human_revision_with_crops`, which inserts the revision and replaces the video's `evidence_crops` in one transaction. An embedding failure answers 502 and writes no revision. On a video with an official revision, Save embeds nothing and the official rows stay. Analysis and re-run keep `storeSearchableCrops`, which logs a crop failure after the revision is written.
@@ -1852,7 +1854,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Decision:** The console moved under `src/` and into feature modules in small PRs (Steps 1 to 8 of the console hexagonal plan): `src/app` (routes and pages), `src/modules/<feature>/{domain,application,infrastructure}` for analysis, chat, contract, dashboard, health, reports, search, shared and videos, `src/sections/<feature>/components` for UI, and `src/lib` for shared technical code. `src/lib/container.ts` is the composition root and the only place that picks adapters. Routes get ports from `getDbAdapters()` and `getAnalysisPorts()`; use cases are one folder each. Analysis saving and run history went behind ports (`AnalysisRunRepository`, `ModelGateway`, `IncidentAgent`, `VideoObjectStore`) in #205, so no route builds a PostgREST query. The contract loader stays a documented exception for the domain validators (Step 6 minimum).
 - **Why:** Files were grouped by technical area, so one feature's code was spread over `app`, `components` and `lib`, and the database rules lived in HTTP handlers. Feature modules keep each port, use case and adapter together, and in-memory fakes with contract suites keep use cases testable without a database. Console search goes through the agent, which already embeds the query, runs the critic and records queries and hits, so the console needs no embedding model.
 - **Rejected:** one large move PR (hard to review and revert); a `Result` type instead of exceptions and `StoreRejection` (a semantic rewrite); shared `src/components/ui` primitives before a second consumer exists; the strict Step 6 (`ContractCatalog` port), deferred.
-- **Links:** [PR 120](https://github.com/Danwidj/video-search-and-summarization/pull/120) (the first ports and adapters); [pull/198](https://github.com/Danwidj/video-search-and-summarization/pull/198) to [pull/206](https://github.com/Danwidj/video-search-and-summarization/pull/206); [`mvp2/console-hexagonal-architecture.md`](../mvp2/console-hexagonal-architecture.md).
+- **Links:** [PR 120](https://github.com/Danwidj/video-search-and-summarization/pull/120) (the first ports and adapters); [pull/198](https://github.com/Danwidj/video-search-and-summarization/pull/198) to [pull/206](https://github.com/Danwidj/video-search-and-summarization/pull/206); [`mvp2/console-hexagonal-architecture.md`](mvp2-console-hexagonal-architecture.md).
 
 ### 2026-10-23: Save as new version keeps the entity seen span and the drawn image's second and box
 - **Decision:** Edit mode saves only as a new `human` revision, with a required note (no Restore). Entities keep `first_seen_seconds` and `last_seen_seconds`. A reviewer-drawn image keeps its `image_timestamp_seconds` and `image_box` (`[ymin, xmin, ymax, xmax]`, 0-1000) on its evidence entry, not in the payload. `saveHumanEdit` checks the built entities, instruments and assets against contract v4 required fields and returns 422 when one is missing. A draft from a v2 or v3 revision, which has no span, starts from the item's most-visible second.
@@ -1876,7 +1878,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Decision:** `/library` has two tabs, Find incidents (one card per video, its official version else its newest) and Find evidence (`POST /api/search`, which the console sends to the agent's `POST /api/v1/incidents/search`, top 20, critic rejections kept; since 2026-10-28 the critic is off and a scoped search lists one incident, see the first entry above). `/reports` redirects to `/library` with its query string, and dashboard links point there. `EvidenceSearchRepository` now has its agent adapter, `src/lib/adapters/agent/search.ts`.
 - **Why:** One page holds incident and evidence search with shared filters. Old `/reports` links and the dashboard keep working through the redirect.
 - **Rejected:** a separate `/search` page (the PR 118 plan); the mockup's "Find similar" and "Download crop", and the "No report yet" card, were left out for now.
-- **Links:** [pull/185](https://github.com/Danwidj/video-search-and-summarization/pull/185); [`mvp2/README.md`](../mvp2/README.md).
+- **Links:** [pull/185](https://github.com/Danwidj/video-search-and-summarization/pull/185); [`mvp2/README.md`](mvp2-search-spec.md).
 
 ### 2026-10-23: Find incidents text search reads the agent's revision search and filters in the console
 - **Decision:** The Find incidents text search calls `POST /api/v1/incidents/revisions/search` through `RevisionSearchRepository`, keeps the incidents the agent matched that pass the other filters, and keeps the user's sort (not similarity order). Zero hits also fall back to the library's ILIKE search, because revisions without a stored vector are invisible to the agent. No similarity threshold is sent (the agent's default is 0).
@@ -2071,7 +2073,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - Query embedding is covered by the remote-embeddings decision above.
 - **Why:** The sample-data store pointed at a non-existent host, so the critic failed to fetch images and every hit was `unverified`. One table avoids three vector columns and three UNIONs. Official scoping stops re-analysis runs producing duplicate hits.
 - **Rejected:** altering the legacy `entities` / `instruments` / `assets` tables; unscoped search; public-only URLs (private buckets need presigning); an external embedding service for now.
-- **Links:** [`../archived/supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`](../../archived/supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql); [`data.md`](../data.md); [`mvp2/README.md`](../mvp2/README.md).
+- **Links:** [`../archived/supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`](../../archived/supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql); [`data.md`](../data.md); [`mvp2/README.md`](mvp2-search-spec.md).
 
 ### 2026-10-16: MVP2 search route, chat route, crop service and launcher
 - **Decision:**
@@ -2081,7 +2083,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - `start.sh` always brings up and checks search (no `--search` flag); local readiness polls `/health`; `.scripts/tunnel-check.sh` probes search through the tunnel.
 - **Why:** A pilot showed VLM bounding boxes were 0% well-framed but timestamps over 95% accurate, so the VLM supplies timestamps and labels and a detector supplies boxes. Ports let the workstreams proceed in parallel. Spacing call starts smooths bursts without retries or sequential latency.
 - **Rejected:** VLM bounding boxes; dropping hits on critic failure; a feature flag for search; retries or thread pools for the critic.
-- **Links:** [`../contracts/search-contract-v1/`](../../contracts/search-contract-v1/); [`../contracts/chat-contract-v1/`](../../contracts/chat-contract-v1/); [`mvp2/README.md`](../mvp2/README.md).
+- **Links:** [`../contracts/search-contract-v1/`](../../contracts/search-contract-v1/); [`../contracts/chat-contract-v1/`](../../contracts/chat-contract-v1/); [`mvp2/README.md`](mvp2-search-spec.md).
 
 ### 2026-10-16: Contract v3 temporal grounding and RP1 on core_ok
 - **Decision:** `incident-contract-v3` adds required `timestamp_seconds` and `label` to entities, instruments and assets; bounding boxes are detector-produced only. Console validation is version-aware, so v2 runs stay viewable. RP1 runs when `core_ok` (not only `full_contract_ok`), receives the unchanged prediction, and `report_generation_prompt.txt` says timeline events outside the incident time are context.

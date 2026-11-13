@@ -1,3 +1,12 @@
+<!--
+agents:
+  context: The shell scripts that start, check and stop the incident backend.
+  read-when: Adding or changing a lifecycle script, or tracing a start.sh failure.
+  owns: the table of scripts and where each runs (laptop or VM).
+  rules: Never use NVIDIA's dev-profile.sh. Never print env values.
+  check: bash -n on the changed script
+-->
+
 # Lifecycle scripts
 
 Shell scripts that start, check and stop the incident backend. The laptop-side scripts open and check the SSH tunnel; the VM-side scripts run the native services and Docker appliances on the VM. [start.sh](../start.sh) calls most of them for you.

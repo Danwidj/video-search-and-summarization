@@ -1,6 +1,6 @@
 # Prompt experiments: readiness and budget statement
 
-> **Superseded for decisions by [`experiment-decision-record.md`](../../../.docs/mvp2/experiment-decision-record.md)** (D9 v2 proposed; D10 and D15 approved; D11 caps enforced, with dollar limits provisional; Stage 0 prepared, with 10 calls and no crop pilot). Status 2026-10-27. The Stage 0 pilot has run ([results](stage0-pilot.md)); no later stage has. This page states what is ready, the call volume of each stage, and the approvals each stage needs (plan §F.2, D9–D11, D15). Tokens and cost are unknown until the Stage 0 paid pilot measures them.
+> **Superseded for decisions by [`experiment-decision-record.md`](../../../.docs/archive/mvp2-experiment-decision-record.md)** (D9 v2 proposed; D10 and D15 approved; D11 caps enforced, with dollar limits provisional; Stage 0 prepared, with 10 calls and no crop pilot). Status 2026-10-27. The Stage 0 pilot has run ([results](stage0-pilot.md)); no later stage has. This page states what is ready, the call volume of each stage, and the approvals each stage needs (plan §F.2, D9–D11, D15). Tokens and cost are unknown until the Stage 0 paid pilot measures them.
 
 ## Ready
 
@@ -8,7 +8,7 @@
 |---|---|---|
 | Prompt registry | `p1-v4-base` (= production prompt), append-only | [`contracts/experiments/`](../../../contracts/experiments/README.md) |
 | Runner, both arms | Same P1 request, policy, validator and scorer. Guards: test split, frozen baseline, budget, `--confirm-paid`, frozen ground truth, crops and RP1 off, VSS prompt echo | [`experiments/README.md`](../../experiments/README.md) |
-| Agent hooks | `experiment_prompt_id`, `skip_crops`, P1 timing and usage, behind `INCIDENT_EXPERIMENTS_ENABLED=1`, never persisted | [`vm-api-contracts.md`](../../../.docs/vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b) |
+| Agent hooks | `experiment_prompt_id`, `skip_crops`, P1 timing and usage, behind `INCIDENT_EXPERIMENTS_ENABLED=1`, never persisted | [`vm-api-contracts.md`](../../../.docs/vm-api-contracts.md#experimental-settings-prompt-experiments) |
 | Reports | Configurations, fields with CIs, severity, items, reliability, inference vs end-to-end latency, the four paired comparisons, limits and exposure disclosure. A NOT REPORTABLE banner on candidate ground truth | `experiment_report.render`, `eval_experiment.py report` |
 | Reproducibility | `results.sha256`, prompt bytes vs registry, config hash, ground-truth digest, split and call count | `eval_experiment.py verify` |
 | Selection guard | Dev records only, frozen ground truth only, and the rule must be a pre-registered decisions.md heading | `experiment_report.select` |

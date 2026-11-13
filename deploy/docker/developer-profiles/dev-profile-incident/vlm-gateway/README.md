@@ -1,6 +1,6 @@
 # VLM gateway
 
-A small proxy that holds the hosted (Brev) inference key on the server, so the console can call the hosted VLMs in the Midterm flow without exposing the key. Mock mode only: in vm mode the console never calls it.
+A small proxy that holds the hosted (Brev) inference key on the server, so the console can call the hosted VLMs in gateway mode without exposing the key. Used in mock mode only: in vm mode the console never calls it.
 
 ## Run it
 
@@ -21,7 +21,7 @@ uv run --env-file .env.local uvicorn app:app --host 127.0.0.1 --port 8600
 | `POST /v1/chat/completions` | Forwards the caller's JSON body unchanged with the server-side key. No streaming, any model |
 | `GET /health` | Answers `{"status": "ok"}` |
 | `VLM_GATEWAY_API_KEY` | The hosted inference key. Required: without it the route answers an error naming the variable |
-| `VLM_GATEWAY_BASE_URL` | The endpoint it forwards to. Required, no default: set it in `.env.local`; without it the route answers an error naming the variable |
+| `VLM_GATEWAY_BASE_URL` | The endpoint it forwards to, ending in `/v1` (the route appends `/chat/completions`). Required, no default: set it in `.env.local`; without it the route answers an error naming the variable |
 | `VLM_GATEWAY_TIMEOUT_SECONDS` | Upstream timeout, default 330 s, longer than the slowest model timeout in [inference.json](../contracts/inference.json) |
 
 ## Read more

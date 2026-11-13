@@ -49,8 +49,8 @@ and deletes each after its call, and is 409 without that prefix, without R2 sett
 setting without the other is 400. A pass that cannot run or finish is skipped as in production (P1 runs without
 context) and ``experiment.caption`` says why.
 A request without them gets exactly the production response.
-With ``INCIDENT_TRACKING_ENABLED`` on, a production response adds ``tracking`` (``{enabled, matched, tracks,
-elapsed_ms, skipped}``); with it off the key is absent.
+With ``INCIDENT_TRACKING_ENABLED`` on, a production response adds ``tracking`` (``{enabled, matched, matched_by_time,
+tracks, elapsed_ms, skipped}``); with it off the key is absent.
 With ``INCIDENT_OBJECT_TRACKING_ENABLED`` on, a production response adds ``object_tracking`` (``{enabled, seeds,
 tracked, tracker, elapsed_ms, time_cap_reached, skipped, detector, items}``) for the instrument and asset tracks, and
 those evidence entries gain ``track_source``; with it off both are absent.

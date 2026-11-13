@@ -1,3 +1,12 @@
+<!--
+agents:
+  context: The registry of model prompts besides the contract's P1 and RP1.
+  read-when: Adding or changing a prompt.
+  owns: the prompt registry table and the steps to add a prompt.
+  rules: A prompt file is the exact text sent; its sha256 is recorded by evaluation.
+  check: the contracts tests for the registry
+-->
+
 # Prompt registry
 
 Every model prompt the profile sends besides the contract's P1 and RP1 prompts ([P1](../incident_extraction_prompt.txt), [RP1](../report_generation_prompt.txt)). Each file is the exact text, [registry.json](registry.json) pins its SHA-256 and lists who uses it, and the request goldens in [golden](../golden/README.md) pin what each prompt renders to.
@@ -36,7 +45,7 @@ Every model prompt the profile sends besides the contract's P1 and RP1 prompts (
 1. Edit the file. For a chart prompt, edit the TypeScript and run `npm run export:prompts` in `incident-console-v2/`.
 2. Update the entry's `sha256`, then run `python ../sync.py` for an agent prompt.
 3. Update the request goldens it changes ([golden](../golden/README.md)) in the same PR.
-4. Say why in the [Decision log](../../.docs/archive/decisions.md). Evaluation records each prompt's sha256, so the old and new versions stay distinguishable.
+4. Say why in the PR description. Evaluation records each prompt's sha256, so the old and new versions stay distinguishable.
 
 ## Rules
 

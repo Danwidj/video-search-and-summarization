@@ -1,4 +1,4 @@
-# Incident Search & Reporting Capstone — Data Layer & Schema
+# Data layer
 
 The database schema (Supabase PostgreSQL) and the object storage layout (Cloudflare R2) of `dev-profile-incident`.
 
@@ -14,7 +14,7 @@ Finals holds seven tables: `videos`, `queries`, `model_runs`, `report_revisions`
 - **A human edit appends a human revision:** `kind='human'`, `parent_id` = the revision the reviewer opened, the full edited report as `payload` and the evidence list that revision uses. It inherits the parent's `model_run_id`.
 - **Re-generation is a new AI branch:** `parent_id` NULL, no earlier edits copied.
 - **One revision per video is official.** `videos.official_revision_id` names it; NULL means none. `evidence_crops` rows belong to the video's **searchable revision**: the official revision when there is one, otherwise the newest (`searchable_revision_id(video_id)`).
-- **Revisions are append-only.** A trigger rejects `UPDATE` and `DELETE`. The exceptions are the `ON DELETE CASCADE` of the video, `apply_r2_rename` (may change only `evidence`) and `set_revision_embedding` (may only set `embedding` while it is NULL).
+- **Revisions are append-only.** A trigger rejects `UPDATE` and `DELETE`. The exceptions are the `ON DELETE CASCADE` of the video, `apply_r2_rename` (may change only `evidence`) `set_revision_embedding` (may only set `embedding` while it is NULL) and `refresh_revision_embedding` (may replace the `embedding` of a video's searchable revision with another vector, and nothing else).
 
 Each `evidence` entry describes one item:
 
@@ -82,7 +82,7 @@ Append-only report snapshots: the source of truth for every AI and human report.
 | `created_by` | `VARCHAR(256)` | Reviewer name; required when `kind='human'`, NULL for AI |
 | `created_at` | `TIMESTAMP` NOT NULL | Creation time |
 | `note` | `TEXT` | Free-text note on a human revision |
-| `embedding` | `extensions.vector(1024)` | Summary vector of the incident title and description, written with the revision. NULL when the embedding endpoint was unavailable; `set_revision_embedding` then sets it once. Never overwritten |
+| `embedding` | `extensions.vector(1024)` | Summary vector of the incident title and description, written with the revision. NULL when the embedding endpoint was unavailable; `set_revision_embedding` then sets it once. Overwritten only by `refresh_revision_embedding` |
 
 Indexes: `(video_id, revision_no DESC)`, `incident_type`, `severity_level`, and an HNSW cosine index on `embedding`. Trigger `report_revisions_no_update_delete` raises `report_revisions is append-only`; it permits the delete made by the video's cascade.
 
@@ -173,15 +173,6 @@ Stores `p_crops` for the video's searchable revision without touching the offici
 
 #### `search_evidence_items`
 
-```
-search_evidence_items(
-  p_query_embedding extensions.vector(1024), p_top_k INTEGER DEFAULT 10,
-  p_min_similarity DOUBLE PRECISION DEFAULT 0.2,
-  p_item_types TEXT[] DEFAULT ARRAY['entity','instrument','asset'],
-  p_incident_types TEXT[] DEFAULT NULL, p_min_severity INTEGER DEFAULT NULL,
-  p_max_severity INTEGER DEFAULT NULL, p_video_id VARCHAR DEFAULT NULL
-)
-```
 
 pgvector HNSW cosine search over `evidence_crops.embedding`, scoped to each video's searchable revision. `p_video_id` limits the scan to one video before ranking. `p_query_embedding` may be NULL only with `p_video_id`: the video's crops are then listed in video time order with `similarity_score` 0. Returns the video id, the revision id and its facets, the crop (with its `timestamp_seconds`, slice and `frame`) and `similarity_score`. The console route passes `p_min_similarity` 0.35 for a text query.
 
@@ -191,7 +182,7 @@ Cosine search over `report_revisions.embedding`, restricted to each video's sear
 
 #### Repair functions
 
-`list_revisions_missing_crops`, `repair_revision_crops`, `list_revisions_missing_embeddings` and `set_revision_embedding` find and heal a searchable revision that has evidence images but no `evidence_crops` rows, or a NULL summary vector. Neither writer overwrites existing data. The console's analysis job loop runs the repair at start, every 2 minutes and after each job; with no job loop running, use `POST /api/videos/repair-crops`.
+`list_revisions_missing_crops`, `repair_revision_crops`, `list_revisions_missing_embeddings`, `set_revision_embedding` and `refresh_revision_embedding` (replaces a searchable revision's stored vector, used by `scripts/refresh_revision_embeddings.py` after the summary text recipe changes) find and heal a searchable revision that has evidence images but no `evidence_crops` rows, or a NULL summary vector. Neither writer overwrites existing data. The console's analysis job loop runs the repair at start, every 2 minutes and after each job; with no job loop running, use `POST /api/videos/repair-crops`.
 
 #### `list_incident_report_summaries`
 
@@ -220,6 +211,21 @@ They run on the database clock, so the stale rule does not depend on the console
 - **Laptop tooling** (the `supabase` CLI) uses direct Postgres (`INCIDENT_DB_DSN`). Direct Postgres from the VM has been blocked on and off, so the agent and console stay on HTTPS.
 - **No client transactions:** PostgREST has none, so the agent's report write is one `INSERT` with `revision_no = max + 1`, retried when the unique key rejects a concurrent writer (SQLSTATE 23505), five attempts at most. In agent mode the agent inserts a placeholder `model_runs` row (`insert_model_run_if_absent`) and the console's later upsert fills in `notes`.
 
+#### Finals keys (`sb_secret_`)
+
+Finals has no legacy JWT keys: the server key is `sb_secret_...` and the public key `sb_publishable_...`. They are not JWTs, so the Supabase gateway rejects one sent as `Authorization: Bearer` ("invalid JWT"); send it in the `apikey` header only. Who sends the key, and whether it copes:
+
+| Sender | How | Handles `sb_secret_`? |
+|---|---|---|
+| `vss-agent` (`utils/incident_db.py`, and through it `SupabaseSearchStore`) | `supabase-py` `acreate_client` | Depends on the installed `supabase` version: `pyproject.toml` only requires `supabase~=2.0`, `uv.lock` locks 2.33.0, and the VM venv was built by hand. Older 2.x releases validate the key as a JWT and raise `Invalid API key` (2.15.x still does; 2.18.0 and later do not). Prove it with the VM key check (see [`incident-operate-vm`](../skills/incident-operate-vm/SKILL.md)) |
+| `mock-backend/base_profile_mock` (mock mode) | Same `incident_db`, its own venv | Yes: its `uv.lock` pins `supabase` 2.31.0 |
+| `incident-console-v2` `src/lib/postgrest/client.ts` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
+| `eval/db_postgrest.py` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
+| `supabase/tests/probe_api.sh` | `apikey`; Bearer only for `eyJ...` keys | Yes |
+| `archived/supabase/copy/`, `supabase` CLI | Direct DSN, no key | Not affected |
+
+Pin a minimum `supabase` version in `services/agent/pyproject.toml` and lock it in `uv.lock` if the VM venv is rebuilt.
+
 ### Row-Level Security (RLS) & Access Control
 
 Finals is locked down from its first migration:
@@ -235,7 +241,7 @@ Cloudflare R2 is the permanent object storage for all video media and evidence i
 ### Bucket Key Tree Layout
 
 ```
-anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
+<R2_BUCKET>/                          # bucket name comes from R2_BUCKET
 ├── anomaly/<category>/<clip-name>.mp4   # classified dataset clips (seed/eval) only
 ├── normal_videos/<clip-name>.mp4        # baseline non-incident clips
 ├── uploads/<original name>.mp4          # all user uploads; flat; always an H.264 MP4; a taken name gets -2, -3 before .mp4

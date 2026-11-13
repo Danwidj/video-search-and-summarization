@@ -3,7 +3,7 @@
 """freeze_midterm.sql / unfreeze_midterm.sql on a local replica of midterm (schema rebuilt from
 archived/supabase/midterm/midterm_base_tables.sql + the applied archived/supabase/midterm/migrations/).
 
-    cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
+    cd archived/supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
 """
 
 import tempfile
@@ -14,8 +14,8 @@ import psycopg
 from psycopg import errors
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
-ARCHIVE = ROOT.parent / "archived" / "supabase"
+LIVE = HERE.parents[2] / "supabase"
+ARCHIVE = HERE.parent
 MIGRATIONS = ARCHIVE / "midterm" / "migrations"
 APPLIED = ["20260917141225", "20260925031000", "20260926120000", "20260927120000", "20260927130000", "20260927140000",
            "20260927150000", "20260927160000", "20260927170000", "20260927180000", "20260928000000", "20261016120000"]
@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory() as tmp:
     uri = server.get_uri()
     # The real midterm 'postgres' is not a superuser; use a non-superuser owner like it.
     with psycopg.connect(uri, autocommit=True) as admin:
-        admin.execute((HERE / "supabase_stub.sql").read_text())
+        admin.execute((LIVE / "tests" / "supabase_stub.sql").read_text())
         admin.execute("CREATE ROLE owner_pg LOGIN CREATEROLE BYPASSRLS; GRANT CREATE, USAGE ON SCHEMA public TO owner_pg; GRANT anon, authenticated, service_role TO owner_pg")
         admin.execute("CREATE EXTENSION vector")  # superuser-owned, as supabase_admin owns it on midterm
         admin.execute("ALTER DEFAULT PRIVILEGES FOR ROLE owner_pg IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role")

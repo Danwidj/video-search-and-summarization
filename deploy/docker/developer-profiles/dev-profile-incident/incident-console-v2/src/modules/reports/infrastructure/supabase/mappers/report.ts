@@ -3,7 +3,7 @@
 // Row -> domain translation for one report revision (report_revisions, with
 // its video and model_runs rows) and the save_human_revision result. The only
 // place that knows those column and result names. The payload is the stored
-// incident-contract-v3 report, read leniently: a human revision may hold what
+// incident-contract-v4 report, read leniently: a human revision may hold what
 // a reviewer typed.
 
 import type { RevisionRecord } from '@/modules/reports/domain/IncidentRepository';

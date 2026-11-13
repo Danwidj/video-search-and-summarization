@@ -12,6 +12,8 @@ agents:
 
 # Incident profile: deployment
 
+A reviewer uploads a video clip, a vision-language model writes a structured incident report, and the reviewer edits, searches and asks questions about it. This page deploys and runs the profile; the [repository README](../../../../README.md) introduces the project.
+
 <img src=".docs/figures/demo-overview.gif" width="800" alt="Overview of the incident console: the incident library, one incident's report with its video, tracked boxes and evidence images, and back to the library" />
 
 ## 1. What you need
@@ -34,7 +36,8 @@ ln -sfn ../.env.local incident-console-v2/.env.local   # laptop: the console rea
 
 | Section 1 setting | Where | Meaning |
 |---|---|---|
-| `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`, `INCIDENT_DB_DSN` | both | The Supabase project |
+| `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | both | The Supabase project |
+| `INCIDENT_DB_DSN` | laptop only | The Supabase connection string, used by `setup-database.sh` |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | both | The Cloudflare R2 bucket |
 | `VSS_SSH_HOST` | laptop only | SSH host name or address of the VM. No default |
 | `NGC_CLI_API_KEY`, `OPENAI_API_KEY` | VM only | Keys for container images and the model endpoint |
@@ -102,3 +105,7 @@ Never use NVIDIA's `dev-profile.sh` for this profile: its `down` deletes the VM'
 - [Operations runbook](.docs/incident-profile-operations.md): running the VM
 - [Console reference](.docs/console-reference.md): pages, routes and configuration
 - [Data layer](.docs/data.md): tables, functions, security, R2 keys
+- [Report schema](.docs/analysis-schema.md): the report contract, validation and storage of model output
+- [Agent API contracts](.docs/vm-api-contracts.md): the `vss-agent` HTTP endpoints
+- [Skills](skills/README.md): launching, operating, analysing and migrating, step by step
+- Changing code: [AGENTS.md](AGENTS.md)

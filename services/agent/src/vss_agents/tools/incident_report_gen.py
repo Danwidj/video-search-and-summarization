@@ -938,7 +938,9 @@ async def persist_revision(
         )
         return int(row["id"])
     except Exception as exc:
-        logger.warning("incident_report_gen: failed to persist the AI revision for %s: %s", incident_id, exc)
+        logger.warning(
+            "incident_report_gen: failed to persist the AI revision for %s: %s", incident_id, type(exc).__name__
+        )
         return None
 
 

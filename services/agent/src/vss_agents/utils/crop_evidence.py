@@ -2674,7 +2674,7 @@ class CropEvidenceService:
             pending = [
                 (entry, crop)
                 for entry, crop in located
-                if not track_evidence.box_confirmed(crop.normalized_box, seconds_of(entry, crop), solid, min_iou)
+                if not track_evidence.box_confirmed(crop.normalized_box or (), seconds_of(entry, crop), solid, min_iou)
             ]
             summary = tracking.summary if tracking is not None else None
             if summary is not None:

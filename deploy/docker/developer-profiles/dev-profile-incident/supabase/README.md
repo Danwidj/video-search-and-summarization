@@ -10,15 +10,16 @@ agents:
 
 The schema of the incident profile. Finals is the live database for every service and is built from [migrations](migrations/): one baseline, then one file per later change. To build a new database from empty, run [`.scripts/setup-database.sh`](../.scripts/setup-database.sh). Midterm (`rfevukimyftzbxlehwel`) is a frozen, read-only record in [archived/supabase/midterm](../archived/supabase/midterm/README.md): never push to it.
 
-This folder is the `--workdir` target of the `supabase` CLI. It is not an initialised CLI project: there is no `config.toml`, and `supabase db push --workdir <dir> --db-url <url>` works against the bare `migrations/` folder.
+The profile folder is the `--workdir` target of the `supabase` CLI, and the CLI reads `migrations/` from it. It is not an initialised CLI project: there is no `config.toml`.
 
 ## Layout
 
 | Path | What it holds |
 |---|---|
 | [migrations/](migrations/) | The finals schema: `20261020000000_finals_baseline.sql` builds it from empty, and later files change it |
-| [tests/](tests/) | The SQL harness (`test_baseline.py`, `test_freeze.py`, which reads the archived midterm files), `security_check.sql`, `supabase_stub.sql`, `parity_check.py`, `rehearse.py`, `probe_api.sh` |
-| [../archived/supabase/r2/](../archived/supabase/r2/) | Archived: `migrate_r2_names.py`, `backfill_content_hash.py` and their tests (one-off R2 and hash backfills) |
+| [tests/](tests/) | The SQL harness (`test_baseline.py`), `security_check.sql`, `supabase_stub.sql`, `probe_api.sh` |
+| [../scripts/](../scripts/) | Live database tools: `backfill_content_hash.py` (fills `videos.content_sha256`) and `refresh_revision_embeddings.py` |
+| [../archived/supabase/r2/](../archived/supabase/r2/) | Archived: `migrate_r2_names.py` and its test (one-off R2 rename) |
 | [../archived/supabase/copy/](../archived/supabase/copy/) | Archived: `copy_midterm_to_finals.py` and `transform.sql`, the one-way midterm to finals copy. It targets the pre-revision schema, so do not run it |
 | [../archived/supabase/midterm/](../archived/supabase/midterm/README.md) | Archived: the frozen midterm record, 14 migrations, `midterm_base_tables.sql`, freeze and unfreeze SQL |
 
@@ -30,8 +31,6 @@ The harness needs no Supabase and no network. It runs on a throwaway local Postg
 cd supabase/tests
 # Applies every file in ../migrations/ in order, then runs the security and behaviour tests
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
-# Midterm freeze and unfreeze on a local replica
-uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
 ```
 
 ## Build a new database
@@ -44,22 +43,9 @@ On an empty Supabase project, put its direct or session-pooler connection string
 
 It applies every file in `migrations/` in order, records the versions, runs `security_check.sql` and stops without applying anything if the target already has tables or recorded migrations. It does not use `supabase db push`, because two migrations share the version `20261028090000`, which the CLI cannot record on an empty database. Test it with `bash .scripts/test-setup-database.sh`.
 
-## Building finals
-
-`FINALS_DSN` is the finals session-pooler URL (port 5432, plain `postgresql://`, no SQLAlchemy suffix). Run from the repo root:
-
-```bash
-W=deploy/docker/developer-profiles/dev-profile-incident
-supabase db push --workdir $W --db-url "$FINALS_DSN" --dry-run
-supabase db push --workdir $W --db-url "$FINALS_DSN"
-psql "$FINALS_DSN" -f $W/supabase/tests/security_check.sql   # expect 0 rows
-FINALS_URL=... FINALS_PUBLIC_KEY=... FINALS_SERVICE_KEY=... $W/supabase/tests/probe_api.sh
-# expect 401 or 403 for every public-key line, 200 for the service key
-```
+## Add a finals migration
 
 Finals uses the new key types: the server key is `sb_secret_...` and the public key `sb_publishable_...`, not JWTs. Send them in the `apikey` header only, as `probe_api.sh` does. The [Manage-database skill](../skills/incident-manage-database/SKILL.md#finals-keys-sb_secret_) holds the connection test and the table of every key sender.
-
-## Add a finals migration
 
 Add `migrations/YYYYMMDDHHMMSS_<what>.sql` after the baseline. Never edit an applied migration and never add files to `archived/supabase/midterm/`. In the same PR:
 - extend `tests/test_baseline.py`, which applies every file in `migrations/` in order;
@@ -67,6 +53,8 @@ Add `migrations/YYYYMMDDHHMMSS_<what>.sql` after the baseline. Never edit an app
 - update the [Data layer](../.docs/data.md).
 
 The file must apply cleanly to a fresh database and to the live one: use `IF NOT EXISTS`, `CREATE OR REPLACE`, guarded `DO` blocks and conditional drops. After applying, run `security_check.sql` against finals. To record an out-of-band change without running SQL, use `supabase migration repair --workdir $W --db-url "$FINALS_DSN" --status applied <YYYYMMDDHHMMSS>`.
+
+Apply a new file to finals **one file at a time**, not with `supabase db push`. Finals' history is not in step with `migrations/` (the two `20261028090000` files were applied by hand without history rows), so a plain `db push` would re-run them. The commands (apply with `psql`, record with `migration repair`, then `security_check.sql`) are in the [Manage-database skill](../skills/incident-manage-database/SKILL.md#apply-a-migration-to-finals). Once the history is repaired, `supabase db push --workdir $W --db-url "$FINALS_DSN" --dry-run` and then without `--dry-run` is the target state. `db push` at midterm fails ("remote migration versions not found") because midterm's history names versions that are no longer in `migrations/`; do not "fix" that with `migration repair` against midterm.
 
 ## Read more
 

@@ -62,8 +62,10 @@ def test_response_format_fixture_matches_python():
     assert json.loads((FIXTURES / "response_format.json").read_text()) == contract.response_format()
 
 
-def test_inference_json_models_match_eval():
-    assert [model["id"] for model in INFERENCE["models"]] == eval_vlm_client.MODELS
+def test_inference_json_models_include_the_eval_models_and_they_take_video():
+    by_id = {model["id"]: model for model in INFERENCE["models"]}
+    assert set(eval_vlm_client.MODELS) <= set(by_id)
+    assert not any(by_id[model_id].get("text_only") for model_id in eval_vlm_client.MODELS)
 
 
 def test_inference_json_p1_settings_match_eval():

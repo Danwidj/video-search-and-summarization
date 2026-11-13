@@ -24,7 +24,7 @@ same scorer, so a difference between them is a pipeline difference, not a scorin
 
 Guards, all enforced before any call:
 - **test split:** refused unless the config is ``final`` and names a selection record that
-  exists in ``.docs/decisions.md`` (the prompt was chosen on dev before test is touched);
+  exists in ``.docs/archive/decisions.md`` (the prompt was chosen on dev before test is touched);
 - **frozen baseline:** a config marked ``frozen_baseline`` with a completed run is never
   run again; its saved outputs are re-scored offline instead;
 - **budget:** the planned P1 calls (videos x repeats) must fit ``budget.max_p1_calls``;

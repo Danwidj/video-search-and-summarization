@@ -80,7 +80,6 @@ test('a second and box picked on the track are saved as a new human revision, as
     label: 'man',
     image: 'evidence/v/edit-1/entity-0.jpg',
     imageUrl: null,
-    pendingImage: null,
     imageTimestampSeconds: 84,
     imageBox: [...box],
     canonicalId: 'E1',

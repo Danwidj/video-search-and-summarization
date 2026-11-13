@@ -1,3 +1,12 @@
+<!--
+agents:
+  context: Running and testing the reviewer console on the laptop.
+  read-when: Running the console, or changing what it reads from .env.local.
+  owns: how to run and test the console; page, route and configuration detail lives in .docs/console-reference.md.
+  rules: Setting names only, never values. Facts belong in .docs/, not here.
+  check: npm test (includes the import-boundary test)
+-->
+
 # Incident console
 
 The Next.js web console for the incident profile. Upload a clip, run the VLM analysis, review and edit the report as versions, mark one official, search incidents and evidence in `/library`, and ask questions about a report.
@@ -49,7 +58,7 @@ npx shadcn@latest docs <component>    # usage and examples
 - [Console reference: Pages](../.docs/console-reference.md#console-pages): pages, routes and configuration
 - [Console reference: Background analysis jobs](../.docs/console-reference.md#background-analysis-jobs): queue, claim, retry, cancel
 - [Architecture: The console](../.docs/architecture.md#level-2-the-console): containers, runtime and deployment
-- [Console layout](../.docs/mvp2/console-hexagonal-architecture.md): code layout and import rules
+- [Console layout](../.docs/architecture.md#level-2-the-console): code layout and import rules
 - [Analysis schema](../.docs/analysis-schema.md): contract, validation and stored attempts
 - [Data layer](../.docs/data.md): tables and R2 keys
 - [shadcn skill](../skills/shadcn/SKILL.md): read it before UI work

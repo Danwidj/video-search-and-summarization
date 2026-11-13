@@ -623,7 +623,7 @@ class SupabaseSearchStore(SearchStore):
             }
             await client.table("queries").upsert(data, on_conflict="id").execute()
         except Exception as exc:
-            logger.warning("Failed to persist query '%s' to Supabase queries table: %s", query_id, exc)
+            logger.warning("Failed to persist query '%s' to Supabase queries table: %s", query_id, type(exc).__name__)
 
     async def persist_query_results(self, query_id: str, results: list[dict[str, Any]]) -> None:
         if not results:
@@ -650,7 +650,7 @@ class SupabaseSearchStore(SearchStore):
             ]
             await client.table("query_results").upsert(rows, on_conflict="id").execute()
         except Exception as exc:
-            logger.warning("Failed to persist query_results for '%s' to Supabase: %s", query_id, exc)
+            logger.warning("Failed to persist query_results for '%s' to Supabase: %s", query_id, type(exc).__name__)
 
 
 def get_default_search_store() -> SearchStore:
@@ -763,7 +763,9 @@ class VlmCriticEvaluator(CriticEvaluator):
 
     def _chat_url(self) -> str:
         if not self.base_url:
-            raise RuntimeError("VLM_BASE_URL is not set: the critic has no endpoint to call (set it in the agent's environment)")
+            raise RuntimeError(
+                "VLM_BASE_URL is not set: the critic has no endpoint to call (set it in the agent's environment)"
+            )
         return f"{self.base_url}/v1/chat/completions"
 
     def _build_critic_prompt(self, query: str, item: ItemHit, incident: IncidentHit) -> str:
@@ -1063,7 +1065,9 @@ def create_incident_search_router(
                 ]
                 await search_store.persist_query_results(query_id, results_to_persist)
         except Exception as exc:
-            logger.error("Failed to persist search query/results audit for query_id=%s: %s", query_id, exc)
+            logger.error(
+                "Failed to persist search query/results audit for query_id=%s: %s", query_id, type(exc).__name__
+            )
 
         if req.hide_rejected:
             hits = [hit for hit in hits if hit.critic.verdict != "rejected"]

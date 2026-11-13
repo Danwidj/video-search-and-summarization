@@ -14,12 +14,15 @@ Activate once per clone:
 | `git worktree add`, branch switch, plain `git checkout <sha>` | `post-checkout` | shared setup + `git lfs post-checkout` |
 | `git merge`, `git pull` | `post-merge` | shared setup + `git lfs post-merge` |
 | `git rebase`, `git commit --amend` | `post-rewrite` | shared setup |
-| `git commit` | `post-commit` | stock LFS shim only |
+| `git commit` (before) | `pre-commit` | secret scan of the staged changes with gitleaks or TruffleHog; a one-line warning when neither is installed |
+| `git commit` (after) | `post-commit` | stock LFS shim only |
 | `git push` | `pre-push` | stock LFS shim only |
 
 `git checkout -- <path>` (pathspec restore) also fires `post-checkout` on
 modern git (verified on 2.54.0) - harmless here, the script is a no-op when
 the env is current.
+
+`core.hooksPath` replaces `.git/hooks/`, so hooks installed by `pre-commit install` do not run; `.githooks/pre-commit` is the secret gate.
 
 ## Shared setup (`setup-worktree.sh`)
 

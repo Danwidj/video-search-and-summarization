@@ -1,6 +1,6 @@
 # incident-console-v2 Reference
 
-Pages, routes, behaviour and configuration of `incident-console-v2`, the reviewer console of `dev-profile-incident`. Companions: [`architecture.md`](architecture.md) (containers, runtime and deployment views), [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) (code layout and import rules), [`vm-api-contracts.md`](vm-api-contracts.md) (the agent's HTTP contracts) and [`data.md`](data.md) (the tables and object keys the routes write).
+Pages, routes, behaviour and configuration of `incident-console-v2`, the reviewer console of `dev-profile-incident`. Companions: [`architecture.md`](architecture.md) (containers, runtime and deployment views), [`architecture.md`](architecture.md#level-2-the-console) (code layout and import rules), [`vm-api-contracts.md`](vm-api-contracts.md) (the agent's HTTP contracts) and [`data.md`](data.md) (the tables and object keys the routes write).
 
 ## Console configuration
 
@@ -11,13 +11,14 @@ Server-only variables, read from `incident-console-v2/.env.local` (a symlink to 
 | `ANALYSIS_MODE` | `gateway` (default) or `agent` |
 | `VLM_GATEWAY_URL` | the gateway, required in gateway mode |
 | `INCIDENT_AGENT_BASE_URL` | the agent or the mock (chat, search, embeddings, and analysis in agent mode); uploads do not use it |
-| `VLM_MODEL` | default model in the picker, one of `contracts/inference.json` (default `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`) |
+| `VLM_MODEL` | default model in the picker, one of the video-capable `contracts/inference.json` entries (those without `text_only`; the six text-only models stay allowed for chat and the reviewer but are not listed) (default `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`) |
 | `CONTRACTS_DIR` | the shared `contracts/` directory (default `../contracts`) |
 | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | PostgREST |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | video and evidence storage |
 | `FFMPEG_PATH`, `FFPROBE_PATH` | override the npm-bundled `ffmpeg` / `ffprobe`; unset uses the bundled copy, then PATH |
 | `ANALYSIS_JOB_LOOP` | `off` keeps this console's [background analysis loop](#background-analysis-jobs) stopped (its queued jobs then wait for another console); unset runs it |
 | `INCIDENT_ANALYSIS_TIMEOUT_SECONDS` | the limit of an agent-mode analysis (default 600) |
+| `INCIDENT_CHAT_STEPS_ENABLED` | `1`, `true`, `yes` or `on` shows the chat's ["What I did"](#report-chat) list ; a request with the header `x-chat-steps: 1` turns it on for that request alone. The tracked `.env` sets it to `1`; it is read on every request, so a change needs no restart |
 
 ## Console routes
 
@@ -39,13 +40,13 @@ Server-only variables, read from `incident-console-v2/.env.local` (a symlink to 
 | `GET /api/reports/[videoId]/track?revision=&type=&item=` | An item's track samples, read from R2 on the server: `{samples: [{t, box}]}`, 404 without a track |
 | `GET /api/reports/[videoId]/frame?t=` | One video frame as a JPEG |
 | `POST /api/reports/[videoId]/evidence-crop` | Cuts a rectangle from a frame and returns it as a JPEG, writing nothing |
-| `POST /api/reports/[videoId]/evidence-image` | Stores a reviewer image under a new R2 key; the console itself no longer calls it |
+| `POST /api/reports/[videoId]/evidence-image` | Stores a reviewer image under a new R2 key; for scripts |
 | `POST /api/reports/[videoId]/evidence-sweep` | Removes images a failed save left behind ([`data.md`](data.md#2-cloudflare-r2-storage-architecture)) |
 | `POST /api/reports/[videoId]/box/describe`, `.../box/track` | Proxies of the agent's [box tool routes](vm-api-contracts.md#reviewer-box-tool-console-proxy) |
 | `POST /api/search` | Find evidence, through the agent's [incident search](vm-api-contracts.md#post-apiv1incidentssearch) |
 | `POST /api/chat`, `POST /api/chat/video-check`, `POST` and `GET /api/chat/gap-retry` | The [report chat](#report-chat) |
 | `GET /api/dashboard`, `POST /api/dashboard/chart` | The [dashboard](#dashboard-analytics-and-cross-filtering) and its chart requests |
-| `GET /api/videos`, `GET /api/videos/[videoId]/runs` | Videos and a video's analysis history |
+| `GET /api/videos`, `GET /api/videos/[videoId]/runs` | Videos and a video's analysis history (not called by the UI) |
 | `POST /api/videos/[videoId]/runs`, `PUT` and `DELETE /api/videos/[videoId]/official` | [Re-generation and the official version](#re-generation-and-the-official-version) |
 | `POST /api/videos/repair-crops` | The [repair step](#search-rows-and-repair) |
 

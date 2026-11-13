@@ -69,7 +69,7 @@ uv run python -m evalv2 review export --records $RUN/records.jsonl --out $RUN/re
 
 ```bash
 cd deploy/docker/developer-profiles/dev-profile-incident/eval
-export EVALV2_DATA_ROOT=/home/hengz/video-search-and-summarization/deploy/docker/developer-profiles/dev-profile-incident/eval/eval_data
+export EVALV2_DATA_ROOT=<repo>/deploy/docker/developer-profiles/dev-profile-incident/eval/eval_data
 ENVF=$EVALV2_DATA_ROOT/../.env.local          # VLM_GATEWAY_*, R2_* (signing only), NVIDIA_API_KEY (judge)
 RUNS=$EVALV2_DATA_ROOT/v2/runs                # private (gitignored)
 
@@ -395,7 +395,7 @@ Each re-imports with 0 decisions. Box review sheets (`v2_box_frames.py sheet`) a
 **Launch** (from `eval/`, after the owner approves; the config hash changes if the subjects are cut):
 
 ```bash
-export EVALV2_DATA_ROOT=/home/hengz/evalv2-data   # where v2/references/dashboard-references-v2/ lives
+export EVALV2_DATA_ROOT=<eval-data-dir>   # where v2/references/dashboard-references-v2/ lives
 ENVF=<profile .env.local with VLM_GATEWAY_BASE_URL and VLM_GATEWAY_API_KEY>   # no R2 is needed
 RUNS=$EVALV2_DATA_ROOT/v2/runs
 uv run --frozen python -m evalv2 preflight --config experiments/v2/c1c-dashboard-pilot.json      # 225 items, ok
@@ -482,7 +482,7 @@ Each block carries its denominator, per tier group (`all`, `ai_validated`, `ai_p
 - **Rule:** run the chat pilot alone on the gateway.
 - **Agent-side tests:** run them with the agent's Python and `--noconftest`, because the eval conftest imports streamlit: `$A -m pytest tests/v2/test_v2_chat_harness_agent.py --noconftest`.
 
-**Launch** (from `eval/`, `EVALV2_DATA_ROOT=/home/hengz/evalv2-data` or the main checkout's `eval/eval_data`; `$OUT` private):
+**Launch** (from `eval/`, `EVALV2_DATA_ROOT=<eval-data-dir>` or the main checkout's `eval/eval_data`; `$OUT` private):
 ```bash
 C=experiments/v2/c1c-chat-pilot.json; A=../../../../../services/agent/.venv/bin/python
 uv run --frozen python -m evalv2 preflight --config $C                    # 140 items; hard_stop gap listed
@@ -543,7 +543,7 @@ $ uv run --frozen python -m evalv2 preflight --config experiments/v2/c1b-track-b
 {"experiment": "v2-c1b-track-b-pilot", "half": "dev", ..., "ok": true, "problems": [], "budget_mode": "hard_stop", "hard_stop": [9 entries]}
 $ uv run --frozen python -m evalv2 preflight --config experiments/v2/c1b-track-b-pilot-captions.json
 {"experiment": "v2-c1b-track-b-pilot-captions", "half": "dev", ..., "ok": true, "problems": [], "budget_mode": "hard_stop", "hard_stop": [12 entries]}
-$ EVALV2_DATA_ROOT=/home/hengz/evalv2-data uv run --frozen python -m evalv2 preflight --config experiments/v2/c1c-dashboard-pilot.json
+$ EVALV2_DATA_ROOT=<eval-data-dir> uv run --frozen python -m evalv2 preflight --config experiments/v2/c1c-dashboard-pilot.json
 {"experiment": "v2-c1c-dashboard-pilot", "half": "dev", "tasks": {"dashboard": {"items": 225, "by_subject": {"ultra-chart": 75, "nano-chart": 75, "super-chart": 75}}}, "retry_policy": "retry-v2", "ok": true, "problems": []}
 ```
 

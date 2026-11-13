@@ -8,7 +8,7 @@
 #   ./native-services.sh stop [service...]
 #   ./native-services.sh restart [service...]
 #   ./native-services.sh status [--porcelain] [service...]
-#   ./native-services.sh logs [service] [-f]
+#   ./native-services.sh logs [service]          (always follows; Ctrl-C to stop)
 #
 # Services supported:
 #   - vss-agent (default port 8000)

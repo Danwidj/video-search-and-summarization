@@ -15,6 +15,8 @@
 
 # Developer profile: incident search & reporting capstone.
 #
+# Overrides only for the services this profile still runs or scales down.
+#
 # Disable SDRC services: sdr-controller is NVIDIA's stream router for dynamically
 # registering live RTSP cameras. Unused in dev-profile-incident (which uses file
 # upload + analyze) and port-clashes with streamprocessing on port 10000.
@@ -34,53 +36,8 @@ services:
   sdr-controller:
     scale: 0
 
-  # Restart policy overrides: set unless-stopped for all persistent appliance
-  # and profile services so a deliberate 'docker compose stop' stays stopped
-  # across system reboots.
-  redis:
-    restart: unless-stopped
-
-  vss-haproxy-ingress:
-    restart: unless-stopped
-    environment:
-      # vss-agent binds 127.0.0.1 only (no auth, holds the DB admin key); haproxy is host-network, so loopback works.
-      VSS_AGENT_BACKEND_HOST: 127.0.0.1
-
-  centralizedb:
-    restart: unless-stopped
-
-  vst-ingress:
-    restart: unless-stopped
-
-  # GPU pinning overrides: pin all Docker appliances that use GPU or the nvidia runtime
-  # to GPU 0, ensuring GPU 1 remains completely untouched for co-tenant training workloads.
-  streamprocessing-ms:
-    restart: unless-stopped
-    deploy:
-      restart_policy:
-        condition: unless-stopped
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=0
-      - CUDA_VISIBLE_DEVICES=0
-
-  sensor-ms:
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=0
-      - CUDA_VISIBLE_DEVICES=0
-
+  # GPU pinning: keep the appliances that use the nvidia runtime on GPU 0, so
+  # GPU 1 stays untouched for co-tenant training workloads.
   nvstreamer-2d-fusion:
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
@@ -91,25 +48,12 @@ services:
       - NVIDIA_VISIBLE_DEVICES=0
       - CUDA_VISIBLE_DEVICES=0
 
-  rtvi-embed:
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=0
-      - CUDA_VISIBLE_DEVICES=0
-
+  # Restart policy: unless-stopped, so a deliberate 'docker compose stop' stays
+  # stopped across system reboots.
   kafka:
     restart: unless-stopped
 
   phoenix:
-    restart: unless-stopped
-
-  vss-ui:
     restart: unless-stopped
 
   elasticsearch:
@@ -118,11 +62,5 @@ services:
   logstash:
     restart: unless-stopped
 
-  kibana:
-    restart: unless-stopped
-
   vss-video-analytics-api-fusion:
-    restart: unless-stopped
-
-  vss-search-analytics-2d-fusion:
     restart: unless-stopped

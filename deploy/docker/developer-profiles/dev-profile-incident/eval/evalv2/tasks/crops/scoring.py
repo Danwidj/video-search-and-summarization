@@ -51,7 +51,7 @@ PADDING = 0.05  # crop_evidence.apply_box_padding's default for the stored evide
 UNSCORABLE_GAPS = ("crop-call cap reached", "no evidence detector is configured", "no evidence image store",
                    "crop failed", "no frame produced at", "image upload failed",
                    "privacy blur failed, so no image was stored", "evidence cropping failed",
-                   "evidence cropping skipped")
+                   "evidence cropping skipped", "detector stopped after")
 TIERS = ("human_verified", "ai_validated", "ai_proposed")
 
 

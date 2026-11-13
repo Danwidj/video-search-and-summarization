@@ -28,7 +28,7 @@ Everything here reads saved results only: no model, judge or network call.
 - ``budget`` states the call volume per stage from the configs (tokens and cost stay unknown
   until the Stage 0 pilot measures them).
 - ``select`` applies a **pre-registered** selection rule to **dev** results only; it refuses
-  test-split records and refuses to run until the rule is recorded in ``.docs/decisions.md``
+  test-split records and refuses to run until the rule is recorded in ``.docs/archive/decisions.md``
   (plan D9 is not decided by this code).
 """
 

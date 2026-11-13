@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 #
-# Prove the tunnel is up from the laptop end (replaces the old
-# `mdx-tunnel-incident-check` shell alias —
-# same behavior, standalone script). LAPTOP SIDE ONLY, like tunnel.sh.
+# Prove the tunnel is up from the laptop end. LAPTOP SIDE ONLY, like tunnel.sh.
 #
 # The agent health check must pass. Only :8000 is forwarded: the VM no longer
 # runs the VIOS/VST HAProxy ingress (:7777).

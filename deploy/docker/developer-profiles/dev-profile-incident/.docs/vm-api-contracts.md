@@ -54,7 +54,7 @@ Request:
 | `reviewer_prompt` | string | none | max 1000 chars. Added to the report prompt for this run only |
 | `skip_rp1` | bool | false | P1 only; `report_text` stays null |
 | `video_duration_seconds` | number | none | a finite number above 0, else `422`. Without it the agent reads the MP4 header from `video_url` |
-| `experiment_prompt_id`, `skip_crops`, `max_crop_calls` | | none | **Experimental** ([below](#experimental-settings-prompt-experiments-pr-6b)) |
+| `experiment_prompt_id`, `skip_crops`, `max_crop_calls` | | none | **Experimental** ([below](#experimental-settings-prompt-experiments)) |
 
 Response `200` (an `IncidentReportGenOutput`, not the bare report). It takes tens of seconds to minutes; use a long timeout.
 
@@ -109,7 +109,7 @@ Off by default in code; `native-services.sh` starts the VM agent with it on (`1`
 
 Clips of `INCIDENT_CHUNK_MIN_CLIP_SECONDS` (30) or less are not chunked. The captions are context for P1 only: the response does not return them and nothing stores them. A skipped pass never fails the analysis: P1 runs without context, and the agent log says why (`caption pass skipped for <id>: <reason>`). It needs `ffmpeg` on the agent's `PATH` ([operations](incident-profile-operations.md#default-analysis-stack-in-vm-mode)).
 
-### Experimental settings (prompt experiments, PR 6B)
+### Experimental settings (prompt experiments)
 
 `experiment_prompt_id`, `skip_crops`, `max_crop_calls`, `max_zoom_calls`, `experiment_object_tracking`, `experiment_captions` and `max_caption_calls` exist for the eval prompt experiments ([`eval/experiments/README.md`](../eval/experiments/README.md)). **A request without any of them is a production request.**
 
@@ -118,6 +118,18 @@ Clips of `INCIDENT_CHUNK_MIN_CLIP_SECONDS` (30) or less are not chunked. The cap
 - **Caps:** `max_crop_calls`, `max_zoom_calls` and `max_caption_calls` (each 1-200) cap the HTTP attempts of their stage, retries included.
 - **Never persisted:** an experimental request writes no `report_revisions` row and no `model_runs` placeholder (`revision_id` is `null`), and cropping with R2 settings on the agent is a **409**.
 - **Response additions:** `experiment`, `p1_report`, `p1_elapsed_ms` and `usage`.
+
+### Other agent settings
+
+Read from the agent's environment (`.env.remote` on the VM); none is in the tracked `.env`.
+
+| Variable | Effect |
+|---|---|
+| `INCIDENT_VIDEO_BASE_URL` | A public base URL for stored videos: when set, the agent builds playback and crop URLs from it instead of signing R2 URLs |
+| `INCIDENT_SEARCH_STORE` | `memory` or `supabase` picks the search store; unset uses `supabase` when the database is configured, else `memory` |
+| `INCIDENT_TRACKING_MIN_IOU` | Minimum overlap (default 0.3) between a located box and a solid track for the track to confirm the box |
+| `INCIDENT_TRACKING_END_MARGIN_SECONDS` | Seconds (default 20) after a track's last sample within which it still counts |
+| `INCIDENT_EXPERIMENT_REGISTRY` | Path to the prompt-experiment registry, instead of `contracts/experiments/registry.json` in the checkout |
 
 ## `POST /api/v1/incidents/search`
 
@@ -142,7 +154,7 @@ Response `200`:
 |---|---|
 | `query_id`, `query`, `total_hits`, `execution_time_ms` | `total_hits` 0 is a normal answer |
 | `hits[].result_id`, `hits[].rank`, `hits[].similarity_score` | ranked, `rank` starts at 1 |
-| `hits[].item` | `item_type`, `item_id`, `name`, `label`, `description`, `threat_level`, `holder_entity_id`, `crop_image_url`, `timestamp_seconds`, `bounding_box` (null or `[ymin, xmin, ymax, xmax]`) |
+| `hits[].item` | `item_type`, `item_id`, `name`, `label`, `description`, `threat_level`, `holder_entity_id`, `crop_image_url`, `timestamp_seconds`, `bounding_box` (null or `[ymin, xmin, ymax, xmax]`), `slice_start_seconds` and `slice_end_seconds` (optional: the item's time range to play, first to last seen where it has a track, else the box second minus or plus 3 s), `frame_image_url` (optional signed URL of the whole frame; null or absent when none is stored) |
 | `hits[].incident` | `incident_id`, `model_run_id`, `incident_type`, `severity_level` (1-5), `title`, `description`, `playback_url`, `incident_window` (`[start_s, end_s]`) |
 | `hits[].critic` | `verdict` (`confirmed`, `rejected`, `unverified`), `confidence`, `rationale` |
 
@@ -187,12 +199,12 @@ Response `200`: `{"session_id", "message": {"role": "assistant", "content", "cit
 | Mode | How | Response |
 |---|---|---|
 | `template` (default) | No model. The answer is composed from the version's report (`utils/report_answers.py`) by the kind of question: what happened, who, objects, what was taken, weapons, when, severity and type, where. A question the report cannot answer gets "This report doesn't mention ..." and no citations | `chat-contract-v1` |
-| `routed` | Code answers a report-field question with no model call; the chat model reads the version for the rest. Routes and rules: [`mvp2/chat-routing.md`](mvp2/chat-routing.md) | [`chat-contract-v3`](../contracts/chat-contract-v3/README.md): adds `message.source` and `grounding.route` (`deterministic`, `report_llm` or `insufficient`) |
+| `routed` | Code answers a report-field question with no model call; the chat model reads the version for the rest. `grounding.route` is `deterministic` for a question that asks only for report fields (also greetings and unrelated questions), `report_llm` for anything that names, reasons or leans on the conversation, and `insufficient` when the report cannot answer. An optional video check runs only on the reviewer's click after an offer, and is off | [`chat-contract-v3`](../contracts/chat-contract-v3/README.md): adds `message.source` and `grounding.route` (`deterministic`, `report_llm` or `insufficient`) |
 | `grounded` | A chat model (`INCIDENT_CHAT_MODEL`, default `nvidia/nemotron-3-ultra`) answers from one report version: `version_id`, else the incident's official version (`409` when it has none), or the reviewer's `draft_report`. Citations are checked against the version's item ids. A library question (no incident and no version) is planned by the model, filtered and counted exactly by code | [`chat-contract-v2`](../contracts/chat-contract-v2/README.md): adds `message.insufficient_evidence` and `grounding` |
 
 - **Prose and citations:** items are named by their labels or descriptions; the prose holds no item or incident id unless the question asks for ids. The citations are the items the answer relies on, each with its evidence entry's crop and the second that crop was found at.
 - **A library question in template mode** gets "This chat mode doesn't answer questions across the whole library yet".
-- **Model failures:** in grounded mode a model failure or a malformed answer is a `502` with a plain `detail`; routed mode instead answers `200` ([failures](mvp2/chat-routing.md#when-something-fails)).
+- **Model failures:** in grounded mode a model failure or a malformed answer is a `502` with a plain `detail`; routed mode instead answers `200` with what the report settles and a note that the reader is unavailable, or a request to try again.
 
 ## `POST /api/v1/incidents/{video_id}/video-check`
 
