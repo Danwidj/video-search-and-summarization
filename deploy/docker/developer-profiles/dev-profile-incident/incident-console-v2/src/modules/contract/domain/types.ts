@@ -75,6 +75,8 @@ export interface InferenceModel {
   id: string;
   label: string;
   timeout_seconds: number;
+  /** Accepts no video: hidden from the upload picker, still allowed for chat, the reviewer and eval. */
+  text_only?: boolean;
   notes?: string;
 }
 

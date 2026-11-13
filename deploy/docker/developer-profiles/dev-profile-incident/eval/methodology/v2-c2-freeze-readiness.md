@@ -98,7 +98,7 @@ Pins: [pre-registration (proposed)](evaluation-v2-preregistration.md).
 
 **Options:**
 - **(H) Historical, chosen for C3 (D3).** The experiment agent at `acbf892ba` with the C1b flags, labelled "Track B (C1b profile)".
-  - Verified offline: the launcher's dry run (`EXPERIMENT_AGENT_DRY_RUN=1`) starts the code at `acbf892ba` from `/home/hengz/vss-wt-pilot`, with `env -i`, experiments on and no tracking variables. That reproduces C1b's pinned flags.
+  - Verified offline: the launcher's dry run (`EXPERIMENT_AGENT_DRY_RUN=1`) starts the code at `acbf892ba` from `<pilot-checkout>`, with `env -i`, experiments on and no tracking variables. That reproduces C1b's pinned flags.
   - Pins: the commit, flags, `nat` environment (frozen package list `e8d1410e…`), launcher, config and ffmpeg hashes, all in the pre-registration §1 and the freeze manifest.
   - The C3 run directory is pre-seeded with C1b's pinned identity, so the first reply from any differing agent stops the run (`AgentDriftError`). It is never replaced by the current configuration.
   - Dev and test then share one configuration.

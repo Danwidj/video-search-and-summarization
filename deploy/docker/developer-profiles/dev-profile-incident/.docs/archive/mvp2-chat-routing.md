@@ -64,7 +64,7 @@ Conversations are per version: `ReportPage` holds a thread per version and draft
 
 ## Evaluation (2026-11-06, no model calls)
 
-Method: template answers composed by this code for the frozen C3 questions and corpora, scored by the frozen code scorer at worktree commit `563b6305c`, against the stored Nemotron 3 Ultra answers. Incident questions only: 99 on the oracle corpus (ground-truth reports), 89 on the system corpus (Nano contingency reports). References are AI-generated. Scripts and outputs: `/home/hengz/evalv2-data/v2/runs/chat-route-compare-2026-11-06/`. Frozen runs are unchanged (checksums verified).
+Method: template answers composed by this code for the frozen C3 questions and corpora, scored by the frozen code scorer at worktree commit `563b6305c`, against the stored Nemotron 3 Ultra answers. Incident questions only: 99 on the oracle corpus (ground-truth reports), 89 on the system corpus (Nano contingency reports). References are AI-generated. Scripts and outputs: `<eval-data-dir>/v2/runs/chat-route-compare-2026-11-06/`. Frozen runs are unchanged (checksums verified).
 
 | Exact answers | Oracle: template | Oracle: grounded | System: template | System: grounded |
 |---|---|---|---|---|
@@ -84,7 +84,7 @@ The comparison also found two bugs, now fixed: "What kind of incident does this 
 
 ## Text-model pilot (2026-11-06, paid, owner-approved)
 
-Real calls to Nemotron 3 Ultra through the real router, from an isolated local process: no video call, no shared service touched. Runner: `eval/scripts/chat_routed_pilot.py`. Set: `eval/experiments/v2/chat-routed-pilot/`. Outputs and manifests: `/home/hengz/evalv2-data/v2/runs/chat-routed-pilot-2026-11-06/`. Frozen runs are unchanged (checksums verified).
+Real calls to Nemotron 3 Ultra through the real router, from an isolated local process: no video call, no shared service touched. Runner: `eval/scripts/chat_routed_pilot.py`. Set: `eval/experiments/v2/chat-routed-pilot/`. Outputs and manifests: `<eval-data-dir>/v2/runs/chat-routed-pilot-2026-11-06/`. Frozen runs are unchanged (checksums verified).
 
 **Spend:** 80 calls, 126,324 tokens (117,998 prompt, 8,326 completion), 0 failed calls. About $0.09 at OpenRouter's public rate for this model ($0.60 and $2.40 per million). That rate is an assumption: Switchyard's billing is not visible here.
 

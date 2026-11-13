@@ -41,6 +41,7 @@ On by default in vm mode: `./start.sh --mode vm` runs `tracking-stack.sh start` 
 ./tracking-stack.sh stop                # stop by name; keeps containers, volumes and built engines
 ```
 
+- **Overrides:** `TRACKING_ENV_FILE` (the env file, default `.env.remote`), `TRACKING_COMPOSE_PROJECT` (default `COMPOSE_PROJECT_NAME` in that file, else `mdx`) and `TRACKING_READY_TIMEOUT` (seconds to wait for perception, default 900).
 - **First start** stages the RT-DETR model with `ngc` (key `NGC_CLI_API_KEY` from the env file) and builds TensorRT engines (about 7 to 10 minutes); later starts take about 90 s.
 - **Cost:** GPU 0 holds about 7.6 GB while the perception container is up, and the images take about 40 GB.
 - **HDR clips crash DeepStream** (BT.2020/HLG, as iPhone HDR records). Convert HDR to BT.709 before NvStreamer, or skip tracking for it.
@@ -61,7 +62,7 @@ Before it starts the agent, `native-services.sh` also installs what the agent ne
 
 ### Pruning Retired Docker Images
 
-`skills/incident-operate-vm/scripts/prune-native-images.sh`, run on the VM, removes the unused images and stopped containers of the services that now run natively. It prompts first when the native virtual environment is missing.
+`skills/incident-operate-vm/scripts/prune-native-images.sh`, run on the VM, removes the unused images and stopped containers of the services that now run natively. It prompts first when the native virtual environment is missing; `--non-interactive` skips that prompt and goes on.
 
 ### Editable Agent Reinstall (`services/agent`)
 

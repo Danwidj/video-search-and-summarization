@@ -441,7 +441,7 @@ async def get_db() -> IncidentDB | None:
         try:
             _db = await IncidentDB.connect()
         except Exception as exc:
-            logger.warning("Incident DB unavailable: %s", exc)
+            logger.warning("Incident DB unavailable: %s", type(exc).__name__)
             return None
     return _db
 

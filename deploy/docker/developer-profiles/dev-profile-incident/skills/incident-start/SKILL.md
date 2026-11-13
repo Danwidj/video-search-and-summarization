@@ -17,7 +17,7 @@ metadata:
 
 | User says | Mode | Why |
 |---|---|---|
-| "run the mock backend", "offline from the VM" (a mock, a backup that mimics the backend; UI and backend work is verified on the VM, and it is never a fallback when the VM is unreachable - stop and report) | `--mode mock` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. `--mode local` still works as a deprecated alias. |
+| "run the mock backend", "offline from the VM" (a mock, a backup that mimics the backend; UI and backend work is verified on the VM, and it is never a fallback when the VM is unreachable - stop and report) | `--mode mock` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. |
 | "run it", "run against the VM", "real agent", "full stack", "demo", "frontend work", any UI or backend work, no preference | `--mode vm` (default) | Real native `vss-agent` and Phoenix on the VM. `start.sh` self-heals missing services: it starts stopped ones, pulls missing images, clones a missing checkout, and fails with a reason instead of hanging. |
 
 Details of each path: [launch modes and connectivity](../../.docs/architecture.md#launch-modes-and-connectivity) in `.docs/architecture.md`.
@@ -64,7 +64,7 @@ Details of each path: [launch modes and connectivity](../../.docs/architecture.m
 
 **Lifecycle (vm mode):** when every expected Docker and native service is already up, `start.sh` skips the backend deploy and goes straight to the tunnel. The person-tracking stack (`ENABLE_TRACKING`, default on) is started on every run, even when the deploy was skipped, and if it fails `start.sh` exits with status 1 before the tunnel opens; `ENABLE_TRACKING=false ./start.sh` skips it.
 
-Environment overrides such as `ENABLE_ANALYTICS`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are documented in the header of [`start.sh`](../../start.sh). The vm-mode tunnel forwards only `localhost:8000` to the agent: uploads go from the console straight to R2, so it needs no `:7777` forward (`VSS_VM_IP` matters only to the standalone `.scripts/tunnel.sh`).
+Environment overrides such as `ENABLE_ANALYTICS`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are documented in the header of [`start.sh`](../../start.sh). The vm-mode tunnel forwards only `localhost:8000` to the agent: uploads go from the console straight to R2, so it needs no `:7777` forward.
 
 ## Verify
 
@@ -87,7 +87,7 @@ Then run one upload to report with [`incident-analyze-video`](../incident-analyz
 |---|---|
 | `start.sh` aborts at the SSH preflight | Read the `Cause:` / `Fix:` lines it prints (Tailscale logged out or stopped, VM offline in the tailnet, DNS, SSH timeout or refused, login rejected, host key changed). More: [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting). |
 | `start.sh` stops with `[vm] ERROR` or "timed out" | The Docker step on the VM failed: exit 10 repo, 11 `.env.remote` missing, 12 docker unusable, 13 image pull (NGC login), 14/124 `compose up` failed or stuck (its output shows container states and logs). Tunables: `VSS_PULL_TIMEOUT`, `VSS_COMPOSE_UP_TIMEOUT`, `VSS_NATIVE_START_TIMEOUT`. |
-| Tunnel step fails | `start.sh` says whether a laptop port is taken, the SSH forward is blocked (or `VSS_AGENT_HOST` on the VM is bound to a LAN address instead of `127.0.0.1`), the VM address is wrong (set `VSS_VM_IP`), or the agent is down on the VM. |
+| Tunnel step fails | `start.sh` says whether a laptop port is taken, the SSH forward is blocked (or `VSS_AGENT_HOST` on the VM is bound to a LAN address instead of `127.0.0.1`), or the agent is down on the VM. |
 | Logged in as the wrong VM user | Set `User` under your `Host` entry for `VSS_SSH_HOST`, or `export VSS_SSH_USER=<name>`. |
 | Port 3200, 7777, 8000 or 8600 already in use | A previous run is still alive. Stop it, or find it with `lsof -i :<port>`. |
 | Console health shows Supabase or R2 not configured | A missing variable or broken symlink. Re-run the prerequisite checks. |

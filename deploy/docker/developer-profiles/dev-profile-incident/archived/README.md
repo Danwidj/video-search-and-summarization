@@ -13,6 +13,6 @@ Nothing here is launched by [`start.sh`](../start.sh), set up by `.githooks` (no
 |---|---|---|---|
 | [`supabase/midterm/`](supabase/midterm/README.md) | Frozen midterm database record: 14 migrations, base tables, freeze and unfreeze SQL | 2026-11-11 | [`supabase/migrations/`](../supabase/migrations/) |
 | [`supabase/copy/`](supabase/copy/) | One-way midterm to finals data copy | 2026-11-11 | None (done once) |
-| [`supabase/r2/`](supabase/r2/) | One-off R2 rename and content-hash backfill scripts | 2026-11-11 | None (done once) |
+| [`supabase/r2/`](supabase/r2/) | One-off R2 rename script | 2026-11-11 | None (done once) |
 
 The midterm harness (`test_freeze.py`, `rehearse.py`, `parity_check.py`) lives in [`supabase/tests/`](supabase/tests/) and reads these archived files.

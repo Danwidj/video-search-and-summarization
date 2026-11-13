@@ -15,7 +15,7 @@ Canonical facts:
 - Setup and variables: [`eval/README.md`](../../eval/README.md)
 - Methodology and recorded 3-model results: [`eval/docs/vlm_benchmark_results.md`](../../eval/docs/vlm_benchmark_results.md)
 - Handoff and open items (including the dropped `gt_*` tables): [`.docs/archive/mvp2-eval.md`](../../.docs/archive/mvp2-eval.md)
-- Retrieval benchmark (Track R): only the offline metrics module `eval/retrieval_metrics.py` exists (work-order step 1, tested by `tests/test_retrieval_metrics.py`). There is no retrieval run command yet; the harness is step 3 of [`.docs/mvp2/eval.md` §10](../../.docs/archive/mvp2-eval.md#10-work-order-and-definition-of-done).
+- Retrieval benchmark (Track R): only the offline metrics module `eval/retrieval_metrics.py` exists (work-order step 1, tested by `tests/test_retrieval_metrics.py`). There is no retrieval run command yet; the harness is step 3 of [`.docs/archive/mvp2-eval.md` §10](../../.docs/archive/mvp2-eval.md#10-work-order-and-definition-of-done).
 
 ## Prerequisites
 

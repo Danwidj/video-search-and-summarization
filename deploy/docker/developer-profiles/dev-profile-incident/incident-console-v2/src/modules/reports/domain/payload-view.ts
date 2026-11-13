@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// A stored revision payload (the incident-contract-v3 report, read leniently:
+// A stored revision payload (the incident-contract-v4 report, read leniently:
 // a human revision holds what a reviewer typed) as the structured shapes the
 // report view shows, each item joined to its evidence entry. Shared by the
 // Supabase and in-memory adapters so both read a payload the same way.

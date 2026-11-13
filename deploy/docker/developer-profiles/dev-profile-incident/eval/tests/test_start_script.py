@@ -102,14 +102,10 @@ def test_start_script_accepts_canonical_modes(tmp_path: Path, args: list[str], e
 
 
 @pytest.mark.parametrize(("args", "extra_env"), [(["--mode", "local"], None), ([], {"VSS_START_MODE": "local"})])
-def test_start_script_local_is_deprecated_alias_for_mock(
-    tmp_path: Path, args: list[str], extra_env: dict[str, str] | None
-):
+def test_start_script_rejects_the_removed_local_mode(tmp_path: Path, args: list[str], extra_env: dict[str, str] | None):
     res = _run_on_fake_vm(tmp_path, args, extra_env)
     assert res.returncode == 1
-    assert "mode 'local' is deprecated; use 'mock'" in res.stderr
-    assert "must be 'vm' or 'mock'" not in res.stderr
-    assert "run this from your laptop, not on the VM" in res.stderr
+    assert "must be 'vm' or 'mock'" in res.stderr
 
 
 def test_start_script_refuses_to_run_on_the_vm_host(tmp_path: Path):

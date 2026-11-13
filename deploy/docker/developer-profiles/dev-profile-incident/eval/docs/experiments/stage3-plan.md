@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Configurations | **C1** direct VLM + `p1-v4-base`; **C2** VSS + `p1-v4-base`; **C3** VSS + V1 `p1-v4-e01-severity`; **C4** direct VLM + V1 |
-| Selected prompt | V1, chosen on dev by D9 v2 and approved by the owner on 2026-10-29 ([record](../../../.docs/decisions.md#2026-10-29-stage-2-selection-d9-v2-p1-v4-e01-severity)) |
+| Selected prompt | V1, chosen on dev by D9 v2 and approved by the owner on 2026-10-29 ([record](../../../.docs/archive/decisions.md#2026-10-29-stage-2-selection-d9-v2-p1-v4-e01-severity)) |
 | Clips | The 55 test clips of `split-v2`: Animal attack 10, Assault 10, Burglary 13, Explosion 10, Road accident 12. No dev clip |
 | Repeats | **1 per configuration** (owner, 2026-10-29; D10 had planned 2), so **220 video-runs** |
 | Order | D10: video order shuffled with `random.Random(20261027 + 1)`; at each clip all four configurations run interleaved, the first rotating by position |
@@ -185,7 +185,7 @@ The manual equivalent:
   - the box-accuracy and RP1 pilot clips are unrecorded;
   - the AI-assisted ground-truth correction viewed frames of test clips (never VSS predictions or scores).
 
-  The full table is in the [decision record](../../../.docs/mvp2/experiment-decision-record.md#d15-held-out-exposure-approved), and every report carries the disclosure.
+  The full table is in the [decision record](../../../.docs/archive/mvp2-experiment-decision-record.md#d15-held-out-exposure-approved), and every report carries the disclosure.
 - **No human validation is claimed:** the ground truth (AI-assisted, approved at dataset level) and τ (AI-labelled, AI-audited calibration) are not human-validated.
 
 ## 7. Remaining risks

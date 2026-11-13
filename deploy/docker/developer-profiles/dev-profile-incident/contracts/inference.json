@@ -1,5 +1,5 @@
 {
-  "description": "Shared P1/RP1 inference settings and the allowlist of VLMs the console may call. The agent reads this file directly; eval/ keeps its own constants in eval/scripts/ and eval/tests/test_contract_fixtures.py asserts they match this file.",
+  "description": "Shared P1/RP1 inference settings and the allowlist of models the console may call. Entries with text_only true accept no video: the upload picker hides them, while chat, the reviewer and eval still use them. The agent reads this file directly; eval/ keeps its own constants in eval/scripts/ and eval/tests/test_contract_fixtures.py asserts they match this file.",
   "p1": {
     "temperature": 0.0,
     "max_tokens": 16384,
@@ -21,7 +21,7 @@
       "id": "nvidia/cosmos-3-super-reasoner",
       "label": "Cosmos 3 Super Reasoner",
       "timeout_seconds": 300,
-      "notes": "Ignores media_io_kwargs.video.num_frames and samples about 24 frames (see .docs/prompt-contract-plan.md 5a)."
+      "notes": "Ignores media_io_kwargs.video.num_frames and samples about 24 frames (see .docs/analysis-schema.md section 7)."
     },
     {
       "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
@@ -35,32 +35,38 @@
     },
     {
       "id": "nvidia/nemotron-3-nano-30b-a3b",
-      "label": "Nemotron 3 Nano 30B (text only)",
+      "label": "Nemotron 3 Nano 30B",
+      "text_only": true,
       "timeout_seconds": 300
     },
     {
       "id": "nvidia/nemotron-3-super-120b-a12b",
-      "label": "Nemotron 3 Super 120B (text only)",
+      "label": "Nemotron 3 Super 120B",
+      "text_only": true,
       "timeout_seconds": 300
     },
     {
       "id": "nvidia/nemotron-3-ultra",
-      "label": "Nemotron 3 Ultra (text only)",
+      "label": "Nemotron 3 Ultra",
+      "text_only": true,
       "timeout_seconds": 300
     },
     {
       "id": "nvidia/nemotron-3-ultra-nvfp4",
-      "label": "Nemotron 3 Ultra NVFP4 (text only)",
+      "label": "Nemotron 3 Ultra NVFP4",
+      "text_only": true,
       "timeout_seconds": 300
     },
     {
       "id": "nvidia/nemotron-3-auto",
-      "label": "Nemotron 3 Auto (text only)",
+      "label": "Nemotron 3 Auto",
+      "text_only": true,
       "timeout_seconds": 300
     },
     {
       "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
-      "label": "Nemotron 3.5 Lightning 30B (text only)",
+      "label": "Nemotron 3.5 Lightning 30B",
+      "text_only": true,
       "timeout_seconds": 300
     }
   ]

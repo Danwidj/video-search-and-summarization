@@ -60,8 +60,7 @@ export interface StructuredEdit {
 }
 
 /**
- * Draft item details: imageUrl is a signed URL for showing the image, never sent, or the object URL of a pending crop.
- * pendingImage is a reviewer-cropped JPEG held in the browser until Save uploads it; its key is then `image`.
+ * Draft item details: imageUrl is a signed URL for showing the image, never sent.
  * imageTimestampSeconds and imageBox (the [ymin, xmin, ymax, xmax] box, 0-1000) describe a
  * reviewer-drawn image only; they stay null for an image the opened revision already had.
  */
@@ -72,7 +71,6 @@ interface DraftItemDetails {
   label: string;
   image: string | null;
   imageUrl: string | null;
-  pendingImage: Blob | null;
   imageTimestampSeconds: number | null;
   imageBox: number[] | null;
   /** Set by the box tool (or a re-track): Save stores the track and cuts the evidence image from its first-seen second. */
@@ -151,7 +149,6 @@ export function newItemDetails(prefix: string, draft: EditDraft): DraftItemDetai
     label: '',
     image: null,
     imageUrl: null,
-    pendingImage: null,
     imageTimestampSeconds: null,
     imageBox: null,
     reviewer: null,
@@ -176,7 +173,6 @@ function details(
     label: item.label,
     image: item.evidence?.image ?? null,
     imageUrl: item.evidence?.imageUrl ?? null,
-    pendingImage: null,
     imageTimestampSeconds: null,
     imageBox: null,
     reviewer: null,
@@ -222,22 +218,6 @@ export function draftFromView(view: ReportView): EditDraft {
       description: asset.description,
     })),
   };
-}
-
-/** The crops in the draft that Save must upload first, by item key. */
-export function pendingImages(draft: EditDraft): Array<{ itemId: string; blob: Blob }> {
-  return [...draft.entities, ...draft.instruments, ...draft.assets].flatMap((item) =>
-    item.pendingImage ? [{ itemId: item.key, blob: item.pendingImage }] : [],
-  );
-}
-
-/** The draft with each uploaded crop's R2 key in place of its pending JPEG: the edit Save sends. */
-export function withUploadedImages(draft: EditDraft, keys: ReadonlyMap<string, string>): EditDraft {
-  const place = <T extends DraftItemDetails>(item: T): T => {
-    const key = keys.get(item.key);
-    return key === undefined ? item : { ...item, image: key, pendingImage: null };
-  };
-  return { ...draft, entities: draft.entities.map(place), instruments: draft.instruments.map(place), assets: draft.assets.map(place) };
 }
 
 /** Problems that stop the draft from becoming a complete edit (shown before sending). */

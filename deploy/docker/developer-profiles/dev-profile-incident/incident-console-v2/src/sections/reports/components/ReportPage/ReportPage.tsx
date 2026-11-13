@@ -33,17 +33,9 @@ import { timelinePanelHeight, videoFitLayout } from '@/lib/ui/video-fit';
 import { seekTarget } from '@/lib/chat/timestamps';
 import { applyChatEdit, type ProposedAction } from '@/lib/edits/chat-edit';
 import type { BoxOpening } from '@/lib/evidence/box-tool';
-import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
 import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
 import { buildTimelineLanes } from '@/lib/reports/timeline-lanes';
-import {
-  draftFromView,
-  draftProblems,
-  editFromDraft,
-  pendingImages,
-  withUploadedImages,
-  type EditDraft,
-} from '@/modules/reports/domain/edit-draft';
+import { draftFromView, draftProblems, editFromDraft, type EditDraft } from '@/modules/reports/domain/edit-draft';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { draftOverlay, stillBoxesFor, trackedReportItems } from '@/modules/reports/domain/track';
@@ -452,9 +444,6 @@ export function ReportPage({
     setSaving(true);
     setSaveProblems([]);
     try {
-      // Crops held in the browser reach R2 only now, before the revision that references them is written.
-      const keys = new Map<string, string>();
-      for (const { itemId, blob } of pendingImages(draft)) keys.set(itemId, await uploadEvidenceImage(videoId, itemId, blob));
       const response = await fetch(`/api/reports/${encodeURIComponent(videoId)}/edit`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -462,7 +451,7 @@ export function ReportPage({
           parentId: editBase.revisionId,
           editedBy: SAVE_AUTHOR,
           note: trimmed,
-          edit: editFromDraft(withUploadedImages(draft, keys)),
+          edit: editFromDraft(draft),
         }),
       });
       const payload = (await response.json()) as {

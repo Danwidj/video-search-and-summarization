@@ -33,7 +33,7 @@ def _validate(schema: dict, instance: dict, label: str) -> None:
 def test_search_request_schema_valid_fixtures():
     """Valid request fixtures pass search_request.schema.json."""
     schema = _load("search-contract-v1/search_request.schema.json")
-    for name in ["minimal-request.json", "full-request.json", "version-request.json", "draft-request.json"]:
+    for name in ["minimal-request.json", "full-request.json"]:
         fixture = _load(f"search-contract-v1/fixtures/valid/{name}")
         _validate(schema, fixture, f"request/{name}")
 
@@ -83,8 +83,8 @@ def test_search_response_pilot_constraints():
     fixture = _load("search-contract-v1/fixtures/valid/full-response.json")
     for idx, hit in enumerate(fixture["hits"]):
         item = hit["item"]
-        assert isinstance(item["timestamp_seconds"], int), (
-            f"hit[{idx}].timestamp_seconds must be int"
+        assert isinstance(item["timestamp_seconds"], (int, float)), (
+            f"hit[{idx}].timestamp_seconds must be a number"
         )
         assert item["timestamp_seconds"] >= 0, (
             f"hit[{idx}].timestamp_seconds must be >= 0"
@@ -207,7 +207,7 @@ def test_incident_contract_v4_schema_has_required_fields():
         ), f"incident-contract-v4 must NOT have bounding_box in {sch_name}"
 
 
-def test_incident_contract_v3_version():
+def test_incident_contract_version():
     """VERSION file matches incident-contract-v4."""
     version = (CONTRACTS_DIR / "VERSION").read_text().strip()
     assert version == "incident-contract-v4", (

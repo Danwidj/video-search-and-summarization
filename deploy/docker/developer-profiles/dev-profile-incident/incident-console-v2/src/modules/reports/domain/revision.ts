@@ -3,7 +3,7 @@
 // Browser-safe shapes of a report revision (report_revisions) and the pure
 // rules for building a human revision from the one the reviewer opened.
 //
-// A revision is a full snapshot: payload is the whole incident-contract-v3
+// A revision is a full snapshot: payload is the whole incident-contract-v4
 // report and evidence lists the R2 image keys and crop details its items use.
 // Revisions are append-only. Save writes a new human revision whose parent is
 // the revision the reviewer opened; nothing is ever updated.

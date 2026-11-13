@@ -1,7 +1,7 @@
 # Evaluation Methodology v2.0 (Evaluation V2: several models, the whole application)
 
 > **Status: proposed (2026-11-01).**
-> - The evaluation owner approved the direction: the scope, the two tracks, AI-first references with tiered human verification, and the layered `eval/v2` package. These are recorded in [`decisions.md`](../../.docs/decisions.md).
+> - The evaluation owner approved the direction: the scope, the two tracks, AI-first references with tiered human verification, and the layered `eval/v2` package. These are recorded in [`decisions.md`](../../.docs/archive/decisions.md).
 > - The **primary metrics, judge, repeat count and freeze rules below are proposals.** They become binding only in the pre-registration record ([`evaluation-v2-preregistration.md`](evaluation-v2-preregistration.md)), which is completed before any run on the test half.
 > - **V1 is untouched:** methodology v1.0–v1.3, `ground-truth-v1.0`, the Stage 0–3 results and the end-to-end profile stay frozen.
 

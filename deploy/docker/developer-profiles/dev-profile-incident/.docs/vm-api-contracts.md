@@ -119,6 +119,18 @@ Clips of `INCIDENT_CHUNK_MIN_CLIP_SECONDS` (30) or less are not chunked. The cap
 - **Never persisted:** an experimental request writes no `report_revisions` row and no `model_runs` placeholder (`revision_id` is `null`), and cropping with R2 settings on the agent is a **409**.
 - **Response additions:** `experiment`, `p1_report`, `p1_elapsed_ms` and `usage`.
 
+### Other agent settings
+
+Read from the agent's environment (`.env.remote` on the VM); none is in the tracked `.env`.
+
+| Variable | Effect |
+|---|---|
+| `INCIDENT_VIDEO_BASE_URL` | A public base URL for stored videos: when set, the agent builds playback and crop URLs from it instead of signing R2 URLs |
+| `INCIDENT_SEARCH_STORE` | `memory` or `supabase` picks the search store; unset uses `supabase` when the database is configured, else `memory` |
+| `INCIDENT_TRACKING_MIN_IOU` | Minimum overlap (default 0.3) between a located box and a solid track for the track to confirm the box |
+| `INCIDENT_TRACKING_END_MARGIN_SECONDS` | Seconds (default 20) after a track's last sample within which it still counts |
+| `INCIDENT_EXPERIMENT_REGISTRY` | Path to the prompt-experiment registry, instead of `contracts/experiments/registry.json` in the checkout |
+
 ## `POST /api/v1/incidents/search`
 
 Natural-language search over evidence crops (entity, instrument, asset). Contract: [`search-contract-v1`](../contracts/search-contract-v1/README.md).
@@ -142,7 +154,7 @@ Response `200`:
 |---|---|
 | `query_id`, `query`, `total_hits`, `execution_time_ms` | `total_hits` 0 is a normal answer |
 | `hits[].result_id`, `hits[].rank`, `hits[].similarity_score` | ranked, `rank` starts at 1 |
-| `hits[].item` | `item_type`, `item_id`, `name`, `label`, `description`, `threat_level`, `holder_entity_id`, `crop_image_url`, `timestamp_seconds`, `bounding_box` (null or `[ymin, xmin, ymax, xmax]`) |
+| `hits[].item` | `item_type`, `item_id`, `name`, `label`, `description`, `threat_level`, `holder_entity_id`, `crop_image_url`, `timestamp_seconds`, `bounding_box` (null or `[ymin, xmin, ymax, xmax]`), `slice_start_seconds` and `slice_end_seconds` (optional: the item's time range to play, first to last seen where it has a track, else the box second minus or plus 3 s), `frame_image_url` (optional signed URL of the whole frame; null or absent when none is stored) |
 | `hits[].incident` | `incident_id`, `model_run_id`, `incident_type`, `severity_level` (1-5), `title`, `description`, `playback_url`, `incident_window` (`[start_s, end_s]`) |
 | `hits[].critic` | `verdict` (`confirmed`, `rejected`, `unverified`), `confidence`, `rationale` |
 

@@ -14,12 +14,12 @@
 #           /analyze endpoint directly. Dashboard chart requests also go through
 #           the agent (its own LLM), so no local vlm-gateway is started. The search route
 #           (POST /api/v1/incidents/search) is always mounted on vss-agent (:8000)
-#           with an always-on VLM critic and persisted ranking/verdicts.
+#           with persisted ranking/verdicts; the VLM critic is off by default
+#           (INCIDENT_SEARCH_CRITIC on the VM turns it on).
 #   mock  — fully local, no VM/SSH. Starts mock-backend (127.0.0.1:7777)
 #           and vlm-gateway (127.0.0.1:8600) locally. Exports
 #           ANALYSIS_MODE=gateway so v2 calls the local gateway. The search route
 #           (POST /api/v1/incidents/search) is always mounted on mock-backend (:7777).
-#           'local' is a deprecated alias for 'mock'.
 #
 # Both modes start and mount the search route automatically with NO opt-in
 # --search flag (search is always on).
@@ -49,7 +49,7 @@
 #   0. Preflight: probes SSH and, on failure, says why (Tailscale not
 #      installed/stopped/logged out, VM offline in the tailnet, host not
 #      resolving, SSH timeout/refused, no route, auth, host key) and what to
-#      do (.scripts/vm-preflight.sh). Then detects the VM address.
+#      do (.scripts/vm-preflight.sh).
 #   1. Checks the current deploy state over SSH against the VM:
 #        - Docker containers via `docker compose -p mdx ps`
 #        - Native services via `native-services.sh status`
@@ -88,8 +88,7 @@
 #      `.scripts/tracking-stack.sh stop` on the VM (incident-operate-vm skill).
 #
 # Overrides:
-#   VSS_START_MODE           'vm' or 'mock' ('local' is a deprecated alias for
-#                            'mock'). Default: 'vm'. In 'mock' mode,
+#   VSS_START_MODE           'vm' or 'mock'. Default: 'vm'. In 'mock' mode,
 #                            SSH is never resolved or touched.
 #   VSS_SSH_TARGET           full "user@host" SSH login for the VM. If set,
 #                            used as-is. If unset, the VM username is
@@ -167,10 +166,6 @@ done
 
 case "$VSS_START_MODE" in
   vm|mock) ;;
-  local)
-    echo "start.sh: mode 'local' is deprecated; use 'mock' (running as --mode mock)." >&2
-    VSS_START_MODE=mock
-    ;;
   *)
     echo "start.sh: VSS_START_MODE must be 'vm' or 'mock' (got '$VSS_START_MODE')." >&2
     exit 1
@@ -275,7 +270,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   if [ "${ENABLE_ANALYTICS}" = "true" ]; then
     default_docker_services="${default_docker_services} elasticsearch"
   fi
-  INCIDENT_DOCKER_SERVICES="${INCIDENT_DOCKER_SERVICES:-${INCIDENT_EXPECTED_CONTAINERS:-$default_docker_services}}"
+  INCIDENT_DOCKER_SERVICES="${INCIDENT_DOCKER_SERVICES:-$default_docker_services}"
 
   # Native VM services
   default_native_services="vss-agent"
@@ -296,6 +291,8 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   VSS_COMPOSE_UP_TIMEOUT="${VSS_COMPOSE_UP_TIMEOUT:-600}"
   VSS_NATIVE_START_TIMEOUT="${VSS_NATIVE_START_TIMEOUT:-300}"
   VSS_REPO_URL="${VSS_REPO_URL:-$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || true)}"
+  # A token embedded in the remote (https://user:token@host/...) must not reach the VM's process list or the terminal.
+  VSS_REPO_URL="$(printf '%s' "$VSS_REPO_URL" | sed -E 's#^(https?://)[^/@]+@#\1#')"
   vm_profile_dir="$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident"
 
   echo "=== STEP 1/3 — Checking backend deploy state on $VSS_SSH_TARGET ==="
@@ -481,7 +478,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
     exit 1
   fi
   echo "  agent ok (localhost:8000 -> VM loopback :8000)"
-  echo "  search route ready (POST http://localhost:8000/api/v1/incidents/search, always-on critic)"
+  echo "  search route ready (POST http://localhost:8000/api/v1/incidents/search, critic off by default)"
 
 
   export INCIDENT_AGENT_BASE_URL="http://localhost:8000"
@@ -491,7 +488,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   # with its own LLM, so this laptop needs no gateway key.
 elif [ "$VSS_START_MODE" = "mock" ]; then
   # Each local service reads its own .env.local symlink to the shared
-  # ../.env.local (README.md §2, kept in place by .githooks/setup-worktree.sh).
+  # ../.env.local (incident-start skill, kept in place by .githooks/setup-worktree.sh).
   for env_link in mock-backend/.env.local vlm-gateway/.env.local; do
     if [ ! -f "${SCRIPT_DIR}/${env_link}" ]; then
       echo "start.sh: ${env_link} is missing or does not resolve to the shared .env.local." >&2
@@ -538,7 +535,7 @@ if [ -n "${VLM_GATEWAY_URL:-}" ]; then
   echo "  VLM_GATEWAY_URL=${VLM_GATEWAY_URL}"
 fi
 echo "  ANALYSIS_MODE=${ANALYSIS_MODE}"
-echo "  SEARCH_ROUTE=${INCIDENT_AGENT_BASE_URL}/api/v1/incidents/search (always-on)"
+echo "  SEARCH_ROUTE=${INCIDENT_AGENT_BASE_URL}/api/v1/incidents/search (always mounted)"
 
 if [ "$NO_CONSOLE" = 1 ]; then
   echo "start.sh: --no-console: backend ready; holding the tunnel/local services open. Ctrl-C to stop."

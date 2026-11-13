@@ -28,7 +28,7 @@ Canonical facts:
 
 ## Search saved report revisions
 
-Finds whole incident reports by meaning, using one summary embedding per saved revision (the type, title and description). Revisions saved without a vector, including human revisions, do not appear. Run it against the VM agent (`localhost:8000`); the mocks answer it from their finals snapshot, so their results say nothing about relevance.
+Finds whole incident reports by meaning, using one summary embedding per saved revision (the type, title and description). A revision saved without a vector (the embedding endpoint was down) does not appear; human revisions get one when saved. Run it against the VM agent (`localhost:8000`); the mocks answer it from their finals snapshot, so their results say nothing about relevance.
 
 ```bash
 curl -sS -X POST http://localhost:8000/api/v1/incidents/revisions/search \

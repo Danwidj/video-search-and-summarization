@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# vm-preflight.sh — LAPTOP SIDE ONLY. Sourced by start.sh / tunnel.sh / tunnel-check.sh.
+# vm-preflight.sh — LAPTOP SIDE ONLY. Sourced by start.sh and tunnel.sh.
 #
 # Gives the VM side of start.sh clear failure reasons instead of a raw ssh error
 # or an indefinite hang:
@@ -8,7 +8,6 @@
 #                      installed/stopped/logged out, VM offline in the tailnet,
 #                      host does not resolve, timeout, refused, no route, auth,
 #                      host key) and print the reason plus the next step.
-#   vm_detect_ip       VM LAN address from its default route (VSS_VM_IP wins).
 #
 # Resolves VSS_SSH_TARGET without prompting before the preflight helpers use it.
 # Tests put a fake `ssh` / `tailscale` first on PATH (.scripts/test-vm-preflight.sh).
@@ -146,26 +145,6 @@ vm_preflight_ssh() {
   esac
   vm_explain_ssh_failure "$err"
   return 1
-}
-
-# vm_detect_ip: print the VM address to forward the tunnel to. An explicit
-# VSS_VM_IP wins; otherwise the default-route source address read over SSH, else
-# the historical 10.131.1.5 (with a note on stderr).
-vm_detect_ip() {
-  local ip
-  if [ -n "${VSS_VM_IP:-}" ]; then
-    echo "$VSS_VM_IP"
-    return 0
-  fi
-  ip="$(ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" 'ip -4 route get 1.1.1.1' 2>/dev/null \
-    | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1 || true)"
-  if [ -n "$ip" ]; then
-    echo "start.sh: detected VM address $ip (set VSS_VM_IP to override)." >&2
-    echo "$ip"
-  else
-    echo "start.sh: could not detect the VM address; falling back to 10.131.1.5 (set VSS_VM_IP to override)." >&2
-    echo "10.131.1.5"
-  fi
 }
 
 # vm_ssh_limited <seconds> <ssh args...>: run ssh (stdin passed through) with a hard

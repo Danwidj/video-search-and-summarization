@@ -32,7 +32,7 @@ The report library reads filtered, paginated metadata through the service-role-o
 The operations dashboard reads bounded aggregates through the service-role-only `/rpc/get_incident_dashboard`, counting each video once through its official revision, else its newest, reporting the official and not-yet-official split, and accepting `p_scope` (`all`/`official`/`not_official`) and `p_timezone` (default `'UTC'`) for local-time trend and heatmap bucketing; it never downloads full report notes or evidence rows.
 Background analysis runs through the `analysis_jobs` table and its service-role functions; it is described in [`.docs/data.md`](../../.docs/data.md).
 Natural-language search queries evidence items through the service-role-only `/rpc/search_evidence_items`, which performs a pgvector cosine distance search over `evidence_crops.embedding` scoped to each video's searchable revision (`searchable_revision_id(video_id) = evidence_crops.revision_id`: official, else newest) and shows the revision's text; hits return `video_id`/`incident_id` and `revision_id`, and the query and hits (with critic verdicts, `unverified` while the critic is off) are logged into `query_results` against that revision. The optional last argument `p_video_id` scopes the scan to one video; a NULL embedding with it lists that video's crops in time order (migration `20261028090000_search_evidence_items_video_id.sql`).
-`report_revisions.embedding` (1024) holds each AI revision's summary vector, written in the insert; `search_report_revisions` searches it, and human revisions have NULL. `evidence_crops` holds the searchable revision of each video (official, else newest) and is written by `set_official_revision` or `set_revision_crops` from the crop list the console sends (the agent returns the embeddings via `POST /api/v1/incidents/evidence-embeddings`; it does not write the rows). The search route embeds queries with the same model, so a model change means re-embedding every row.
+`report_revisions.embedding` (1024) holds each AI revision's summary vector, written in the insert (a human revision's Save passes `p_embedding` the same way); `search_report_revisions` searches it, and a revision saved while the embedding endpoint was down has NULL. `evidence_crops` holds the searchable revision of each video (official, else newest) and is written by `set_official_revision` or `set_revision_crops` from the crop list the console sends (the agent returns the embeddings via `POST /api/v1/incidents/evidence-embeddings`; it does not write the rows). The search route embeds queries with the same model, so a model change means re-embedding every row.
 `model_runs` rows without a revision are normal: failed analysis attempts (`contract_failed` / `request_failed`) and runs whose revision was removed by a video delete. Never count `model_runs` rows as analyses without filtering by `run_outcome(notes)`.
 
 ## Rules
@@ -40,7 +40,7 @@ Natural-language search queries evidence items through the service-role-only `/r
 - **Migrations are the schema authority.** Finals is built by `supabase/migrations/20261020000000_finals_baseline.sql`; every change is a new timestamped file `supabase/migrations/YYYYMMDDHHMMSS_<what>.sql` after it. Never edit the baseline once finals has it, never add to `archived/supabase/midterm/`, and never hand-edit the live DB without a matching migration file.
 - **Test before applying:** extend and run the SQL harness (below) in the same PR. It applies every file in `supabase/migrations/` in order.
 - **Dry-run first, then ask** before applying for real. Applying is live and shared.
-- **Videos carry `content_sha256`** (unique where set); `archived/supabase/r2/backfill_content_hash.py` (dry run unless `--apply`, stops on two videos with the same content, deletes nothing) fills it from R2 for rows without one.
+- **Videos carry `content_sha256`** (unique where set); `scripts/backfill_content_hash.py` (dry run unless `--apply`, stops on two videos with the same content, deletes nothing) fills it from R2 for rows without one.
 - **After applying, run `supabase/tests/security_check.sql`** against finals: 0 rows expected.
 - **Security on every new object:** RLS on every new table; `SET search_path = ''` and no `SECURITY DEFINER` on every function; nothing for `PUBLIC`/`anon`/`authenticated`. The harness and the security check fail otherwise. Default privileges only cover objects created by `postgres`.
 - **Cascades are real.** Deleting a `videos` row cascades through its revisions, their `evidence_crops` and the `query_results` that name those revisions. `model_runs` and `report_revisions` are linked by a required foreign key, so a revision needs its run row first. The append-only trigger permits only the video cascade, so delete a video rather than a revision.
@@ -62,7 +62,7 @@ uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' pytho
 
 ### Apply a migration to finals
 
-From the repo root, with `FINALS_DSN` the finals session-pooler URL (after the cutover this is `INCIDENT_DB_DSN` in `.env.local`). Finals' history is not in step with `supabase/migrations/` (the two `20261028090000` files were applied by hand without history rows), so a plain `db push` would re-run them. Until the history is repaired, apply one file at a time:
+From the repo root, with `FINALS_DSN` the finals session-pooler URL (after the cutover this is `INCIDENT_DB_DSN` in `.env.local`). Finals' history is not in step with `supabase/migrations/`, so apply one file at a time, never `supabase db push` ([why, and the target state](../../supabase/README.md#add-a-finals-migration)):
 
 ```bash
 W=deploy/docker/developer-profiles/dev-profile-incident
@@ -73,16 +73,6 @@ psql "$FINALS_DSN" -f $W/supabase/tests/security_check.sql                      
 ```
 
 In an agent run the CLI refuses `migration repair` without `--yes`; add it only when the repair for this one version is authorised. `psql` is not installed on the laptop or the VM: apply the file with `uvx --with "psycopg[binary]" python -I` (read the DSN into the environment, never print it).
-
-Target state, once the history is repaired: `supabase db push --workdir $W --db-url "$FINALS_DSN" --dry-run`, then without `--dry-run`.
-
-`db push` at midterm fails ("remote migration versions not found"), because midterm's history names versions that are no longer in `supabase/migrations/`. Do not "fix" that with `migration repair` against midterm.
-
-To record an out-of-band change on finals without re-executing SQL:
-
-```bash
-supabase migration repair --workdir $W --db-url "$FINALS_DSN" --status applied <YYYYMMDDHHMMSS>
-```
 
 **If the laptop cannot reach the pooler** (5432 and 6543 time out) but the VM can, tunnel through the VM and point the DSN's host and port at the tunnel (the pooler routes on the `postgres.<ref>` user name, so the host change is fine; `<supabase-pooler-host>` below is the host in your `FINALS_DSN`), then close the tunnel by PID:
 

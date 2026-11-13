@@ -18,7 +18,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | [`eval/`](eval/README.md) | Python, `uv` | Standalone P1/RP1 VLM benchmark |
 | [`contracts/`](contracts/README.md) | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v4`), model allowlist + P1 settings (`inference.json`), shared validator fixtures; eval, console (gateway and agent mode) and vss-agent all use it ([schema](.docs/analysis-schema.md)) |
 | [`supabase/`](supabase/README.md) | SQL, Python | Finals schema authority (`migrations/`: one baseline, then later finals migrations), SQL harness (`tests/`) |
-| `scripts/` | Python | `refresh_revision_embeddings.py`: re-embeds revision summaries after the summary text recipe changes |
+| `scripts/` | Python | `refresh_revision_embeddings.py` (re-embeds revision summaries after the summary text recipe changes) and `backfill_content_hash.py` (fills `videos.content_sha256`) |
 | [`start.sh`, `.scripts/`](.scripts/README.md) | Bash | Laptop launcher; VM lifecycle scripts |
 | [`archived/`](archived/README.md) | - | Frozen midterm database record, copy and R2 scripts, kept as read-only history: never push, never run (see Boundaries) |
 | `services/agent/` (outside this dir) | Python, NAT | `POST /api/v1/incidents/{id}/analyze`, `incident_report_gen` (writes `report_revisions`), `POST /api/v1/incidents/evidence-embeddings`, search over `evidence_crops`, `utils/incident_db.py`. Follow [`services/agent/AGENTS.md`](../../../../services/agent/AGENTS.md) |
@@ -31,6 +31,9 @@ Run from each component's directory. Run a component's checks after every change
 # incident-console-v2 (lint is Biome plus tsc; `npm run format` applies Biome's formatter;
 # tests, including the import-boundary check, need a Node build with TypeScript stripping; otherwise use npx -y node@22)
 npm install && npm run lint && npm run typecheck && npm test
+
+# contracts (schemas, fixtures, vendored copy; run `python sync.py` after editing a contract file)
+cd contracts && python sync.py --check && uv run --no-project --with pytest --with jsonschema pytest test_schema.py
 
 # vlm-gateway (no tests dir yet)
 uv sync && uv run ruff check .

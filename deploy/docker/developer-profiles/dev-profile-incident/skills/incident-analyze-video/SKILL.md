@@ -82,7 +82,7 @@ Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-
 
 - The report page shows type, severity, confidence, summary, incident window and evidence, and the video plays from a fresh 1-hour signed R2 URL.
 - With person tracking (agent `INCIDENT_TRACKING_ENABLED=1`), a matched person's box follows them over the video in View mode (a person the detector could not box may be matched by the report's seconds: `box_source: "track-time"`, shown as a "Matched by time" badge; `track_gap` says why anyone else has no track), each tracked card has a presence bar that seeks, and a card click selects its box. The samples come from `GET /api/reports/<videoId>/track?revision=<id>&type=entity&item=<E1>` (`{samples: [{t, box}]}`, 404 without a track); the run's notes keep the agent's `tracking` summary as `response.tracking`.
-- `videos.filepath` is a classification-neutral **R2 key** (`uploads/<original name>.mp4` in both modes), **not** a `http://10.131.1.5:...` VST URL. The agent no longer writes `videos`.
+- `videos.filepath` is a classification-neutral **R2 key** (`uploads/<original name>.mp4` in both modes), **not** a `http://<vm-ip>:...` VST URL. The agent no longer writes `videos`.
 - There is a new `model_runs` row and a new AI revision in History, and the previous runs still appear in the run picker.
 - The analysis response was 200; `verifying the persisted report in PostgREST failed` means inference completed but the durable row graph is incomplete and must not be treated as a finished report.
 

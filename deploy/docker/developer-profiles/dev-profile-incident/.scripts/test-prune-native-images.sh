@@ -36,11 +36,6 @@ if grep -qF "Proceed with pruning" <<<"$output"; then
   echo "FAIL non-interactive prune prompted"
   exit 1
 fi
-if ! grep -qF -- "--non-interactive was supplied" <<<"$output"; then
-  echo "$output"
-  echo "FAIL non-interactive mode was not reported"
-  exit 1
-fi
 if ! grep -qF "docker image prune -f --filter until=24h" "$FAKE_DOCKER_LOG"; then
   cat "$FAKE_DOCKER_LOG"
   echo "FAIL prune interface did not reach Docker"

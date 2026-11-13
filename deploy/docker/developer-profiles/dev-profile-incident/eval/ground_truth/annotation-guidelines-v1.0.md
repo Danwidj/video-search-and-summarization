@@ -1,13 +1,13 @@
 # Annotation Guidelines v1.0
 
-> **Status: approved (2026-10-27).** Version id `annotation-guidelines-v1.0`. Approved decisions D1 and D2 of the [ground-truth plan](../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) apply: the severity and threat scales are unchanged, and this document adds decision rules, tie-breaks, category examples, significance and classification rules, uncertainty handling and description standards. The interpretations A1–A14 are recorded in [§11](#11-decision-record); all fourteen are approved.
+> **Status: approved (2026-10-27).** Version id `annotation-guidelines-v1.0`. Approved decisions D1 and D2 of the ground-truth plan (local document, not tracked in Git) apply: the severity and threat scales are unchanged, and this document adds decision rules, tie-breaks, category examples, significance and classification rules, uncertainty handling and description standards. The interpretations A1–A14 are recorded in [§11](#11-decision-record); all fourteen are approved.
 
 This document defines what a correct incident annotation is. It is the shared reference for:
 - human annotators and reviewers of the ground truth;
 - the AI-assisted ground-truth correction prompt (PR 4), which must cite this version;
 - the VSS extraction prompt variants of the prompt experiments (PR 6/7), which must follow the same definitions.
 
-It is **not** a prompt, and it does not change the production P1 prompt (`contracts/incident_extraction_prompt.txt`), the ground-truth workbook, any frozen label, or the evaluation scoring. Scoring rules belong to the evaluation methodology (PR 1B). A change to this document is a new version (`v1.1`, …) with a [`decisions.md`](../../.docs/decisions.md) entry; labels made under one version are never silently re-read under another.
+It is **not** a prompt, and it does not change the production P1 prompt (`contracts/incident_extraction_prompt.txt`), the ground-truth workbook, any frozen label, or the evaluation scoring. Scoring rules belong to the evaluation methodology (PR 1B). A change to this document is a new version (`v1.1`, …) with a [`decisions.md`](../../.docs/archive/decisions.md) entry; labels made under one version are never silently re-read under another.
 
 ## Contents
 

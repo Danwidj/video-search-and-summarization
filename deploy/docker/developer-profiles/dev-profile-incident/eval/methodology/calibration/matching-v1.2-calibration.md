@@ -55,7 +55,7 @@ At 0.40 only B18 remains (1 FP), and recall falls from 18 to 16 TP. At 0.75 ther
 - **Warning 1, grid edge:** the rule selected the **lowest candidate on the grid** (0.30). The true optimum on this sample may lie below the grid. The grid was fixed in advance and the rule is applied as written. It is not extended after seeing the result.
 - **Warning 2, coverage:** the sample took blocks of ≤ 9 pairs only. In the Stage 1 dev results, **16 of 112 blocks are larger, and they hold 402 of the 795 pairs** (for example 16 predicted × 6 ground-truth entities). In large blocks a low τ has more chances of a false match, so precision at 0.30 may be optimistic for exactly the over-listing outputs Stage 2 targets.
 - **Warning 3, small sample:** 21 positives, wide intervals and AI labels. The human audit is still to do.
-- **Not an input:** model scores. Stage 1 item scores under the candidate τ were computed only **after** selection, for the record ([Stage 1](../../docs/experiments/stage1-baselines.md#v12-provisional-re-matching)).
+- **Not an input:** model scores. Stage 1 item scores under the candidate τ were computed only **after** selection, for the record ([Stage 1](../../docs/experiments/stage1-baselines.md#v12-provisional-re-matching-superseded-calibration-v1)).
 
 ## Needed before v1.2 is in force (owner decisions)
 

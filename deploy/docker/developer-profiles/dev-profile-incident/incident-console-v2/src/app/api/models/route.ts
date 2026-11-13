@@ -12,7 +12,9 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const config = getServiceConfiguration();
-    const models = allowedModels().map(({ id, label }) => ({ id, label }));
+    const models = allowedModels()
+      .filter((model) => !model.text_only)
+      .map(({ id, label }) => ({ id, label }));
     const defaultModel = models.some((model) => model.id === config.vlmModel) ? config.vlmModel : models[0]?.id;
     return NextResponse.json({ models, defaultModel });
   } catch (error) {

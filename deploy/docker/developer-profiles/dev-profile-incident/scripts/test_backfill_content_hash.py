@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for backfill_content_hash.py: `uv run --no-project --with pytest --with boto3 pytest`."""
+"""Tests for backfill_content_hash.py: `uv run --no-project --with pytest --with boto3 pytest test_backfill_content_hash.py`."""
 
 import hashlib
 import io

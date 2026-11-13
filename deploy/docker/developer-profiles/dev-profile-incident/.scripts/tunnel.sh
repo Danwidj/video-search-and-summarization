@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 #
-# VM backend tunnel — LAPTOP SIDE ONLY (replaces the old
-# `mdx-tunnel-incident` shell alias — same
-# behavior, standalone script).
+# VM backend tunnel — LAPTOP SIDE ONLY.
 #
 # The laptop-local incident-console-v2 reaches the real VM agent (:8000)
 # through this SSH tunnel instead of the mock. Unlike every other script in

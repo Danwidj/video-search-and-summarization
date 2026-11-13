@@ -1,0 +1,11 @@
+#!/bin/sh
+# Scans the staged changes for secrets when gitleaks or TruffleHog is on PATH.
+# Warns (exit 0) when neither is installed, so a missing scanner never blocks a commit.
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact || exit 1
+elif command -v trufflehog >/dev/null 2>&1; then
+  trufflehog git file://. --since-commit HEAD --results=verified,unknown --fail || exit 1
+else
+  echo >&2 "pre-commit: no secret scanner found (install gitleaks or trufflehog); staged changes were not scanned"
+fi
+exit 0

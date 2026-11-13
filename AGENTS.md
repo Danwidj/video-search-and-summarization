@@ -6,7 +6,7 @@ This repository is a fork of [NVIDIA's VSS Blueprint](https://docs.nvidia.com/vs
 
 - **Compose profile architecture:** [`deploy/docker/README.md`](deploy/docker/README.md) is authoritative. Developer stacks run via `deploy/docker/scripts/dev-profile.sh up --profile <base|lvs|alerts|search> --hardware-profile <...>`, not hand-edited Compose.
 - **Deployment topology:**
-  - **Full GPU-backed stack** (NIM containers, real inference): VM-only, brought up via `dev-profile.sh` (stock profiles) or direct `docker compose` (this fork's `incident` profile). Requires `NGC_CLI_API_KEY` and a GPU-equipped host.
+  - **Full GPU-backed stack** (NIM containers, real inference): VM-only, brought up via `dev-profile.sh` (stock profiles) or `start.sh` (this fork's `incident` profile). Requires `NGC_CLI_API_KEY` and a GPU-equipped host.
   - **Zero-GPU local mock (a backup that mimics the backend):** [`mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) mocks the whole `bp_developer_base` backend (vss-agent API + VIOS/VST + inference) behind one FastAPI process on port 7777. It is a mock, not the real backend: run and verify frontend work (`services/ui/apps/nv-metropolis-bp-vss-ui`, `incident-console-v2`) on the VM, not here. There is no mock of the Postgres schema (do not conflate the two); the SQL harness in [`supabase/tests/`](deploy/docker/developer-profiles/dev-profile-incident/supabase/README.md) tests the real schema on a throwaway local Postgres.
 
 Other services have their own `AGENTS.md` (e.g. [`services/agent/AGENTS.md`](services/agent/AGENTS.md)) — consult those when touching that service directly.

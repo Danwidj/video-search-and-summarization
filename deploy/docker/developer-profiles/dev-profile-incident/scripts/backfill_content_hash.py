@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Fill videos.content_sha256 for every video that has none, from its R2 object. Deletes nothing.
 
-    cd archived/supabase/r2 && uv run --no-project --with boto3 python backfill_content_hash.py \
-        --env-file ../../../.env.local [--apply]
+    cd scripts && uv run --no-project --with boto3 python backfill_content_hash.py \
+        --env-file ../.env.local [--apply]
 
 Dry run by default: it streams each video's object from R2, hashes it (SHA-256, lower-case hex) and prints
 the plan. With --apply it sets the hash on each row that has none (PATCH filtered on content_sha256 being
@@ -25,16 +25,72 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
-from migrate_r2_names import Rest, not_found, read_env
-
 CHUNK = 8 * 1024 * 1024
+
+
+def not_found(error: Exception) -> bool:
+    response = getattr(error, "response", {}) or {}
+    return str(response.get("Error", {}).get("Code")) in {
+        "404",
+        "NoSuchKey",
+        "NotFound",
+    }
+
+
+class Rest:
+    def __init__(self, url: str, key: str) -> None:
+        self.base = url.rstrip("/") + "/rest/v1/"
+        self.headers = {
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+
+    def call(self, path: str, body: Any = None) -> Any:
+        request = urllib.request.Request(
+            self.base + path,
+            data=None if body is None else json.dumps(body).encode(),
+            headers=self.headers,
+            method="GET" if body is None else "POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return json.loads(response.read() or "null")
+        except urllib.error.HTTPError as error:
+            raise RuntimeError(
+                f"{path.split('?')[0]} failed: HTTP {error.code} {error.read().decode()[:300]}"
+            ) from None
+
+    def table(self, name: str, select: str, order: str = "id") -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        while True:
+            page = self.call(
+                f"{name}?select={select}&order={order}&limit=1000&offset={len(rows)}"
+            )
+            rows += page
+            if len(page) < 1000:
+                return rows
+
+
+def read_env(path: str) -> dict[str, str]:
+    env: dict[str, str] = {}
+    for line in Path(path).read_text().splitlines():
+        match = re.match(r"^\s*([A-Z0-9_]+)=(.*)$", line)
+        if match:
+            env[match.group(1)] = match.group(2).strip().strip('"').strip("'")
+    for name in os.environ:
+        env.setdefault(name, os.environ[name])
+    return env
 
 
 def sha256_of_object(client: Any, bucket: str, key: str) -> str | None:

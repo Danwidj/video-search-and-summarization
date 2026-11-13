@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
-# Cross-profile deploy health check (replaces the old `mdx-health` shell
-# alias — same behavior, standalone script).
+# Cross-profile deploy health check.
 #
 # Every profile runs the agent and must answer on :8000/health
 # (skills/vss-deploy-profile/references/readiness.md Step 2 "Cross-profile

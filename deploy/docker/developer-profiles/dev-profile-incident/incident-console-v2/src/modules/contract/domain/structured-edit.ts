@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Server-side validation of a structured (Class A) reviewer edit, built from
-// the incident-contract-v3 schema itself (no second schema): the editable
+// the incident-contract-v4 schema itself (no second schema): the editable
 // incident properties plus the contract's own entities / instruments / assets
 // item schemas, then the contract's ID and holder rules and the window order.
 // Class B (model-generated) and Class C (provenance) fields are rejected.

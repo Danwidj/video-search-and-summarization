@@ -87,7 +87,7 @@ Not started by the profile: Video IO & Storage (VIOS, also called VST), the HAPr
 
 ### Level 2: The Agent's Incident Extension
 
-The extension is a set of routes registered by the stock worker ([`vm-api-contracts.md`](vm-api-contracts.md) lists them with their request and response shapes), one NAT tool (`incident_report_gen`), a vendored copy of the contract (`incident_contract/`), and utilities behind small interfaces: the remote VLM as the open-vocabulary detector and namer, object storage as the evidence and scratch store, and HTTP clients for the perception stack and the embedding endpoint.
+The extension is a set of routes registered by the stock worker ([`vm-api-contracts.md`](vm-api-contracts.md) lists them with their request and response shapes), NAT tools (`incident_report_gen`; the investigator's read tools `incident_read_report` and `incident_list_versions`; the editor's `propose_*` tools, which only propose draft changes), a vendored copy of the contract (`incident_contract/`), and utilities behind small interfaces: the remote VLM as the open-vocabulary detector and namer, object storage as the evidence and scratch store, and HTTP clients for the perception stack and the embedding endpoint.
 
 The analysis pipeline, in order. "Soft" means a failure is recorded on the item or the run and the analysis continues.
 
@@ -95,7 +95,7 @@ The analysis pipeline, in order. "Soft" means a failure is recorded on the item 
 |---|---|---|---|
 | Caption pass (flag) | Cuts a long clip into overlapping windows, captions each with the VLM and hands the captions to P1 as context | Yes | `utils/chunk_captions.py` |
 | Set-of-marks (flag, needs tracking) | Draws a numbered box on each person track on a scratch copy of the clip, asks P1 for the number in each person's label, then strips the numbers | Yes | `utils/set_of_marks.py` |
-| P1 extraction | Sends the signed video URL, the contract prompt and any reviewer prompt with the schema enforced through structured output; validates under `core-scored-v1` with `id-normalization-v1` | No: a violation is a client error and nothing is persisted | `tools/incident_report_gen.py`, `incident_contract/` |
+| P1 extraction | Sends the signed video URL, the contract prompt and any reviewer prompt with the schema enforced through structured output; validates under `core-scored-v1` with `id-normalization-v1` | No: a violation is a client error and nothing is persisted | `tools/incident_report_gen.py`, `tools/incident_investigator.py`, `tools/incident_editor.py`, `tools/incident_experiments.py`, `incident_contract/` |
 | RP1 prose report | A text report from the validated P1 JSON; the console asks for P1 only | Yes | `tools/incident_report_gen.py` |
 | Person tracking (flag) | Runs beside the locate step: pushes the clip through the perception stack and builds person tracks from the frame pages | Yes | `utils/track_evidence.py`, `utils/perception_client.py` |
 | Locate | Finds each entity, instrument and asset at its second with the detector, retrying the neighbouring seconds. An unfound item keeps a recorded gap | Yes | `utils/crop_evidence.py` |
@@ -112,7 +112,7 @@ The rule: team code lives in the profile directory or in files named `incident_*
 
 | Area | Stock VSS | Added by the team |
 |---|---|---|
-| Agent process (`services/agent`) | The NAT agents and tools, embeddings, the video-analytics MCP server. Modified only to register the incident routes and tool and to serve the dashboard chart routes | The `api/incident_*.py` route modules, `tools/incident_report_gen.py`, `incident_contract/` and the incident utilities under `utils/` |
+| Agent process (`services/agent`) | The NAT agents and tools, embeddings, the video-analytics MCP server. Modified only to register the incident routes and tools and to serve the dashboard chart routes | The `api/incident_*.py` route modules, `tools/incident_report_gen.py`, `incident_contract/` and the incident utilities under `utils/` |
 | Perception and infrastructure | NvStreamer, DeepStream perception, Kafka, Logstash, Elasticsearch, the video-analytics API, Phoenix | The profile's Compose override (GPU pinning) and tracking Compose file, the tracking-stack script |
 | Deployment packaging | The `dev-profile.sh` helper and the stock profiles, never used for this profile | `start.sh`, `.scripts/`, the profile's `compose.yml` |
 | User interface | The stock web UI, not started | `incident-console-v2`, `vlm-gateway`, `mock-backend` |

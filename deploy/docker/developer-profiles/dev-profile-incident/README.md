@@ -36,7 +36,8 @@ ln -sfn ../.env.local incident-console-v2/.env.local   # laptop: the console rea
 
 | Section 1 setting | Where | Meaning |
 |---|---|---|
-| `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`, `INCIDENT_DB_DSN` | both | The Supabase project |
+| `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | both | The Supabase project |
+| `INCIDENT_DB_DSN` | laptop only | The Supabase connection string, used by `setup-database.sh` |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | both | The Cloudflare R2 bucket |
 | `VSS_SSH_HOST` | laptop only | SSH host name or address of the VM. No default |
 | `NGC_CLI_API_KEY`, `OPENAI_API_KEY` | VM only | Keys for container images and the model endpoint |
