@@ -14,7 +14,7 @@ agents:
 
 A reviewer uploads a video clip, a vision-language model writes a structured incident report, and the reviewer edits, searches and asks questions about it. This page deploys and runs the profile; the [repository README](../../../../README.md) introduces the project.
 
-<img src=".docs/figures/demo-overview.gif" width="800" alt="Overview of the incident console: the incident library, one incident's report with its video, tracked boxes and evidence images, and back to the library" />
+<img src=".docs/figures/demo-overview.gif" width="100%" alt="Overview of the incident console: the incident library, one incident's report with its video, tracked boxes and evidence images, and back to the library" />
 
 ## 1. What you need
 
@@ -85,19 +85,19 @@ Never use NVIDIA's `dev-profile.sh` for this profile: its `down` deletes the VM'
 
 **Report workspace:** the video with boxes that follow each item, the timeline, the report fields, the evidence items and the report's versions.
 
-<img src=".docs/figures/demo-1-report-workspace.gif" width="800" alt="Report workspace: a click on the timeline plays the video with boxes that follow a leopard and a dog, then the evidence items, then the model's version of the report and back to the reviewer's version" />
+<img src=".docs/figures/demo-1-report-workspace.gif" width="100%" alt="Report workspace: a click on the timeline plays the video with boxes that follow a leopard and a dog, then the evidence items, then the model's version of the report and back to the reviewer's version" />
 
 **Dashboard:** counts by hour, severity, type, assets, instruments and evidence; every panel follows the filters.
 
-<img src=".docs/figures/demo-2-dashboard.gif" width="800" alt="Dashboard: one hour is selected on the activity heatmap, then the burglary type and medium severity, and every panel changes with each filter" />
+<img src=".docs/figures/demo-2-dashboard.gif" width="100%" alt="Dashboard: one hour is selected on the activity heatmap, then the burglary type and medium severity, and every panel changes with each filter" />
 
 **Evidence search:** describe a person or an object in plain English and open a match at the second it appears.
 
-<img src=".docs/figures/demo-3-evidence-search.gif" width="800" alt="Evidence search: the query a silver car returns 14 matching evidence items with their match scores, narrowed to road accidents, and one match opens its report at that second" />
+<img src=".docs/figures/demo-3-evidence-search.gif" width="100%" alt="Evidence search: the query a silver car returns 14 matching evidence items with their match scores, narrowed to road accidents, and one match opens its report at that second" />
 
 **Ask about this incident:** a question about one report, answered from the report, with the tools the agent used.
 
-<img src=".docs/figures/demo-4-ask-incident.gif" width="800" alt="Ask about this incident: a question about what the bear takes and when, the answer, and the What I did list showing the incident_read_report tool call" />
+<img src=".docs/figures/demo-4-ask-incident.gif" width="100%" alt="Ask about this incident: a question about what the bear takes and when, the answer, and the What I did list showing the incident_read_report tool call" />
 
 ## Read more
 
