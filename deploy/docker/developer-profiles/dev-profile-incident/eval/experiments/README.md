@@ -31,7 +31,7 @@ Every guard runs before any call:
 
 | Guard | Rule |
 |---|---|
-| Test split | Only for `final: true` with a `selection_record` that is an existing `### ` heading in `.docs/decisions.md` |
+| Test split | Only for `final: true` with a `selection_record` that is an existing `### ` heading in `.docs/archive/decisions.md` |
 | Frozen baseline | A `frozen_baseline` config with a completed run is never rerun. Re-score its saved outputs instead |
 | Budget | Videos × repeats must not exceed `budget.max_p1_calls` |
 | Paid calls | `run` and `rescore` send nothing without `--confirm-paid` |

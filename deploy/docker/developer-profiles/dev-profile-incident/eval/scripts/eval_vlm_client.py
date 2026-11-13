@@ -68,7 +68,7 @@ FIXED_INFERENCE_CONFIG = {"temperature": 0.0, "max_tokens": 4096}
 P1_INFERENCE_CONFIG = {"max_tokens": 16384, "media_io_kwargs": {"video": {"num_frames": 64}}}
 
 # Fixed rate-limit policy for P1, identical for every model and decided before any
-# benchmark result (.docs/decisions.md 2026-10-02). Never tuned per model or run.
+# benchmark result (.docs/archive/decisions.md 2026-10-02). Never tuned per model or run.
 # Switchyard's shared limits seen in the smoke test: cosmos-3-super-reasoner 240
 # requests/min, nemotron-3-nano-omni 30,000 tokens/min (one P1 call is about 6k
 # prompt tokens plus up to 16,384 completion tokens).

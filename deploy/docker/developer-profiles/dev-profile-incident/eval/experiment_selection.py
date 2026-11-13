@@ -13,10 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The Stage 2 prompt-selection rule, D9 v2 (``.docs/mvp2/experiment-decision-record.md``).
+"""The Stage 2 prompt-selection rule, D9 v2 (``.docs/archive/mvp2-experiment-decision-record.md``).
 
 Pure functions over saved results. Nothing here is used until the rule is pre-registered in
-``.docs/decisions.md``; ``select_d9`` refuses otherwise, and refuses test-split, pilot and
+``.docs/archive/decisions.md``; ``select_d9`` refuses otherwise, and refuses test-split, pilot and
 unfrozen-ground-truth records.
 
 **Primary metric** ``ΔI``: the equally weighted mean of three component differences,
