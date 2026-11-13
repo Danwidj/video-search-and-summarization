@@ -1,6 +1,8 @@
 # Incident Search and Reporting
 
-[![Watch the pitch video](https://img.youtube.com/vi/_THMlaojpK8/hqdefault.jpg)](https://youtu.be/_THMlaojpK8)
+<a href="https://youtu.be/_THMlaojpK8">
+  <img src="https://img.youtube.com/vi/_THMlaojpK8/maxresdefault.jpg" alt="Watch the pitch video" width="100%">
+</a>
 
 > **Pitch video:** [watch on YouTube](https://youtu.be/_THMlaojpK8)
 
