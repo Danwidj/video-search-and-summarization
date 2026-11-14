@@ -1,131 +1,20 @@
 #!/usr/bin/env bash
 #
-# start.sh — the one-command daily entry point for the incident-console-v2
-# workflow. RUN FROM YOUR LAPTOP:
+# start.sh: the one-command laptop entry point for the incident profile. Run it from
+# your laptop, never on the VM:
 #
-#   cd deploy/docker/developer-profiles/dev-profile-incident && ./start.sh
-#   (add --prod for a production console build; it rebuilds on every run)
+#   cd deploy/docker/developer-profiles/dev-profile-incident
+#   ./start.sh [--mode mock|vm] [--no-console] [--prod]
 #
-# Modes (via --mode or VSS_START_MODE, default: vm):
-#   vm    — real VM agent (checks/deploys the VM over SSH, opens the SSH
-#           tunnel for the agent on :8000 only; uploads go straight from the
-#           console to R2, and the VM runs no VST/HAProxy). Exports
-#           ANALYSIS_MODE=agent so v2 calls the agent's
-#           /analyze endpoint directly. Dashboard chart requests also go through
-#           the agent (its own LLM), so no local vlm-gateway is started. The search route
-#           (POST /api/v1/incidents/search) is always mounted on vss-agent (:8000)
-#           with persisted ranking/verdicts; the VLM critic is off by default
-#           (INCIDENT_SEARCH_CRITIC on the VM turns it on).
-#   mock  — fully local, no VM/SSH. Starts mock-backend (127.0.0.1:7777)
-#           and vlm-gateway (127.0.0.1:8600) locally. Exports
-#           ANALYSIS_MODE=gateway so v2 calls the local gateway. The search route
-#           (POST /api/v1/incidents/search) is always mounted on mock-backend (:7777).
+#   --mode vm      default: checks and heals the VM backend over SSH, opens the SSH
+#                  tunnel to the agent (:8000) and starts incident-console-v2 (:3200)
+#   --mode mock    laptop only, no VM or SSH: mock-backend (:7777) and vlm-gateway (:8600)
+#   --no-console   backend and tunnel only
+#   --prod         console as a production build (rebuilt on every run)
 #
-# Both modes start and mount the search route automatically with NO opt-in
-# --search flag (search is always on).
-#
-# Both modes launch incident-console-v2 (Next.js, port 3200), the only active
-# console. The Streamlit v1 console was removed (git history keeps it).
-#
-# Architecture (Native vs Docker Split):
-#   - DOCKER SERVICES: Phoenix (the trace viewer used for eval), plus
-#     Elasticsearch with ENABLE_ANALYTICS=true, plus the person-tracking stack
-#     (ENABLE_TRACKING, on by default; see below). VIOS/VST, HAProxy and Redis
-#     are no longer part of the deployment: uploads go straight to R2.
-#   - NATIVE SERVICES: Fast-iterating application modules running directly
-#     on the VM (vss-agent via NAT framework, plus optional analytics
-#     video-analytics-api and behavior-analytics).
-#
-# Default analysis stack (vm mode): one run brings up person tracking and the
-# caption pass. start.sh starts the tracking stack (ENABLE_TRACKING=false
-# skips it); native-services.sh starts vss-agent with
-# INCIDENT_TRACKING_ENABLED=true and INCIDENT_CHUNKING_ENABLED=1 (20 s windows,
-# 2 s overlap) unless .env.remote sets them (false or 0 turns one off,
-# then restart the agent), and installs a static ffmpeg/ffprobe into the VM
-# checkout's .tools/ffmpeg on the agent's first start (.scripts/media-tools.sh).
-# With either piece off the analysis still runs without it.
-#
-# Execution flow (vm mode):
-#   0. Preflight: probes SSH and, on failure, says why (Tailscale not
-#      installed/stopped/logged out, VM offline in the tailnet, host not
-#      resolving, SSH timeout/refused, no route, auth, host key) and what to
-#      do (.scripts/vm-preflight.sh).
-#   1. Checks the current deploy state over SSH against the VM:
-#        - Docker containers via `docker compose -p mdx ps`
-#        - Native services via `native-services.sh status`
-#   2. Branches on that state:
-#        - NOTHING expected running  -> deploy the backend fresh over SSH:
-#          Starts Docker appliances (`docker compose ... up -d <docker-services>`),
-#          then starts native services via `native-services.sh start`.
-#          Then opens the tunnel and starts v2.
-#        - EVERYTHING expected up    -> skip the deploy, straight to
-#          tunnel + v2.
-#        - PARTIAL (some up)         -> SELF-HEAL. Prints what's missing,
-#          starts only the missing Docker and native services over SSH,
-#          then proceeds to the tunnel.
-#      Starting Docker services runs .scripts/vm-ensure-docker.sh on the VM
-#      (piped over SSH): it clones the repo if the checkout is missing, fixes a
-#      stale HOST_IP in .env.remote (backed up first), pulls missing
-#      images, then runs `docker compose up -d --yes` under a timeout (--yes
-#      recreates volumes/containers that no longer match the config instead
-#      of prompting). Every step is
-#      bounded and fails with a message instead of hanging.
-#   3. The tunnel step is laptop-side only (same hostname guard the old
-#      `mdx-tunnel-incident` alias had — refuse if run ON the VM:
-#      forwarding the VM to itself is at best a no-op). It is backgrounded
-#      here so the script can continue, and is torn down automatically when
-#      the console exits (Ctrl-C).
-#   4. v2 runs the profile's standard local dev loop:
-#      `cd incident-console-v2 && npm run dev -- -H 127.0.0.1 --port 3200` (see
-#      incident-console-v2/README.md). start.sh waits on it; Ctrl-C when
-#      you're done.
-#   5. Cleanup on exit (Ctrl-C, SIGTERM, SIGHUP, normal exit): tears down each
-#      local process with everything it started (uv -> uvicorn, npm -> next dev
-#      -> next-server) and the SSH tunnel. Nothing on the VM is stopped, whether this
-#      was the last session or not: the backend (vss-agent, Phoenix, the tracking
-#      stack) is shared by several people and workers and keeps running. To stop
-#      it deliberately, use `.scripts/native-services.sh stop` and
-#      `.scripts/tracking-stack.sh stop` on the VM (incident-operate-vm skill).
-#
-# Overrides:
-#   VSS_START_MODE           'vm' or 'mock'. Default: 'vm'. In 'mock' mode,
-#                            SSH is never resolved or touched.
-#   VSS_SSH_TARGET           full "user@host" SSH login for the VM. If set,
-#                            used as-is. If unset, the VM username is
-#                            resolved non-interactively by vm-preflight.sh:
-#                            VSS_SSH_USER env var, else ~/.ssh/config User,
-#                            else $USER/whoami. No prompt is ever shown.
-#                            VSS_SSH_HOST sets the host (required, no default).
-#   VSS_SSH_USER             VM username override (see VSS_SSH_TARGET above)
-#   VSS_SSH_HOST             VM hostname (required in vm mode, no default): set it in the
-#                            environment or in .env.local. The laptop guard compares it
-#                            with this machine's short hostname
-#   VSS_REPO_ROOT            the VM's shared checkout (default: /srv/rise-up/vss)
-#   VSS_REPO_URL             git URL to clone if the VM has no checkout (default: this
-#                            clone's `origin`)
-#   VSS_SSH_CONNECT_TIMEOUT  SSH connect timeout in seconds (default: 10)
-#   VSS_PULL_TIMEOUT         image pull/clone timeout on the VM, seconds (default: 1800)
-#   VSS_COMPOSE_UP_TIMEOUT   `docker compose up` timeout on the VM, seconds (default: 600)
-#   VSS_NATIVE_START_TIMEOUT native service start timeout on the VM, seconds (default: 300)
-#   --prod                   console step only: run `next build` then `next start` (a production
-#                            build, same host and port 3200 and same env) instead of
-#                            `npm run dev`. The build takes about a minute; a failed build stops
-#                            start.sh. Without the flag nothing changes
-#   --no-console             bring the backend and tunnel up, skip incident-console-v2,
-#                            and hold the tunnel open (for checking the VM side only)
-#   ENABLE_ANALYTICS         set to 'true' to include video-analytics-api and
-#                            behavior-analytics natively, plus elasticsearch in Docker
-#   ENABLE_TRACKING          vm mode only, default 'true': also start the person-tracking stack
-#                            on the VM after Phoenix and the agent, via
-#                            .scripts/tracking-stack.sh start: NvStreamer, DeepStream perception
-#                            (RT-DETR warehouse, GPU 0), Kafka, Logstash, Elasticsearch and the
-#                            video-analytics API. Stages the RT-DETR model on first use; the first
-#                            start builds TensorRT engines (about 10 minutes). Left running when
-#                            start.sh exits. Set 'false' to skip
-#                            the stack: the agent (INCIDENT_TRACKING_ENABLED, on by default via
-#                            native-services.sh) then skips tracking and analysis runs as before.
-#   INCIDENT_DOCKER_SERVICES space-separated list of Docker services to expect/run
-#   INCIDENT_NATIVE_SERVICES space-separated list of native VM services to expect/run
+# Ctrl-C stops every laptop process and the tunnel; nothing on the shared VM stops.
+# Modes, settings (VSS_SSH_HOST, ENABLE_TRACKING, timeouts, ...) and the VM flow:
+# .docs/incident-profile-operations.md section 3 and skills/incident-start/SKILL.md.
 set -euo pipefail
 
 # Pin all local processes and defaults to GPU 0 to protect GPU 1 for co-tenants

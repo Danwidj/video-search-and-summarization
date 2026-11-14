@@ -12,7 +12,7 @@ refuses to go on if that fails. Reads INCIDENT_DB_DSN from the environment (the 
 HOST:PORT replaces the DSN's host and port when the laptop reaches the pooler through an ssh tunnel (never printed).
 
     set -a; . ./.env.local; set +a
-    uv run --no-project --with 'psycopg[binary]' python scripts/refresh_revision_embeddings.py \
+    uv run --no-project --with 'psycopg[binary]' python db-tools/refresh_revision_embeddings.py \
         --agent http://127.0.0.1:18001 --db-tunnel 127.0.0.1:15432 --backup /path/backup.json [--apply]
 """
 
