@@ -18,6 +18,16 @@ A reviewer uploads a surveillance or anomaly clip in a web console. A vision-lan
 
 ![Containers of the incident system](deploy/docker/developer-profiles/dev-profile-incident/.docs/figures/figure-2-containers.drawio.svg)
 
+## Hardware requirements
+
+The incident profile deploys perception containers and a native agent locally on a GPU host, whilst language and vision model inference is hosted remotely:
+
+- **Tested configuration:** developed and tested on an Ubuntu workstation with an NVIDIA RTX A6000 (48 GB VRAM, pinned to GPU 0; ~7.6 GB VRAM held by perception while active, ~40 GB disk for images).
+- **Upstream VSS minimums:** an x86 host with an 18-core CPU, 128 GB RAM, 1 TB SSD storage, 1 Gbps network, Ubuntu 24.04, NVIDIA driver (>= 595.58.03), Docker Engine (>= 28.3.3, < 29.5.0) with Compose (>= v2.39.1), and NVIDIA Container Toolkit (>= 1.17.8).
+- **Client laptop:** runs the web console; requires Node.js, npm, uv, and SSH connectivity to the GPU host.
+
+Detailed deployment prerequisites, container footprints, and operations are documented in the [incident profile operations guide](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-profile-operations.md).
+
 ## Get started
 
 Deploy and run it from the [incident profile README](deploy/docker/developer-profiles/dev-profile-incident/README.md). The rest of the repository is the upstream blueprint, which the project builds on.
