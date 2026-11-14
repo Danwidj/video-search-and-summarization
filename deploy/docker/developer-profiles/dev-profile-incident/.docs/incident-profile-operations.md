@@ -79,6 +79,23 @@ The console (`incident-console-v2`) runs on the laptop. `./start.sh --mode vm` s
 - **Production console:** `./start.sh --mode vm --prod` runs `next build` then `next start` instead of `npm run dev`. Use it to demo or for a long session. It does not pick up a code change: stop `start.sh` and run it again, which always rebuilds.
 - **Tunnel:** `start.sh` forwards only `localhost:8000` to the agent on the VM loopback. To open or test it by hand (never on the VM itself): `./.scripts/tunnel.sh`, then `./.scripts/tunnel-check.sh`. Listeners bind to the laptop loopback only; do not add `GatewayPorts`.
 
+### `start.sh` settings
+
+Flags: `--mode vm|mock` (default `vm`), `--prod` (console as a production build) and `--no-console` (backend and tunnel only). Environment settings, read from the environment or `.env.local`:
+
+| Setting | Meaning |
+|---|---|
+| `VSS_START_MODE` | `vm` or `mock`; `--mode` wins. Mock mode never resolves or touches SSH |
+| `VSS_SSH_HOST` | VM host name or SSH config alias. Required in vm mode, no default; the laptop guard compares it with this machine's short hostname |
+| `VSS_SSH_USER`, `VSS_SSH_TARGET` | VM user name, or the full `user@host` login used as is ([SSH login](#ssh-login)) |
+| `VSS_REPO_ROOT` | The VM's shared checkout (default `/srv/rise-up/vss`) |
+| `VSS_REPO_URL` | Git URL cloned when the VM has no checkout (default: this clone's `origin`, with any embedded token stripped) |
+| `VSS_SSH_CONNECT_TIMEOUT` | SSH connect timeout in seconds (default 10) |
+| `VSS_PULL_TIMEOUT`, `VSS_COMPOSE_UP_TIMEOUT`, `VSS_NATIVE_START_TIMEOUT` | Timeouts on the VM in seconds for the image pull or clone, `docker compose up` and the native service start (defaults 1800, 600, 300) |
+| `ENABLE_TRACKING` | vm mode, default `true`: start the person-tracking stack after Phoenix and the agent ([details](#person-tracking-stack-scriptstracking-stacksh-enable_trackingtrue)) |
+| `ENABLE_ANALYTICS` | `true` adds `video-analytics-api` and `behavior-analytics` natively and Elasticsearch in Docker |
+| `INCIDENT_DOCKER_SERVICES`, `INCIDENT_NATIVE_SERVICES` | Space-separated lists of the Docker and native VM services to expect and run |
+
 ### SSH login
 
 `start.sh` and `.scripts/tunnel.sh` source `.scripts/vm-preflight.sh`, which resolves the SSH target with no prompt: `VSS_SSH_TARGET` as is; else `VSS_SSH_USER` with `VSS_SSH_HOST` (no default: set it in `.env.local` or the environment to your own host or SSH config alias); else the `User` of that host's entry in `~/.ssh/config`; else your local `$USER`.

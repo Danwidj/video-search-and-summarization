@@ -182,7 +182,7 @@ Cosine search over `report_revisions.embedding`, restricted to each video's sear
 
 #### Repair functions
 
-`list_revisions_missing_crops`, `repair_revision_crops`, `list_revisions_missing_embeddings`, `set_revision_embedding` and `refresh_revision_embedding` (replaces a searchable revision's stored vector, used by `scripts/refresh_revision_embeddings.py` after the summary text recipe changes) find and heal a searchable revision that has evidence images but no `evidence_crops` rows, or a NULL summary vector. Neither writer overwrites existing data. The console's analysis job loop runs the repair at start, every 2 minutes and after each job; with no job loop running, use `POST /api/videos/repair-crops`.
+`list_revisions_missing_crops`, `repair_revision_crops`, `list_revisions_missing_embeddings`, `set_revision_embedding` and `refresh_revision_embedding` (replaces a searchable revision's stored vector, used by `db-tools/refresh_revision_embeddings.py` after the summary text recipe changes) find and heal a searchable revision that has evidence images but no `evidence_crops` rows, or a NULL summary vector. Neither writer overwrites existing data. The console's analysis job loop runs the repair at start, every 2 minutes and after each job; with no job loop running, use `POST /api/videos/repair-crops`.
 
 #### `list_incident_report_summaries`
 

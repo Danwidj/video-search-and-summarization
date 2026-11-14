@@ -13,16 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Developer profile: incident search & reporting capstone.
-#
-# Overrides only for the services this profile still runs or scales down.
-#
-# Disable SDRC services: sdr-controller is NVIDIA's stream router for dynamically
-# registering live RTSP cameras. Unused in dev-profile-incident (which uses file
-# upload + analyze) and port-clashes with streamprocessing on port 10000.
-# Re-enable when live RTSP camera routing is needed.
+# Developer profile: incident search and reporting.
+# Overrides only for the stock services this profile scales down or tunes.
 
 services:
+  # Scaled to 0: the stock init and wait helpers, and sdr-controller (NVIDIA's router for
+  # live RTSP cameras; this profile uploads files and calls /analyze, and sdr-controller
+  # clashes with streamprocessing on port 10000). Scale it back up for live cameras.
   init-dirs:
     scale: 0
   render-config:
@@ -36,8 +33,7 @@ services:
   sdr-controller:
     scale: 0
 
-  # GPU pinning: keep the appliances that use the nvidia runtime on GPU 0, so
-  # GPU 1 stays untouched for co-tenant training workloads.
+  # GPU 0 only: GPU 1 stays free for co-tenant training workloads.
   nvstreamer-2d-fusion:
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
@@ -48,8 +44,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=0
       - CUDA_VISIBLE_DEVICES=0
 
-  # Restart policy: unless-stopped, so a deliberate 'docker compose stop' stays
-  # stopped across system reboots.
+  # unless-stopped: a deliberate 'docker compose stop' stays stopped across reboots.
   kafka:
     restart: unless-stopped
 

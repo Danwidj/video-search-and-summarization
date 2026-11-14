@@ -18,7 +18,7 @@ The profile folder is the `--workdir` target of the `supabase` CLI, and the CLI 
 |---|---|
 | [migrations/](migrations/) | The finals schema: `20261020000000_finals_baseline.sql` builds it from empty, and later files change it |
 | [tests/](tests/) | The SQL harness (`test_baseline.py`), `security_check.sql`, `supabase_stub.sql`, `probe_api.sh` |
-| [../scripts/](../scripts/) | Live database tools: `backfill_content_hash.py` (fills `videos.content_sha256`) and `refresh_revision_embeddings.py` |
+| [../db-tools/](../db-tools/) | Live database tools: `backfill_content_hash.py` (fills `videos.content_sha256`) and `refresh_revision_embeddings.py` |
 | [../archived/supabase/r2/](../archived/supabase/r2/) | Archived: `migrate_r2_names.py` and its test (one-off R2 rename) |
 | [../archived/supabase/copy/](../archived/supabase/copy/) | Archived: `copy_midterm_to_finals.py` and `transform.sql`, the one-way midterm to finals copy. It targets the pre-revision schema, so do not run it |
 | [../archived/supabase/midterm/](../archived/supabase/midterm/README.md) | Archived: the frozen midterm record, 14 migrations, `midterm_base_tables.sql`, freeze and unfreeze SQL |

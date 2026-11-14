@@ -64,7 +64,7 @@ Details of each path: [launch modes and connectivity](../../.docs/architecture.m
 
 **Lifecycle (vm mode):** when every expected Docker and native service is already up, `start.sh` skips the backend deploy and goes straight to the tunnel. The person-tracking stack (`ENABLE_TRACKING`, default on) is started on every run, even when the deploy was skipped, and if it fails `start.sh` exits with status 1 before the tunnel opens; `ENABLE_TRACKING=false ./start.sh` skips it.
 
-Environment overrides such as `ENABLE_ANALYTICS`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are documented in the header of [`start.sh`](../../start.sh). The vm-mode tunnel forwards only `localhost:8000` to the agent: uploads go from the console straight to R2, so it needs no `:7777` forward.
+Environment overrides such as `ENABLE_ANALYTICS`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are listed in [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#startsh-settings). The vm-mode tunnel forwards only `localhost:8000` to the agent: uploads go from the console straight to R2, so it needs no `:7777` forward.
 
 ## Verify
 
